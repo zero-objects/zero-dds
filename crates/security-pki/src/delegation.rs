@@ -43,8 +43,8 @@ extern crate alloc;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
-use ring::rand::SystemRandom;
-use ring::signature::{
+use crate::backend::rand::SystemRandom;
+use crate::backend::signature::{
     self, ECDSA_P256_SHA256_FIXED, ECDSA_P384_SHA384_FIXED, ED25519, RSA_PSS_2048_8192_SHA256,
     UnparsedPublicKey,
 };
@@ -364,7 +364,7 @@ impl DelegationLink {
         };
         let pk = UnparsedPublicKey::new(alg, verify_public_key);
         pk.verify(&input, &self.signature)
-            .map_err(|_| DelegationError::VerifyFailed("ring::verify".to_string()))
+            .map_err(|_| DelegationError::VerifyFailed("crate::backend::verify".to_string()))
     }
 
     /// Wire encoding of a complete link (sign input + signature suffix).
@@ -626,7 +626,7 @@ fn sign_ecdsa(
     input: &[u8],
 ) -> DelegationResult<Vec<u8>> {
     let rng = SystemRandom::new();
-    let key_pair = signature::EcdsaKeyPair::from_pkcs8(alg, pkcs8, &rng)
+    let key_pair = crate::compat::ecdsa_from_pkcs8(alg, pkcs8, &rng)
         .map_err(|e| DelegationError::SignFailed(alloc::format!("ecdsa key parse: {e}")))?;
     let sig = key_pair
         .sign(&rng, input)
@@ -637,13 +637,13 @@ fn sign_ecdsa(
 fn sign_rsa_pss(pkcs8: &[u8], input: &[u8]) -> DelegationResult<Vec<u8>> {
     let key_pair = signature::RsaKeyPair::from_pkcs8(pkcs8)
         .map_err(|e| DelegationError::SignFailed(alloc::format!("rsa key parse: {e}")))?;
-    if key_pair.public().modulus_len() != 256 {
+    if crate::compat::rsa_modulus_len(&key_pair) != 256 {
         return Err(DelegationError::SignFailed(alloc::format!(
             "rsa key is {} bits, expected 2048",
-            key_pair.public().modulus_len() * 8
+            crate::compat::rsa_modulus_len(&key_pair) * 8
         )));
     }
-    let mut sig = alloc::vec![0u8; key_pair.public().modulus_len()];
+    let mut sig = alloc::vec![0u8; crate::compat::rsa_modulus_len(&key_pair)];
     let rng = SystemRandom::new();
     key_pair
         .sign(&signature::RSA_PSS_SHA256, &rng, input, &mut sig)
@@ -662,8 +662,8 @@ fn sign_ed25519(pkcs8: &[u8], input: &[u8]) -> DelegationResult<Vec<u8>> {
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use ring::rand::SystemRandom;
-    use ring::signature::{
+    use crate::backend::rand::SystemRandom;
+    use crate::backend::signature::{
         ECDSA_P256_SHA256_FIXED_SIGNING, ECDSA_P384_SHA384_FIXED_SIGNING, EcdsaKeyPair,
         Ed25519KeyPair, KeyPair,
     };
@@ -685,7 +685,7 @@ mod tests {
         let rng = SystemRandom::new();
         let pkcs8 = EcdsaKeyPair::generate_pkcs8(alg, &rng).expect("gen ecdsa");
         let pkcs8_vec = pkcs8.as_ref().to_vec();
-        let key = EcdsaKeyPair::from_pkcs8(alg, &pkcs8_vec, &rng).expect("parse");
+        let key = crate::compat::ecdsa_from_pkcs8(alg, &pkcs8_vec, &rng).expect("parse");
         let pub_key = key.public_key().as_ref().to_vec();
         (pkcs8_vec, pub_key)
     }

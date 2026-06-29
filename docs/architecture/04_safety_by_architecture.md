@@ -323,7 +323,7 @@ When a commit violates the safety rules:
    - A risk assessment
    - Compensating measures (e.g. additional tests, fuzz coverage)
    - Approval from the Safety Engineering Lead and a senior engineer from another team
-4. **Documentation in the safety-waiver register.** All granted waivers are documented in the repo under `docs/safety-waivers/` and included in the audit.
+4. **Documentation in the safety-waiver register.** All granted waivers are documented in the repo under `internal/safety-waivers/` and included in the audit.
 
 ## 8 Retrospective and review
 

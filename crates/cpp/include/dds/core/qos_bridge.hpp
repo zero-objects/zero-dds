@@ -8,12 +8,39 @@
 #ifndef ZERODDS_DDS_CORE_QOS_BRIDGE_HPP
 #define ZERODDS_DDS_CORE_QOS_BRIDGE_HPP
 
+#include <vector>
+
 #include "dds/core/qos.hpp"
 #include "zerodds.h"
 
 namespace dds {
 namespace core {
 namespace detail {
+
+// ---------------------------------------------------------------------------
+// PartitionPtrs — keeps the `const char*` array referenced by
+// ZeroDdsPartitionQosPolicy{names,names_len} alive for the duration of the
+// create_* call. The C-FFI partition policy is caller-owned (Spec
+// §2.2.3.4 PARTITION): the strings live in the source QoS's
+// std::vector<std::string>, which outlives the by-value native struct, so we
+// only need to materialise a stable array of pointers into them.
+// ---------------------------------------------------------------------------
+struct PartitionPtrs {
+    std::vector<const char*> ptrs;
+
+    // Fills `pol.names/names_len` to point at this holder's pointer array.
+    // `src` must outlive both this holder and the create_* call.
+    void bind(zerodds_ZeroDdsPartitionQosPolicy& pol,
+              const std::vector<std::string>& src) {
+        ptrs.clear();
+        ptrs.reserve(src.size());
+        for (const auto& s : src) {
+            ptrs.push_back(s.c_str());
+        }
+        pol.names = ptrs.empty() ? nullptr : ptrs.data();
+        pol.names_len = ptrs.size();
+    }
+};
 
 inline zerodds_ZeroDdsDuration to_native(const Duration& d) {
     zerodds_ZeroDdsDuration out;
@@ -59,8 +86,16 @@ inline zerodds_ZeroDdsPublisherQos to_native(const PublisherQos& q) {
     out.entity_factory.autoenable_created_entities = q.entity_factory.autoenable_created_entities();
     out.group_data.value = q.group_data.value().empty() ? nullptr : q.group_data.value().data();
     out.group_data.value_len = q.group_data.value().size();
-    out.partition.names = nullptr; // partition bridge in a follow-up patch
+    out.partition.names = nullptr;
     out.partition.names_len = 0;
+    return out;
+}
+
+// Overload that also wires the PARTITION policy (Spec §2.2.3.4). `q` and
+// `holder` must outlive the create_* call the native struct is passed to.
+inline zerodds_ZeroDdsPublisherQos to_native(const PublisherQos& q, PartitionPtrs& holder) {
+    zerodds_ZeroDdsPublisherQos out = to_native(q);
+    holder.bind(out.partition, q.partition.name());
     return out;
 }
 
@@ -74,6 +109,12 @@ inline zerodds_ZeroDdsSubscriberQos to_native(const SubscriberQos& q) {
     out.group_data.value_len = q.group_data.value().size();
     out.partition.names = nullptr;
     out.partition.names_len = 0;
+    return out;
+}
+
+inline zerodds_ZeroDdsSubscriberQos to_native(const SubscriberQos& q, PartitionPtrs& holder) {
+    zerodds_ZeroDdsSubscriberQos out = to_native(q);
+    holder.bind(out.partition, q.partition.name());
     return out;
 }
 
@@ -118,6 +159,12 @@ inline zerodds_ZeroDdsDataWriterQos to_native(const DataWriterQos& q) {
     return out;
 }
 
+inline zerodds_ZeroDdsDataWriterQos to_native(const DataWriterQos& q, PartitionPtrs& holder) {
+    zerodds_ZeroDdsDataWriterQos out = to_native(q);
+    holder.bind(out.partition, q.partition.name());
+    return out;
+}
+
 inline zerodds_ZeroDdsDataReaderQos to_native(const DataReaderQos& q) {
     zerodds_ZeroDdsDataReaderQos out{};
     out.reliability.kind = static_cast<uint32_t>(q.reliability.kind());
@@ -150,6 +197,12 @@ inline zerodds_ZeroDdsDataReaderQos to_native(const DataReaderQos& q) {
     out.group_data.value_len = q.group_data.value().size();
     out.partition.names = nullptr;
     out.partition.names_len = 0;
+    return out;
+}
+
+inline zerodds_ZeroDdsDataReaderQos to_native(const DataReaderQos& q, PartitionPtrs& holder) {
+    zerodds_ZeroDdsDataReaderQos out = to_native(q);
+    holder.bind(out.partition, q.partition.name());
     return out;
 }
 

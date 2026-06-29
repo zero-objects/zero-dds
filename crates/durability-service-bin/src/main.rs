@@ -20,6 +20,7 @@ use std::sync::mpsc;
 use zerodds_durability_service::DurabilityService;
 use zerodds_durability_store::{Contract, DurabilityStore};
 use zerodds_durability_store_file::FileStore;
+#[cfg(feature = "lakehouse")]
 use zerodds_durability_store_lakehouse::LakehouseStore;
 use zerodds_durability_store_sqlite::SqliteStore;
 
@@ -33,6 +34,7 @@ USAGE:
 OPTIONS:
   --domain N        DDS domain id (required). One daemon per domain.
   --store KIND      Cold-store adapter: sqlite (default) | file | lakehouse.
+                    lakehouse (DuckDB) is opt-in: build with --features lakehouse.
   --path PATH       Store location. sqlite/lakehouse: a db file (omit = in-memory,
                     NOT durable across restart). file: a directory (required).
   --auto            Auto-serve every topic whose writers declare TRANSIENT or
@@ -118,6 +120,7 @@ fn build_store(args: &Args, contract: Contract) -> Result<Arc<dyn DurabilityStor
                 Arc::new(SqliteStore::open_in_memory(contract).map_err(|e| e.to_string())?)
             }
         },
+        #[cfg(feature = "lakehouse")]
         "lakehouse" => match &args.path {
             Some(p) => Arc::new(LakehouseStore::open(p, contract).map_err(|e| e.to_string())?),
             None => {
@@ -125,6 +128,14 @@ fn build_store(args: &Args, contract: Contract) -> Result<Arc<dyn DurabilityStor
                 Arc::new(LakehouseStore::open_in_memory(contract).map_err(|e| e.to_string())?)
             }
         },
+        #[cfg(not(feature = "lakehouse"))]
+        "lakehouse" => {
+            return Err(
+                "the 'lakehouse' (DuckDB) backend is not compiled into this binary — \
+                 rebuild with `--features lakehouse` (requires the system libduckdb)"
+                    .to_string(),
+            );
+        }
         "file" => {
             let p = args
                 .path

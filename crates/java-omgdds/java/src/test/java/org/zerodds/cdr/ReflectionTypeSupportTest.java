@@ -123,7 +123,9 @@ final class ReflectionTypeSupportTest {
     void sensorMatchesV8() {
         ReflectionTypeSupport<Sensor> ts = ReflectionTypeSupport.of(Sensor.class);
         byte[] actual = ts.encode(new Sensor(42, 3.14));
-        assertArrayEquals(hex("2A 00 00 00 00 00 00 00 1F 85 EB 51 B8 1E 09 40"), actual);
+        // XCDR2 MAXALIGN=4 (XTypes 1.3 §7.4.1.1.1): double at off 4, no 8-align
+        // pad. Was 16 bytes under the over-alignment Bug XW; spec-correct is 12.
+        assertArrayEquals(hex("2A 00 00 00 1F 85 EB 51 B8 1E 09 40"), actual);
         assertTrue(ts.isKeyed());
 
         // §7.6.8.4: 4-byte BE key holder zero-padded to 16.

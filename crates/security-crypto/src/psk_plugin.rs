@@ -26,7 +26,7 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
-use ring::hkdf;
+use crate::backend::hkdf;
 use zerodds_security::authentication::{IdentityHandle, SharedSecretHandle};
 use zerodds_security::crypto::{CryptoHandle, CryptographicPlugin, ReceiverMac};
 use zerodds_security::error::{SecurityError, SecurityErrorKind, SecurityResult};

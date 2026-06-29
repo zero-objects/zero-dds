@@ -27,12 +27,12 @@ alloc = []
 safety = []
 
 [dependencies]
-zerodds-dcps = { version = "1.0.0-rc.3.1", path = "../dcps" }
-zerodds-dcps-async = { version = "1.0.0-rc.3.1", path = "../dcps-async" }
-zerodds-qos = { version = "1.0.0-rc.3.1", path = "../qos" }
-zerodds-types = { version = "1.0.0-rc.3.1", path = "../types" }
-zerodds-monitor = { version = "1.0.0-rc.3.1", path = "../monitor" }
-zerodds-recorder = { version = "1.0.0-rc.3.1", path = "../recorder" }
-zerodds-foundation = { version = "1.0.0-rc.3.1", path = "../foundation" }
+zerodds-dcps = { version = "1.0.0-rc.4", path = "../dcps" }
+zerodds-dcps-async = { version = "1.0.0-rc.4", path = "../dcps-async" }
+zerodds-qos = { version = "1.0.0-rc.4", path = "../qos" }
+zerodds-types = { version = "1.0.0-rc.4", path = "../types" }
+zerodds-monitor = { version = "1.0.0-rc.4", path = "../monitor" }
+zerodds-recorder = { version = "1.0.0-rc.4", path = "../recorder" }
+zerodds-foundation = { version = "1.0.0-rc.4", path = "../foundation" }
 
 [dev-dependencies]

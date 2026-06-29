@@ -42,6 +42,10 @@ export interface SampleInfo {
   readonly sequenceNumber: bigint;
   readonly publicationHandle: DdsGuid;
   readonly instanceHandle: bigint;
+  /// Wire byte order of `bytes` (the bridge reports it out-of-band because the
+  /// forwarded payload has no encapsulation header): `false` = little-endian,
+  /// `true` = big-endian. The typed decoder dispatches its byte order on it.
+  readonly bigEndian: boolean;
 }
 
 /// C.1.2 — a taken sample. `bytes` is the XCDR2 octet sequence exactly as it

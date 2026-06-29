@@ -70,7 +70,7 @@ mod tests {
     };
 
     use super::cross_vendor::{
-        FastDurability, FastQos, FastReliability, live_host_available, start_fastdds_pub,
+        FastDurability, FastQos, FastReliability, require_or_skip, start_fastdds_pub,
     };
 
     /// Domain for FastDDS live tests. Dedicated block so it does not
@@ -97,8 +97,7 @@ mod tests {
     }
 
     fn run_pub_test(topic: &'static str, fast_qos: FastQos, rdr_qos: DataReaderQos) {
-        if !live_host_available() {
-            eprintln!("LLVM_HOST_AVAILABLE not set + sshpass missing — skipping");
+        if !require_or_skip("fastdds_live_pub") {
             return;
         }
 

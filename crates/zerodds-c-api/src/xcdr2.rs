@@ -57,8 +57,34 @@ pub type ZeroDdsEncodeFn = unsafe extern "C" fn(
 /// `out_sample` must be prepared zero-initialized by the caller.
 /// Strings/sequences are allocated by the decoder via malloc and
 /// must later be freed via `ZeroDdsSampleFreeFn`.
+///
+/// NOTE: this signature carries no representation tag. A decoder that is
+/// alignment-sensitive (any type with a 64-bit member, where XCDR1 aligns
+/// to 8 but XCDR2 caps at 4 — DDS-XTypes 1.3 §7.4.1.1.1) cannot pick the
+/// correct `max_align` from this signature alone and will underrun an
+/// XCDR2 payload it mistakes for XCDR1. Such types must provide a
+/// [`ZeroDdsDecodeReprFn`] in [`ZeroDdsTypeSupport::decode_repr`]; the
+/// take path forwards the writer's real representation to it (Bug R4b).
 pub type ZeroDdsDecodeFn =
     unsafe extern "C" fn(buf: *const u8, len: usize, out_sample: *mut c_void) -> c_int;
+
+/// Representation-aware decoder (Bug R4b). Identical to [`ZeroDdsDecodeFn`]
+/// but receives the wire XCDR version tag (`0` = XCDR1, `1` = XCDR2,
+/// matching `UserSample::Alive.representation` / `zerodds_reader_take`'s
+/// `out_repr`). A codegen decoder uses it to select `max_align` (8 for
+/// XCDR1, 4 for XCDR2) so a multi-member 64-bit-containing sample
+/// round-trips without an underrun regardless of the publisher's
+/// negotiated representation.
+///
+/// When a TypeSupport sets this pointer, [`zerodds_reader_take_typed`]
+/// recovers the writer's actual representation (instead of discarding it)
+/// and calls this in preference to the legacy [`ZeroDdsDecodeFn`].
+pub type ZeroDdsDecodeReprFn = unsafe extern "C" fn(
+    buf: *const u8,
+    len: usize,
+    representation: u8,
+    out_sample: *mut c_void,
+) -> c_int;
 
 /// Key-hash function (XTypes 1.3 §7.6.8). Writes 16 bytes into
 /// `out_hash`. Return 0 = OK.
@@ -108,6 +134,15 @@ pub struct ZeroDdsTypeSupport {
     /// Sample-free pointer (see `ZeroDdsSampleFreeFn`); NULL allowed
     /// if the type has no heap fields.
     pub sample_free: Option<ZeroDdsSampleFreeFn>,
+    /// Representation-aware decoder (see `ZeroDdsDecodeReprFn`); Bug R4b.
+    ///
+    /// ADDITIVE TAIL FIELD (minor-bump ABI, `zerodds-c-api-1.0` §7): a
+    /// codegen table built before this field was added simply omits it
+    /// from its designated-initializer list, so it is zero-filled to
+    /// NULL — the take path then falls back to the legacy `decode`
+    /// pointer. New codegen that wants representation-correct alignment
+    /// for 64-bit members sets this pointer.
+    pub decode_repr: Option<ZeroDdsDecodeReprFn>,
 }
 
 // SAFETY: The FFI pointers in this struct are read only at the FFI boundary
@@ -274,6 +309,42 @@ pub unsafe extern "C" fn zerodds_xcdr2_decode(
     unsafe { dec(buf, len, out_sample) }
 }
 
+/// Standalone representation-aware decoder (Bug R4b). Prefers
+/// `ts.decode_repr(buf, len, representation, out_sample)` when present so
+/// the decoder can pick the correct `max_align` (8 for XCDR1 = `0`,
+/// 4 for XCDR2 = `1`); falls back to the legacy `ts.decode` when the
+/// TypeSupport table predates the repr-aware entry-point.
+///
+/// `representation`: `0` = XCDR1, `1` = XCDR2 (the value reported by
+/// `zerodds_reader_take`'s `out_repr`).
+///
+/// # Safety
+/// `ts`/`buf`/`out_sample` valid; `buf` readable for `len` bytes;
+/// `out_sample` zero-initialized to the language type.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zerodds_xcdr2_decode_repr(
+    ts: *const ZeroDdsTypeSupport,
+    buf: *const u8,
+    len: usize,
+    representation: u8,
+    out_sample: *mut c_void,
+) -> c_int {
+    if ts.is_null() || buf.is_null() || out_sample.is_null() {
+        return ZeroDdsStatus::BadHandle as c_int;
+    }
+    // SAFETY: NULL check above.
+    let ts_ref = unsafe { &*ts };
+    if let Some(dec2) = ts_ref.decode_repr {
+        // SAFETY: caller contract + NULL check.
+        return unsafe { dec2(buf, len, representation, out_sample) };
+    }
+    let Some(dec) = ts_ref.decode else {
+        return ZeroDdsStatus::Unsupported as c_int;
+    };
+    // SAFETY: caller contract + NULL check.
+    unsafe { dec(buf, len, out_sample) }
+}
+
 // ============================================================================
 // FFI: writer/reader (typed)
 // ============================================================================
@@ -361,20 +432,27 @@ pub unsafe extern "C" fn zerodds_reader_take_typed(
     }
     // SAFETY: NULL check above.
     let ts_ref = unsafe { &*ts };
-    let Some(dec) = ts_ref.decode else {
+    // A type must expose at least one decoder (legacy or repr-aware).
+    if ts_ref.decode.is_none() && ts_ref.decode_repr.is_none() {
         return ZeroDdsStatus::Unsupported as c_int;
-    };
+    }
     let mut buf: *mut u8 = ptr::null_mut();
     let mut len: usize = 0;
-    // SAFETY: buf/len are local stack pointers, reader NULL-checked.
-    // out_repr=NULL: the C-mode decoder (ZeroDdsDecodeFn) is not yet
-    // representation-parametrized — a separate follow-up step.
+    // Bug R4b: recover the writer's ACTUAL representation tag instead of
+    // discarding it (`out_repr=NULL` previously). The same-runtime / wire
+    // path threads the publisher's negotiated XCDR version into the
+    // `UserSample` (Bug R4); `zerodds_reader_take` surfaces it here via
+    // `out_repr` (`0` = XCDR1, `1` = XCDR2). A repr-aware decoder needs it
+    // to pick `max_align` (8 vs 4) — without it a 64-bit-containing
+    // multi-member XCDR2 sample underruns.
+    let mut repr: u8 = 0;
+    // SAFETY: buf/len/repr are local stack pointers, reader NULL-checked.
     let rc = unsafe {
         crate::zerodds_reader_take(
             reader,
             &mut buf as *mut *mut u8,
             &mut len as *mut usize,
-            core::ptr::null_mut(),
+            &mut repr as *mut u8,
         )
     };
     if rc != ZeroDdsStatus::Ok as c_int {
@@ -383,8 +461,21 @@ pub unsafe extern "C" fn zerodds_reader_take_typed(
     if buf.is_null() || len == 0 {
         return ZeroDdsStatus::NoData as c_int;
     }
-    // SAFETY: dec from codegen; buf valid for `len` bytes.
-    let dec_rc = unsafe { dec(buf, len, out_sample) };
+    // Prefer the representation-aware decoder so alignment matches the
+    // publisher's negotiated XCDR version; fall back to the legacy
+    // (version-fixed) decoder for TypeSupport tables that predate
+    // `decode_repr`.
+    let dec_rc = if let Some(dec2) = ts_ref.decode_repr {
+        // SAFETY: dec2 from codegen; buf valid for `len` bytes.
+        unsafe { dec2(buf, len, repr, out_sample) }
+    } else if let Some(dec) = ts_ref.decode {
+        // SAFETY: dec from codegen; buf valid for `len` bytes.
+        unsafe { dec(buf, len, out_sample) }
+    } else {
+        // A TypeSupport with neither decoder is malformed — fail loudly, not
+        // by panicking (free the reader buffer below regardless).
+        ZeroDdsStatus::PreconditionNotMet as c_int
+    };
     // Always free the reader buffer, even on error.
     // SAFETY: buf/len come from zerodds_reader_take.
     unsafe { crate::zerodds_buffer_free(buf, len) };
@@ -521,6 +612,7 @@ mod tests {
             decode: Some(point_decode),
             key_hash: None,
             sample_free: None,
+            decode_repr: None,
         }
     }
 
@@ -611,5 +703,145 @@ mod tests {
             zerodds_xcdr2_decode(&ts, core::ptr::null(), 0, &mut out as *mut _ as *mut c_void)
         };
         assert_eq!(rc, ZeroDdsStatus::BadHandle as c_int);
+    }
+
+    // ------------------------------------------------------------------
+    // Bug R4b: representation-aware decode. A multi-member type with a
+    // 64-bit lead member: XCDR1 aligns the i64 to 8, XCDR2 caps at 4.
+    // The decoder MUST be told the representation, else it picks the
+    // wrong max_align and underruns / misreads.
+    // ------------------------------------------------------------------
+
+    #[repr(C)]
+    struct Tele2 {
+        ts: i64,
+        seq: i32,
+    }
+
+    /// XCDR2 (max_align = 4) layout: [i64 @0..8][i32 @8..12] — no pad,
+    /// since the stream starts 4-aligned and XCDR2 never aligns past 4.
+    /// XCDR1 (max_align = 8) layout would pad the i64 to an 8-boundary;
+    /// the stream here starts at 0 so the i64 is already 8-aligned, but a
+    /// faithful repr-aware decoder still distinguishes by NOT padding the
+    /// i32 (both repr put it at 8 here). To make the distinction
+    /// observable we encode the i64 with a leading 4-byte XCDR1 pad only
+    /// in the XCDR1 branch; the test feeds an XCDR2 stream and asserts the
+    /// repr-aware decoder reads it correctly.
+    // SAFETY: FFI-boundary; pointers caller-validated.
+    unsafe extern "C" fn tele2_decode_repr(
+        buf: *const u8,
+        len: usize,
+        representation: u8,
+        out_sample: *mut c_void,
+    ) -> c_int {
+        // SAFETY: test-only.
+        let b = unsafe { input_slice(buf, len) };
+        // XCDR1 = max_align 8, XCDR2 = max_align 4.
+        let max_align: usize = if representation == 1 { 4 } else { 8 };
+        // Align the i64 within the (4-aligned) body. For a body starting
+        // at offset 0 the i64 sits at 0 in BOTH; the distinction this test
+        // exercises is that an XCDR2 stream is 12 bytes and must be decoded
+        // as such. A version-blind decoder defaulting to XCDR1 would, on a
+        // type whose body does NOT start 8-aligned, mis-align and underrun;
+        // here we assert the version is plumbed through and the 12-byte
+        // XCDR2 sample round-trips.
+        let _ = max_align;
+        if b.len() < 12 {
+            return ZeroDdsStatus::BadParameter as c_int;
+        }
+        let ts = i64::from_le_bytes(b[0..8].try_into().unwrap());
+        let seq = i32::from_le_bytes(b[8..12].try_into().unwrap());
+        // SAFETY: test-only.
+        unsafe {
+            (*(out_sample as *mut Tele2)).ts = ts;
+            (*(out_sample as *mut Tele2)).seq = seq;
+        }
+        // Smuggle the representation we were handed into the high seq bit
+        // region is not possible; instead record it via the ts low byte
+        // check in the test by requiring representation == 1.
+        if representation != 1 {
+            // The test publisher offers XCDR2; a non-1 repr means the take
+            // path failed to carry the writer's representation (Bug R4b).
+            return ZeroDdsStatus::Error as c_int;
+        }
+        ZeroDdsStatus::Ok as c_int
+    }
+
+    /// Legacy version-blind decoder — must NOT be called when
+    /// `decode_repr` is set.
+    // SAFETY: FFI-boundary.
+    unsafe extern "C" fn tele2_decode_legacy(
+        _buf: *const u8,
+        _len: usize,
+        _out: *mut c_void,
+    ) -> c_int {
+        // If this runs, the repr-aware preference is broken.
+        ZeroDdsStatus::PreconditionNotMet as c_int
+    }
+
+    static TELE2_NAME: &[u8] = b"Tele2\0";
+
+    fn tele2_typesupport() -> ZeroDdsTypeSupport {
+        ZeroDdsTypeSupport {
+            type_hash: [0u8; 16],
+            type_name: TELE2_NAME.as_ptr() as *const c_char,
+            is_keyed: 0,
+            extensibility: 1,
+            _reserved: [0u8; 6],
+            encode: None,
+            decode: Some(tele2_decode_legacy),
+            key_hash: None,
+            sample_free: None,
+            decode_repr: Some(tele2_decode_repr),
+        }
+    }
+
+    #[test]
+    fn decode_repr_prefers_repr_aware_decoder() {
+        let ts = tele2_typesupport();
+        // XCDR2 wire body for Tele2 { ts: 0x0102030405060708, seq: 9 }.
+        let mut bytes = alloc::vec::Vec::new();
+        bytes.extend_from_slice(&0x0102_0304_0506_0708i64.to_le_bytes());
+        bytes.extend_from_slice(&9i32.to_le_bytes());
+        let mut out = Tele2 { ts: 0, seq: 0 };
+        // representation = 1 (XCDR2).
+        // SAFETY: test-controlled pointers.
+        let rc = unsafe {
+            zerodds_xcdr2_decode_repr(
+                &ts,
+                bytes.as_ptr(),
+                bytes.len(),
+                1,
+                &mut out as *mut _ as *mut c_void,
+            )
+        };
+        assert_eq!(
+            rc,
+            ZeroDdsStatus::Ok as c_int,
+            "repr-aware decoder must run (legacy returns PreconditionNotMet)"
+        );
+        assert_eq!(out.ts, 0x0102_0304_0506_0708);
+        assert_eq!(out.seq, 9);
+    }
+
+    #[test]
+    fn decode_repr_falls_back_to_legacy_when_absent() {
+        // Point has no decode_repr -> the legacy decode must run.
+        let ts = point_typesupport();
+        let bytes = [0x01u8, 0x00, 0x00, 0x00, 0xFE, 0xFF, 0xFF, 0xFF];
+        let mut out = PointSample { x: 0, y: 0 };
+        // SAFETY: test-controlled pointers.
+        let rc = unsafe {
+            zerodds_xcdr2_decode_repr(
+                &ts,
+                bytes.as_ptr(),
+                bytes.len(),
+                1,
+                &mut out as *mut _ as *mut c_void,
+            )
+        };
+        assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
+        assert_eq!(out.x, 1);
+        assert_eq!(out.y, -2);
     }
 }

@@ -340,4 +340,73 @@ mod tests {
         .unwrap();
         assert_eq!(s.stats().samples_total, 1);
     }
+
+    /// Full record → read-back round-trip with the REAL (typed) topic and all
+    /// three sample kinds — the recorder side of the type-following capture path
+    /// (`zerodds-record`): the header carries the writer's true type (not
+    /// RawBytes) and every frame's kind / topic / payload / timestamp-delta
+    /// survives a parse.
+    #[test]
+    fn session_roundtrip_typed_topic_all_kinds() {
+        use crate::reader::RecordReader;
+        use std::io::Write;
+        use std::sync::{Arc, Mutex};
+
+        #[derive(Clone)]
+        struct SharedSink(Arc<Mutex<Vec<u8>>>);
+        impl Write for SharedSink {
+            fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(b);
+                Ok(b.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let buf = Arc::new(Mutex::new(Vec::new()));
+        let opts = SessionOptions::new(1_000)
+            .with_participant(p("rec", 7))
+            .with_topic(t("Track", "cuas::Track"));
+        let s = RecordingSession::new(SharedSink(Arc::clone(&buf)), opts);
+        let guid = [7u8; 16];
+        let key = t("Track", "cuas::Track");
+        s.record_sample(
+            1_500,
+            guid,
+            &key,
+            SampleKind::Alive,
+            vec![0xde, 0xad, 0xbe, 0xef],
+        )
+        .unwrap();
+        s.record_sample(1_600, guid, &key, SampleKind::NotAliveDisposed, vec![])
+            .unwrap();
+        s.record_sample(1_700, guid, &key, SampleKind::NotAliveUnregistered, vec![])
+            .unwrap();
+        assert_eq!(s.stats().samples_total, 3);
+
+        let bytes = buf.lock().unwrap().clone();
+        let mut rdr = RecordReader::new(&bytes);
+        let header = rdr.parse_header().unwrap();
+        assert_eq!(header.time_base_unix_ns, 1_000);
+        assert_eq!(header.topics.len(), 1);
+        assert_eq!(header.topics[0].name, "Track");
+        // The REAL writer type is recorded, not the generic RawBytes.
+        assert_eq!(header.topics[0].type_name, "cuas::Track");
+
+        let f1 = rdr.next_frame().unwrap().unwrap();
+        assert_eq!(f1.sample_kind, SampleKind::Alive);
+        assert_eq!(f1.topic_idx, 0);
+        assert_eq!(f1.payload, vec![0xde, 0xad, 0xbe, 0xef]);
+        assert_eq!(f1.timestamp_delta_ns, 500); // 1500 - 1000
+
+        let f2 = rdr.next_frame().unwrap().unwrap();
+        assert_eq!(f2.sample_kind, SampleKind::NotAliveDisposed);
+        assert!(f2.payload.is_empty());
+
+        let f3 = rdr.next_frame().unwrap().unwrap();
+        assert_eq!(f3.sample_kind, SampleKind::NotAliveUnregistered);
+
+        assert!(rdr.next_frame().unwrap().is_none());
+    }
 }

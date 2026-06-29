@@ -1,0 +1,11 @@
+// Conformance feature: sequences — bounded, unbounded, of structs, nested.
+module conf {
+  struct Item { long id; };
+  struct Sequences {
+    sequence<long>            unbounded;
+    sequence<long, 10>        bounded;
+    sequence<Item>            items;
+    sequence<sequence<long> > nested;
+    sequence<string>          names;
+  };
+};

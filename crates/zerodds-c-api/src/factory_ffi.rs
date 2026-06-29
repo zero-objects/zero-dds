@@ -67,6 +67,8 @@ pub unsafe extern "C" fn zerodds_dpf_create_participant(
             topics: Mutex::new(alloc::vec::Vec::new()),
             publishers: Mutex::new(alloc::vec::Vec::new()),
             subscribers: Mutex::new(alloc::vec::Vec::new()),
+            default_pub_partition_out: Mutex::new(Default::default()),
+            default_sub_partition_out: Mutex::new(Default::default()),
         });
         let p = Box::into_raw(participant);
         if let Ok(mut list) = factory.participants.lock() {

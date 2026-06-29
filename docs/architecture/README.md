@@ -66,12 +66,12 @@ All architecture documents live in the main repository under `docs/architecture/
 
 ## Related resources (outside this suite)
 
-- Standards registry under `docs/standards/` for all external specs (OMG, W3C, IETF, CNCF, OASIS, ISO/IEC) on which ZeroDDS builds
+- Standards registry under `internal/standards/` for all external specs (OMG, W3C, IETF, CNCF, OASIS, ISO/IEC) on which ZeroDDS builds
 - Requirements tracker (Polarion, DOORS, or GitHub Issues with `REQ-...` labels)
 - ADR directory under `docs/adr/` for Architecture Decision Records
-- Safety-waiver register under `docs/safety-waivers/`
-- Design RFCs under `docs/rfcs/` for larger technical proposals
-- Security advisories under `docs/security/advisories/`
+- Safety-waiver register under `internal/safety-waivers/`
+- Design RFCs under `internal/rfcs/` for larger technical proposals
+- Security advisories under `internal/security/advisories/`
 
 ## Conventions
 

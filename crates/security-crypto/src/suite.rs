@@ -24,7 +24,7 @@
 //! Now spec-conformant — a wire-breaking change relative to
 //! v0.x ZeroDDS peers.
 
-use ring::aead;
+use crate::backend::aead;
 
 /// `CryptoTransformKind` constants as low-byte IDs (spec-1.2 §10.5
 /// Tab.79). On the wire it is the 4-byte big-endian array

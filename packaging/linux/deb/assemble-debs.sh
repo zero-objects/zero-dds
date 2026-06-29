@@ -36,15 +36,17 @@ trap 'rm -rf "$ROOT"' EXIT
 build_pkg () {
     local name="$1"        # z.B. zerodds-ws-bridge
     local daemon="$2"      # ws-bridged | "" fuer core/cli/dev
+    local conf="${3:-$daemon.yaml}"   # config basename; bridges = <daemon>.yaml,
+                                      # router = router.json (JSON config)
     local stage
     stage=$(mktemp -d -p "$ROOT")
 
     mkdir -p "$stage/DEBIAN"
-    sed -e "s/@DAEMON@/$daemon/g" \
+    sed -e "s/@DAEMON@/$daemon/g" -e "s/@CONF@/$conf/g" \
         packaging/linux/deb/postinst.tmpl > "$stage/DEBIAN/postinst"
-    sed -e "s/@DAEMON@/$daemon/g" \
+    sed -e "s/@DAEMON@/$daemon/g" -e "s/@CONF@/$conf/g" \
         packaging/linux/deb/prerm.tmpl    > "$stage/DEBIAN/prerm"
-    sed -e "s/@DAEMON@/$daemon/g" \
+    sed -e "s/@DAEMON@/$daemon/g" -e "s/@CONF@/$conf/g" \
         packaging/linux/deb/postrm.tmpl   > "$stage/DEBIAN/postrm"
     chmod 0755 "$stage/DEBIAN/postinst" "$stage/DEBIAN/prerm" "$stage/DEBIAN/postrm"
 
@@ -113,6 +115,20 @@ CONTROL
                     "$stage/usr/share/man/man5/zerodds-$daemon.yaml.5"
             fi
             ;;
+        zerodds-router)
+            # Routing service: own case because its config is JSON
+            # (router.json.example), not the bridge <daemon>.yaml.
+            install -Dm0755 "target/$TARGET/release/zerodds-router" \
+                "$stage/usr/bin/zerodds-router"
+            install -Dm0644 packaging/linux/systemd/zerodds-router.service \
+                "$stage/usr/lib/systemd/system/zerodds-router.service"
+            install -Dm0640 packaging/linux/configs/router.json.example \
+                "$stage/usr/share/zerodds/configs/router.json.example"
+            if [ -f "man/man1/zerodds-router.1" ]; then
+                install -Dm0644 "man/man1/zerodds-router.1" \
+                    "$stage/usr/share/man/man1/zerodds-router.1"
+            fi
+            ;;
     esac
 
     dpkg-deb --build --root-owner-group "$stage" \
@@ -129,5 +145,6 @@ build_pkg zerodds-amqp-bridge  amqp-bridged
 build_pkg zerodds-grpc-bridge  grpc-bridged
 build_pkg zerodds-corba-bridge corba-bridged
 build_pkg zerodds-ros2         ros2-shim
+build_pkg zerodds-router       router         router.json
 
 echo "Built $(ls "$OUT" | wc -l) .deb files in $OUT"

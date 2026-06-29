@@ -23,16 +23,19 @@ public final class TagsTypeSupport implements org.zerodds.cdr.TopicTypeSupport<T
     public byte[] encode(Tags sample) { return encode(sample, org.zerodds.cdr.EndianMode.LITTLE_ENDIAN); }
 
     @Override
-    public byte[] encode(Tags sample, org.zerodds.cdr.EndianMode endian) {
-        org.zerodds.cdr.Xcdr2Writer w = new org.zerodds.cdr.Xcdr2Writer(endian);
+    public byte[] encode(Tags sample, org.zerodds.cdr.EndianMode endian) { return encode(sample, endian, 1); }
+
+    public byte[] encode(Tags sample, org.zerodds.cdr.EndianMode endian, int representation) {
+        int __maxAlign = representation == 0 ? org.zerodds.cdr.Xcdr2Writer.XCDR1_MAX_ALIGN_VALUE : 4;
+        org.zerodds.cdr.Xcdr2Writer w = new org.zerodds.cdr.Xcdr2Writer(endian, __maxAlign);
         {
-            java.util.List<?> __seq = (sample.getTags() == null) ? java.util.Collections.emptyList() : (sample.getTags());
-            int __seqdh = w.beginAppendable();
-            w.writeSequenceCount(__seq.size());
-            for (Object __el : __seq) {
-                w.writeString((String) __el);
+            java.util.List<String> __seq0 = (sample.getTags() == null) ? java.util.Collections.<String>emptyList() : (sample.getTags());
+            int __seqdh0 = w.beginAppendable();
+            w.writeSequenceCount(__seq0.size());
+            for (String __el0 : __seq0) {
+                w.writeString(__el0);
             }
-            w.endDelimited(__seqdh);
+            w.endDelimited(__seqdh0);
         }
         return w.toByteArray();
     }
@@ -41,17 +44,29 @@ public final class TagsTypeSupport implements org.zerodds.cdr.TopicTypeSupport<T
     public Tags decode(byte[] bytes) { return decode(bytes, 0, bytes.length); }
 
     @Override
-    public Tags decode(byte[] bytes, int offset, int length) {
-        org.zerodds.cdr.Xcdr2Reader r = new org.zerodds.cdr.Xcdr2Reader(bytes, offset, length, org.zerodds.cdr.EndianMode.LITTLE_ENDIAN);
+    public Tags decode(byte[] bytes, int offset, int length) { return decode(bytes, offset, length, org.zerodds.cdr.EndianMode.LITTLE_ENDIAN); }
+    public Tags decode(byte[] bytes, int offset, int length, org.zerodds.cdr.EndianMode endian) { return decode(bytes, offset, length, endian, 1); }
+    public Tags decode(byte[] bytes, int offset, int length, org.zerodds.cdr.EndianMode endian, int representation) {
+        int __maxAlign = representation == 0 ? org.zerodds.cdr.Xcdr2Reader.XCDR1_MAX_ALIGN_VALUE : 4;
+        org.zerodds.cdr.Xcdr2Reader r = new org.zerodds.cdr.Xcdr2Reader(bytes, offset, length, endian, __maxAlign);
+        return decodeFrom(r);
+    }
+
+    public static Tags decodeFrom(org.zerodds.cdr.Xcdr2Reader r) {
         Tags v = new Tags();
         {
-            r.readDHeader();
-            int __cnt = r.readSequenceCount();
-            java.util.List<String> __out = new java.util.ArrayList<>(__cnt);
-            for (int __i = 0; __i < __cnt; __i++) {
-                __out.add(r.readString());
+            java.util.List<String> __rv;
+            {
+                r.readDHeader();
+                int __cnt0 = r.readSequenceCount();
+                java.util.List<String> __out0 = new java.util.ArrayList<>(__cnt0);
+                for (int __si0 = 0; __si0 < __cnt0; __si0++) {
+                    String __se0 = r.readString();
+                    __out0.add(__se0);
+                }
+                __rv = __out0;
             }
-            v.setTags(__out);
+            v.setTags(__rv);
         }
         return v;
     }
@@ -59,5 +74,25 @@ public final class TagsTypeSupport implements org.zerodds.cdr.TopicTypeSupport<T
     @Override
     public byte[] keyHash(Tags sample) {
         return new byte[16];
+    }
+
+    private static void skipByLc(org.zerodds.cdr.Xcdr2Reader r, int lc) {
+        switch (lc) {
+            case 0: r.skip(1); break;
+            case 1: r.skip(2); break;
+            case 2: r.skip(4); break;
+            case 3: r.skip(8); break;
+            default: { int __n = r.readNextInt(); r.skip(__n); break; }
+        }
+    }
+
+    private static byte[] readDelimitedFrame(org.zerodds.cdr.Xcdr2Reader r) {
+        int __sz = r.readDHeader();
+        byte[] __body = r.readBytes(__sz);
+        byte[] __frame = new byte[4 + __sz];
+        __frame[0] = (byte) (__sz & 0xFF); __frame[1] = (byte) ((__sz >>> 8) & 0xFF);
+        __frame[2] = (byte) ((__sz >>> 16) & 0xFF); __frame[3] = (byte) ((__sz >>> 24) & 0xFF);
+        System.arraycopy(__body, 0, __frame, 4, __sz);
+        return __frame;
     }
 }

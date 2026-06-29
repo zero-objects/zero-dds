@@ -251,10 +251,14 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
         let h = thread::spawn(move || {
             while !stop_c.load(Ordering::SeqCst) {
                 match rx.recv_timeout(Duration::from_millis(200)) {
-                    Ok(UserSample::Alive { payload, .. }) => {
+                    Ok(UserSample::Alive {
+                        payload,
+                        big_endian,
+                        ..
+                    }) => {
                         dds_out.inc();
                         if let Ok(mut r) = router_c.lock() {
-                            r.dispatch(&topic_name_c, payload.to_vec());
+                            r.dispatch(&topic_name_c, payload.to_vec(), big_endian);
                         }
                     }
                     Ok(UserSample::Lifecycle { .. }) => {
@@ -660,14 +664,18 @@ fn serve_connection(
     let writer_thread = thread::spawn(move || {
         while !stop_w.load(Ordering::SeqCst) {
             match rx.recv_timeout(Duration::from_millis(200)) {
-                Ok(RouterMsg::Sample { topic, payload }) => {
+                Ok(RouterMsg::Sample {
+                    topic,
+                    payload,
+                    big_endian,
+                }) => {
                     // §7.3 — read ACL (post-subscribe gate): if the
                     // ACL for this subject + topic is deny,
                     // drop the sample (no disclosure).
                     if !authorize(&security_w.acl, &subject_w, AclOp::Read, &topic) {
                         continue;
                     }
-                    let json = render_notify_json(&topic, &payload);
+                    let json = render_notify_json(&topic, &payload, big_endian);
                     let frame = Frame::text(json);
                     if let Ok(bytes) = encode(&frame) {
                         bytes_out.add(bytes.len() as u64);
@@ -940,7 +948,7 @@ fn send_text_frame(stream: &Arc<Mutex<WsStream>>, text: &str) {
     }
 }
 
-fn render_notify_json(topic: &str, payload: &[u8]) -> String {
+fn render_notify_json(topic: &str, payload: &[u8], big_endian: bool) -> String {
     let payload_text = match core::str::from_utf8(payload) {
         Ok(s) => s.to_string(),
         Err(_) => format_bytes_array(payload),
@@ -965,8 +973,11 @@ fn render_notify_json(topic: &str, payload: &[u8]) -> String {
         buf.push('"');
         buf
     };
+    // `"be":true` only for a big-endian payload; the LE default omits it so
+    // the common-case frame bytes are unchanged (older clients ignore it).
+    let be_field = if big_endian { ",\"be\":true" } else { "" };
     alloc_format(format_args!(
-        "{{\"op\":\"notify\",\"topic\":\"{topic}\",\"data\":{payload_json}}}"
+        "{{\"op\":\"notify\",\"topic\":\"{topic}\",\"data\":{payload_json}{be_field}}}"
     ))
 }
 
@@ -1007,21 +1018,32 @@ mod tests {
 
     #[test]
     fn render_notify_json_with_text_payload() {
-        let s = render_notify_json("Trade", b"hello");
+        let s = render_notify_json("Trade", b"hello", false);
         assert!(s.contains("\"op\":\"notify\""));
         assert!(s.contains("\"topic\":\"Trade\""));
         assert!(s.contains("\"hello\""));
+        // LE default omits the byte-order field — wire unchanged.
+        assert!(!s.contains("\"be\""));
     }
 
     #[test]
     fn render_notify_json_with_object_payload() {
-        let s = render_notify_json("X", b"{\"a\":1}");
+        let s = render_notify_json("X", b"{\"a\":1}", false);
         assert!(s.contains("\"data\":{\"a\":1}"));
     }
 
     #[test]
     fn render_notify_json_escapes_quotes() {
-        let s = render_notify_json("X", b"a\"b");
+        let s = render_notify_json("X", b"a\"b", false);
         assert!(s.contains("\\\""));
+    }
+
+    #[test]
+    fn render_notify_json_big_endian_sets_be_field() {
+        let s = render_notify_json("Trade", b"hello", true);
+        // A big-endian payload carries "be":true so the browser dispatches
+        // the big-endian decoder.
+        assert!(s.contains("\"be\":true"));
+        assert!(s.contains("\"topic\":\"Trade\""));
     }
 }

@@ -23,8 +23,10 @@ fn all_source(src: &str) -> String {
 #[test]
 fn bounded_sequence_throws_on_over_bound() {
     let src = all_source("@final struct Cap { sequence<octet, 4> data; };");
+    // Temp identifiers are depth-suffixed (`__seq0`) so nested sequences do not
+    // collide; the over-bound check is still emitted against the member's list.
     assert!(
-        src.contains("__seq.size() > 4") && src.contains("bounded sequence length"),
+        src.contains(".size() > 4") && src.contains("bounded sequence length"),
         "bounded sequence<octet, 4> must throw on over-bound encode:\n{src}"
     );
 }
@@ -33,7 +35,7 @@ fn bounded_sequence_throws_on_over_bound() {
 fn unbounded_sequence_has_no_check() {
     let src = all_source("@final struct Free { sequence<octet> data; };");
     assert!(
-        !src.contains("__seq.size() > "),
+        !src.contains(".size() > "),
         "unbounded sequence must NOT get a bound check:\n{src}"
     );
 }

@@ -35,6 +35,8 @@
 pub mod bridge;
 pub mod builder;
 pub mod builtin_types;
+pub mod codec;
+pub mod collection;
 pub mod data;
 pub mod descriptor;
 pub mod error;

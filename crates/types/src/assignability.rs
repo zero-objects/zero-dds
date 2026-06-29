@@ -201,6 +201,18 @@ pub fn is_assignable(
     registry: &TypeRegistry,
     cfg: &AssignabilityConfig,
 ) -> Assignable {
+    // Identity short-circuit FIRST (XTypes 1.3 §7.2.4.1: a type is always
+    // assignable to itself). This must run *before* alias resolution, because
+    // for a hash-referenced type (Minimal **or** Complete) that is absent from
+    // the registry (e.g. a typed endpoint whose generated type carries a
+    // complete TypeIdentifier and whose TypeObject was never registered),
+    // `resolve_alias_chain` returns `Unknown` and would otherwise mask the
+    // identity match. Two endpoints carrying the *same* complete TypeIdentifier
+    // are by definition the same type.
+    if w == r {
+        return Assignable::Yes;
+    }
+
     // Alias resolution on both sides.
     let Ok(w) = resolve_alias_chain(w, registry, cfg.max_depth) else {
         return Assignable::No("writer alias resolution failed");
@@ -317,6 +329,27 @@ fn check_direct(
             match (registry.get_minimal(wh), registry.get_minimal(rh)) {
                 (Some(wobj), Some(robj)) => check_minimal_types(wobj, robj, registry, cfg),
                 _ => Assignable::No("unknown type objects for hash comparison"),
+            }
+        }
+        // Hash refs: both on Complete (XTypes 1.3 §7.3.4.1 — a complete
+        // TypeIdentifier carries the EquivalenceHashComplete). Equal hashes are
+        // the same type. With both TypeObjects absent from the registry (the
+        // typed-endpoint same-runtime case), equal hashes are the only thing we
+        // can compare and are sufficient: identical complete hashes ⇒ identical
+        // types. When the complete TypeObjects are registered we down-project to
+        // the structural minimal comparison.
+        (
+            TypeIdentifier::EquivalenceHashComplete(wh),
+            TypeIdentifier::EquivalenceHashComplete(rh),
+        ) => {
+            if wh == rh {
+                return Assignable::Yes;
+            }
+            // Differing complete hashes: only assignable if the registry holds
+            // both minimal projections and they are structurally compatible.
+            match (registry.get_minimal(wh), registry.get_minimal(rh)) {
+                (Some(wobj), Some(robj)) => check_minimal_types(wobj, robj, registry, cfg),
+                _ => Assignable::No("unknown complete type objects for hash comparison"),
             }
         }
 
@@ -1614,5 +1647,46 @@ mod tests {
     fn assignable_is_yes_matches_expectation() {
         assert!(Assignable::Yes.is_yes());
         assert!(!Assignable::No("reason").is_yes());
+    }
+
+    // Bug QT (#76): a typed endpoint whose generated type carries a *complete*
+    // TypeIdentifier (EquivalenceHashComplete) whose TypeObject is absent from
+    // the registry must still match itself. Before the fix, `is_assignable`
+    // resolved the alias chain FIRST and returned `Unknown` for the absent
+    // hash, BEFORE the identity short-circuit — so a writer + reader of the
+    // SAME complete type failed to match.
+    #[test]
+    fn equal_complete_hash_is_assignable_with_empty_registry() {
+        let reg = TypeRegistry::new();
+        let h = crate::type_identifier::EquivalenceHash([0xCE; 14]);
+        let ti = TypeIdentifier::EquivalenceHashComplete(h);
+        assert!(
+            is_assignable(&ti, &ti, &reg, &AssignabilityConfig::default()).is_yes(),
+            "identical complete TypeIdentifiers must be assignable even with an empty registry"
+        );
+    }
+
+    #[test]
+    fn equal_minimal_hash_is_assignable_with_empty_registry() {
+        let reg = TypeRegistry::new();
+        let h = crate::type_identifier::EquivalenceHash([0x4D; 14]);
+        let ti = TypeIdentifier::EquivalenceHashMinimal(h);
+        assert!(is_assignable(&ti, &ti, &reg, &AssignabilityConfig::default()).is_yes());
+    }
+
+    #[test]
+    fn differing_complete_hashes_unknown_objects_are_not_assignable() {
+        let reg = TypeRegistry::new();
+        let wh = crate::type_identifier::EquivalenceHash([0x01; 14]);
+        let rh = crate::type_identifier::EquivalenceHash([0x02; 14]);
+        assert!(
+            !is_assignable(
+                &TypeIdentifier::EquivalenceHashComplete(wh),
+                &TypeIdentifier::EquivalenceHashComplete(rh),
+                &reg,
+                &AssignabilityConfig::default(),
+            )
+            .is_yes()
+        );
     }
 }

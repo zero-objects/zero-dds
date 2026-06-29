@@ -36,14 +36,14 @@ safety = [
 ]
 
 [dependencies]
-zerodds-foundation = { version = "1.0.0-rc.3.1", path = "../foundation", default-features = false }
-zerodds-cdr = { version = "1.0.0-rc.3.1", path = "../cdr", default-features = false }
-zerodds-types = { version = "1.0.0-rc.3.1", path = "../types", default-features = false }
-zerodds-qos = { version = "1.0.0-rc.3.1", path = "../qos", default-features = false }
-zerodds-rtps = { version = "1.0.0-rc.3.1", path = "../rtps", default-features = false }
-zerodds-discovery = { version = "1.0.0-rc.3.1", path = "../discovery", default-features = false }
-zerodds-transport = { version = "1.0.0-rc.3.1", path = "../transport", default-features = false }
-zerodds-transport-udp = { version = "1.0.0-rc.3.1", path = "../transport-udp", default-features = false }
-zerodds-security = { version = "1.0.0-rc.3.1", path = "../security", default-features = false }
-zerodds-xrce-client = { version = "1.0.0-rc.3.1", path = "../xrce-client", default-features = false }
-zerodds-sys = { version = "1.0.0-rc.3.1", path = "../sys", default-features = false }
+zerodds-foundation = { version = "1.0.0-rc.4", path = "../foundation", default-features = false }
+zerodds-cdr = { version = "1.0.0-rc.4", path = "../cdr", default-features = false }
+zerodds-types = { version = "1.0.0-rc.4", path = "../types", default-features = false }
+zerodds-qos = { version = "1.0.0-rc.4", path = "../qos", default-features = false }
+zerodds-rtps = { version = "1.0.0-rc.4", path = "../rtps", default-features = false }
+zerodds-discovery = { version = "1.0.0-rc.4", path = "../discovery", default-features = false }
+zerodds-transport = { version = "1.0.0-rc.4", path = "../transport", default-features = false }
+zerodds-transport-udp = { version = "1.0.0-rc.4", path = "../transport-udp", default-features = false }
+zerodds-security = { version = "1.0.0-rc.4", path = "../security", default-features = false }
+zerodds-xrce-client = { version = "1.0.0-rc.4", path = "../xrce-client", default-features = false }
+zerodds-sys = { version = "1.0.0-rc.4", path = "../sys", default-features = false }

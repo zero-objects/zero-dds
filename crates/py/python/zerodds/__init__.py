@@ -40,6 +40,7 @@ from . import cdr, idl  # noqa: F401
 try:
     from ._core import (  # noqa: F401
         __version__,
+        BytesContentFilteredTopic,
         BytesReader,
         BytesTopic,
         BytesWriter,
@@ -50,9 +51,14 @@ try:
         DomainParticipant,
         DomainParticipantFactory,
         GuardCondition,
+        KeyedReader,
+        KeyedReading,
+        KeyedTopic,
+        KeyedWriter,
         Publisher,
         QueryCondition,
         ReadCondition,
+        SampleInfo,
         Shape,
         ShapeReader,
         ShapeTopic,
@@ -89,6 +95,8 @@ except ImportError as _core_err:  # pragma: no cover - only in dev-without-matur
             _core_not_available()
 
     BytesReader = BytesTopic = BytesWriter = _CoreStub  # type: ignore[assignment,misc]
+    BytesContentFilteredTopic = SampleInfo = _CoreStub  # type: ignore[assignment,misc]
+    KeyedReader = KeyedReading = KeyedTopic = KeyedWriter = _CoreStub  # type: ignore[assignment,misc]
     DomainParticipant = DomainParticipantFactory = _CoreStub  # type: ignore[assignment,misc]
     Publisher = Subscriber = _CoreStub  # type: ignore[assignment,misc]
     Shape = ShapeReader = ShapeTopic = ShapeWriter = _CoreStub  # type: ignore[assignment,misc]
@@ -100,13 +108,18 @@ except ImportError as _core_err:  # pragma: no cover - only in dev-without-matur
 from .idl import (  # noqa: F401
     Array,
     Bool,
+    BoundedString,
+    BoundedWString,
     Bytes,
+    Char,
     Float32,
     Float64,
     Int8,
     Int16,
     Int32,
     Int64,
+    Map,
+    Octet,
     Optional,
     Sequence,
     String,
@@ -114,6 +127,8 @@ from .idl import (  # noqa: F401
     UInt16,
     UInt32,
     UInt64,
+    WChar,
+    WString,
     idl_struct,
     idl_union,
     is_idl_struct,
@@ -123,9 +138,15 @@ from .topic import IdlReader, IdlTopic, IdlWriter  # noqa: F401
 
 __all__ = [
     "__version__",
+    "BytesContentFilteredTopic",
     "BytesReader",
     "BytesTopic",
     "BytesWriter",
+    "KeyedReader",
+    "KeyedReading",
+    "KeyedTopic",
+    "KeyedWriter",
+    "SampleInfo",
     "DataReaderListener",
     "DataReaderQos",
     "DataWriterListener",
@@ -161,8 +182,15 @@ __all__ = [
     "UInt32",
     "UInt64",
     "Array",
+    "BoundedString",
+    "BoundedWString",
+    "Char",
+    "Map",
+    "Octet",
     "Optional",
     "Sequence",
+    "WChar",
+    "WString",
     "idl_union",
     "IdlTopic",
     "IdlWriter",

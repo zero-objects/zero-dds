@@ -53,6 +53,33 @@ use zerodds_qos::ReliabilityKind;
 #[cfg(feature = "std")]
 use zerodds_rtps::wire_types::EntityId;
 
+/// Decodes a received sample body with the encoder that matches its
+/// **encapsulation** — both the XCDR version (`representation`: `0` = XCDR1 /
+/// classic CDR, `1` = XCDR2) and the byte order (`big_endian`), as extracted
+/// from the RTPS encapsulation header (RTPS 2.5 §10.5) when the sample was
+/// staged (`UserSample::Alive`).
+///
+/// This is essential for cross-vendor interop: CycloneDDS (and legacy RTI /
+/// OpenDDS) default their writers to **XCDR1** for `@final` types, so a ZeroDDS
+/// reader must decode XCDR1 with the classic-CDR alignment rule (max-align 8, no
+/// DHEADER) rather than the XCDR2 rule (max-align 4) — otherwise every body with
+/// an 8-byte member or an `@appendable` DHEADER would be mis-aligned. The
+/// per-representation framing lives in `DdsType::{decode, decode_be,
+/// decode_xcdr1, decode_xcdr1_be}` (XTypes 1.3 §7.4.3.4.2).
+#[inline]
+fn decode_for_encap<T: DdsType>(
+    bytes: &[u8],
+    representation: u8,
+    big_endian: bool,
+) -> core::result::Result<T, crate::dds_type::DecodeError> {
+    match (representation, big_endian) {
+        (0, false) => T::decode_xcdr1(bytes),
+        (0, true) => T::decode_xcdr1_be(bytes),
+        (_, false) => T::decode(bytes),
+        (_, true) => T::decode_be(bytes),
+    }
+}
+
 /// Subscriber — entity group for DataReaders.
 #[derive(Debug)]
 pub struct Subscriber {
@@ -440,6 +467,19 @@ impl<T: DdsType> core::fmt::Debug for DataReader<T> {
     }
 }
 
+/// One drained inbox entry awaiting decode in `ingest_into_cache`:
+/// `(bytes, writer_guid, writer_strength, source_timestamp, key_only, flags)`.
+/// `bytes` is the refcounted zero-copy `SampleBytes` (Wave 2.1).
+#[cfg(feature = "std")]
+type RawIngestSample = (
+    crate::sample_bytes::SampleBytes,
+    [u8; 16],
+    i32,
+    Option<zerodds_rtps::header_extension::HeTimestamp>,
+    bool,
+    u8,
+);
+
 impl<T: DdsType> DataReader<T> {
     #[cfg(feature = "std")]
     fn new_offline(topic: Topic<T>, qos: DataReaderQos, subscriber: Arc<SubscriberInner>) -> Self {
@@ -642,6 +682,16 @@ impl<T: DdsType> DataReader<T> {
             let mut empty: Vec<CachedSample> = Vec::new();
             self.run_reader_autopurge(now, &mut empty);
         }
+        // Cross-vendor same-host zero-copy: if this reader was
+        // `enable_cyclone_iox`-ed, return Cyclone-published samples drained from
+        // iceoryx (classic-CDR-decoded) when any are queued.
+        #[cfg(all(feature = "std", feature = "cyclone-iox", target_os = "linux"))]
+        {
+            let iox = crate::cyclone_iox_integration::take::<T>(self.topic.name());
+            if !iox.is_empty() {
+                return Ok(iox);
+            }
+        }
         // Live mode: first drain the staging inbox (filled by
         // wait_for_data), then pull all not-yet-polled samples from mpsc.
         #[cfg(feature = "std")]
@@ -668,11 +718,14 @@ impl<T: DdsType> DataReader<T> {
                         payload: bytes,
                         writer_guid,
                         writer_strength,
+                        representation,
+                        big_endian,
                         ..
                     } => {
-                        let sample = T::decode(&bytes).map_err(|e| DdsError::WireError {
-                            message: e.to_string(),
-                        })?;
+                        let sample = decode_for_encap::<T>(&bytes, representation, big_endian)
+                            .map_err(|e| DdsError::WireError {
+                                message: e.to_string(),
+                            })?;
                         if !self.sample_passes_filter(&sample) {
                             continue;
                         }
@@ -702,11 +755,14 @@ impl<T: DdsType> DataReader<T> {
                         payload: bytes,
                         writer_guid,
                         writer_strength,
+                        representation,
+                        big_endian,
                         ..
                     } => {
-                        let sample = T::decode(&bytes).map_err(|e| DdsError::WireError {
-                            message: e.to_string(),
-                        })?;
+                        let sample = decode_for_encap::<T>(&bytes, representation, big_endian)
+                            .map_err(|e| DdsError::WireError {
+                                message: e.to_string(),
+                            })?;
                         if !self.sample_passes_filter(&sample) {
                             continue;
                         }
@@ -756,14 +812,19 @@ impl<T: DdsType> DataReader<T> {
                 payload: bytes,
                 writer_guid,
                 writer_strength,
+                representation,
+                big_endian,
                 ..
             } = staged_item
             else {
                 continue;
             };
-            let sample = T::decode(&bytes).map_err(|e| DdsError::WireError {
-                message: e.to_string(),
-            })?;
+            let sample =
+                decode_for_encap::<T>(&bytes, representation, big_endian).map_err(|e| {
+                    DdsError::WireError {
+                        message: e.to_string(),
+                    }
+                })?;
             if !self.sample_passes_filter(&sample) {
                 continue;
             }
@@ -882,14 +943,19 @@ impl<T: DdsType> DataReader<T> {
                 payload: bytes,
                 writer_guid,
                 writer_strength,
+                representation,
+                big_endian,
                 ..
             } = staged_item
             else {
                 continue;
             };
-            let sample = T::decode(&bytes).map_err(|e| DdsError::WireError {
-                message: e.to_string(),
-            })?;
+            let sample =
+                decode_for_encap::<T>(&bytes, representation, big_endian).map_err(|e| {
+                    DdsError::WireError {
+                        message: e.to_string(),
+                    }
+                })?;
             if !self.sample_passes_filter(&sample) {
                 continue;
             }
@@ -1358,8 +1424,10 @@ impl<T: DdsType> DataReader<T> {
                 payload: crate::sample_bytes::SampleBytes::from_vec(bytes),
                 writer_guid,
                 writer_strength,
-                // Test hook: raw-bytes injection, XCDR1 baseline.
+                // Test hook: raw-bytes injection, XCDR1 baseline, little-endian.
                 representation: 0,
+                big_endian: false,
+                source_timestamp: None,
             });
         }
         // Listener notify outside the inbox lock to avoid re-entrancy.
@@ -1491,7 +1559,7 @@ impl<T: DdsType> DataReader<T> {
         // Arc<[u8]>) instead of `Vec<u8>`. Decode goes via Deref<[u8]>
         // directly without to_vec. Saves 2 hot-path copies per recv'd
         // Alive sample. Spec: docs/specs/zerodds-zero-copy-1.0.md §6 wave 2.1.
-        let mut raw: Vec<(crate::sample_bytes::SampleBytes, [u8; 16], i32)> = Vec::new();
+        let mut raw: Vec<RawIngestSample> = Vec::new();
         {
             let mut inbox = self
                 .inbox
@@ -1504,10 +1572,20 @@ impl<T: DdsType> DataReader<T> {
                     payload,
                     writer_guid,
                     writer_strength,
+                    source_timestamp,
+                    big_endian,
+                    representation,
                     ..
                 } = item
                 {
-                    raw.push((payload, writer_guid, writer_strength));
+                    raw.push((
+                        payload,
+                        writer_guid,
+                        writer_strength,
+                        source_timestamp,
+                        big_endian,
+                        representation,
+                    ));
                 }
             }
         }
@@ -1527,8 +1605,18 @@ impl<T: DdsType> DataReader<T> {
                         payload: bytes,
                         writer_guid,
                         writer_strength,
+                        source_timestamp,
+                        big_endian,
+                        representation,
                         ..
-                    } => raw.push((bytes, writer_guid, writer_strength)),
+                    } => raw.push((
+                        bytes,
+                        writer_guid,
+                        writer_strength,
+                        source_timestamp,
+                        big_endian,
+                        representation,
+                    )),
                     crate::runtime::UserSample::Lifecycle { key_hash, kind } => {
                         let lc_kind = match kind {
                             zerodds_rtps::history_cache::ChangeKind::NotAliveDisposed
@@ -1565,12 +1653,19 @@ impl<T: DdsType> DataReader<T> {
             self.run_reader_autopurge(now, &mut cache);
             return Ok(());
         }
-        for (bytes, writer_guid, writer_strength) in raw {
+        for (bytes, writer_guid, writer_strength, src_ts, big_endian, representation) in raw {
+            // RTPS-F1: use the writer's INFO_TS source timestamp for the
+            // SampleInfo + DESTINATION_ORDER; fall back to reception time
+            // (`now`) when the writer sent none.
+            let sample_source_ts = src_ts.map_or(now, crate::time::he_timestamp_to_time);
             // Decode T to (a) evaluate the filter and (b) compute the
             // KeyHash.
-            let sample = T::decode(&bytes).map_err(|e| DdsError::WireError {
-                message: alloc::string::ToString::to_string(&e),
-            })?;
+            let sample =
+                decode_for_encap::<T>(&bytes, representation, big_endian).map_err(|e| {
+                    DdsError::WireError {
+                        message: alloc::string::ToString::to_string(&e),
+                    }
+                })?;
             if !self.sample_passes_filter(&sample) {
                 continue;
             }
@@ -1605,16 +1700,20 @@ impl<T: DdsType> DataReader<T> {
                     continue;
                 }
                 // Spec §2.2.3.18 DESTINATION_ORDER: under BY_SOURCE_TIMESTAMP
-                // only deliver samples with a strictly greater source_ts,
-                // otherwise out-of-order resolution kicks in.
-                if !self
-                    .instances
-                    .should_deliver_under_destination_order(&kh, now, by_source_ts)
-                {
+                // the ordering key is the writer's source timestamp (from
+                // INFO_TS), not the reception time — only deliver samples with a
+                // strictly greater source_ts. Under BY_RECEPTION_TIMESTAMP the
+                // reception clock (`now`) is the key.
+                let order_ts = if by_source_ts { sample_source_ts } else { now };
+                if !self.instances.should_deliver_under_destination_order(
+                    &kh,
+                    order_ts,
+                    by_source_ts,
+                ) {
                     continue;
                 }
                 let (handle, _) = self.instances.observe_sample(kh, key_bytes, Some(now));
-                self.instances.record_delivery(&kh, now);
+                self.instances.record_delivery(&kh, order_ts);
                 let state = match self.instances.get_by_handle(handle) {
                     Some(s) => s,
                     None => continue, // should never happen — defensive
@@ -1629,7 +1728,7 @@ impl<T: DdsType> DataReader<T> {
                     instance_state: state.kind,
                     disposed_generation_count: state.disposed_generation_count,
                     no_writers_generation_count: state.no_writers_generation_count,
-                    source_timestamp: now,
+                    source_timestamp: sample_source_ts,
                     instance_handle: handle,
                     valid_data: true,
                     ..SampleInfo::default()
@@ -1643,7 +1742,7 @@ impl<T: DdsType> DataReader<T> {
                     sample_state: SampleStateKind::NotRead,
                     view_state: ViewStateKind::NotNew,
                     instance_handle: HANDLE_NIL,
-                    source_timestamp: now,
+                    source_timestamp: sample_source_ts,
                     valid_data: true,
                     ..SampleInfo::default()
                 }
@@ -2151,6 +2250,45 @@ mod tests {
         let p = DomainParticipantFactory::instance()
             .create_participant_offline(0, DomainParticipantQos::default());
         Topic::new("Chatter".into(), TopicQos::default(), p)
+    }
+
+    /// `decode_for_encap` must pick the decoder matching the sample's
+    /// encapsulation — XCDR version *and* byte order — so an XCDR1 writer
+    /// (CycloneDDS / legacy RTI default for `@final`) is decoded with the
+    /// classic-CDR rule, not the XCDR2 rule. Regression for Bug DR1.
+    #[test]
+    fn decode_for_encap_dispatches_on_representation_and_endianness() {
+        use crate::dds_type::{DecodeError, EncodeError};
+
+        /// Marker whose four decode variants return a distinct value, so the
+        /// test can prove which one `decode_for_encap` selected.
+        #[derive(Debug, PartialEq)]
+        struct Probe(u8);
+        impl DdsType for Probe {
+            const TYPE_NAME: &'static str = "test::Probe";
+            fn encode(&self, _out: &mut Vec<u8>) -> core::result::Result<(), EncodeError> {
+                Ok(())
+            }
+            fn decode(_b: &[u8]) -> core::result::Result<Self, DecodeError> {
+                Ok(Probe(1)) // XCDR2-LE
+            }
+            fn decode_be(_b: &[u8]) -> core::result::Result<Self, DecodeError> {
+                Ok(Probe(2)) // XCDR2-BE
+            }
+            fn decode_xcdr1(_b: &[u8]) -> core::result::Result<Self, DecodeError> {
+                Ok(Probe(10)) // XCDR1-LE
+            }
+            fn decode_xcdr1_be(_b: &[u8]) -> core::result::Result<Self, DecodeError> {
+                Ok(Probe(20)) // XCDR1-BE
+            }
+        }
+
+        // (representation, big_endian) -> expected marker.
+        // representation: 1 = XCDR2, 0 = XCDR1.
+        assert_eq!(decode_for_encap::<Probe>(&[], 1, false).unwrap(), Probe(1));
+        assert_eq!(decode_for_encap::<Probe>(&[], 1, true).unwrap(), Probe(2));
+        assert_eq!(decode_for_encap::<Probe>(&[], 0, false).unwrap(), Probe(10));
+        assert_eq!(decode_for_encap::<Probe>(&[], 0, true).unwrap(), Probe(20));
     }
 
     #[test]

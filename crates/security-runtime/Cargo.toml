@@ -21,19 +21,54 @@ workspace = true
 path = "src/lib.rs"
 
 [features]
-safety = []  # empty marker for safe-profile lints (docs/safety-flag-drift.md)
-default = ["std"]
+safety = []  # empty marker for safe-profile lints (internal/safety-flag-drift.md)
+default = ["std", "ring-backend"]
 std = []
+# The security deps are pulled `default-features = false`, so the backend is
+# chosen here and fans out — that lets `fips` build with NO ring at all.
+# `ring-backend` (default) selects the ring primitives across the whole stack.
+ring-backend = [
+    "zerodds-security-crypto/ring-backend",
+    "zerodds-security-crypto/std",
+    "zerodds-security-crypto/metrics",
+    "zerodds-security-permissions/ring-backend",
+    "zerodds-security-permissions/std",
+    "zerodds-security-pki/ring-backend",
+    "zerodds-security-pki/std",
+]
+# FIPS umbrella: one knob that swaps the whole DDS-Security crypto stack to
+# `aws-lc-rs` (AWS-LC, FIPS-140-3-validatable) and, with --no-default-features,
+# pulls in NO ring at all. Fans `aws-lc` out (permissions → pki → keyexchange +
+# crypto). Build: `--no-default-features --features std,fips`.
+fips = [
+    "std",
+    "zerodds-security-crypto/aws-lc",
+    "zerodds-security-permissions/aws-lc",
+    "zerodds-security-pki/aws-lc",
+]
+# wolfCrypt umbrella: swaps the whole DDS-Security crypto stack to wolfSSL/
+# wolfCrypt (FIPS-ready, DO-178/embedded heritage) via the ring-API-compatible
+# shim. Fans `wolfcrypt` out (permissions → pki → keyexchange + crypto). The
+# primitive surface (AEAD/HMAC/HKDF/ECDH/signing) is wolfCrypt; X.509 cert-chain
+# verify keeps the webpki `ring` provider (no wolfCrypt provider upstream).
+# Build: `--no-default-features --features std,wolfcrypt` (needs libwolfssl or
+# WOLFSSL_SRC pointing at a wolfSSL 5.9.x source tree).
+wolfcrypt = [
+    "std",
+    "zerodds-security-crypto/wolfcrypt",
+    "zerodds-security-permissions/wolfcrypt",
+    "zerodds-security-pki/wolfcrypt",
+]
 
 [dependencies]
-zerodds-qos = { version = "1.0.0-rc.3.1", path = "../qos" }
-zerodds-rtps = { version = "1.0.0-rc.3.1", path = "../rtps", default-features = false, features = ["alloc"] }
-zerodds-security = { version = "1.0.0-rc.3.1", path = "../security" }
-zerodds-security-crypto = { version = "1.0.0-rc.3.1", path = "../security-crypto" }
-zerodds-security-permissions = { version = "1.0.0-rc.3.1", path = "../security-permissions" }
+zerodds-qos = { version = "1.0.0-rc.4", path = "../qos" }
+zerodds-rtps = { version = "1.0.0-rc.4", path = "../rtps", default-features = false, features = ["alloc"] }
+zerodds-security = { version = "1.0.0-rc.4", path = "../security" }
+zerodds-security-crypto = { version = "1.0.0-rc.4", path = "../security-crypto", default-features = false }
+zerodds-security-permissions = { version = "1.0.0-rc.4", path = "../security-permissions", default-features = false }
 # DelegationChain im PeerCapabilities-Cache + Wire-Codec.
-zerodds-security-pki = { version = "1.0.0-rc.3.1", path = "../security-pki" }
-zerodds-security-rtps = { version = "1.0.0-rc.3.1", path = "../security-rtps" }
+zerodds-security-pki = { version = "1.0.0-rc.4", path = "../security-pki", default-features = false }
+zerodds-security-rtps = { version = "1.0.0-rc.4", path = "../security-rtps" }
 
 [dev-dependencies]
 zerodds-discovery = { path = "../discovery" }

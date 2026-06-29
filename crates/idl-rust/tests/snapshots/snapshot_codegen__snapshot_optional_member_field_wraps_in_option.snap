@@ -1,5 +1,6 @@
 ---
 source: crates/idl-rust/tests/snapshot_codegen.rs
+assertion_line: 308
 expression: run(idl)
 ---
 // SPDX-License-Identifier: Apache-2.0
@@ -7,6 +8,7 @@ expression: run(idl)
 
 #![allow(clippy::too_many_lines)]
 #![allow(unused_imports)]
+#![allow(non_snake_case)]
 
 use zerodds_cdr::{BufferReader, BufferWriter, CdrDecode, CdrEncode, DecodeError, EncodeError, Endianness};
 
@@ -20,28 +22,71 @@ pub struct Profile {
 
 impl zerodds_dcps::DdsType for Profile {
     const TYPE_NAME: &'static str = "Profile";
-    const EXTENSIBILITY: zerodds_dcps::Extensibility = zerodds_dcps::Extensibility::Final;
-    const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0x8f, 0x00, 0x77, 0x5f, 0x79, 0x95, 0x14, 0x6b, 0x32, 0x4a, 0x61, 0x23, 0xba, 0x90]));
+    const EXTENSIBILITY: zerodds_dcps::Extensibility = zerodds_dcps::Extensibility::Appendable;
+    const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0x4f, 0x66, 0x57, 0x57, 0xd8, 0x93, 0x8f, 0xc1, 0xfb, 0x05, 0x72, 0xac, 0xe1, 0x42]));
 
     fn encode(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
         let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little).xcdr2();
-        <_ as zerodds_cdr::CdrEncode>::encode(&self.name, &mut writer)?;
-        <_ as zerodds_cdr::CdrEncode>::encode(&self.age, &mut writer)?;
-        <_ as zerodds_cdr::CdrEncode>::encode(&self.email, &mut writer)?;
+        zerodds_cdr::struct_enc::encode_appendable(&mut writer, |w| {
+            <_ as zerodds_cdr::CdrEncode>::encode(&self.name, w)?;
+            <_ as zerodds_cdr::CdrEncode>::encode(&self.age, w)?;
+            <_ as zerodds_cdr::CdrEncode>::encode(&self.email, w)?;
+            Ok(())
+        })?;
+        out.extend_from_slice(&writer.into_bytes());
+        Ok(())
+    }
+
+    fn encode_be(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
+        let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Big).xcdr2();
+        zerodds_cdr::struct_enc::encode_appendable(&mut writer, |w| {
+            <_ as zerodds_cdr::CdrEncode>::encode(&self.name, w)?;
+            <_ as zerodds_cdr::CdrEncode>::encode(&self.age, w)?;
+            <_ as zerodds_cdr::CdrEncode>::encode(&self.email, w)?;
+            Ok(())
+        })?;
         out.extend_from_slice(&writer.into_bytes());
         Ok(())
     }
 
     fn decode(bytes: &[u8]) -> ::core::result::Result<Self, zerodds_dcps::DecodeError> {
         let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Little).xcdr2();
-        let name = <String as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
-        let age = <::core::option::Option<i32> as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
-        let email = <::core::option::Option<String> as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
-        Ok(Self {
-            name,
-            age,
-            email,
-        })
+        zerodds_cdr::struct_enc::decode_appendable(&mut reader, |r| {
+            let name = <String as zerodds_cdr::CdrDecode>::decode(r)?;
+            let age = <::core::option::Option<i32> as zerodds_cdr::CdrDecode>::decode(r)?;
+            let email = <::core::option::Option<String> as zerodds_cdr::CdrDecode>::decode(r)?;
+            Ok(Self {
+                name,
+                age,
+                email,
+            })
+        }).map_err(::core::convert::Into::into)
+    }
+
+    fn decode_be(bytes: &[u8]) -> ::core::result::Result<Self, zerodds_dcps::DecodeError> {
+        let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Big).xcdr2();
+        zerodds_cdr::struct_enc::decode_appendable(&mut reader, |r| {
+            let name = <String as zerodds_cdr::CdrDecode>::decode(r)?;
+            let age = <::core::option::Option<i32> as zerodds_cdr::CdrDecode>::decode(r)?;
+            let email = <::core::option::Option<String> as zerodds_cdr::CdrDecode>::decode(r)?;
+            Ok(Self {
+                name,
+                age,
+                email,
+            })
+        }).map_err(::core::convert::Into::into)
+    }
+
+    fn encode_xcdr1(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
+        let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little);
+        <Self as zerodds_cdr::CdrEncode>::encode(self, &mut writer)?;
+        out.extend_from_slice(&writer.into_bytes());
+        Ok(())
+    }
+
+    fn decode_xcdr1(bytes: &[u8]) -> ::core::result::Result<Self, zerodds_dcps::DecodeError> {
+        let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Little);
+        <Self as zerodds_cdr::CdrDecode>::decode(&mut reader).map_err(::core::convert::Into::into)
     }
 
     fn field_value(&self, path: &str) -> ::core::option::Option<zerodds_sql_filter::Value> {
@@ -56,22 +101,44 @@ impl zerodds_dcps::DdsType for Profile {
 
 impl zerodds_cdr::CdrEncode for Profile {
     fn encode(&self, writer: &mut zerodds_cdr::BufferWriter) -> ::core::result::Result<(), zerodds_cdr::EncodeError> {
-        <_ as zerodds_cdr::CdrEncode>::encode(&self.name, writer)?;
-        <_ as zerodds_cdr::CdrEncode>::encode(&self.age, writer)?;
-        <_ as zerodds_cdr::CdrEncode>::encode(&self.email, writer)?;
+        if writer.max_alignment() == 4 {
+            zerodds_cdr::struct_enc::encode_appendable(writer, |w| {
+                <_ as zerodds_cdr::CdrEncode>::encode(&self.name, w)?;
+                <_ as zerodds_cdr::CdrEncode>::encode(&self.age, w)?;
+                <_ as zerodds_cdr::CdrEncode>::encode(&self.email, w)?;
+                Ok(())
+            })?;
+        } else {
+            <_ as zerodds_cdr::CdrEncode>::encode(&self.name, writer)?;
+            <_ as zerodds_cdr::CdrEncode>::encode(&self.age, writer)?;
+            <_ as zerodds_cdr::CdrEncode>::encode(&self.email, writer)?;
+        }
         ::core::result::Result::Ok(())
     }
 }
 
 impl zerodds_cdr::CdrDecode for Profile {
     fn decode(reader: &mut zerodds_cdr::BufferReader<'_>) -> ::core::result::Result<Self, zerodds_cdr::DecodeError> {
-        let name = <String as zerodds_cdr::CdrDecode>::decode(reader)?;
-        let age = <::core::option::Option<i32> as zerodds_cdr::CdrDecode>::decode(reader)?;
-        let email = <::core::option::Option<String> as zerodds_cdr::CdrDecode>::decode(reader)?;
-        ::core::result::Result::Ok(Self {
-            name,
-            age,
-            email,
-        })
+        if reader.max_alignment() == 4 {
+            zerodds_cdr::struct_enc::decode_appendable(reader, |r| {
+                let name = <String as zerodds_cdr::CdrDecode>::decode(r)?;
+                let age = <::core::option::Option<i32> as zerodds_cdr::CdrDecode>::decode(r)?;
+                let email = <::core::option::Option<String> as zerodds_cdr::CdrDecode>::decode(r)?;
+                ::core::result::Result::Ok(Self {
+                    name,
+                    age,
+                    email,
+                })
+            })
+        } else {
+            let name = <String as zerodds_cdr::CdrDecode>::decode(reader)?;
+            let age = <::core::option::Option<i32> as zerodds_cdr::CdrDecode>::decode(reader)?;
+            let email = <::core::option::Option<String> as zerodds_cdr::CdrDecode>::decode(reader)?;
+            ::core::result::Result::Ok(Self {
+                name,
+                age,
+                email,
+            })
+        }
     }
 }

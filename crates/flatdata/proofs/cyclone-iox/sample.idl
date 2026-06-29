@@ -1,0 +1,7 @@
+module IoxOracle {
+  struct Sample {
+    unsigned long id;
+    unsigned long value;
+    octet data[8];
+  };
+};

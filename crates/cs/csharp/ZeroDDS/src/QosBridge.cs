@@ -16,6 +16,7 @@ namespace ZeroDDS.QosBridge;
 public sealed class NativeQosScope : IDisposable
 {
     private readonly System.Collections.Generic.List<GCHandle> _handles = new();
+    private readonly System.Collections.Generic.List<IntPtr> _unmanaged = new();
     private bool _disposed;
 
     internal IntPtr Pin(byte[] data)
@@ -24,6 +25,28 @@ public sealed class NativeQosScope : IDisposable
         var h = GCHandle.Alloc(data, GCHandleType.Pinned);
         _handles.Add(h);
         return h.AddrOfPinnedObject();
+    }
+
+    /// <summary>
+    /// Marshals a PartitionPolicy's name list into a C-FFI
+    /// <c>const char *const *</c> array (Spec §2.2.3.x PARTITION). Returns
+    /// (names_ptr, count); names_ptr is <see cref="IntPtr.Zero"/> for an empty
+    /// list. The native ANSI strings + the pointer array are freed on Dispose.
+    /// </summary>
+    internal (IntPtr namesPtr, UIntPtr count) PinPartition(
+        System.Collections.Generic.IReadOnlyList<string>? names)
+    {
+        if (names == null || names.Count == 0) return (IntPtr.Zero, UIntPtr.Zero);
+        // Array of char* pointers, one per name.
+        IntPtr arr = Marshal.AllocHGlobal(IntPtr.Size * names.Count);
+        _unmanaged.Add(arr);
+        for (int i = 0; i < names.Count; i++)
+        {
+            IntPtr s = Marshal.StringToHGlobalAnsi(names[i] ?? string.Empty);
+            _unmanaged.Add(s);
+            Marshal.WriteIntPtr(arr, i * IntPtr.Size, s);
+        }
+        return (arr, (UIntPtr)names.Count);
     }
 
     public void Dispose()
@@ -35,6 +58,11 @@ public sealed class NativeQosScope : IDisposable
             if (h.IsAllocated) h.Free();
         }
         _handles.Clear();
+        foreach (var p in _unmanaged)
+        {
+            if (p != IntPtr.Zero) Marshal.FreeHGlobal(p);
+        }
+        _unmanaged.Clear();
         GC.SuppressFinalize(this);
     }
     ~NativeQosScope() { Dispose(); }
@@ -217,6 +245,12 @@ public static class QosBridge
     private static NativeDuration N(Duration d) =>
         new() { Sec = d.Sec, Nanosec = d.Nanosec };
 
+    private static NativePartition P(PartitionPolicy p, NativeQosScope scope)
+    {
+        var (names, count) = scope.PinPartition(p?.Names);
+        return new NativePartition { Names = names, NamesLen = count };
+    }
+
     public static NativeDomainParticipantQos ToNative(DomainParticipantQos q, NativeQosScope scope)
     {
         return new NativeDomainParticipantQos
@@ -292,7 +326,7 @@ public static class QosBridge
                 CoherentAccess = q.Presentation.CoherentAccess,
                 OrderedAccess = q.Presentation.OrderedAccess,
             },
-            Partition = new NativePartition { Names = IntPtr.Zero, NamesLen = UIntPtr.Zero },
+            Partition = P(q.Partition, scope),
             GroupData = new NativeBytesData
             {
                 Value = scope.Pin(q.GroupData.Value),
@@ -316,7 +350,7 @@ public static class QosBridge
                 CoherentAccess = q.Presentation.CoherentAccess,
                 OrderedAccess = q.Presentation.OrderedAccess,
             },
-            Partition = new NativePartition { Names = IntPtr.Zero, NamesLen = UIntPtr.Zero },
+            Partition = P(q.Partition, scope),
             GroupData = new NativeBytesData
             {
                 Value = scope.Pin(q.GroupData.Value),
@@ -359,7 +393,7 @@ public static class QosBridge
             Lifespan = new NativeLifespan { Duration = N(q.Lifespan.Duration) },
             Ownership = new NativeOwnership { Kind = (uint)q.Ownership.Kind },
             OwnershipStrength = new NativeOwnershipStrength { Value = q.OwnershipStrength.Value },
-            Partition = new NativePartition { Names = IntPtr.Zero, NamesLen = UIntPtr.Zero },
+            Partition = P(q.Partition, scope),
             Presentation = new NativePresentation
             {
                 AccessScope = (uint)q.Presentation.AccessScope,
@@ -419,7 +453,7 @@ public static class QosBridge
             },
             DestinationOrder = new NativeDestinationOrder { Kind = (uint)q.DestinationOrder.Kind },
             Ownership = new NativeOwnership { Kind = (uint)q.Ownership.Kind },
-            Partition = new NativePartition { Names = IntPtr.Zero, NamesLen = UIntPtr.Zero },
+            Partition = P(q.Partition, scope),
             Presentation = new NativePresentation
             {
                 AccessScope = (uint)q.Presentation.AccessScope,

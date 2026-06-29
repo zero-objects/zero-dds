@@ -160,3 +160,25 @@ fn snapshot_typesupport_mutable_struct() {
         "@mutable struct M { @id(1) long a; @id(2) string b; };"
     ));
 }
+
+// REGRESSION GATE: @mutable members WITHOUT explicit @id must take SEQUENTIAL
+// 0-based ids (XTypes 1.3 §7.3.4.3 @autoid default; vendor-confirmed vs Cyclone).
+// The Java backend previously started its auto-id counter at 1 (off-by-one),
+// diverging from rust/cpp/c/python/ts/csharp + Cyclone on the @mutable wire.
+#[test]
+fn mutable_autoid_is_zero_based_sequential() {
+    let ts = gen_typesupport("@mutable struct AutoId { long a; long b; };");
+    assert!(
+        ts.contains("writeEmHeader(0,"),
+        "first auto-id @mutable member must be id 0 (sequential), got:\n{ts}"
+    );
+    assert!(
+        ts.contains("writeEmHeader(1,"),
+        "second auto-id @mutable member must be id 1 (sequential), got:\n{ts}"
+    );
+    // Guard against the old 1-based regression (would emit id 2 for the 2nd member).
+    assert!(
+        !ts.contains("writeEmHeader(2,"),
+        "1-based auto-id regression: no member should be id 2 here"
+    );
+}

@@ -3,7 +3,13 @@
 
 //! Lakehouse-adapter tests: contract enforcement, pagination, restart, and the
 //! Parquet lake export.
+//!
+//! The whole crate is gated behind the optional `duckdb` feature
+//! (`#![cfg(feature = "duckdb")]` in lib.rs); mirror that here so a default
+//! `cargo test --workspace` (duckdb OFF) compiles this to an empty test target
+//! instead of failing on the absent `LakehouseStore`.
 
+#![cfg(feature = "duckdb")]
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
 use std::time::{Duration, SystemTime};
@@ -30,6 +36,8 @@ fn sample(topic: &str, inst: u8, seq: u64) -> DurabilitySample {
         instance_key: [inst; 16],
         sequence: seq,
         payload: format!("p-{inst}-{seq}").into_bytes(),
+        representation: 1,
+        big_endian: false,
         created_at: SystemTime::UNIX_EPOCH + Duration::from_secs(seq),
     }
 }

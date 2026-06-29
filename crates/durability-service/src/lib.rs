@@ -273,7 +273,13 @@ impl DurabilityService {
             .map_err(|_| ServiceError::Poisoned("register ingest reader"))?;
 
         // Startup-sync: prime the replay writer's history from durable storage.
+        // Each stored sample carries its own representation + byte order; set
+        // the writer overrides so the primed replay re-declares the original
+        // wire (a big-endian peer's persisted sample replays with a BE encap).
         for sample in self.store.replay_for_topic(topic_name)? {
+            let off: i16 = if sample.representation == 1 { 2 } else { 0 };
+            let _ = rrt.set_user_writer_data_rep_override(weid, Some(vec![off]));
+            let _ = rrt.set_user_writer_byte_order_override(weid, sample.big_endian);
             let _ = rrt.write_user_sample_borrowed(weid, &sample.payload);
         }
 
@@ -296,6 +302,9 @@ impl DurabilityService {
                 // changes (a topic is representation-consistent, so this is
                 // effectively a one-time set). 255 = "not yet observed".
                 let mut last_rep: u8 = 255;
+                // Tracks the last byte order pushed to the replay writer's encap
+                // override, so a BE peer's samples replay with a BE encap header.
+                let mut last_be = false;
                 // Event-driven: block on the reader's channel (no busy-poll),
                 // waking on each sample or the 200ms stop-flag re-check.
                 while !pump_stop.load(Ordering::Relaxed) {
@@ -304,12 +313,13 @@ impl DurabilityService {
                         Err(mpsc::RecvTimeoutError::Timeout) => continue,
                         Err(mpsc::RecvTimeoutError::Disconnected) => break,
                     };
-                    let (payload, representation) = match sample {
+                    let (payload, representation, big_endian) = match sample {
                         UserSample::Alive {
                             payload,
                             representation,
+                            big_endian,
                             ..
-                        } => (payload.to_vec(), representation),
+                        } => (payload.to_vec(), representation, big_endian),
                         UserSample::Lifecycle { .. } => continue,
                     };
                     if representation != last_rep {
@@ -319,11 +329,20 @@ impl DurabilityService {
                         let _ = pump_rrt.set_user_writer_data_rep_override(weid, Some(vec![off]));
                         last_rep = representation;
                     }
+                    if big_endian != last_be {
+                        // The stored body bytes are big-endian for a BE peer, so
+                        // the replay writer must emit a matching `_BE` encap
+                        // header — otherwise the late-joiner mis-decodes.
+                        let _ = pump_rrt.set_user_writer_byte_order_override(weid, big_endian);
+                        last_be = big_endian;
+                    }
                     let ds = DurabilitySample {
                         topic: topic_owned.clone(),
                         instance_key: [0u8; 16], // unkeyed (increment 1)
                         sequence: seq.fetch_add(1, Ordering::Relaxed),
                         payload: payload.clone(),
+                        representation,
+                        big_endian,
                         created_at: SystemTime::now(),
                     };
                     if store.store(ds).is_ok() {
@@ -453,6 +472,13 @@ fn pump(
                 instance_key: [0u8; 16], // unkeyed (increment 1)
                 sequence: seq.fetch_add(1, Ordering::Relaxed),
                 payload: payload.clone(),
+                // The high-level `DataReader<RawBytes>` SampleInfo does not
+                // surface the wire representation / byte order, so this DDS-API
+                // ingest path assumes the canonical XCDR2 little-endian wire.
+                // For a big-endian peer use `serve_typed` (the runtime-level
+                // UserSample path), which captures both and replays them.
+                representation: 1,
+                big_endian: false,
                 created_at: SystemTime::now(),
             };
             if store.store(ds).is_ok() {

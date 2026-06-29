@@ -16,9 +16,9 @@ use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use ring::digest;
-use ring::rand::{SecureRandom, SystemRandom};
-use ring::signature;
+use crate::backend::digest;
+use crate::backend::rand::{SecureRandom, SystemRandom};
+use crate::backend::signature;
 use rustls_pki_types::CertificateDer;
 use zerodds_security::authentication::{
     AuthenticationPlugin, HandshakeHandle, HandshakeStepOutcome, IdentityHandle,
@@ -358,7 +358,7 @@ fn sign_with(key_algo: CertKeyAlgo, pkcs8: &[u8], msg: &[u8]) -> SecurityResult<
     let rng = SystemRandom::new();
     match key_algo {
         CertKeyAlgo::EcdsaP256Sha256 => {
-            let key = signature::EcdsaKeyPair::from_pkcs8(
+            let key = crate::compat::ecdsa_from_pkcs8(
                 &signature::ECDSA_P256_SHA256_ASN1_SIGNING,
                 pkcs8,
                 &rng,
@@ -384,7 +384,7 @@ fn sign_with(key_algo: CertKeyAlgo, pkcs8: &[u8], msg: &[u8]) -> SecurityResult<
                     alloc::format!("pki: rsa key-parse failed: {e}"),
                 )
             })?;
-            let mut out = alloc::vec![0u8; key.public().modulus_len()];
+            let mut out = alloc::vec![0u8; crate::compat::rsa_modulus_len(&key)];
             key.sign(&signature::RSA_PSS_SHA256, &rng, msg, &mut out)
                 .map_err(|e| {
                     SecurityError::new(
@@ -415,8 +415,14 @@ fn verify_signature_with_cert(
         )
     })?;
     let alg: &dyn rustls_pki_types::SignatureVerificationAlgorithm = match key_algo {
+        #[cfg(not(feature = "aws-lc"))]
         CertKeyAlgo::EcdsaP256Sha256 => webpki::ring::ECDSA_P256_SHA256,
+        #[cfg(feature = "aws-lc")]
+        CertKeyAlgo::EcdsaP256Sha256 => webpki::aws_lc_rs::ECDSA_P256_SHA256,
+        #[cfg(not(feature = "aws-lc"))]
         CertKeyAlgo::RsaPssSha256 => webpki::ring::RSA_PSS_2048_8192_SHA256_LEGACY_KEY,
+        #[cfg(feature = "aws-lc")]
+        CertKeyAlgo::RsaPssSha256 => webpki::aws_lc_rs::RSA_PSS_2048_8192_SHA256_LEGACY_KEY,
         CertKeyAlgo::Unknown => {
             return Err(SecurityError::new(
                 SecurityErrorKind::InvalidConfiguration,

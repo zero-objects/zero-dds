@@ -18,11 +18,11 @@ use zerodds_security::authentication::{IdentityHandle, SharedSecretHandle, Share
 use zerodds_security::crypto::{CryptoHandle, CryptographicPlugin, ReceiverMac};
 use zerodds_security::error::{SecurityError, SecurityErrorKind, SecurityResult};
 
-use ring::aead::{LessSafeKey, Nonce, UnboundKey};
-use ring::digest;
-use ring::hkdf;
-use ring::hmac;
-use ring::rand::{SecureRandom, SystemRandom};
+use crate::backend::aead::{LessSafeKey, Nonce, UnboundKey};
+use crate::backend::digest;
+use crate::backend::hkdf;
+use crate::backend::hmac;
+use crate::backend::rand::{SecureRandom, SystemRandom};
 
 use crate::suite::Suite;
 
@@ -295,7 +295,7 @@ impl KeyMaterial {
             let mut b = plaintext.to_vec();
             key.seal_in_place_append_tag(
                 Nonce::assume_unique_for_key(nonce),
-                ring::aead::Aad::empty(),
+                crate::backend::aead::Aad::empty(),
                 &mut b,
             )
             .map_err(|_| {
@@ -314,7 +314,7 @@ impl KeyMaterial {
             let mut sink: Vec<u8> = Vec::new();
             key.seal_in_place_append_tag(
                 Nonce::assume_unique_for_key(nonce),
-                ring::aead::Aad::from(plaintext),
+                crate::backend::aead::Aad::from(plaintext),
                 &mut sink,
             )
             .map_err(|_| {
@@ -361,7 +361,7 @@ impl KeyMaterial {
             let mut b = plaintext.to_vec();
             key.seal_in_place_append_tag(
                 Nonce::assume_unique_for_key(nonce),
-                ring::aead::Aad::empty(),
+                crate::backend::aead::Aad::empty(),
                 &mut b,
             )
             .map_err(|_| {
@@ -380,7 +380,7 @@ impl KeyMaterial {
             let _ = aad_extension;
             key.seal_in_place_append_tag(
                 Nonce::assume_unique_for_key(nonce),
-                ring::aead::Aad::from(plaintext),
+                crate::backend::aead::Aad::from(plaintext),
                 &mut sink,
             )
             .map_err(|_| {
@@ -430,7 +430,7 @@ impl KeyMaterial {
             let plain = key
                 .open_in_place(
                     Nonce::assume_unique_for_key(nonce),
-                    ring::aead::Aad::empty(),
+                    crate::backend::aead::Aad::empty(),
                     &mut buf,
                 )
                 .map_err(|_| {
@@ -446,7 +446,7 @@ impl KeyMaterial {
             let mut buf = tag.to_vec();
             key.open_in_place(
                 Nonce::assume_unique_for_key(nonce),
-                ring::aead::Aad::from(ct),
+                crate::backend::aead::Aad::from(ct),
                 &mut buf,
             )
             .map_err(|_| {
@@ -490,7 +490,7 @@ impl KeyMaterial {
             let plain = key
                 .open_in_place(
                     Nonce::assume_unique_for_key(nonce),
-                    ring::aead::Aad::empty(),
+                    crate::backend::aead::Aad::empty(),
                     &mut buf,
                 )
                 .map_err(|_| {
@@ -506,7 +506,7 @@ impl KeyMaterial {
             let mut buf = tag.to_vec();
             key.open_in_place(
                 Nonce::assume_unique_for_key(nonce),
-                ring::aead::Aad::from(ct),
+                crate::backend::aead::Aad::from(ct),
                 &mut buf,
             )
             .map_err(|_| {
@@ -697,7 +697,7 @@ impl KeyMaterial {
     }
 }
 
-/// Manual length struct for `ring::hkdf::Prk::expand`. The
+/// Manual length struct for `crate::backend::hkdf::Prk::expand`. The
 /// ring crate's `KeyType` trait accepts only types that
 /// provide `len()` + an HKDF algo.
 struct HkdfLen {
@@ -1231,8 +1231,12 @@ fn seal_with(mat: &KeyMaterial, plaintext: &[u8], aad_extension: &[u8]) -> Secur
     let key = key_from_bytes(mat.suite, &session_key)?;
     let mut payload: Vec<u8> = plaintext.to_vec();
     let nonce_obj = Nonce::assume_unique_for_key(nonce);
-    key.seal_in_place_append_tag(nonce_obj, ring::aead::Aad::from(&aad_bytes), &mut payload)
-        .map_err(|_| SecurityError::new(SecurityErrorKind::CryptoFailed, "crypto: seal failed"))?;
+    key.seal_in_place_append_tag(
+        nonce_obj,
+        crate::backend::aead::Aad::from(&aad_bytes),
+        &mut payload,
+    )
+    .map_err(|_| SecurityError::new(SecurityErrorKind::CryptoFailed, "crypto: seal failed"))?;
     let mut out = Vec::with_capacity(12 + payload.len());
     out.extend_from_slice(&nonce);
     out.extend(payload);
@@ -1298,7 +1302,11 @@ fn open_with(
     let mut buf = ct.to_vec();
     let nonce_obj = Nonce::assume_unique_for_key(n);
     let plain = key
-        .open_in_place(nonce_obj, ring::aead::Aad::from(&aad_bytes), &mut buf)
+        .open_in_place(
+            nonce_obj,
+            crate::backend::aead::Aad::from(&aad_bytes),
+            &mut buf,
+        )
         .map_err(|_| {
             SecurityError::new(
                 SecurityErrorKind::CryptoFailed,

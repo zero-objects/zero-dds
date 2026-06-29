@@ -21,22 +21,46 @@ workspace = true
 path = "src/lib.rs"
 
 [features]
-safety = []  # empty marker for safe-profile lints (docs/safety-flag-drift.md)
-default = ["std"]
+safety = []  # empty marker for safe-profile lints (internal/safety-flag-drift.md)
+default = ["std", "ring-backend"]
 std = []
+# Crypto primitive backend (pick one) — see lib.rs. `ring-backend` (default) or
+# `aws-lc` (aws-lc-rs / AWS-LC, FIPS-140-3-validatable; implies std). The signing
+# API deltas (EcdsaKeyPair::from_pkcs8 rng arg, RsaKeyPair modulus len) are
+# bridged in the `compat` module; the webpki verify provider swaps too.
+# The intra-stack deps are pulled `default-features = false` so the backend is
+# selected here (not forced to ring) — that lets the `aws-lc` build drop ring
+# entirely.
+ring-backend = [
+    "dep:ring",
+    "rustls-webpki/ring",
+    "zerodds-security-keyexchange/ring-backend",
+    "zerodds-security-keyexchange/std",
+]
+aws-lc = ["dep:aws-lc-rs", "rustls-webpki/aws-lc-rs", "zerodds-security-keyexchange/aws-lc", "std"]
+# Third backend: wolfSSL/wolfCrypt. The signing keypair APIs route through the
+# wolfcrypt-ring-compat shim (it mirrors aws-lc-rs' API, bridged in `compat`).
+# rustls-webpki has no wolfCrypt provider upstream, so X.509 cert-chain *verify*
+# keeps the `ring` provider (the only foreign linkage in a wolfcrypt build).
+wolfcrypt = ["dep:wolfcrypt-compat", "rustls-webpki/ring", "zerodds-security-keyexchange/wolfcrypt", "std"]
 
 [dependencies]
-zerodds-security = { version = "1.0.0-rc.3.1", path = "../security" }
+zerodds-security = { version = "1.0.0-rc.4", path = "../security" }
 # X.509 cert DER + trust-anchor types + PEM parser (integrated since 1.9,
 # RUSTSEC-2025-0134 — rustls-pemfile is unmaintained for this). Pure Rust,
 # no-std-capable. Apache-2.0 / ISC / MIT.
 rustls-pki-types = { workspace = true }
 # Chain validation + signature verification. ISC.
 rustls-webpki = { workspace = true }
-# X25519/P-256 ephemeral DH for the handshake secret.
-zerodds-security-keyexchange = { version = "1.0.0-rc.3.1", path = "../security-keyexchange" }
-# Delegation-link sign/verify (ECDSA-P256/P384, RSA-PSS, Ed25519).
-ring = { workspace = true }
+# X25519/P-256 ephemeral DH for the handshake secret. Backend selected by our
+# features above (so a FIPS build pulls no ring through it).
+zerodds-security-keyexchange = { version = "1.0.0-rc.4", path = "../security-keyexchange", default-features = false }
+# Delegation-link sign/verify (ECDSA-P256/P384, RSA-PSS, Ed25519). Swappable:
+# `ring` (default) or `aws-lc-rs` (FIPS) via the backend features above.
+ring = { workspace = true, optional = true }
+aws-lc-rs = { version = "1", optional = true }
+# wolfCrypt backend — `[lib] name` is `ring`, renamed to avoid the collision.
+wolfcrypt-compat = { package = "wolfcrypt-ring-compat", version = "1", optional = true }
 # X.509 subject extraction for IdentityToken (spec §10.3.2.1 `dds.cert.sn`).
 # Pure Rust, MIT/Apache-2.0.
 x509-cert = { version = "0.2", default-features = false, features = ["pem", "std"] }

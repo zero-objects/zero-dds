@@ -5,7 +5,7 @@
 //!
 //! This file detects at **runtime** which AES/SHA/polynomial
 //! multiplication accelerators the current CPU offers. The actual
-//! AEAD path still goes through `ring::aead`, which handles the HW
+//! AEAD path still goes through `crate::backend::aead`, which handles the HW
 //! exploitation internally — this file makes it *visible*, so that
 //! operations teams can check what is deployed.
 //!

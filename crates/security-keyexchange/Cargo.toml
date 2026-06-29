@@ -21,10 +21,21 @@ workspace = true
 path = "src/lib.rs"
 
 [features]
-safety = []  # empty marker for safe-profile lints (docs/safety-flag-drift.md)
-default = ["std"]
+safety = []  # empty marker for safe-profile lints (internal/safety-flag-drift.md)
+default = ["std", "ring-backend"]
 std = []
+# Crypto primitive backend (pick one) — see lib.rs. `ring-backend` (default,
+# no_std) or `aws-lc` (aws-lc-rs / AWS-LC, FIPS-140-3-validatable; implies std).
+ring-backend = ["dep:ring"]
+aws-lc = ["dep:aws-lc-rs", "std"]
+# Third backend: wolfSSL/wolfCrypt via the ring-API-compatible shim. It shares
+# aws-lc-rs' API (4-arg `agree_ephemeral`), so it follows the `aws-lc` code path.
+wolfcrypt = ["dep:wolfcrypt-compat", "std"]
 
 [dependencies]
-zerodds-security = { version = "1.0.0-rc.3.1", path = "../security" }
-ring = { workspace = true }
+zerodds-security = { version = "1.0.0-rc.4", path = "../security" }
+ring = { workspace = true, optional = true }
+aws-lc-rs = { version = "1", optional = true }
+# wolfCrypt backend — its `[lib] name` is `ring`, so it MUST be renamed here to
+# avoid colliding with the real `ring` crate's extern name.
+wolfcrypt-compat = { package = "wolfcrypt-ring-compat", version = "1", optional = true }

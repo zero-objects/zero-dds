@@ -54,6 +54,21 @@ fn underlying_type_for(bit_bound: u32) -> &'static str {
     }
 }
 
+/// C# constant expression for the bit value `1 << pos`, typed to match the enum
+/// underlying so the generated `enum X : <underlying> { A = ... }` COMPILES. A
+/// bare `1UL << pos` (ulong) does NOT implicitly convert to `byte`/`ushort`/
+/// `uint` and is a hard compile error; cast the shifted constant to the
+/// underlying type. For `ulong` the shift itself must be `1UL` so `1 << 63`
+/// does not overflow `int`.
+fn bit_value_literal(underlying: &str, pos: u32) -> String {
+    match underlying {
+        "ulong" => format!("1UL << {pos}"),
+        // `(byte)(1u << pos)` / `(ushort)(1u << pos)` / `(uint)(1u << pos)`:
+        // a uint constant cast down to the narrower enum base.
+        u => format!("({u})(1u << {pos})"),
+    }
+}
+
 fn pascal_case(s: &str) -> String {
     let mut chars = s.chars();
     match chars.next() {
@@ -94,7 +109,8 @@ pub(crate) fn emit_bitmask(
         // Enum literals keep their IDL spelling (Spec idl4-csharp
         // §7.2.4.4.4: "names of the IDL enumeration constants").
         let lit_name = escape_identifier(&v.name.text)?;
-        writeln!(out, "{inner}{lit_name} = 1UL << {pos},").map_err(fmt_err)?;
+        let lit = bit_value_literal(underlying, pos);
+        writeln!(out, "{inner}{lit_name} = {lit},").map_err(fmt_err)?;
     }
     writeln!(out, "{indent}}}").map_err(fmt_err)?;
     writeln!(out).map_err(fmt_err)?;
@@ -174,7 +190,7 @@ fn const_expr_to_u32(e: &ConstExpr) -> Option<u32> {
     None
 }
 
-fn extract_int_annotation(anns: &[Annotation], name: &str) -> Option<u32> {
+pub(crate) fn extract_int_annotation(anns: &[Annotation], name: &str) -> Option<u32> {
     let a = anns
         .iter()
         .find(|a| a.name.parts.last().map(|p| p.text.as_str()) == Some(name))?;

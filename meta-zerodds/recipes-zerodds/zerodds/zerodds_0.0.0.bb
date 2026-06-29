@@ -18,7 +18,7 @@ inherit cargo_bin
 
 # Source: lokal liegender Tarball oder git-Auspack. Hier git als
 # Default fuer CI-Reproducability.
-SRC_URI = "git://gitlab.sandra-kessler.eu/zerodds/zerodds.git;protocol=https;branch=main"
+SRC_URI = "git://github.com/zero-objects/zero-dds.git;protocol=https;branch=main"
 SRCREV = "${AUTOREV}"
 
 S = "${WORKDIR}/git"

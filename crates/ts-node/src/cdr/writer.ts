@@ -15,6 +15,13 @@ import type { EndianMode } from './types.js';
 /// Buffer growth step (doubles automatically).
 const INITIAL_CAPACITY = 64;
 
+/// XCDR2 maximum alignment (XTypes 1.3 §7.4.1.1.1 / §7.4.3.2.3 MAXALIGN(2)=4).
+/// All alignments are clamped to this; 8-byte primitives align to 4, not 8.
+const XCDR2_MAX_ALIGN = 4;
+/// XCDR1 / classic CDR alignment cap (8). Pass to the writer ctor for the
+/// legacy wire (no DHEADER on aggregates, PL_CDR1 for @mutable).
+export const XCDR1_MAX_ALIGN = 8;
+
 /// XCDR2 writer with a dynamically growing Uint8Array backing.
 /// Stateful: has a write cursor `pos` and an "origin"
 /// position for alignment computations.
@@ -25,13 +32,20 @@ export class Xcdr2Writer {
     private readonly littleEndian: boolean;
     /// Stack of the alignment-origin positions (default: [0]).
     private originStack: number[];
+    private readonly maxAlign: number;
 
-    constructor(endian: EndianMode = 'le') {
+    constructor(endian: EndianMode = 'le', maxAlign: number = XCDR2_MAX_ALIGN) {
         this.buf = new Uint8Array(INITIAL_CAPACITY);
         this.view = new DataView(this.buf.buffer);
         this._pos = 0;
         this.littleEndian = endian === 'le';
         this.originStack = [0];
+        this.maxAlign = maxAlign === XCDR1_MAX_ALIGN ? XCDR1_MAX_ALIGN : XCDR2_MAX_ALIGN;
+    }
+
+    /// `true` when writing the XCDR1 / classic CDR wire.
+    get isXcdr1(): boolean {
+        return this.maxAlign === XCDR1_MAX_ALIGN;
     }
 
     /// Current write position (bytes written).
@@ -71,7 +85,16 @@ export class Xcdr2Writer {
 
     /// Pads the cursor so that `(pos - origin) % alignment == 0`.
     /// Writes null bytes as padding.
+    ///
+    /// XCDR2 (= PLAIN_CDR2 / PL_CDR2) caps the maximum alignment at 4
+    /// (XTypes 1.3 §7.4.1.1.1; §7.4.3.2.3 INIT MAXALIGN(2)=4): 64-bit
+    /// primitives (int64/uint64/float64) align to min(sizeof, 4) = 4, never 8.
+    /// This matches the cdr-core `Xcdr2Writer` reference, byte-identical with
+    /// Cyclone/FastDDS on the RTPS path.
     align(alignment: number): void {
+        if (alignment > this.maxAlign) {
+            alignment = this.maxAlign;
+        }
         if (alignment <= 1) {
             return;
         }
@@ -250,7 +273,9 @@ export class Xcdr2Writer {
         this.align(2);
         this.ensureCapacity(byteLen);
         for (let i = 0; i < codeUnits; i++) {
-            this.view.setUint16(this._pos, s.charCodeAt(i), true);
+            // UTF-16 units in the message byte order (mirrors readWString) — a
+            // big-endian stream must carry big-endian units, not a hardcoded LE.
+            this.view.setUint16(this._pos, s.charCodeAt(i), this.littleEndian);
             this._pos += 2;
         }
     }
@@ -260,6 +285,42 @@ export class Xcdr2Writer {
         this.ensureCapacity(bytes.length);
         this.buf.set(bytes, this._pos);
         this._pos += bytes.length;
+    }
+
+    /// Writes an IDL `fixed<P,S>` value (decimal string, e.g. "123.45") as
+    /// CORBA/GIOP §9.3.2.7 packed BCD: P digit nibbles MSB-first + a sign
+    /// nibble (0xC pos, 0xD neg), a leading 0x0 pad when P+1 is odd, packed
+    /// 2 nibbles/byte high-first. (P+2)/2 octets, no length prefix, no
+    /// alignment. Ported from crates/cdr/src/fixed.rs (oracle-validated).
+    writeFixedBcd(decimal: string, p: number, s: number): void {
+        let str = decimal;
+        let positive = true;
+        if (str.startsWith("-")) { positive = false; str = str.slice(1); }
+        else if (str.startsWith("+")) { str = str.slice(1); }
+        const dot = str.indexOf(".");
+        let intPart = dot < 0 ? str : str.slice(0, dot);
+        let fracPart = dot < 0 ? "" : str.slice(dot + 1);
+        const intNeeded = p - s;
+        if (intPart.length > intNeeded) {
+            throw new XcdrError(`fixed: integer part '${intPart}' exceeds P-S=${intNeeded}`);
+        }
+        if (fracPart.length > s) {
+            throw new XcdrError(`fixed: fractional part '${fracPart}' exceeds S=${s}`);
+        }
+        const digits = intPart.padStart(intNeeded, "0") + fracPart.padEnd(s, "0");
+        const nibbles: number[] = [];
+        if ((p + 1) % 2 === 1) nibbles.push(0);
+        for (const c of digits) {
+            const d = c.charCodeAt(0) - 48;
+            if (d < 0 || d > 9) throw new XcdrError(`fixed: non-digit '${c}'`);
+            nibbles.push(d);
+        }
+        nibbles.push(positive ? 0x0c : 0x0d);
+        const out = new Uint8Array(nibbles.length / 2);
+        for (let b = 0; b < out.length; b++) {
+            out[b] = (nibbles[2 * b] << 4) | nibbles[2 * b + 1];
+        }
+        this.writeBytes(out);
     }
 
     /// Patches a 32-bit value at an already-written
@@ -280,6 +341,11 @@ export class Xcdr2Writer {
     /// (XTypes §7.4.4.4 — alignment within the DHEADER is
     /// relative to the position directly after the DHEADER).
     beginAppendable(): number {
+        // XCDR1 / classic CDR: no DHEADER — write the body inline; -1 marks the
+        // frame-less token so endAppendable patches nothing.
+        if (this.isXcdr1) {
+            return -1;
+        }
         this.align(4);
         const dheaderPos = this._pos;
         this.ensureCapacity(4);
@@ -293,6 +359,9 @@ export class Xcdr2Writer {
     /// Closes an appendable block: computes the body size
     /// and writes it back to the DHEADER position.
     endAppendable(token: number): void {
+        if (token < 0) {
+            return; // XCDR1: no frame to close.
+        }
         const bodyStart = token + 4;
         const size = this._pos - bodyStart;
         this.view.setUint32(token, size, this.littleEndian);
@@ -309,6 +378,37 @@ export class Xcdr2Writer {
     /// the read range via the DHEADER, cf. §6 V-12).
     endMutable(token: number): void {
         this.endAppendable(token);
+    }
+
+    /// Writes one PL_CDR1 (@mutable XCDR1) member: a 4-byte aligned
+    /// [u16 PID][u16 length] header (PID_EXTENDED long form for ids >= 0x3F00 /
+    /// bodies > 0xFFFF), the member `body` bytes (built member-relative), then
+    /// zero-pad to the next 4-byte boundary. Mirrors cdr-core
+    /// `xcdr1::encode_pl_cdr1_member`.
+    writePlCdr1Member(memberId: number, body: Uint8Array): void {
+        this.align(4);
+        const bodyLen = body.length;
+        if (memberId >= 0x3f00 || bodyLen > 0xffff) {
+            this.writeUint16(0x3f01);
+            this.writeUint16(8);
+            this.writeUint32(memberId);
+            this.writeUint32(bodyLen);
+        } else {
+            this.writeUint16(memberId);
+            this.writeUint16(bodyLen);
+        }
+        this.writeBytes(body);
+        const pad = (4 - (bodyLen % 4)) % 4;
+        for (let i = 0; i < pad; i++) {
+            this.writeOctet(0);
+        }
+    }
+
+    /// Writes the PID_LIST_END (0x3F02) terminator of a PL_CDR1 list.
+    writePlCdr1Sentinel(): void {
+        this.align(4);
+        this.writeUint16(0x3f02);
+        this.writeUint16(0);
     }
 
     /// XTypes §7.4.3.4.2 EMHEADER1 Encoding (PL_CDR2).

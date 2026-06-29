@@ -19,6 +19,16 @@ pub struct DurabilitySample {
     pub sequence: u64,
     /// Encoded payload (XCDR2 serialized body).
     pub payload: Vec<u8>,
+    /// XCDR representation of `payload` from the encapsulation header (RTPS 2.5
+    /// §10.5): `0` = XCDR1 (CDR/PL_CDR), `1` = XCDR2 (CDR2/D_CDR2/PL_CDR2). The
+    /// replay writer re-declares it so a late-joiner reads the body with the
+    /// right alignment.
+    pub representation: u8,
+    /// Wire byte order of `payload`: `false` = little-endian, `true` =
+    /// big-endian. A big-endian peer's stored sample holds big-endian body
+    /// bytes; the replay writer must emit a matching `_BE` encap header
+    /// (otherwise a late-joiner mis-decodes). Defaults to little-endian.
+    pub big_endian: bool,
     /// Source/creation wall-clock timestamp.
     pub created_at: SystemTime,
 }

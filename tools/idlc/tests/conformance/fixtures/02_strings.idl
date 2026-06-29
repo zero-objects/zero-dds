@@ -1,0 +1,9 @@
+// Conformance feature: strings + wstrings, bounded and unbounded (§7.4.1.4).
+module conf {
+  struct Strings {
+    string             unbounded;
+    string<32>         bounded;
+    wstring            wunbounded;
+    wstring<16>        wbounded;
+  };
+};

@@ -70,6 +70,53 @@ export function isU(v: unknown): v is U {
 
 registerType(UType);
 
+export const UTypeSupport: DdsTopicType<U> = {
+    typeName: "U",
+    isKeyed: false,
+    extensibility: "appendable",
+    encodeInto(w: Xcdr2Writer, s: U): void {
+        const _tok = w.beginAppendable();
+        w.writeInt32(s.discriminator);
+        if (s.discriminator === 1) {
+            const _v: number = (s as unknown as { a: number }).a;
+            w.writeInt32(_v);
+        } else if (s.discriminator === 2) {
+            const _v: number = (s as unknown as { b: number }).b;
+            w.writeFloat64(_v);
+        }
+        w.endAppendable(_tok);
+    },
+    encode(s: U, endian: EndianMode = "le", representation = 1): Uint8Array {
+        const w = new Xcdr2Writer(endian, representation === 0 ? 8 : 4);
+        this.encodeInto(w, s);
+        return w.toBytes();
+    },
+    decodeFrom(r: Xcdr2Reader): U {
+        const _tok = r.beginAppendable();
+        const _disc: number = r.readInt32();
+        let _result: U;
+        if (_disc === 1) {
+            const _b: number = r.readInt32();
+            _result = { discriminator: _disc, a: _b } as unknown as typeof _result;
+        } else if (_disc === 2) {
+            const _b: number = r.readFloat64();
+            _result = { discriminator: _disc, b: _b } as unknown as typeof _result;
+        } else {
+            _result = { discriminator: _disc } as unknown as U;
+        }
+        r.endAppendable(_tok);
+        return _result;
+    },
+    decode(bytes: Uint8Array, offset = 0, length: number = bytes.length - offset, endian: EndianMode = "le", representation = 1): U {
+        const r = new Xcdr2Reader(bytes, offset, length, endian, representation === 0 ? 8 : 4);
+        return this.decodeFrom(r);
+    },
+    keyHash(s: U): Uint8Array {
+        void s;
+        return new Uint8Array(16);
+    },
+};
+
 
 // Spec §7.2.3 / §8.1.2 / §8.1.3 — AMQP-Bindings.
 import * as ddsAmqp from "@zerodds/amqp/codec";

@@ -35,10 +35,40 @@ zerodds-record record \
 | `-t`, `--topic NAME` | `*` | Topic-Filter (wiederholbar) |
 | `--duration DUR` | indefinite | `5`, `30s`, `2m`, `1h` |
 | `--max-sample-bytes N` | `1048576` | DoS-Cap pro Sample |
+| `--decode` | off | Decode samples to typed values (needs `--type-file`) |
+| `--type-file IDL` | — | Out-of-band IDL providing the types |
+| `--map TOPIC=Type` | — | Override which IDL type decodes a topic (repeatable) |
+| `--out-json FILE` | — | Write decoded samples as NDJSON |
+| `--out-sqlite FILE` | — | Write decoded samples to per-topic SQLite |
 
-**Hinweis:** Live-Capture braucht eine angeschlossene DCPS-Runtime;
-in RC1 validiert der `record`-Subcommand die Konfiguration und
-beendet sich. Der vollständige Capture-Pfad wird mit RC2 freigeschaltet.
+#### Decoded output (`--decode`)
+
+With `--decode --type-file <IDL>` each captured CDR sample is additionally
+decoded to typed values (via the reflective XTypes codec) and fanned out to a
+per-topic relational SQLite DB (`--out-sqlite`) and/or NDJSON (`--out-json`).
+The opaque `.zddsrec` is **always** written too — decode/write failures warn but
+never abort the capture. Each decoded sink retains the raw CDR bytes per sample,
+so `zerodds-replay` can re-publish byte-exact from any format.
+
+The IDL type per topic defaults to the writer's discovered DDS type name; use
+`--map TopicName=Pkg::Type` to override. The SQLite schema uses `sample_id` as a
+record marker, with child tables (joined by `sample_id`) for scalar
+sequences/arrays; `_types` holds the full IDL per topic.
+
+```bash
+zerodds-record record -t TrackTopic \
+    --decode --type-file tracks.idl --map TrackTopic=cuas::Track \
+    --out-sqlite tracks.db --out-json tracks.ndjson
+```
+
+**Type-following:** der `record`-Subcommand entdeckt vor dem Festschreiben des
+`.zddsrec`-Headers den echten IDL-Typnamen jedes Writers der angeforderten
+Topics via SEDP (kurze Settle-Phase) und hängt sich pro `(Topic, Typ)` mit einem
+opaken Reader an. So werden **typisierte Topics** (z.B. `cuas::Track`) erfasst —
+ein generischer `RawBytes`-Reader würde keinen typisierten Writer matchen und
+nichts aufzeichnen. Topics ohne entdeckten Writer fallen (mit Warnung) auf
+`zerodds::RawBytes` zurück. Die Payload wird als rohe CDR-Bytes verlustfrei
+gespeichert (Replay-fähig); der Header trägt den echten Typnamen.
 
 ### `info <FILE>` — Header inspizieren
 

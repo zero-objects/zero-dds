@@ -1,0 +1,10 @@
+// Conformance feature: nested modules, reopened modules, cross-module refs.
+module outer {
+  struct Base { long id; };
+  module inner {
+    struct Leaf { outer::Base parent; long extra; };
+  };
+};
+module outer {            // reopened module
+  struct Derived { outer::inner::Leaf leaf; };
+};

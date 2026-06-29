@@ -1,6 +1,6 @@
 # DDS Extensions for Time Sensitive Networking 1.0 — Spec Coverage
 
-**Source:** `docs/standards/cache/omg/dds-tsn-1.0-beta2.pdf` (OMG DDS-TSN 1.0,
+**Source:** `internal/standards/cache/omg/dds-tsn-1.0-beta2.pdf` (OMG DDS-TSN 1.0,
 ptc/2024-05-16; not tracked in the repo for IP/copyright reasons). Public spec
 page: <https://www.omg.org/spec/DDS-TSN/>.
 
@@ -332,7 +332,7 @@ padding, sysfs MAC parsing) lives in `live_frame.rs`.
 
 **Tests:** `ethernet_psm::tests::*` (7); `live_frame::tests::*` (12,
 platform-neutral); `tests/veth_loopback.rs` — real RTPS roundtrip over a
-veth pair (root, CI `tsn-live` job, see `docs/ci/tsn-live.md`).
+veth pair (root, CI `tsn-live` job, see `internal/ci/tsn-live.md`).
 
 **Status:** done
 

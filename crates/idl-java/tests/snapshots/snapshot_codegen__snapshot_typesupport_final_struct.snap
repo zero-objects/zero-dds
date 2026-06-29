@@ -23,8 +23,11 @@ public final class PointTypeSupport implements org.zerodds.cdr.TopicTypeSupport<
     public byte[] encode(Point sample) { return encode(sample, org.zerodds.cdr.EndianMode.LITTLE_ENDIAN); }
 
     @Override
-    public byte[] encode(Point sample, org.zerodds.cdr.EndianMode endian) {
-        org.zerodds.cdr.Xcdr2Writer w = new org.zerodds.cdr.Xcdr2Writer(endian);
+    public byte[] encode(Point sample, org.zerodds.cdr.EndianMode endian) { return encode(sample, endian, 1); }
+
+    public byte[] encode(Point sample, org.zerodds.cdr.EndianMode endian, int representation) {
+        int __maxAlign = representation == 0 ? org.zerodds.cdr.Xcdr2Writer.XCDR1_MAX_ALIGN_VALUE : 4;
+        org.zerodds.cdr.Xcdr2Writer w = new org.zerodds.cdr.Xcdr2Writer(endian, __maxAlign);
         w.writeInt32(sample.getX());
         w.writeInt32(sample.getY());
         return w.toByteArray();
@@ -34,16 +37,49 @@ public final class PointTypeSupport implements org.zerodds.cdr.TopicTypeSupport<
     public Point decode(byte[] bytes) { return decode(bytes, 0, bytes.length); }
 
     @Override
-    public Point decode(byte[] bytes, int offset, int length) {
-        org.zerodds.cdr.Xcdr2Reader r = new org.zerodds.cdr.Xcdr2Reader(bytes, offset, length, org.zerodds.cdr.EndianMode.LITTLE_ENDIAN);
+    public Point decode(byte[] bytes, int offset, int length) { return decode(bytes, offset, length, org.zerodds.cdr.EndianMode.LITTLE_ENDIAN); }
+    public Point decode(byte[] bytes, int offset, int length, org.zerodds.cdr.EndianMode endian) { return decode(bytes, offset, length, endian, 1); }
+    public Point decode(byte[] bytes, int offset, int length, org.zerodds.cdr.EndianMode endian, int representation) {
+        int __maxAlign = representation == 0 ? org.zerodds.cdr.Xcdr2Reader.XCDR1_MAX_ALIGN_VALUE : 4;
+        org.zerodds.cdr.Xcdr2Reader r = new org.zerodds.cdr.Xcdr2Reader(bytes, offset, length, endian, __maxAlign);
+        return decodeFrom(r);
+    }
+
+    public static Point decodeFrom(org.zerodds.cdr.Xcdr2Reader r) {
         Point v = new Point();
-        v.setX(r.readInt32());
-        v.setY(r.readInt32());
+        {
+            int __rv = r.readInt32();
+            v.setX(__rv);
+        }
+        {
+            int __rv = r.readInt32();
+            v.setY(__rv);
+        }
         return v;
     }
 
     @Override
     public byte[] keyHash(Point sample) {
         return new byte[16];
+    }
+
+    private static void skipByLc(org.zerodds.cdr.Xcdr2Reader r, int lc) {
+        switch (lc) {
+            case 0: r.skip(1); break;
+            case 1: r.skip(2); break;
+            case 2: r.skip(4); break;
+            case 3: r.skip(8); break;
+            default: { int __n = r.readNextInt(); r.skip(__n); break; }
+        }
+    }
+
+    private static byte[] readDelimitedFrame(org.zerodds.cdr.Xcdr2Reader r) {
+        int __sz = r.readDHeader();
+        byte[] __body = r.readBytes(__sz);
+        byte[] __frame = new byte[4 + __sz];
+        __frame[0] = (byte) (__sz & 0xFF); __frame[1] = (byte) ((__sz >>> 8) & 0xFF);
+        __frame[2] = (byte) ((__sz >>> 16) & 0xFF); __frame[3] = (byte) ((__sz >>> 24) & 0xFF);
+        System.arraycopy(__body, 0, __frame, 4, __sz);
+        return __frame;
     }
 }

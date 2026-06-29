@@ -122,8 +122,26 @@ class IdlReader(Generic[T]):
         self._cls: Type[T] = cls
 
     def take(self) -> list[T]:
-        raw_samples = self._inner.take()
-        return [self._cls.decode(b) for b in raw_samples]  # type: ignore[attr-defined]
+        # Endian-aware path: thread the wire byte order from the encapsulation
+        # header into the generated decoder so a big-endian peer's sample is
+        # read correctly. Falls back to the little-endian `take()` for an inner
+        # reader that predates `take_endian`.
+        take_endian = getattr(self._inner, "take_endian", None)
+        if take_endian is None:
+            raw_samples = self._inner.take()
+            return [self._cls.decode(b) for b in raw_samples]  # type: ignore[attr-defined]
+        out: list[T] = []
+        while True:
+            got = take_endian()
+            if got is None:
+                break
+            data, big_endian, representation = got
+            out.append(
+                self._cls.decode(  # type: ignore[attr-defined]
+                    data, "be" if big_endian else "le", representation
+                )
+            )
+        return out
 
     def wait_for_data(self, timeout_secs: float) -> None:
         self._inner.wait_for_data(timeout_secs)

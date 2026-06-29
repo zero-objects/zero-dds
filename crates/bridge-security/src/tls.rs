@@ -63,7 +63,7 @@ pub fn load_server_config(
 ) -> Result<Arc<ServerConfig>, TlsConfigError> {
     let certs = read_certs(cert_pem_path)?;
     let key = read_private_key(key_pem_path)?;
-    let provider = rustls::crypto::ring::default_provider();
+    let provider = crate::tls_provider();
     let cfg = ServerConfig::builder_with_provider(Arc::new(provider))
         .with_safe_default_protocol_versions()
         .map_err(|e| TlsConfigError::Rustls(format!("{e}")))?
@@ -97,12 +97,18 @@ pub fn load_server_config_with_client_auth(
             .add(c)
             .map_err(|e| TlsConfigError::Rustls(format!("client CA add: {e}")))?;
     }
-    let verifier = rustls::server::WebPkiClientVerifier::builder(Arc::new(roots))
-        .build()
-        .map_err(|e| TlsConfigError::Rustls(format!("client verifier: {e}")))?;
+    // The client-cert verifier MUST be built with the explicit provider too —
+    // its default builder pulls the *process-level* CryptoProvider, which is
+    // ambiguous (panics) when rustls carries both ring and aws-lc-rs.
+    let provider = Arc::new(crate::tls_provider());
+    let verifier = rustls::server::WebPkiClientVerifier::builder_with_provider(
+        Arc::new(roots),
+        provider.clone(),
+    )
+    .build()
+    .map_err(|e| TlsConfigError::Rustls(format!("client verifier: {e}")))?;
 
-    let provider = rustls::crypto::ring::default_provider();
-    let cfg = ServerConfig::builder_with_provider(Arc::new(provider))
+    let cfg = ServerConfig::builder_with_provider(provider)
         .with_safe_default_protocol_versions()
         .map_err(|e| TlsConfigError::Rustls(format!("{e}")))?
         .with_client_cert_verifier(verifier)

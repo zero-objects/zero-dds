@@ -119,38 +119,125 @@ fn default_discriminator(cases: &[UnionCase]) -> i128 {
 fn emit_union_cdr_encode(out: &mut String, u: &UnionDef, cases: &[UnionCase], switch_ty: &str) {
     let name = escape_keyword(&u.name.text);
     let dd = default_discriminator(cases);
+    // XTypes 1.3 §7.4.3.5.3: a FINAL union (FUNION, rule (26)) serializes as
+    // disc + selected_member with NO frame. An APPENDABLE union (rule (30))
+    // is self-delimited by a DHEADER on the XCDR2 path — required so a NESTED
+    // or collection-element union of this type carries its own DHEADER on the
+    // wire (the top-level frame only wraps the outermost type). Classic CDR
+    // (CORBA/GIOP, max_align 8) has no DHEADER, so it stays plain. We detect
+    // the path at runtime via `writer.max_alignment() == 4`.
+    let appendable = matches!(
+        crate::annotations::struct_extensibility(&u.annotations),
+        crate::annotations::StructExtensibility::Appendable
+    );
     out.push_str(&format!("\nimpl zerodds_cdr::CdrEncode for {name} {{\n"));
     out.push_str("    fn encode(&self, writer: &mut zerodds_cdr::BufferWriter) -> ::core::result::Result<(), zerodds_cdr::EncodeError> {\n");
-    out.push_str("        match self {\n");
+    let (open, body_writer, indent) = if appendable {
+        out.push_str("        if writer.max_alignment() == 4 {\n");
+        out.push_str("            zerodds_cdr::struct_enc::encode_appendable(writer, |w| {\n");
+        emit_union_match_encode(out, &name, cases, switch_ty, dd, "w", "                ");
+        out.push_str("                Ok(())\n");
+        out.push_str("            })?;\n");
+        out.push_str("        } else {\n");
+        (true, "writer", "            ")
+    } else {
+        (false, "writer", "        ")
+    };
+    emit_union_match_encode(out, &name, cases, switch_ty, dd, body_writer, indent);
+    if open {
+        out.push_str("        }\n");
+    }
+    out.push_str("        ::core::result::Result::Ok(())\n");
+    out.push_str("    }\n}\n");
+}
+
+/// Emits the `match self { .. }` discriminator+member encode into `writer_expr`.
+fn emit_union_match_encode(
+    out: &mut String,
+    name: &str,
+    cases: &[UnionCase],
+    switch_ty: &str,
+    dd: i128,
+    writer_expr: &str,
+    indent: &str,
+) {
+    out.push_str(indent);
+    out.push_str("match self {\n");
     for c in cases {
         let disc = c.value_labels.first().copied().unwrap_or(dd);
-        out.push_str(&format!("            {name}::{}(__v) => {{\n", c.variant));
+        out.push_str(&format!("{indent}    {name}::{}(__v) => {{\n", c.variant));
         out.push_str(&format!(
-            "                <{switch_ty} as zerodds_cdr::CdrEncode>::encode(&(({disc}) as {switch_ty}), writer)?;\n"
+            "{indent}        <{switch_ty} as zerodds_cdr::CdrEncode>::encode(&(({disc}) as {switch_ty}), {writer_expr})?;\n"
         ));
         // Bounded-collection enforcement on the active arm (DDS-XTypes §7.4.3),
         // shared with the struct path. `__v` is the matched `&<arm-type>`.
         let mut checks = String::new();
         crate::struct_emit::emit_bound_checks_decl(&mut checks, &c.type_spec, &c.declarator, "__v");
         if !checks.is_empty() {
-            out.push_str(&format!("                {checks}\n"));
+            out.push_str(&format!("{indent}        {checks}\n"));
         }
-        out.push_str("                <_ as zerodds_cdr::CdrEncode>::encode(__v, writer)?;\n");
-        out.push_str("            }\n");
+        out.push_str(&format!(
+            "{indent}        <_ as zerodds_cdr::CdrEncode>::encode(__v, {writer_expr})?;\n"
+        ));
+        out.push_str(&format!("{indent}    }}\n"));
     }
-    out.push_str("        }\n");
-    out.push_str("        ::core::result::Result::Ok(())\n");
-    out.push_str("    }\n}\n");
+    out.push_str(indent);
+    out.push_str("}\n");
 }
 
 fn emit_union_cdr_decode(out: &mut String, u: &UnionDef, cases: &[UnionCase], switch_ty: &str) {
     let name = escape_keyword(&u.name.text);
+    let appendable = matches!(
+        crate::annotations::struct_extensibility(&u.annotations),
+        crate::annotations::StructExtensibility::Appendable
+    );
     out.push_str(&format!("\nimpl zerodds_cdr::CdrDecode for {name} {{\n"));
     out.push_str("    fn decode(reader: &mut zerodds_cdr::BufferReader<'_>) -> ::core::result::Result<Self, zerodds_cdr::DecodeError> {\n");
+    if appendable {
+        // XCDR2: strip the per-element DHEADER (rule (30)), symmetric to encode.
+        out.push_str("        if reader.max_alignment() == 4 {\n");
+        out.push_str(
+            "            return zerodds_cdr::struct_enc::decode_appendable(reader, |r| {\n",
+        );
+        emit_union_disc_match_decode(
+            out,
+            &name,
+            &u.name.text,
+            cases,
+            switch_ty,
+            "r",
+            "                ",
+        );
+        out.push_str("            });\n");
+        out.push_str("        }\n");
+    }
+    emit_union_disc_match_decode(
+        out,
+        &name,
+        &u.name.text,
+        cases,
+        switch_ty,
+        "reader",
+        "        ",
+    );
+    out.push_str("    }\n}\n");
+}
+
+/// Emits the `let __disc = ..; match __disc { .. }` decode into `reader_expr`.
+fn emit_union_disc_match_decode(
+    out: &mut String,
+    name: &str,
+    raw_name: &str,
+    cases: &[UnionCase],
+    switch_ty: &str,
+    reader_expr: &str,
+    indent: &str,
+) {
     out.push_str(&format!(
-        "        let __disc = <{switch_ty} as zerodds_cdr::CdrDecode>::decode(reader)?;\n"
+        "{indent}let __disc = <{switch_ty} as zerodds_cdr::CdrDecode>::decode({reader_expr})?;\n"
     ));
-    out.push_str("        match __disc as i128 {\n");
+    out.push_str(indent);
+    out.push_str("match __disc as i128 {\n");
     for c in cases {
         if c.value_labels.is_empty() {
             continue; // default-only case → falls into the _ arm
@@ -162,55 +249,31 @@ fn emit_union_cdr_decode(out: &mut String, u: &UnionDef, cases: &[UnionCase], sw
             .collect::<Vec<_>>()
             .join(" | ");
         out.push_str(&format!(
-            "            {pat} => ::core::result::Result::Ok({name}::{}(<{} as zerodds_cdr::CdrDecode>::decode(reader)?)),\n",
+            "{indent}    {pat} => ::core::result::Result::Ok({name}::{}(<{} as zerodds_cdr::CdrDecode>::decode({reader_expr})?)),\n",
             c.variant, c.elem_type
         ));
     }
     if let Some(dc) = cases.iter().find(|c| c.is_default) {
         out.push_str(&format!(
-            "            _ => ::core::result::Result::Ok({name}::{}(<{} as zerodds_cdr::CdrDecode>::decode(reader)?)),\n",
+            "{indent}    _ => ::core::result::Result::Ok({name}::{}(<{} as zerodds_cdr::CdrDecode>::decode({reader_expr})?)),\n",
             dc.variant, dc.elem_type
         ));
     } else {
         out.push_str(&format!(
-            "            _ => ::core::result::Result::Err(zerodds_cdr::DecodeError::InvalidEnum {{ kind: \"{}\", value: __disc as u32 }}),\n",
-            u.name.text
+            "{indent}    _ => ::core::result::Result::Err(zerodds_cdr::DecodeError::InvalidEnum {{ kind: \"{raw_name}\", value: __disc as u32 }}),\n"
         ));
     }
-    out.push_str("        }\n");
-    out.push_str("    }\n}\n");
+    out.push_str(indent);
+    out.push_str("}\n");
 }
 
 /// Evaluates a case-label ConstExpr to i128 (integer literal, optionally unary).
 ///
 /// zerodds-lint: recursion-depth 64 (Const-Expr-Tree; bounded by IDL nesting)
 fn const_label_as_i128(expr: &ConstExpr) -> Option<i128> {
-    use zerodds_idl::ast::types::{ConstExpr as CE, LiteralKind, UnaryOp};
-    match expr {
-        CE::Literal(lit) if lit.kind == LiteralKind::Integer => parse_int_literal_i128(&lit.raw),
-        CE::Unary { op, operand, .. } => {
-            let v = const_label_as_i128(operand)?;
-            match op {
-                UnaryOp::Plus => Some(v),
-                UnaryOp::Minus => Some(v.checked_neg()?),
-                UnaryOp::BitNot => Some(!v),
-            }
-        }
-        _ => None,
-    }
-}
-
-fn parse_int_literal_i128(raw: &str) -> Option<i128> {
-    let t = raw.trim_end_matches(['u', 'U', 'l', 'L']);
-    if let Some(h) = t.strip_prefix("0x").or_else(|| t.strip_prefix("0X")) {
-        i128::from_str_radix(h, 16).ok()
-    } else if let Some(o) = t.strip_prefix("0o").or_else(|| t.strip_prefix("0O")) {
-        i128::from_str_radix(o, 8).ok()
-    } else if let Some(b) = t.strip_prefix("0b").or_else(|| t.strip_prefix("0B")) {
-        i128::from_str_radix(b, 2).ok()
-    } else {
-        t.parse::<i128>().ok()
-    }
+    // Resolves integer literals, enum literals (e.g. `case K_A:`), named consts,
+    // and arithmetic — via the codegen const/enum registry (Bug H/L).
+    crate::type_map::const_expr_as_i128(expr)
 }
 
 fn emit_case_variant(out: &mut String, case: &Case) -> Result<()> {
@@ -246,9 +309,9 @@ fn switch_repr(spec: &SwitchTypeSpec) -> Result<&'static str> {
         SwitchTypeSpec::Integer(IntegerType::ULongLong | IntegerType::UInt64) => Ok("u64"),
         SwitchTypeSpec::Char | SwitchTypeSpec::Octet => Ok("u8"),
         SwitchTypeSpec::Boolean => Ok("u8"),
-        SwitchTypeSpec::Scoped(_) => Err(RustGenError::Unsupported {
-            what: "union discriminator scoped",
-            at: 0,
-        }),
+        // An enum (or a typedef resolving to one) is the common scoped
+        // discriminator. DDS enums are 32-bit on the wire (§7.4.5.1), so the
+        // discriminant repr is i32 — matching `enum_emit`'s `#[repr(i32)]`.
+        SwitchTypeSpec::Scoped(_) => Ok("i32"),
     }
 }

@@ -8,7 +8,7 @@
 //! type-name does under `use_xtypes=no` (match keyed on topic + type-name), so
 //! this in-process scenario proves the cross-vendor INGEST capability without a
 //! foreign binary. The real-vendor wire confirmation runs on codepit
-//! (docs/interop/durability-cross-vendor-ingest-followup.md).
+//! (internal/interop/durability-cross-vendor-ingest-followup.md).
 //!
 //! Own test binary = isolated process (process-global DDS state).
 

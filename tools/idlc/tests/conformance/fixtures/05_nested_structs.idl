@@ -1,0 +1,9 @@
+// Conformance feature: nested struct members + cross-referencing types.
+module conf {
+  struct Inner { long x; long y; };
+  struct Middle { Inner a; Inner b; };
+  struct Outer {
+    Middle m;
+    Inner  direct;
+  };
+};

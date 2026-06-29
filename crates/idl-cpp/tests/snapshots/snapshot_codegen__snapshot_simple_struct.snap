@@ -11,6 +11,7 @@ expression: cpp
 #include "dds/topic/TopicTraits.hpp"
 #include "dds/topic/xcdr2.hpp"
 #include "dds/topic/xcdr2_md5.hpp"
+#include "dds/core/Fixed.hpp"
 
 class Point {
 public:
@@ -42,52 +43,72 @@ struct topic_type_support<::Point> {
     static const char* type_name() { return "Point"; }
     static constexpr bool is_keyed() { return false; }
     static constexpr ::dds::topic::core::policy::DataRepresentationKind extensibility() { return ::dds::topic::core::policy::DataRepresentationKind::APPENDABLE; }
-    static std::vector<uint8_t> encode(const ::Point& __v) {
-        return encode(__v, ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
+    static std::vector<uint8_t> encode(const ::Point& zd_v);
+    static std::vector<uint8_t> encode(const ::Point& zd_v, ::dds::topic::xcdr2::XcdrVersion zd_repr);
+    static std::vector<uint8_t> encode_be(const ::Point& zd_v);
+    static std::vector<uint8_t> encode_be(const ::Point& zd_v, ::dds::topic::xcdr2::XcdrVersion zd_repr);
+    static ::Point decode(const uint8_t* zd_buf, size_t zd_len, ::dds::topic::xcdr2::XcdrVersion zd_repr, bool zd_be = false);
+    static std::array<uint8_t, 16> key_hash(const ::Point& zd_v);
+};
+
+inline std::vector<uint8_t> topic_type_support<::Point>::encode(const ::Point& zd_v) {
+        return encode(zd_v, ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
     }
-    static std::vector<uint8_t> encode(const ::Point& __v, ::dds::topic::xcdr2::XcdrVersion __repr) {
-        std::vector<uint8_t> __out;
-        (void)__v;
-        const size_t __max_align = ::dds::topic::xcdr2::xcdr_max_align(__repr);
-        (void)__max_align;
-        const auto __dh = ::dds::topic::xcdr2::dheader_begin(__out);
-        const size_t __origin = __out.size();
-        (void)__origin;
-        ::dds::topic::xcdr2::write_le_origin<int32_t>(__out, __origin, __v.x(), __max_align);
-        ::dds::topic::xcdr2::write_le_origin<int32_t>(__out, __origin, __v.y(), __max_align);
-        ::dds::topic::xcdr2::dheader_end(__out, __dh);
-        return __out;
+inline std::vector<uint8_t> topic_type_support<::Point>::encode(const ::Point& zd_v, ::dds::topic::xcdr2::XcdrVersion zd_repr) {
+        std::vector<uint8_t> zd_out;
+        (void)zd_v;
+        const size_t zd_max_align = ::dds::topic::xcdr2::xcdr_max_align(zd_repr);
+        (void)zd_max_align;
+        const bool zd_x1 = (zd_repr == ::dds::topic::xcdr2::XcdrVersion::Xcdr1);
+        size_t zd_dh = 0; (void)zd_dh;
+        if (!zd_x1) { zd_dh = ::dds::topic::xcdr2::dheader_begin(zd_out); }
+        const size_t zd_origin = zd_out.size();
+        (void)zd_origin;
+        ::dds::topic::xcdr2::write_le_origin<int32_t>(zd_out, zd_origin, zd_v.x(), zd_max_align);
+        ::dds::topic::xcdr2::write_le_origin<int32_t>(zd_out, zd_origin, zd_v.y(), zd_max_align);
+        if (!zd_x1) { ::dds::topic::xcdr2::dheader_end(zd_out, zd_dh, false); }
+        return zd_out;
     }
-    static std::vector<uint8_t> encode_be(const ::Point& __v) {
-        std::vector<uint8_t> __out;
-        (void)__v;
-        const auto __dh = ::dds::topic::xcdr2::dheader_begin(__out);
-        const size_t __origin = __out.size();
-        (void)__origin;
-        ::dds::topic::xcdr2::write_be_origin<int32_t>(__out, __origin, __v.x());
-        ::dds::topic::xcdr2::write_be_origin<int32_t>(__out, __origin, __v.y());
-        ::dds::topic::xcdr2::dheader_end(__out, __dh);
-        return __out;
+inline std::vector<uint8_t> topic_type_support<::Point>::encode_be(const ::Point& zd_v) {
+        return encode_be(zd_v, ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
     }
-    static ::Point decode(const uint8_t* __buf, size_t __len, ::dds::topic::xcdr2::XcdrVersion __repr) {
-        size_t __pos = 0;
-        ::Point __v;
-        const size_t __max_align = ::dds::topic::xcdr2::xcdr_max_align(__repr);
-        (void)__buf; (void)__len; (void)__pos; (void)__max_align;
-        const auto __dh = ::dds::topic::xcdr2::dheader_read(__buf, __pos, __len);
-        const size_t __origin = __pos;
-        const size_t __end = __origin + __dh;
-        (void)__end;
-        __v.x(::dds::topic::xcdr2::read_le_origin<int32_t>(__buf, __pos, __len, __origin, __max_align));
-        __v.y(::dds::topic::xcdr2::read_le_origin<int32_t>(__buf, __pos, __len, __origin, __max_align));
-        if (__pos < __end) __pos = __end;
-        return __v;
+inline std::vector<uint8_t> topic_type_support<::Point>::encode_be(const ::Point& zd_v, ::dds::topic::xcdr2::XcdrVersion zd_repr) {
+        std::vector<uint8_t> zd_out;
+        (void)zd_v;
+        const size_t zd_max_align = ::dds::topic::xcdr2::xcdr_max_align(zd_repr);
+        (void)zd_max_align;
+        const bool zd_x1 = (zd_repr == ::dds::topic::xcdr2::XcdrVersion::Xcdr1);
+        size_t zd_dh = 0; (void)zd_dh;
+        if (!zd_x1) { zd_dh = ::dds::topic::xcdr2::dheader_begin(zd_out); }
+        const size_t zd_origin = zd_out.size();
+        (void)zd_origin;
+        ::dds::topic::xcdr2::write_be_origin<int32_t>(zd_out, zd_origin, zd_v.x(), zd_max_align);
+        ::dds::topic::xcdr2::write_be_origin<int32_t>(zd_out, zd_origin, zd_v.y(), zd_max_align);
+        if (!zd_x1) { ::dds::topic::xcdr2::dheader_end(zd_out, zd_dh, true); }
+        return zd_out;
     }
-    static std::array<uint8_t, 16> key_hash(const ::Point& __v) {
-        (void)__v;
+inline ::Point topic_type_support<::Point>::decode(const uint8_t* zd_buf, size_t zd_len, ::dds::topic::xcdr2::XcdrVersion zd_repr, bool zd_be) {
+        size_t zd_pos = 0;
+        ::Point zd_v;
+        const size_t zd_max_align = ::dds::topic::xcdr2::xcdr_max_align(zd_repr);
+        (void)zd_buf; (void)zd_len; (void)zd_pos; (void)zd_max_align; (void)zd_be;
+        const bool zd_x1 = (zd_repr == ::dds::topic::xcdr2::XcdrVersion::Xcdr1);
+        size_t zd_end = zd_len;
+        if (!zd_x1) {
+            const auto zd_dh = ::dds::topic::xcdr2::dheader_read(zd_buf, zd_pos, zd_len, zd_be);
+            zd_end = zd_pos + zd_dh;
+        }
+        const size_t zd_origin = zd_pos;
+        (void)zd_end;
+        zd_v.x(::dds::topic::xcdr2::read_le_origin<int32_t>(zd_buf, zd_pos, zd_len, zd_origin, zd_max_align, zd_be));
+        zd_v.y(::dds::topic::xcdr2::read_le_origin<int32_t>(zd_buf, zd_pos, zd_len, zd_origin, zd_max_align, zd_be));
+        if (!zd_x1 && zd_pos < zd_end) zd_pos = zd_end;
+        return zd_v;
+    }
+inline std::array<uint8_t, 16> topic_type_support<::Point>::key_hash(const ::Point& zd_v) {
+        (void)zd_v;
         return std::array<uint8_t, 16>{{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
     }
-};
 
 } // namespace topic
 } // namespace dds

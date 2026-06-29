@@ -23,10 +23,21 @@ using ZeroDDS.Topic;
 namespace ZeroDDS;
 
 /// <summary>
+/// Non-generic capability marker so the DDS entity layer (whose <c>T</c> is not
+/// constrained to <c>notnull</c>) can obtain a keyed-instance key hash from a
+/// generated TypeSupport without a generic-constraint mismatch.
+/// </summary>
+public interface IKeyHashProvider
+{
+    /// <summary>16-byte XTypes key hash (§7.6.8) of <paramref name="sample"/>.</summary>
+    byte[] KeyHashOf(object sample);
+}
+
+/// <summary>
 /// Adapter exposing an <see cref="IDdsTopicType{T}"/> (codegen output) as the
 /// <see cref="ITopicTraits{T}"/> the DDS entity layer consumes.
 /// </summary>
-public sealed class DdsTopicTypeTraits<T> : ITopicTraits<T> where T : notnull
+public sealed class DdsTopicTypeTraits<T> : ITopicTraits<T>, IKeyHashProvider where T : notnull
 {
     private readonly IDdsTopicType<T> _ts;
 
@@ -45,6 +56,23 @@ public sealed class DdsTopicTypeTraits<T> : ITopicTraits<T> where T : notnull
 
     /// <inheritdoc/>
     public T Decode(ReadOnlySpan<byte> bytes) => _ts.Decode(bytes);
+
+    /// <inheritdoc/>
+    public T Decode(ReadOnlySpan<byte> bytes, EndianMode endian) => _ts.Decode(bytes, endian);
+
+    /// <inheritdoc/>
+    public T Decode(ReadOnlySpan<byte> bytes, EndianMode endian, int representation) =>
+        _ts.Decode(bytes, endian, representation);
+
+    /// <summary>
+    /// 16-byte XTypes key hash (§7.6.8) of the instance carried by
+    /// <paramref name="value"/>. Used to drive keyed-instance lifecycle
+    /// (register/dispose/unregister) over the C-FFI.
+    /// </summary>
+    public byte[] KeyHash(T value) => _ts.KeyHash(value);
+
+    /// <inheritdoc/>
+    byte[] IKeyHashProvider.KeyHashOf(object sample) => _ts.KeyHash((T)sample);
 }
 
 /// <summary>

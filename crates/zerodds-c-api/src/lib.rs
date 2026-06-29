@@ -225,6 +225,31 @@ pub unsafe extern "C" fn zerodds_runtime_create(domain_id: u32) -> *mut ZeroDdsR
     Box::into_raw(handle)
 }
 
+/// Like [`zerodds_runtime_create`] but with the **ROS-2 out-of-the-box profile**
+/// ([`RuntimeConfig::ros_defaults`]): the reader announces both XCDR1 and XCDR2
+/// data representations, so a ZeroDDS node matches `rmw_cyclonedds`/
+/// `rmw_fastrtps` writers that emit XCDR1 for final/simple types
+/// (e.g. `std_msgs/String`) without any `ZERODDS_DATA_REPR_OFFER` env tuning.
+/// This is what `rmw_zerodds` uses, so ROS-2 interop works config-free.
+///
+/// # Safety
+/// Same as [`zerodds_runtime_create`].
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zerodds_runtime_create_ros_defaults(
+    domain_id: u32,
+) -> *mut ZeroDdsRuntime {
+    let cfg = RuntimeConfig::ros_defaults();
+    let rt = match DcpsRuntime::start(domain_id as i32, random_guid_prefix(), cfg) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("zerodds_runtime_create_ros_defaults(domain_id={domain_id}) failed: {e:?}");
+            return ptr::null_mut();
+        }
+    };
+    let handle = Box::new(ZeroDdsRuntime { rt, _shutdown: () });
+    Box::into_raw(handle)
+}
+
 /// Destroys a runtime. NULL-safe.
 ///
 /// # Safety
@@ -914,6 +939,40 @@ pub unsafe extern "C" fn zerodds_writer_unregister_with_dispose(
     }
 }
 
+/// Number of remote DataReaders currently matched to this writer (DDS 1.4
+/// §2.2.4.2 PublicationMatchedStatus.current_count). Powers
+/// `rmw_publisher_count_matched_subscriptions` → `Publisher.get_subscription_count()`
+/// in rclpy/rclcpp. Returns `0` on a NULL handle.
+///
+/// # Safety
+/// `writer` must come from `zerodds_writer_create*` or be NULL.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zerodds_writer_matched_count(writer: *mut ZeroDdsWriter) -> usize {
+    if writer.is_null() {
+        return 0;
+    }
+    // SAFETY: writer NULL-checked; caller pledge it came from writer_create*.
+    let w = unsafe { &*writer };
+    w.rt.user_writer_matched_count(w.eid)
+}
+
+/// Number of remote DataWriters currently matched to this reader (DDS 1.4
+/// §2.2.4.2 SubscriptionMatchedStatus.current_count). Powers
+/// `rmw_subscription_count_matched_publishers` → `Subscription.get_publisher_count()`.
+/// Returns `0` on a NULL handle.
+///
+/// # Safety
+/// `reader` must come from `zerodds_reader_create*` or be NULL.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zerodds_reader_matched_count(reader: *mut ZeroDdsReader) -> usize {
+    if reader.is_null() {
+        return 0;
+    }
+    // SAFETY: reader NULL-checked; caller pledge it came from reader_create*.
+    let r = unsafe { &*reader };
+    r.rt.user_reader_matched_count(r.eid)
+}
+
 /// Destroys a writer. NULL-safe.
 ///
 /// # Safety
@@ -1074,6 +1133,10 @@ pub unsafe extern "C" fn zerodds_reader_create_kind(
 /// wire sample. The typed consumer needs this to decode the body
 /// with the correct alignment rule. NULL = ignore.
 ///
+/// This little-endian-default form does not surface the wire byte order;
+/// a consumer that must decode a big-endian peer uses
+/// [`zerodds_reader_take_endian`].
+///
 /// # Safety
 /// Pointers must be valid. `out_repr` may be NULL.
 #[unsafe(no_mangle)]
@@ -1082,6 +1145,27 @@ pub unsafe extern "C" fn zerodds_reader_take(
     out_buf: *mut *mut u8,
     out_len: *mut usize,
     out_repr: *mut u8,
+) -> c_int {
+    // SAFETY: delegates to the endian-aware form with a NULL `out_be`.
+    unsafe { zerodds_reader_take_endian(reader, out_buf, out_len, out_repr, ptr::null_mut()) }
+}
+
+/// Like [`zerodds_reader_take`], plus `out_be` (nullable): receives the wire
+/// byte order — `0` = little-endian (the canonical XCDR2 wire), `1` =
+/// big-endian — derived from the encapsulation representation identifier
+/// (RTPS 2.5 §10.5). A typed FFI consumer dispatches its little-endian vs
+/// big-endian decoder on this, so a big-endian peer's sample decodes
+/// correctly. NULL = ignore (assume little-endian).
+///
+/// # Safety
+/// Pointers must be valid. `out_repr` and `out_be` may be NULL.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zerodds_reader_take_endian(
+    reader: *mut ZeroDdsReader,
+    out_buf: *mut *mut u8,
+    out_len: *mut usize,
+    out_repr: *mut u8,
+    out_be: *mut u8,
 ) -> c_int {
     if reader.is_null() || out_buf.is_null() || out_len.is_null() {
         return ZeroDdsStatus::BadHandle as c_int;
@@ -1097,9 +1181,10 @@ pub unsafe extern "C" fn zerodds_reader_take(
                     Some(zerodds_dcps::runtime::UserSample::Alive {
                         payload: b,
                         representation,
+                        big_endian,
                         ..
                     }) => {
-                        break Some((b, representation));
+                        break Some((b, representation, big_endian));
                     }
                     Some(zerodds_dcps::runtime::UserSample::Lifecycle { .. }) => continue,
                     None => break None,
@@ -1112,7 +1197,7 @@ pub unsafe extern "C" fn zerodds_reader_take(
             }
         };
         match bytes {
-            Some((bs, repr)) => {
+            Some((bs, repr, be)) => {
                 // Hand over a heap buffer — the caller frees via zerodds_buffer_free.
                 // SampleBytes -> Vec materialization at the C-FFI boundary.
                 let mut boxed = bs.to_vec().into_boxed_slice();
@@ -1123,12 +1208,18 @@ pub unsafe extern "C" fn zerodds_reader_take(
                 if !out_repr.is_null() {
                     *out_repr = repr;
                 }
+                if !out_be.is_null() {
+                    *out_be = u8::from(be);
+                }
             }
             None => {
                 *out_buf = ptr::null_mut();
                 *out_len = 0;
                 if !out_repr.is_null() {
                     *out_repr = 0;
+                }
+                if !out_be.is_null() {
+                    *out_be = 0;
                 }
             }
         }
@@ -1240,6 +1331,35 @@ pub unsafe extern "C" fn zerodds_reader_unknown_src_count(reader: *mut ZeroDdsRe
     r.rt.user_reader_unknown_src_count(r.eid)
 }
 
+/// A2 — arm TIME_BASED_FILTER (DDS 1.4 §2.2.3.12) on a reader: it then delivers
+/// at most one sample per instance per `min_separation_nanos`; closer-spaced
+/// samples are dropped before `zerodds_reader_take`/the data callback sees them.
+/// `0` disables the filter. ROS 2 exposes no TIME_BASED_FILTER field in
+/// `rmw_qos_profile_t`, so `rmw_zerodds` calls this from the
+/// `ZERODDS_TIME_BASED_FILTER` env to rate-limit a subscription. Returns `0` on
+/// success, `-1` on a NULL/unknown reader.
+///
+/// # Safety
+/// `reader` must come from `zerodds_reader_create*` or be NULL.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zerodds_reader_set_time_based_filter_ns(
+    reader: *mut ZeroDdsReader,
+    min_separation_nanos: u64,
+) -> c_int {
+    if reader.is_null() {
+        return -1;
+    }
+    // SAFETY: reader NULL-checked; caller pledge it came from reader_create*.
+    let r = unsafe { &*reader };
+    if r.rt
+        .set_user_reader_time_based_filter(r.eid, u128::from(min_separation_nanos))
+    {
+        0
+    } else {
+        -1
+    }
+}
+
 /// Destroys a reader handle and releases its resources.
 ///
 /// # Safety
@@ -1285,6 +1405,10 @@ pub unsafe extern "C" fn zerodds_reader_destroy(reader: *mut ZeroDdsReader) {
 /// * `representation` is the XCDR version of the sample: `0` = XCDR1,
 ///   `1` = XCDR2. The typed consumer needs it to decode the body
 ///   with the correct alignment rule.
+/// * `big_endian` is the wire byte order from the encapsulation header
+///   (RTPS 2.5 §10.5): `0` = little-endian, `1` = big-endian. The typed
+///   consumer dispatches the little-endian vs big-endian decoder on it.
+///   Intra-runtime / durability-replay samples are always `0`.
 /// * Disposed/unregistered lifecycle events do NOT fire the callback.
 ///
 /// # Safety
@@ -1296,6 +1420,7 @@ pub type ZeroDdsDataCallback = extern "C" fn(
     payload: *const u8,
     payload_len: usize,
     representation: u8,
+    big_endian: u8,
 );
 
 /// Sets a data-available callback (or clears it with NULL).
@@ -1320,12 +1445,13 @@ pub unsafe extern "C" fn zerodds_reader_set_data_callback(
             // in the closure we cast it back. Per the contract the caller must keep
             // user_data alive until the listener is cleared with NULL.
             let ud_addr = user_data as usize;
-            Some(Box::new(move |bytes: &[u8], repr: u8| {
+            Some(Box::new(move |bytes: &[u8], repr: u8, big_endian: u8| {
                 cb(
                     ud_addr as *mut core::ffi::c_void,
                     bytes.as_ptr(),
                     bytes.len(),
                     repr,
+                    big_endian,
                 );
             }))
         }

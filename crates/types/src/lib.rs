@@ -20,7 +20,7 @@
 //!
 //! Layer 1 — primitives. Direct dependents: `zerodds-discovery`,
 //! `zerodds-dcps`, `zerodds-idl`, `zerodds-rpc`, `zerodds-xml`.
-//! Architecture + RFC: `docs/rfcs/0004-xtypes-integration.md`.
+//! Architecture + RFC: `internal/rfcs/0004-xtypes-integration.md`.
 //!
 //! ## Public-API modules
 //!

@@ -7,7 +7,7 @@
 //! the wire). The Rust field type is an unbounded `Vec<T>` / `String`, so the
 //! codegen enforces the bound at encode time — recursively (nested sequences),
 //! over array elements, and for narrow strings (byte length).
-//! See docs/interop/bounded-sequence-enforcement-followup.md.
+//! See internal/interop/bounded-sequence-enforcement-followup.md.
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, missing_docs)]
 
@@ -29,6 +29,22 @@ fn bounded_sequence_emits_encode_bound_check() {
     assert!(
         out.contains("ValueOutOfRange"),
         "the bound violation must surface as EncodeError::ValueOutOfRange:\n{out}"
+    );
+}
+
+#[test]
+fn bound_check_error_is_into_converted() {
+    // The bound violation is constructed as `zerodds_cdr::EncodeError`, but the
+    // `DdsType::encode` member path returns `zerodds_dcps::EncodeError`. The
+    // `return Err(...)` MUST `.into()`-convert or the generated `DdsType` impl
+    // does not compile (the bounded seq lives directly on a top-level type).
+    // Both error contexts (cdr-returning union arm, dcps-returning DdsType
+    // member) compile because `.into()` is identity in the cdr case and a real
+    // `From` conversion in the dcps case.
+    let out = gen_rust("@final struct Cap { sequence<octet, 4> data; };");
+    assert!(
+        out.contains("ValueOutOfRange { message: \"bounded sequence length exceeds its IDL bound (4)\" }.into()"),
+        "the bound-violation error must be `.into()`-converted so the DdsType encode path compiles:\n{out}"
     );
 }
 

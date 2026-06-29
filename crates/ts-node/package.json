@@ -13,8 +13,9 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "test": "node --test --import tsx test/smoke.test.ts test/xcdr2-wire-vectors.test.ts",
-    "test:wire": "node --test --import tsx test/xcdr2-wire-vectors.test.ts"
+    "test": "node --test --test-concurrency=1 --import tsx test/smoke.test.ts test/xcdr2-wire-vectors.test.ts test/qos.test.ts",
+    "test:wire": "node --test --import tsx test/xcdr2-wire-vectors.test.ts",
+    "test:qos": "node --test --import tsx test/qos.test.ts"
   },
   "dependencies": {
     "koffi": "^2.10.0"

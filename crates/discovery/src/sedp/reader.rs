@@ -165,7 +165,7 @@ impl SedpPublicationsReader {
         source_prefix: GuidPrefix,
         data: &DataSubmessage,
     ) -> Result<Vec<PublicationBuiltinTopicData>, SedpReaderError> {
-        let samples = self.inner.handle_data(source_prefix, data);
+        let samples = self.inner.handle_data(source_prefix, data, None);
         decode_publication_samples(samples.into_iter().map(|s| s.payload))
     }
 
@@ -179,7 +179,7 @@ impl SedpPublicationsReader {
         df: &DataFragSubmessage,
         now: Duration,
     ) -> Result<Vec<PublicationBuiltinTopicData>, SedpReaderError> {
-        let samples = self.inner.handle_data_frag(source_prefix, df, now);
+        let samples = self.inner.handle_data_frag(source_prefix, df, now, None);
         decode_publication_samples(samples.into_iter().map(|s| s.payload))
     }
 
@@ -318,7 +318,7 @@ impl SedpSubscriptionsReader {
         source_prefix: GuidPrefix,
         data: &DataSubmessage,
     ) -> Result<Vec<SubscriptionBuiltinTopicData>, SedpReaderError> {
-        let samples = self.inner.handle_data(source_prefix, data);
+        let samples = self.inner.handle_data(source_prefix, data, None);
         decode_subscription_samples(samples.into_iter().map(|s| s.payload))
     }
 
@@ -332,7 +332,7 @@ impl SedpSubscriptionsReader {
         df: &DataFragSubmessage,
         now: Duration,
     ) -> Result<Vec<SubscriptionBuiltinTopicData>, SedpReaderError> {
-        let samples = self.inner.handle_data_frag(source_prefix, df, now);
+        let samples = self.inner.handle_data_frag(source_prefix, df, now, None);
         decode_subscription_samples(samples.into_iter().map(|s| s.payload))
     }
 

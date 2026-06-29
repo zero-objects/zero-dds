@@ -197,17 +197,32 @@ pub unsafe extern "C" fn zerodds_pub_create_datawriter(
             liveliness: qos.liveliness.clone(),
             ownership: qos.ownership.kind,
             ownership_strength: qos.ownership_strength.value,
-            partition: Vec::new(),
-            user_data: Vec::new(),
-            topic_data: Vec::new(),
-            group_data: Vec::new(),
+            // QB-cluster: plumb PARTITION from the Publisher/writer QoS onto the
+            // endpoint config so `partitions_overlap` (DDS 1.4 §2.2.3.10) gates
+            // matching. Previously hardcoded empty → every writer landed in the
+            // default partition regardless of the requested names.
+            partition: qos.partition.names.clone(),
+            user_data: qos.user_data.value.clone(),
+            topic_data: qos.topic_data.value.clone(),
+            group_data: qos.group_data.value.clone(),
             type_identifier: zerodds_types::TypeIdentifier::default(),
-            data_representation_offer: None,
+            data_representation_offer: qos.data_representation.clone(),
         };
         let eid = match rt.register_user_writer(cfg) {
             Ok(e) => e,
             Err(_) => return ptr::null_mut(),
         };
+        // QB-cluster: wire HISTORY keep-last DEPTH onto the runtime writer slot
+        // (DDS 1.4 §2.2.3.18) so the TransientLocal retain path caps per-instance
+        // retained samples. KeepAll → unbounded.
+        {
+            use zerodds_qos::HistoryKind;
+            let depth = match qos.history.kind {
+                HistoryKind::KeepLast => qos.history.depth.max(1) as usize,
+                HistoryKind::KeepAll => usize::MAX,
+            };
+            let _ = rt.set_user_writer_history_depth(eid, depth);
+        }
 
         let dw = Box::new(ZeroDdsDataWriter {
             publisher: pub_,
@@ -215,6 +230,7 @@ pub unsafe extern "C" fn zerodds_pub_create_datawriter(
             rt,
             eid,
             qos: Mutex::new(qos),
+            partition_out: Mutex::new(Default::default()),
         });
         let dw_ptr = Box::into_raw(dw);
         if let Ok(mut list) = pp.datawriters.lock() {

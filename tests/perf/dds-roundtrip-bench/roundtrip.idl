@@ -41,17 +41,34 @@ module RoundtripBench {
     ///   Echo-Sender kopiert den Wert unveraendert ins Echo, der
     ///   Empfaenger berechnet `now - t_send_ns`.
     /// * `payload` -- variable-size `sequence<octet>` zum Sweep ueber
-    ///   Groessen (32 / 64 / 256 / 1024 / 4096 Byte).
+    ///   Groessen (0 … 8192 Byte in 10%-Schritten).
+    // @topic — markiert den Struct als DDS-Topic-Type. OpenDDS'
+    // opendds_idl generiert NUR fuer @topic-annotierte Structs die
+    // TypeSupport (DataWriter/DataReader/TypeSupportImpl). Cyclone-
+    // idlc, fastddsgen und rtiddsgen behandeln ohnehin jeden Struct
+    // als Topic-faehig — die Annotation ist cross-vendor-neutral
+    // (XTypes 1.3 §7.3.1.2.1.5).
+    // @autoid(SEQUENTIAL) + explizite @id pro Member: erzwingt ueber
+    // ALLE Vendor-Codegens (rtiddsgen / idlc / fastddsgen / opendds_idl /
+    // idl-cpp) identische Member-IDs im TypeObject. Ohne das leiten die
+    // Codegens bei einem @final-Struct zwar dasselbe Wire-Layout ab,
+    // aber teils abweichende TypeObject-Member-IDs — RTI Connext erzwingt
+    // Type-Consistency strikt und weist einen TypeObject mit fremden
+    // Member-IDs/Hash ab (Discovery scheitert, kein Match). Mit pinned
+    // @id ist der TypeObject byte-identisch ueber alle Stacks
+    // (XTypes 1.3 §7.3.1.2.1.1 „Member ID assignment").
+    @topic
     @final
+    @autoid(SEQUENTIAL)
     struct Roundtrip {
-        unsigned long           sequence_id;
-        unsigned long long      t_send_ns;
+        @id(0) unsigned long           sequence_id;
+        @id(1) unsigned long long      t_send_ns;
         // Bounded sequence — 8192 ist groesser als unsere maximale
-        // Sweep-Payload-Groesse (4096). Explizite bound, damit RTI/
-        // FastDDS/Cyclone nicht unterschiedliche Defaults nehmen
-        // (RTI default 100, FastDDS unbounded). Mit gleicher bound
-        // generieren alle drei dasselbe Wire-Layout.
-        sequence<octet, 8192>   payload;
+        // Sweep-Payload-Groesse. Explizite bound, damit RTI/FastDDS/
+        // Cyclone nicht unterschiedliche Defaults nehmen (RTI default
+        // 100, FastDDS unbounded). Mit gleicher bound generieren alle
+        // dasselbe Wire-Layout.
+        @id(2) sequence<octet, 8192>   payload;
     };
 
 };

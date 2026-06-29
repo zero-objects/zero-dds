@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # L4 Isolation: Sender und Receiver auf verschiedenen Hosts im LAN.
 # ZeroDDS-Bench-Setup: llvm (bare-metal) und pivot (LXC), beide
-# in 192.168.178.0/24 (siehe docs/plans/milestone-v1.2.md §Bench-
+# in 192.168.178.0/24 (siehe internal/plans/milestone-v1.2.md §Bench-
 # Hardware).
 #
 # Usage:

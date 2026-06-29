@@ -13,10 +13,21 @@ export class ZeroDdsError extends Error {
 // Re-export the DDS-PSM-Cxx 1.0 conform surface
 export {
   DomainParticipantFactory, DomainParticipantFactoryHandle, DomainParticipant,
-  Topic, Publisher, DataWriter,
+  Topic, ContentFilteredTopic, CftFieldKind, Publisher, DataWriter,
   Subscriber, DataReader, GuardCondition, WaitSet,
   ByteSeqTraits, StringTraits,
-  type TopicTraits, type TypeSupport, type Sample,
+  type TopicTraits, type TypeSupport, type Sample, type SampleWithInfo,
+  // QoS surface (OMG DDS-DCPS 1.4 §2.2.3)
+  type DataWriterQos, type DataReaderQos, type PublisherQos,
+  type SubscriberQos, type TopicQos,
+  type ReliabilityPolicy, type DurabilityPolicy, type HistoryPolicy,
+  type DeadlinePolicy, type LivelinessPolicy, type OwnershipPolicy,
+  type OwnershipStrengthPolicy, type PartitionPolicy, type Duration,
+  ReliabilityKind, DurabilityKind, HistoryKind, OwnershipKind,
+  LivelinessKind, DestinationOrderKind,
+  DURATION_ZERO, DURATION_INFINITE,
+  defaultDataWriterQos, defaultDataReaderQos, defaultPublisherQos,
+  defaultSubscriberQos, defaultTopicQos,
 } from "./dds.js";
 
 /// Domain runtime.

@@ -37,6 +37,31 @@ pub enum DefaultExt {
 }
 
 impl DefaultExt {
+    /// Built-in default selected at compile time by the `ext-default-*` Cargo
+    /// features (XTypes 1.3 §7.3.3.1). Used when no `--default-extensibility`
+    /// CLI flag is given. The default feature is `ext-default-appendable`
+    /// (FastDDS/spec-leaning); build idlc with
+    /// `--no-default-features --features ext-default-final` for a Cyclone-DDS
+    /// compatible default.
+    #[must_use]
+    pub const fn cfg_default() -> Self {
+        #[cfg(feature = "ext-default-final")]
+        {
+            Self::Final
+        }
+        #[cfg(all(feature = "ext-default-mutable", not(feature = "ext-default-final")))]
+        {
+            Self::Mutable
+        }
+        #[cfg(all(
+            not(feature = "ext-default-final"),
+            not(feature = "ext-default-mutable")
+        ))]
+        {
+            Self::Appendable
+        }
+    }
+
     /// CLI-Wert (`final` / `appendable` / `mutable`) parsen.
     pub fn parse(token: &str) -> Option<Self> {
         Some(match token {
@@ -148,6 +173,20 @@ mod tests {
     use super::*;
     use zerodds_idl::config::ParserConfig;
     use zerodds_idl::parser::parse;
+
+    #[test]
+    fn cfg_default_matches_active_feature() {
+        // The compile-time `ext-default-*` feature selects the built-in default.
+        #[cfg(all(
+            not(feature = "ext-default-final"),
+            not(feature = "ext-default-mutable")
+        ))]
+        assert_eq!(DefaultExt::cfg_default(), DefaultExt::Appendable);
+        #[cfg(feature = "ext-default-final")]
+        assert_eq!(DefaultExt::cfg_default(), DefaultExt::Final);
+        #[cfg(all(feature = "ext-default-mutable", not(feature = "ext-default-final")))]
+        assert_eq!(DefaultExt::cfg_default(), DefaultExt::Mutable);
+    }
 
     fn parse_spec(src: &str) -> Specification {
         parse(src, &ParserConfig::default()).expect("parse")

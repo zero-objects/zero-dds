@@ -298,3 +298,168 @@ fn compile_check_multi_key_id_sorting() {
         "#,
     );
 }
+
+/// Regression for Bug A: `field_value` must resolve scoped field types — a
+/// nested struct forwards `.field_value()`, but a typedef-to-primitive or an
+/// enum is a terminal value (forwarding those does not compile). Models the
+/// NGVA shape (AEP-4754 Vol V §8.1.3: typedef-in-units + enum + nested struct).
+/// Fast (no cargo) — asserts on the generated source.
+#[test]
+fn ngva_field_value_resolves_leaf_vs_struct() {
+    let idl = r#"module nga {
+      typedef double CurrentInAmpsType;
+      enum CoordinateSystemType { COORDINATE_SYSTEM_TYPE__BNG, COORDINATE_SYSTEM_TYPE__MGRS };
+      @final struct LinearVelocity2DType { double xComponent; double yComponent; };
+      @appendable struct Nav {
+        @key string<32>      vehicleId;
+        LinearVelocity2DType velocity;
+        CoordinateSystemType coordinateSystem;
+        CurrentInAmpsType    batteryCurrent;
+      };
+    };"#;
+    let ast = zerodds_idl::parse(idl, &ParserConfig::default()).expect("parse");
+    let src = generate_rust_module(&ast, &RustGenOptions::default()).expect("gen");
+
+    // nested struct member → forwards field_value()
+    assert!(
+        src.contains("self.velocity.field_value"),
+        "struct member must forward field_value()"
+    );
+    // typedef-to-primitive → terminal leaf, NOT forwarded
+    assert!(
+        !src.contains("self.batteryCurrent.field_value"),
+        "typedef-to-primitive must not forward field_value()"
+    );
+    assert!(
+        src.contains("\"batteryCurrent\" =>"),
+        "typedef-to-primitive must emit a terminal value arm"
+    );
+    // enum → terminal int, NOT forwarded
+    assert!(
+        !src.contains("self.coordinateSystem.field_value"),
+        "enum must not forward field_value()"
+    );
+}
+
+/// Bug A end-to-end: the NGVA-shaped struct must actually compile
+/// (typedef-primitive + enum + nested-struct members). Opt-in like the others.
+#[test]
+#[ignore = "requires cargo offline + path-deps"]
+fn compile_check_ngva_field_value() {
+    compile_generated(
+        "ngva_field_value",
+        r#"module nga {
+          typedef double CurrentInAmpsType;
+          typedef float  HeadingType;
+          enum CoordinateSystemType { COORDINATE_SYSTEM_TYPE__BNG, COORDINATE_SYSTEM_TYPE__MGRS };
+          @final struct LinearVelocity2DType { double xComponent; double yComponent; };
+          @appendable struct Navigation_Resource_Specification {
+            @key string<32>      vehicleId;
+            HeadingType          heading;
+            LinearVelocity2DType velocity;
+            CoordinateSystemType coordinateSystem;
+            CurrentInAmpsType    batteryCurrent;
+          };
+        };"#,
+    );
+}
+
+/// Bug L: an array bound written as a named/scoped constant or a const
+/// expression (§7.4.1.4.4.5 `positive_int_const ::= const_expr`) must parse and
+/// — because the Rust backend does not emit IDL `const` declarations — be
+/// resolved to its integer value at codegen time.
+#[test]
+fn array_bound_by_named_const_resolves() {
+    let idl = "module conf { \
+                 const long N = 4; \
+                 const long M = N * 2; \
+                 struct S { long v[N]; long w[M]; long z[1 << 3]; }; \
+               };";
+    let ast = zerodds_idl::parse(idl, &ParserConfig::default()).expect("parse");
+    let rust = generate_rust_module(&ast, &RustGenOptions::default()).expect("gen");
+    assert!(rust.contains("[i32; 4]"), "named const bound N=4:\n{rust}");
+    assert!(
+        rust.contains("[i32; 8]"),
+        "const expr M=N*2=8 / 1<<3=8:\n{rust}"
+    );
+}
+
+/// Bug H: a union with an enum (scoped) discriminator must generate, with the
+/// discriminant repr i32 (DDS enums are 32-bit, §7.4.5.1) and `case ENUM_LIT:`
+/// labels resolved to the same discriminants the generated enum uses.
+#[test]
+fn union_with_enum_discriminator_resolves_labels() {
+    let idl = "module conf { \
+                 enum Kind { K_A, K_B, K_C }; \
+                 union EnumUnion switch (Kind) { \
+                   case K_A: long a; \
+                   case K_B: short b; \
+                   default: octet other; \
+                 }; \
+               };";
+    let ast = zerodds_idl::parse(idl, &ParserConfig::default()).expect("parse");
+    let rust = generate_rust_module(&ast, &RustGenOptions::default()).expect("gen");
+    // K_A → discriminant 0, K_B → 1 (matching enum_emit), encoded as i32.
+    assert!(
+        rust.contains("encode(&((0) as i32)") && rust.contains("encode(&((1) as i32)"),
+        "enum case labels K_A/K_B must resolve to 0/1 as i32:\n{rust}"
+    );
+}
+
+/// Compile gate for Bug H (cargo check, ignored — needs offline path deps).
+#[test]
+#[ignore = "requires cargo offline + path-deps"]
+fn compile_check_union_enum_discriminator() {
+    compile_generated(
+        "union_enum_disc",
+        "module conf { \
+           enum Kind { K_A, K_B, K_C }; \
+           union EnumUnion switch (Kind) { \
+             case K_A: long a; \
+             case K_B: short b; \
+             default: octet other; \
+           }; \
+         };",
+    );
+}
+
+/// Edge-hardening: an `@optional` NESTED-STRUCT member must compile. The
+/// `field_value` dotted-path arm used to emit `self.opt.field_value(..)`
+/// where `opt` is `Option<T>` (no `field_value` method) → E0599. The arm
+/// now forwards through the Option (`as_ref().and_then(..)`).
+#[test]
+#[ignore = "requires cargo offline + path-deps"]
+fn compile_check_optional_nested_struct_field_value() {
+    compile_generated(
+        "optional_nested_struct",
+        "@nested @final struct Inner { long v; }; \
+         @final struct Outer { @optional Inner inner; long id; };",
+    );
+}
+
+/// Edge-hardening: a `wstring` member's `field_value` must compile. The
+/// generated field type is `zerodds_cdr::WString` (a `String` newtype), so
+/// the `Value::String` arm must go through `.as_str().to_string()` rather
+/// than `.clone()` (which would yield a `WString`, not a `String`) → E0308.
+#[test]
+#[ignore = "requires cargo offline + path-deps"]
+fn compile_check_wstring_field_value() {
+    compile_generated(
+        "wstring_field_value",
+        "@final struct WText { wstring label; @optional wstring note; };",
+    );
+}
+
+/// Edge-hardening: a fixed-size ARRAY-OF-STRING member must compile. The
+/// blanket `impl CdrDecode for [T; N]` requires `T: Copy`; `String` is not
+/// `Copy`, so `<[String; 3] as CdrDecode>::decode` would not compile. The
+/// codegen now emits an element-wise manual decoder for non-`Copy` array
+/// elements (struct/union/string/sequence/map).
+#[test]
+#[ignore = "requires cargo offline + path-deps"]
+fn compile_check_array_of_string_member() {
+    compile_generated(
+        "array_of_string",
+        "@final struct Names { string names[3]; sequence<long> rows[2]; };",
+    );
+}

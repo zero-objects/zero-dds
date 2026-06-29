@@ -1,0 +1,41 @@
+# /usr/lib/systemd/system/zerodds-router.service
+# Spec: zerodds-deployment-1.0.md §2.3. The routing service is a plain
+# DDS<->DDS forwarding daemon (no protocol bridge); see zerodds-router(1).
+[Unit]
+Description=ZeroDDS DDS Routing Service
+Documentation=man:zerodds-router(1)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# Type=exec (NOT notify): zerodds-router does not call sd_notify — it execs,
+# starts its routes, and blocks until SIGINT/SIGTERM (ctrlc handler). exec
+# considers the unit started once the binary successfully execs.
+Type=exec
+ExecStart=/usr/bin/zerodds-router run --config /etc/zerodds/router.json
+# No ExecReload: the daemon has no SIGHUP config-reload path. Edit the config
+# and restart the unit to apply route changes.
+KillMode=mixed
+KillSignal=SIGTERM
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=5
+User=zerodds
+Group=zerodds
+StandardOutput=journal
+StandardError=journal
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/zerodds /var/lib/zerodds
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LimitNOFILE=65536
+LimitNPROC=4096
+
+[Install]
+WantedBy=multi-user.target

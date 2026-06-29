@@ -1,0 +1,16 @@
+// Conformance feature: unions — integral discriminator, enum discriminator,
+// default case, multiple labels per branch.
+module conf {
+  enum Kind { K_A, K_B, K_C };
+  union IntUnion switch (long) {
+    case 0: long    asLong;
+    case 1:
+    case 2: double  asDouble;
+    default: string asString;
+  };
+  union EnumUnion switch (Kind) {
+    case K_A: long  a;
+    case K_B: short b;
+    default:  octet other;
+  };
+};

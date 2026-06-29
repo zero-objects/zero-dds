@@ -28,7 +28,7 @@ echo "== ZeroDDS sub (bg) + Cyclone talker (count=$COUNT) =="
 # XCDR2-only → the reader must also offer XCDR1, otherwise Cyclone's
 # data_representation_match_p does not apply. Token syntax (XCDR1/XCDR2). For the
 # cleaner fix (DataRepresentationQosPolicy) see
-# docs/interop/ros2-reader-xcdr1-offer-followup.md.
+# internal/interop/ros2-reader-xcdr1-offer-followup.md.
 ZERODDS_DATA_REPR_OFFER="${ZERODDS_DATA_REPR_OFFER:-XCDR1,XCDR2}" \
   "$ROOT/target/release/examples/ros2_chatter_subscriber" > "$WORK/zd.out" 2>&1 &
 SUB=$!

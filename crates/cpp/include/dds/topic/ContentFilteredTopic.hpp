@@ -40,12 +40,17 @@ public:
             throw ::dds::core::Error("ContentFilteredTopic::create failed");
         }
         related_topic_ = related_topic.native_handle();
-        // In RC1: TopicDescription::handle_ stays the Topic pointer, since
-        // the CFT is an opaque sub-type at the C-FFI level and is passed
-        // through the DataReader create path as a TopicDescription pointer.
-        // (Follow-up wave: proper reader bind via cft_handle_.)
+        // TopicDescription::handle_ keeps the related Topic pointer for the
+        // base-class identity, but DataReader<T> binds to a CFT through the
+        // dedicated `zerodds_sub_create_datareader_with_cft` path using
+        // `native_cft_handle()` below — the filter is evaluated on every
+        // take/read (Spec §2.2.2.3.3 + §7.5.13.7).
         handle_ = related_topic.native_handle();
     }
+
+    /// Native ContentFilteredTopic handle for the CFT-aware DataReader
+    /// constructor (`zerodds_sub_create_datareader_with_cft`).
+    zerodds_ZeroDdsContentFilteredTopic* native_cft_handle() const { return cft_handle_; }
 
     ContentFilteredTopic(const ContentFilteredTopic&) = delete;
     ContentFilteredTopic& operator=(const ContentFilteredTopic&) = delete;

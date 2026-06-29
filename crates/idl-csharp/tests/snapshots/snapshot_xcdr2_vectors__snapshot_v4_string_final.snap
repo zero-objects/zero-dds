@@ -26,9 +26,11 @@ public sealed class GreetingTypeSupport : IDdsTopicType<Greeting>
 
     public byte[] Encode(Greeting sample) => Encode(sample, EndianMode.LittleEndian);
 
-    public byte[] Encode(Greeting sample, EndianMode endian)
+    public byte[] Encode(Greeting sample, EndianMode endian) => Encode(sample, endian, 1);
+    public byte[] Encode(Greeting sample, EndianMode endian, int representation)
     {
-        var w = new Xcdr2Writer(endian);
+        int __maxAlign = representation == 0 ? Xcdr2Writer.Xcdr1MaxAlignmentValue : 4;
+        var w = new Xcdr2Writer(endian, __maxAlign);
         EncodeInto(w, sample);
         return w.ToArray();
     }
@@ -38,15 +40,18 @@ public sealed class GreetingTypeSupport : IDdsTopicType<Greeting>
         w.WriteString(sample.Text);
     }
 
-    public Greeting Decode(ReadOnlySpan<byte> bytes)
+    public Greeting Decode(ReadOnlySpan<byte> bytes) => Decode(bytes, EndianMode.LittleEndian, 1);
+    public Greeting Decode(ReadOnlySpan<byte> bytes, EndianMode endian) => Decode(bytes, endian, 1);
+    public Greeting Decode(ReadOnlySpan<byte> bytes, EndianMode endian, int representation)
     {
-        var r = new Xcdr2Reader(bytes, EndianMode.LittleEndian);
-        return DecodeFrom(r);
+        int __maxAlign = representation == 0 ? Xcdr2Reader.Xcdr1MaxAlignmentValue : 4;
+        var r = new Xcdr2Reader(bytes, endian, __maxAlign);
+        return DecodeFrom(ref r);
     }
 
-    public Greeting DecodeFrom(Xcdr2Reader r)
+    public Greeting DecodeFrom(ref Xcdr2Reader r)
     {
-        string __m0 = default;
+        string __m0 = default!;
         __m0 = r.ReadString();
         return new Greeting
         {

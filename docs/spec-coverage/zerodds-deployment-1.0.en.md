@@ -46,7 +46,7 @@ typeobject/xml-config.
 **Repo:** per-tool `crates/<tool>/src/bin/` and `tools/<tool>/`
 (admin/bench-suite/idlc/recorder-bridge/replay/perf/qos-matrix/
 xmlc/dashboard/dds-roundtrip-codegen/interop-matrix/isolation-smoke/
-chaos/traceability/cargo-dag/pve); man pages
+chaos/traceability/cargo-dag); man pages
 `man/man1/zerodds-{admin,idlc,ros2-shim,ws-bridged,mqtt-bridged,
 coap-bridged,amqp-bridged,grpc-bridged,corba-bridged}.1`
 (cluster-C CLI coverage audit).

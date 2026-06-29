@@ -8,6 +8,7 @@ expression: "gen_default(\"union U switch (long) { case 1: long a; case 2: doubl
 
 using Omg.Types;
 using System;
+using ZeroDDS.Cdr;
 
 public partial record class U : ITopicType<U>
 {
@@ -17,4 +18,91 @@ public partial record class U : ITopicType<U>
     // case 1 -> a
     // case 2 -> b
     // case default -> c
+}
+
+public sealed class UTypeSupport : IDdsTopicType<U>
+{
+    public static readonly UTypeSupport Instance = new();
+
+    public string TypeName => "U";
+    public bool IsKeyed => false;
+    public ExtensibilityKind Extensibility => ExtensibilityKind.Appendable;
+
+    public byte[] Encode(U sample) => Encode(sample, EndianMode.LittleEndian);
+
+    public byte[] Encode(U sample, EndianMode endian) => Encode(sample, endian, 1);
+    public byte[] Encode(U sample, EndianMode endian, int representation)
+    {
+        int __maxAlign = representation == 0 ? Xcdr2Writer.Xcdr1MaxAlignmentValue : 4;
+        var w = new Xcdr2Writer(endian, __maxAlign);
+        EncodeInto(w, sample);
+        return w.ToArray();
+    }
+
+    public void EncodeInto(Xcdr2Writer w, U sample)
+    {
+        using (var __scope = w.BeginAppendable())
+        {
+            w.WriteInt32(sample.Discriminator);
+            switch (sample.Discriminator)
+            {
+                case 1:
+                    w.WriteInt32(((int)sample.Value!));
+                    break;
+                case 2:
+                    w.WriteFloat64(((double)sample.Value!));
+                    break;
+                default:
+                    w.WriteOctet(((byte)sample.Value!));
+                    break;
+            }
+        }
+    }
+
+    public U Decode(ReadOnlySpan<byte> bytes) => Decode(bytes, EndianMode.LittleEndian, 1);
+    public U Decode(ReadOnlySpan<byte> bytes, EndianMode endian) => Decode(bytes, endian, 1);
+    public U Decode(ReadOnlySpan<byte> bytes, EndianMode endian, int representation)
+    {
+        int __maxAlign = representation == 0 ? Xcdr2Reader.Xcdr1MaxAlignmentValue : 4;
+        var r = new Xcdr2Reader(bytes, endian, __maxAlign);
+        return DecodeFrom(ref r);
+    }
+
+    public U DecodeFrom(ref Xcdr2Reader r)
+    {
+        var __scope = r.BeginDHeader();
+        int __disc = r.ReadInt32();
+        object? __val = null;
+        switch (__disc)
+        {
+            case 1:
+                {
+                    int __uv0;
+                    __uv0 = r.ReadInt32();
+                    __val = __uv0;
+                }
+                break;
+            case 2:
+                {
+                    double __uv1;
+                    __uv1 = r.ReadFloat64();
+                    __val = __uv1;
+                }
+                break;
+            default:
+                {
+                    byte __uv2;
+                    __uv2 = r.ReadOctet();
+                    __val = __uv2;
+                }
+                break;
+        }
+        r.EndDHeader(__scope);
+        return new U { Discriminator = __disc, Value = __val };
+    }
+
+    public byte[] KeyHash(U sample)
+    {
+        return new byte[16];
+    }
 }

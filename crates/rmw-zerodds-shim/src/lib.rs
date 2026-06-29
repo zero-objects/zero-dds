@@ -147,8 +147,17 @@ impl WaitNotify {
 /// the listener the subscription's sole delivery path: the callback (fired in
 /// the receive thread the instant a sample lands) copies the CDR body here and
 /// wakes the context condvar; `take` / `has_data` drain this queue.
+/// One parked sample awaiting `take`: `(CDR body, representation byte,
+/// big_endian flag)` from the encapsulation header (RTPS 2.5 §10.5).
+type InboxEntry = (alloc::boxed::Box<[u8]>, u8, u8);
+
 struct SubInbox {
-    queue: Mutex<alloc::collections::VecDeque<(alloc::boxed::Box<[u8]>, u8)>>,
+    // (CDR body, representation, big_endian). `representation`/`big_endian` are
+    // the wire byte order from the encapsulation header (RTPS 2.5 §10.5),
+    // carried for completeness; the C introspection deserializer is currently
+    // CDR_LE-only (REP-2007), so a big-endian remote sample is a known
+    // pre-existing limitation rather than honored here.
+    queue: Mutex<alloc::collections::VecDeque<InboxEntry>>,
     notify: Arc<WaitNotify>,
     /// Optional rmw event callback (EventsExecutor `on_new_message/request/
     /// response`), fired on each arrival with `number_of_events = 1`.
@@ -192,7 +201,13 @@ fn inbox_set_event(inbox: &SubInbox, cb: Option<RmwEventCallback>, ud: *const c_
 /// Data callback registered on each subscription's ZeroDDS reader. `user_data`
 /// is an [`Arc<SubInbox>`] raw pointer kept alive by the owning subscription
 /// until after the reader is destroyed (see `rmw_zerodds_destroy_subscription`).
-extern "C" fn subscription_on_data(ud: *mut c_void, payload: *const u8, len: usize, repr: u8) {
+extern "C" fn subscription_on_data(
+    ud: *mut c_void,
+    payload: *const u8,
+    len: usize,
+    repr: u8,
+    big_endian: u8,
+) {
     if ud.is_null() || (len != 0 && payload.is_null()) {
         return;
     }
@@ -209,7 +224,7 @@ extern "C" fn subscription_on_data(ud: *mut c_void, payload: *const u8, len: usi
         unsafe { core::slice::from_raw_parts(payload, len) }.into()
     };
     if let Ok(mut q) = inbox.queue.lock() {
-        q.push_back((bytes, repr));
+        q.push_back((bytes, repr, big_endian));
     }
     inbox.notify.notify();
     // Fire the rmw EventsExecutor callback (snapshot it, then call outside the
@@ -262,16 +277,24 @@ unsafe fn attach_inbox(
 ///
 /// # Safety
 /// `out_buf` / `out_len` must be valid out pointers.
-unsafe fn inbox_take(inbox: &SubInbox, out_buf: *mut *mut u8, out_len: *mut usize) -> i32 {
+unsafe fn inbox_take(
+    inbox: &SubInbox,
+    out_buf: *mut *mut u8,
+    out_len: *mut usize,
+    out_big_endian: *mut u8,
+) -> i32 {
     let popped = inbox.queue.lock().ok().and_then(|mut q| q.pop_front());
     match popped {
-        Some((bytes, _repr)) if !bytes.is_empty() => {
+        Some((bytes, _repr, be)) if !bytes.is_empty() => {
             let len = bytes.len();
             let ptr = alloc::boxed::Box::into_raw(bytes).cast::<u8>();
             // SAFETY: out pointers valid per caller contract.
             unsafe {
                 *out_buf = ptr;
                 *out_len = len;
+                if !out_big_endian.is_null() {
+                    *out_big_endian = be;
+                }
             }
             RMW_RET_OK
         }
@@ -280,6 +303,9 @@ unsafe fn inbox_take(inbox: &SubInbox, out_buf: *mut *mut u8, out_len: *mut usiz
             unsafe {
                 *out_buf = ptr::null_mut();
                 *out_len = 0;
+                if !out_big_endian.is_null() {
+                    *out_big_endian = 0;
+                }
             }
             RMW_RET_OK
         }
@@ -493,7 +519,13 @@ fn decode_participant_info(body: &[u8]) -> Option<ParticipantInfo> {
 
 /// Data callback on the discovery reader: decode an incoming
 /// `ParticipantEntitiesInfo` and update the remote node map.
-extern "C" fn discovery_on_data(ud: *mut c_void, payload: *const u8, len: usize, _repr: u8) {
+extern "C" fn discovery_on_data(
+    ud: *mut c_void,
+    payload: *const u8,
+    len: usize,
+    _repr: u8,
+    _big_endian: u8,
+) {
     if ud.is_null() || payload.is_null() || len < 4 {
         return;
     }
@@ -681,12 +713,15 @@ pub unsafe extern "C" fn rmw_zerodds_init(domain_id: u32) -> *mut RmwZerodsConte
         // SAFETY: no pointer args; NULL on missing/invalid enclave.
         unsafe { zerodds::security_ffi::zerodds_runtime_create_secure_from_env(domain_id) }
     } else {
-        // SAFETY: zerodds_runtime_create is NULL-tolerant + heap-allocated.
-        unsafe { zerodds::zerodds_runtime_create(domain_id) }
+        // A2/A5: ROS-2 out-of-the-box profile — the reader offers XCDR1+XCDR2 so
+        // it matches rmw_cyclonedds/rmw_fastrtps XCDR1 writers config-free.
+        // SAFETY: NULL-tolerant + heap-allocated.
+        unsafe { zerodds::zerodds_runtime_create_ros_defaults(domain_id) }
     };
     #[cfg(not(feature = "security"))]
-    // SAFETY: zerodds_runtime_create is NULL-tolerant + heap-allocated.
-    let rt = unsafe { zerodds::zerodds_runtime_create(domain_id) };
+    // A2/A5: ROS-2 out-of-the-box profile (XCDR1+XCDR2 offer), config-free interop.
+    // SAFETY: NULL-tolerant + heap-allocated.
+    let rt = unsafe { zerodds::zerodds_runtime_create_ros_defaults(domain_id) };
     if rt.is_null() {
         return ptr::null_mut();
     }
@@ -1099,6 +1134,50 @@ pub unsafe extern "C" fn rmw_zerodds_create_publisher(
     }))
 }
 
+/// Number of remote subscriptions currently matched to this publisher — the
+/// value behind `rmw_publisher_count_matched_subscriptions` /
+/// `Publisher.get_subscription_count()`. `0` on NULL.
+///
+/// # Safety
+/// `pub_` must come from `rmw_zerodds_create_publisher` or be NULL.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rmw_zerodds_publisher_matched_count(
+    pub_: *mut RmwZerodsPublisher,
+) -> usize {
+    if pub_.is_null() {
+        return 0;
+    }
+    // SAFETY: pub_ NULL-checked; caller pledge it came from create_publisher.
+    let p = unsafe { &*pub_ };
+    let Ok(w) = p.inner.lock() else {
+        return 0;
+    };
+    // SAFETY: writer from zerodds_writer_create; NULL-tolerant.
+    unsafe { zerodds::zerodds_writer_matched_count(*w) }
+}
+
+/// Number of remote publishers currently matched to this subscription — the
+/// value behind `rmw_subscription_count_matched_publishers` /
+/// `Subscription.get_publisher_count()`. `0` on NULL.
+///
+/// # Safety
+/// `sub` must come from `rmw_zerodds_create_subscription` or be NULL.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn rmw_zerodds_subscription_matched_count(
+    sub: *mut RmwZerodsSubscription,
+) -> usize {
+    if sub.is_null() {
+        return 0;
+    }
+    // SAFETY: sub NULL-checked; caller pledge it came from create_subscription.
+    let s = unsafe { &*sub };
+    let Ok(r) = s.inner.lock() else {
+        return 0;
+    };
+    // SAFETY: reader from zerodds_reader_create; NULL-tolerant.
+    unsafe { zerodds::zerodds_reader_matched_count(*r) }
+}
+
 /// `rmw_destroy_publisher(*mut Publisher)`.
 ///
 /// # Safety
@@ -1144,6 +1223,51 @@ pub unsafe extern "C" fn rmw_zerodds_publish(
     // SAFETY: payload + len contract via FFI; writer from create.
     let rc = unsafe { zerodds::zerodds_writer_write(writer, payload, len) };
     if rc == 0 { RMW_RET_OK } else { RMW_RET_ERROR }
+}
+
+/// A2 — resolve the TIME_BASED_FILTER `minimum_separation` (nanoseconds) for a
+/// ROS topic from the `ZERODDS_TIME_BASED_FILTER` env. ROS 2 has no
+/// `rmw_qos_profile_t` field for TIME_BASED_FILTER, so this is the
+/// vendor-idiomatic config seam (cf. `CYCLONEDDS_URI` / Fast DDS XML).
+///
+/// Value = comma-separated entries; each is either `<seconds>` (a bare number =
+/// global default for every subscription) or `<topic>=<seconds>` (per-topic
+/// override, where `<topic>` is the ROS topic name, e.g. `/scan`). A per-topic
+/// entry wins over the global default. `Some(0)`/absent/unparseable → no filter.
+///
+/// Examples: `ZERODDS_TIME_BASED_FILTER=0.1` (10 Hz cap on all subs);
+/// `ZERODDS_TIME_BASED_FILTER=/scan=0.2,/image=0.5` (per-topic).
+fn tbf_min_separation_nanos_for(topic_ros: &str) -> Option<u64> {
+    let raw = std::env::var("ZERODDS_TIME_BASED_FILTER").ok()?;
+    parse_tbf_env(&raw, topic_ros)
+}
+
+/// Pure parser for [`tbf_min_separation_nanos_for`] (no env access, unit-testable).
+fn parse_tbf_env(raw: &str, topic_ros: &str) -> Option<u64> {
+    let to_ns = |secs: f64| -> Option<u64> {
+        if secs.is_finite() && secs > 0.0 {
+            Some((secs * 1_000_000_000.0) as u64)
+        } else {
+            None
+        }
+    };
+    let mut global: Option<u64> = None;
+    for entry in raw.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+        match entry.split_once('=') {
+            Some((topic, secs)) => {
+                if topic.trim() == topic_ros {
+                    // Per-topic override takes precedence; return immediately.
+                    return secs.trim().parse::<f64>().ok().and_then(to_ns);
+                }
+            }
+            None => {
+                if let Ok(secs) = entry.parse::<f64>() {
+                    global = to_ns(secs);
+                }
+            }
+        }
+    }
+    global
 }
 
 /// `rmw_create_subscription(node, type, topic, reliable)`.
@@ -1227,6 +1351,12 @@ pub unsafe extern "C" fn rmw_zerodds_create_subscription(
         // SAFETY: reader from reader_create.
         unsafe { zerodds::zerodds_reader_destroy(reader) };
         return ptr::null_mut();
+    }
+    // A2 — TIME_BASED_FILTER: ROS 2's `rmw_qos_profile_t` has no field for it, so
+    // the subscription rate-limit is set per-topic via `ZERODDS_TIME_BASED_FILTER`.
+    if let Some(ns) = tbf_min_separation_nanos_for(&topic_ros) {
+        // SAFETY: reader valid (created above + callback set); NULL-tolerant.
+        unsafe { zerodds::zerodds_reader_set_time_based_filter_ns(reader, ns) };
     }
     // Capture the reader GUID + register the endpoint with its owning node.
     let mut gid = [0u8; 16];
@@ -1678,6 +1808,7 @@ pub unsafe extern "C" fn rmw_zerodds_take(
     sub: *mut RmwZerodsSubscription,
     out_buf: *mut *mut u8,
     out_len: *mut usize,
+    out_big_endian: *mut u8,
 ) -> i32 {
     if sub.is_null() || out_buf.is_null() || out_len.is_null() {
         return RMW_RET_INVALID_ARGUMENT;
@@ -1686,7 +1817,7 @@ pub unsafe extern "C" fn rmw_zerodds_take(
     let s = unsafe { &*sub };
     let popped = s.inbox.queue.lock().ok().and_then(|mut q| q.pop_front());
     match popped {
-        Some((bytes, _repr)) if !bytes.is_empty() => {
+        Some((bytes, _repr, be)) if !bytes.is_empty() => {
             let len = bytes.len();
             let ptr = alloc::boxed::Box::into_raw(bytes).cast::<u8>();
             // SAFETY: out_buf/out_len NULL-checked above; caller frees the
@@ -1695,6 +1826,9 @@ pub unsafe extern "C" fn rmw_zerodds_take(
             unsafe {
                 *out_buf = ptr;
                 *out_len = len;
+                if !out_big_endian.is_null() {
+                    *out_big_endian = be;
+                }
             }
             RMW_RET_OK
         }
@@ -1703,6 +1837,9 @@ pub unsafe extern "C" fn rmw_zerodds_take(
             // NULL buffer as `taken = false`.
             // SAFETY: out_buf/out_len NULL-checked above.
             unsafe {
+                if !out_big_endian.is_null() {
+                    *out_big_endian = 0;
+                }
                 *out_buf = ptr::null_mut();
                 *out_len = 0;
             }
@@ -1996,6 +2133,7 @@ pub unsafe extern "C" fn rmw_zerodds_take_response(
     client: *mut RmwZerodsClient,
     out_buf: *mut *mut u8,
     out_len: *mut usize,
+    out_big_endian: *mut u8,
 ) -> i32 {
     if client.is_null() || out_buf.is_null() || out_len.is_null() {
         return RMW_RET_INVALID_ARGUMENT;
@@ -2003,7 +2141,7 @@ pub unsafe extern "C" fn rmw_zerodds_take_response(
     // SAFETY: NULL-checked; out pointers validated above.
     let c = unsafe { &*client };
     // SAFETY: validity upheld by the surrounding contract (NULL/bounds checked where applicable).
-    unsafe { inbox_take(&c.reply_inbox, out_buf, out_len) }
+    unsafe { inbox_take(&c.reply_inbox, out_buf, out_len, out_big_endian) }
 }
 
 /// `1` if a reply is queued for `client`, `0` if none, negative on a bad handle.
@@ -2185,6 +2323,7 @@ pub unsafe extern "C" fn rmw_zerodds_take_request(
     service: *mut RmwZerodsService,
     out_buf: *mut *mut u8,
     out_len: *mut usize,
+    out_big_endian: *mut u8,
 ) -> i32 {
     if service.is_null() || out_buf.is_null() || out_len.is_null() {
         return RMW_RET_INVALID_ARGUMENT;
@@ -2192,7 +2331,7 @@ pub unsafe extern "C" fn rmw_zerodds_take_request(
     // SAFETY: NULL-checked; out pointers validated above.
     let s = unsafe { &*service };
     // SAFETY: validity upheld by the surrounding contract (NULL/bounds checked where applicable).
-    unsafe { inbox_take(&s.request_inbox, out_buf, out_len) }
+    unsafe { inbox_take(&s.request_inbox, out_buf, out_len, out_big_endian) }
 }
 
 /// `1` if a request is queued for `service`, `0` if none, negative on bad handle.
@@ -2677,6 +2816,32 @@ mod tests {
     use super::*;
 
     #[test]
+    fn tbf_env_parse_global_and_per_topic() {
+        // Bare number = global default for every topic.
+        assert_eq!(parse_tbf_env("0.1", "/scan"), Some(100_000_000));
+        assert_eq!(parse_tbf_env("0.1", "/anything"), Some(100_000_000));
+        // Per-topic override wins over the global default.
+        assert_eq!(
+            parse_tbf_env("0.1,/scan=0.5", "/scan"),
+            Some(500_000_000),
+            "per-topic must override global"
+        );
+        assert_eq!(
+            parse_tbf_env("0.1,/scan=0.5", "/image"),
+            Some(100_000_000),
+            "non-matching topic falls back to global"
+        );
+        // No global, only a per-topic entry → other topics get nothing.
+        assert_eq!(parse_tbf_env("/scan=0.2", "/scan"), Some(200_000_000));
+        assert_eq!(parse_tbf_env("/scan=0.2", "/image"), None);
+        // Zero / negative / junk = disabled.
+        assert_eq!(parse_tbf_env("0", "/x"), None);
+        assert_eq!(parse_tbf_env("-1", "/x"), None);
+        assert_eq!(parse_tbf_env("nonsense", "/x"), None);
+        assert_eq!(parse_tbf_env("", "/x"), None);
+    }
+
+    #[test]
     fn rmw_codes_match_rep_2007() {
         assert_eq!(RMW_RET_OK, 0);
         assert_eq!(RMW_RET_ERROR, 1);
@@ -3000,7 +3165,7 @@ mod tests {
         let mut buf: *mut u8 = ptr::null_mut();
         let mut len: usize = 0;
         // SAFETY: out pointers valid; sub valid.
-        let tr = unsafe { rmw_zerodds_take(sub, &mut buf, &mut len) };
+        let tr = unsafe { rmw_zerodds_take(sub, &mut buf, &mut len, &mut 0u8) };
         assert_eq!(tr, RMW_RET_OK);
         assert!(!buf.is_null() && len >= 4, "take returns the parked sample");
         // SAFETY: buf/len from take.
@@ -3015,7 +3180,7 @@ mod tests {
             let mut b2: *mut u8 = ptr::null_mut();
             let mut l2: usize = 0;
             // SAFETY: valid out pointers.
-            let _ = unsafe { rmw_zerodds_take(sub, &mut b2, &mut l2) };
+            let _ = unsafe { rmw_zerodds_take(sub, &mut b2, &mut l2, &mut 0u8) };
             if !b2.is_null() {
                 // SAFETY: from take.
                 unsafe { rmw_zerodds_buffer_free(b2, l2) };
@@ -3101,7 +3266,7 @@ mod tests {
         let mut rlen: usize = 0;
         // SAFETY: valid out pointers; service valid.
         assert_eq!(
-            unsafe { rmw_zerodds_take_request(service, &mut rbuf, &mut rlen) },
+            unsafe { rmw_zerodds_take_request(service, &mut rbuf, &mut rlen, &mut 0u8) },
             RMW_RET_OK
         );
         assert!(!rbuf.is_null() && rlen >= 1, "request bytes delivered");
@@ -3130,7 +3295,7 @@ mod tests {
         let mut plen: usize = 0;
         // SAFETY: valid out pointers; client valid.
         assert_eq!(
-            unsafe { rmw_zerodds_take_response(client, &mut pbuf, &mut plen) },
+            unsafe { rmw_zerodds_take_response(client, &mut pbuf, &mut plen, &mut 0u8) },
             RMW_RET_OK
         );
         assert!(!pbuf.is_null() && plen >= 1, "reply bytes delivered");

@@ -7,6 +7,7 @@ expression: run(idl)
 
 #![allow(clippy::too_many_lines)]
 #![allow(unused_imports)]
+#![allow(non_snake_case)]
 
 use zerodds_cdr::{BufferReader, BufferWriter, CdrDecode, CdrEncode, DecodeError, EncodeError, Endianness};
 
@@ -27,18 +28,38 @@ impl Default for Event {
 
 impl zerodds_cdr::CdrEncode for Event {
     fn encode(&self, writer: &mut zerodds_cdr::BufferWriter) -> ::core::result::Result<(), zerodds_cdr::EncodeError> {
-        match self {
-            Event::Counter(__v) => {
-                <i32 as zerodds_cdr::CdrEncode>::encode(&((1) as i32), writer)?;
-                <_ as zerodds_cdr::CdrEncode>::encode(__v, writer)?;
-            }
-            Event::Value(__v) => {
-                <i32 as zerodds_cdr::CdrEncode>::encode(&((2) as i32), writer)?;
-                <_ as zerodds_cdr::CdrEncode>::encode(__v, writer)?;
-            }
-            Event::Message(__v) => {
-                <i32 as zerodds_cdr::CdrEncode>::encode(&((0) as i32), writer)?;
-                <_ as zerodds_cdr::CdrEncode>::encode(__v, writer)?;
+        if writer.max_alignment() == 4 {
+            zerodds_cdr::struct_enc::encode_appendable(writer, |w| {
+                match self {
+                    Event::Counter(__v) => {
+                        <i32 as zerodds_cdr::CdrEncode>::encode(&((1) as i32), w)?;
+                        <_ as zerodds_cdr::CdrEncode>::encode(__v, w)?;
+                    }
+                    Event::Value(__v) => {
+                        <i32 as zerodds_cdr::CdrEncode>::encode(&((2) as i32), w)?;
+                        <_ as zerodds_cdr::CdrEncode>::encode(__v, w)?;
+                    }
+                    Event::Message(__v) => {
+                        <i32 as zerodds_cdr::CdrEncode>::encode(&((0) as i32), w)?;
+                        <_ as zerodds_cdr::CdrEncode>::encode(__v, w)?;
+                    }
+                }
+                Ok(())
+            })?;
+        } else {
+            match self {
+                Event::Counter(__v) => {
+                    <i32 as zerodds_cdr::CdrEncode>::encode(&((1) as i32), writer)?;
+                    <_ as zerodds_cdr::CdrEncode>::encode(__v, writer)?;
+                }
+                Event::Value(__v) => {
+                    <i32 as zerodds_cdr::CdrEncode>::encode(&((2) as i32), writer)?;
+                    <_ as zerodds_cdr::CdrEncode>::encode(__v, writer)?;
+                }
+                Event::Message(__v) => {
+                    <i32 as zerodds_cdr::CdrEncode>::encode(&((0) as i32), writer)?;
+                    <_ as zerodds_cdr::CdrEncode>::encode(__v, writer)?;
+                }
             }
         }
         ::core::result::Result::Ok(())
@@ -47,6 +68,16 @@ impl zerodds_cdr::CdrEncode for Event {
 
 impl zerodds_cdr::CdrDecode for Event {
     fn decode(reader: &mut zerodds_cdr::BufferReader<'_>) -> ::core::result::Result<Self, zerodds_cdr::DecodeError> {
+        if reader.max_alignment() == 4 {
+            return zerodds_cdr::struct_enc::decode_appendable(reader, |r| {
+                let __disc = <i32 as zerodds_cdr::CdrDecode>::decode(r)?;
+                match __disc as i128 {
+                    1 => ::core::result::Result::Ok(Event::Counter(<i32 as zerodds_cdr::CdrDecode>::decode(r)?)),
+                    2 => ::core::result::Result::Ok(Event::Value(<f64 as zerodds_cdr::CdrDecode>::decode(r)?)),
+                    _ => ::core::result::Result::Ok(Event::Message(<String as zerodds_cdr::CdrDecode>::decode(r)?)),
+                }
+            });
+        }
         let __disc = <i32 as zerodds_cdr::CdrDecode>::decode(reader)?;
         match __disc as i128 {
             1 => ::core::result::Result::Ok(Event::Counter(<i32 as zerodds_cdr::CdrDecode>::decode(reader)?)),

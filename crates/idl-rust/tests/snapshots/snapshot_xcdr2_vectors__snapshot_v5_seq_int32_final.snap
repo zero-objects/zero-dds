@@ -1,5 +1,6 @@
 ---
 source: crates/idl-rust/tests/snapshot_xcdr2_vectors.rs
+assertion_line: 57
 expression: "gen_default(\"@final struct Bag { sequence<long> ids; };\")"
 ---
 // SPDX-License-Identifier: Apache-2.0
@@ -7,6 +8,7 @@ expression: "gen_default(\"@final struct Bag { sequence<long> ids; };\")"
 
 #![allow(clippy::too_many_lines)]
 #![allow(unused_imports)]
+#![allow(non_snake_case)]
 
 use zerodds_cdr::{BufferReader, BufferWriter, CdrDecode, CdrEncode, DecodeError, EncodeError, Endianness};
 
@@ -28,12 +30,39 @@ impl zerodds_dcps::DdsType for Bag {
         Ok(())
     }
 
+    fn encode_be(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
+        let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Big).xcdr2();
+        <_ as zerodds_cdr::CdrEncode>::encode(&self.ids, &mut writer)?;
+        out.extend_from_slice(&writer.into_bytes());
+        Ok(())
+    }
+
     fn decode(bytes: &[u8]) -> ::core::result::Result<Self, zerodds_dcps::DecodeError> {
         let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Little).xcdr2();
         let ids = <Vec<i32> as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
         Ok(Self {
             ids,
         })
+    }
+
+    fn decode_be(bytes: &[u8]) -> ::core::result::Result<Self, zerodds_dcps::DecodeError> {
+        let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Big).xcdr2();
+        let ids = <Vec<i32> as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
+        Ok(Self {
+            ids,
+        })
+    }
+
+    fn encode_xcdr1(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
+        let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little);
+        <Self as zerodds_cdr::CdrEncode>::encode(self, &mut writer)?;
+        out.extend_from_slice(&writer.into_bytes());
+        Ok(())
+    }
+
+    fn decode_xcdr1(bytes: &[u8]) -> ::core::result::Result<Self, zerodds_dcps::DecodeError> {
+        let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Little);
+        <Self as zerodds_cdr::CdrDecode>::decode(&mut reader).map_err(::core::convert::Into::into)
     }
 
     fn field_value(&self, path: &str) -> ::core::option::Option<zerodds_sql_filter::Value> {

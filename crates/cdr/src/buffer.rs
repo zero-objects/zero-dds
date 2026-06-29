@@ -387,6 +387,27 @@ impl<'a> BufferReader<'a> {
         Ok(self.endianness.read_u32(buf))
     }
 
+    /// Reads a `u32` at the current position **without** consuming it and
+    /// **without** alignment. Used for the XTypes 1.3 §7.4.3.4.2 LC5/6/7
+    /// EMHEADER length-code optimization: there the member's own leading
+    /// length word (a DHEADER / string length) doubles as the NEXTINT, so
+    /// the decoder must inspect it but leave it in place as the first 4
+    /// bytes of the member body.
+    ///
+    /// # Errors
+    /// `UnexpectedEof` when fewer than 4 bytes remain.
+    pub fn peek_u32(&self) -> Result<u32, DecodeError> {
+        if self.remaining() < 4 {
+            return Err(DecodeError::UnexpectedEof {
+                needed: 4,
+                offset: self.pos,
+            });
+        }
+        let mut buf = [0u8; 4];
+        buf.copy_from_slice(&self.bytes[self.pos..self.pos + 4]);
+        Ok(self.endianness.read_u32(buf))
+    }
+
     /// Aligns + reads `u64`.
     ///
     /// # Errors

@@ -22,7 +22,7 @@ ZeroDDS-Transports über eine fixe Payload-Achse.
 
 ## Wie man die Baseline erzeugt
 
-Siehe `docs/perf/methodology.md` für Details. Kurzversion:
+Siehe `internal/perf/methodology.md` für Details. Kurzversion:
 
 ```bash
 # Auf dem llvm-Host (bare-metal Debian 12, Threadripper 3955WX):
@@ -39,7 +39,7 @@ sudo ./benches/hosts/llvm/tune.sh off
 
 Die erzeugten Reports liegen unter `target/criterion/` — raw JSON +
 HTML-Plots. Baseline-Exports als Markdown unter
-`docs/perf/baseline-<host>-<date>.md`.
+`internal/perf/baseline-<host>-<date>.md`.
 
 ## Design-Entscheidungen
 
@@ -90,7 +90,7 @@ Output: stdout p50/p90/p99/p999/p9999/p99999 + min/max/n;
 `tools/bench-suite` misst nur den ZeroDDS-Pfad. Cross-vendor-
 Vergleiche gegen Cyclone DDS (`ddsperf`) + FastDDS
 (`LatencyTestPublisher`) laufen ueber das Live-Interop-Harness in
-`docs/interop/`.
+`internal/interop/`.
 
 ## Regression-Gate
 

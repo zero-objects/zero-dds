@@ -36,7 +36,7 @@ use crate::emitter::{JavaFile, fmt_err, indent_unit, wrap_compilation_unit_defau
 use crate::error::JavaGenError;
 use crate::keywords::sanitize_identifier;
 
-const DEFAULT_BIT_BOUND: u32 = 32;
+pub(crate) const DEFAULT_BIT_BOUND: u32 = 32;
 /// Java `long` is 64-bit signed — this is the maximum width that
 /// can be represented for bitset/bitmask.
 const MAX_BIT_BOUND: u32 = 64;
@@ -276,7 +276,7 @@ fn bitfield_width(e: &ConstExpr) -> Option<u32> {
     None
 }
 
-fn extract_int_annotation(anns: &[Annotation], name: &str) -> Option<u32> {
+pub(crate) fn extract_int_annotation(anns: &[Annotation], name: &str) -> Option<u32> {
     let a = anns
         .iter()
         .find(|a| a.name.parts.last().map(|p| p.text.as_str()) == Some(name))?;

@@ -28,16 +28,21 @@ public class AlignmentTests
     }
 
     [Fact]
-    public void Align8_ForDouble_AfterFourBytes_PadsFour()
+    public void Align4_ForDoubleAfterFourBytes_NoExtraPadding()
     {
+        // XCDR2 caps the maximum alignment at 4 (XTypes 1.3 §7.4.1.1.1):
+        // an 8-byte primitive (double) aligns to 4, NEVER to 8. After a 4-byte
+        // int32 the position is already 4-aligned, so the double follows
+        // immediately at offset 4 with NO padding. Mirrors the cross-vendor
+        // zerodds-cdr core (`crates/cdr/src/buffer.rs`:
+        // `alignment.min(self.max_alignment)`, XCDR2_MAX_ALIGNMENT == 4).
         var w = new Xcdr2Writer(EndianMode.LittleEndian);
         w.WriteInt32(7);
         w.WriteFloat64(1.0);
         var bytes = w.ToArray();
-        Assert.Equal(16, bytes.Length);
+        Assert.Equal(12, bytes.Length);
         Assert.Equal(7, BitConverter.ToInt32(bytes, 0));
-        // Bytes 4..7 = padding
-        Assert.Equal(1.0, BitConverter.ToDouble(bytes, 8));
+        Assert.Equal(1.0, BitConverter.ToDouble(bytes, 4));
     }
 
     [Fact]

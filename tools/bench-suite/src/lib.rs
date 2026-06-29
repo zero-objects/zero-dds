@@ -25,7 +25,7 @@
 //!
 //! Die Bench-Targets (`benches/*.rs`) nutzen diese Bausteine +
 //! `criterion`. Reports landen als JSON in `target/criterion/` und
-//! werden ueber `docs/perf/baseline-*.md` referenziert.
+//! werden ueber `internal/perf/baseline-*.md` referenziert.
 
 #![warn(missing_docs)]
 

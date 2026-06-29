@@ -41,7 +41,7 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
-use ring::hmac;
+use crate::backend::hmac;
 
 /// Spec tag string for the session key (§10.5.2 Tab.74).
 pub const SESSION_KEY_TAG: &[u8] = b"SessionKey";

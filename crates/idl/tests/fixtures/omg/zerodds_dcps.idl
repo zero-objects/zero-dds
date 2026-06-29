@@ -2,7 +2,7 @@
 // OMG DDS 1.4 §B (DCPS PSM IDL).
 //
 // This file is NOT a 1:1 copy of the OMG spec IDL — the spec is
-// under copyright and is referenced via `docs/standards/cache/omg/dds-dcps-1.4.pdf`.
+// under copyright and is referenced via `internal/standards/cache/omg/dds-dcps-1.4.pdf`.
 // Here is a **content-equivalent selection** of the
 // most important built-in topic types and QoS structures, serving as a
 // parser smoke test for T3.12.

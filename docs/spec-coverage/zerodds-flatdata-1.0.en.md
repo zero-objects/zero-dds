@@ -45,7 +45,7 @@ Implementation:
 ### §3.2 Same-host match logic
 - **Requirement:** match when hostname_hash + uid are locally equal AND the mmap succeeds.
 - **Repo:** `crates/flatdata/src/locator.rs::is_same_host` + `fnv1a_32`; the SEDP discovery hook in `crates/dcps/src/runtime.rs` auto-binds same-host pairs (`register_pending`→`mark_bound`→idempotent `open_or_create`).
-- **Tests:** `tests::{fnv1a_known_value, same_host_match_positive, same_host_mismatch_uid, same_host_mismatch_hostname}` + `same_host_e2e::e2e_two_runtimes_shm_roundtrip` (codepit).
+- **Tests:** `tests::{fnv1a_known_value, same_host_match_positive, same_host_mismatch_uid, same_host_mismatch_hostname}` + `same_host_e2e::e2e_two_runtimes_shm_roundtrip` (Linux bench host).
 - **Status:** done — match logic + discovery-driven mmap auto-binding in the production path (no manual `set_flat_backend` call needed).
 
 ### §3.4 SEDP push (PID_SHM_LOCATOR via a side-map)
@@ -71,13 +71,13 @@ Implementation:
 ### §4.2 Reader notify (eventfd / semaphore)
 - **Requirement:** the reader polls the same-host channel without a UDP round-trip.
 - **Repo:** `crates/flatdata/src/{backend.rs,allocator.rs,posix.rs}` — `notify_generation`/`wait_for_change` on the `SlotBackend` trait; in-memory `ChangeNotify` (condvar + generation), POSIX cross-process futex on a generation word in the SHM header (FUTEX_WAIT/WAKE, Linux). DCPS: `DataReader::read_flat_blocking(timeout)` + `FlatReader::read_blocking`.
-- **Tests:** `futex_notify_wakes_consumer_across_mappings` (codepit, cross-process wake) + 5 in-memory thread tests.
+- **Tests:** `futex_notify_wakes_consumer_across_mappings` (Linux bench host, cross-process wake) + 5 in-memory thread tests.
 - **Status:** done — event-driven notify on both backends, no busy-poll / UDP round-trip.
 
 ### §4.3 Cross-host fallback in parallel
 - **Requirement:** the writer also sends UDP DATA to cross-host readers in parallel to the SHM notify.
 - **Repo:** `crates/dcps/src/runtime.rs::same_host_udp_skip_set` — collects the UDP unicast locators of same-host SHM-bound readers; the write hot path skips them for UDP (same-host → SHM, cross-host → UDP, no double delivery).
-- **Tests:** `same_host_e2e::e2e_cross_vendor_different_host_id_no_shm_bind` (codepit).
+- **Tests:** `same_host_e2e::e2e_cross_vendor_different_host_id_no_shm_bind` (Linux bench host).
 - **Status:** done — same-host-vs-cross-host routing in the production wire path (Wave 4b / ADR-0006).
 
 ### §4.4 Mixed-vendor compat
@@ -113,7 +113,7 @@ Implementation:
 ### §7.1 POSIX permissions 0600
 - **Requirement:** the SHM segment is owner-only (mode=0600).
 - **Repo:** `crates/flatdata/src/posix.rs::PosixSlotAllocator::create` chmods both artefacts to 0600 after `shm_open` (flink file + the `/dev/shm` object on Linux); otherwise `shared_memory` left them at the umask default (often 0644 = world-readable).
-- **Tests:** Linux-gated `segment_is_owner_only_0600` (codepit, checks both modes == 0600).
+- **Tests:** Linux-gated `segment_is_owner_only_0600` (Linux bench host, checks both modes == 0600).
 - **Status:** done — the zero-copy payload is owner-only; other local users cannot read it.
 
 ### §7.2 Bounded slot allocation
@@ -174,7 +174,7 @@ Implementation:
 ### §10.3 Cross-host fallback test
 - **Requirement:** mixed domain (same-host + cross-host reader); both get the sample.
 - **Repo:** `crates/dcps/tests/same_host_e2e.rs`.
-- **Tests:** `e2e_two_runtimes_shm_roundtrip` (same-host → SHM) + `e2e_cross_vendor_different_host_id_no_shm_bind` (different host-id → UDP), codepit-green.
+- **Tests:** `e2e_two_runtimes_shm_roundtrip` (same-host → SHM) + `e2e_cross_vendor_different_host_id_no_shm_bind` (different host-id → UDP), bench-green.
 - **Status:** done — same-host-vs-cross-host behaviour proven via the 2-runtime E2E.
 
 ### §10.4 Cyclone compat

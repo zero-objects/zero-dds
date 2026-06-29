@@ -37,7 +37,15 @@
 #![warn(missing_docs)]
 // Tests may panic/expect/unwrap freely; production code stays strict
 // (the workspace denies these globally).
-#![cfg_attr(test, allow(clippy::expect_used, clippy::unwrap_used, clippy::panic))]
+#![cfg_attr(
+    test,
+    allow(
+        clippy::expect_used,
+        clippy::unwrap_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
 
 extern crate alloc;
 

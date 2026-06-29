@@ -31,7 +31,12 @@ use zerodds_record::{
 };
 use zerodds_recorder::format::{ParticipantEntry, SampleKind};
 use zerodds_recorder::session::{RecordingSession, SessionOptions, TopicKey};
+use zerodds_recorder_decode::json_sink::{JsonSink, to_hex};
+use zerodds_recorder_decode::sqlite_sink::SqliteSink;
+use zerodds_recorder_decode::type_source::{TypeBook, parse_topic_type_map};
 use zerodds_rtps::wire_types::GuidPrefix;
+use zerodds_types::dynamic::codec::decode_dynamic;
+use zerodds_types::dynamic::type_::DynamicType;
 
 fn main() -> ExitCode {
     let args: Vec<String> = env::args().skip(1).collect();
@@ -67,7 +72,7 @@ fn run_record(r: RecordArgs) -> ExitCode {
     }
 
     // Output-Pfad festlegen.
-    let out_path = r.output.unwrap_or_else(|| {
+    let out_path = r.output.clone().unwrap_or_else(|| {
         let ts = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -99,17 +104,16 @@ fn run_record(r: RecordArgs) -> ExitCode {
         }
     };
 
-    // Recording-Session vorbereiten. Der Header wird beim ersten
-    // record_sample-Call lazy geschrieben — wir geben Topics +
-    // Participants in den SessionOptions vor.
-    let topics: Vec<TopicKey> = r
-        .topics
-        .iter()
-        .map(|name| TopicKey {
-            topic: name.clone(),
-            type_name: "zerodds::RawBytes".to_string(),
-        })
-        .collect();
+    // Type-following discovery settle: before freezing the .zddsrec header
+    // (RecordingSession fixes its topic set at construction), wait briefly for
+    // the requested topics' writers to be discovered so we learn each writer's
+    // REAL type_name. A recorder announcing a generic `RawBytes` reader would
+    // never match a typed writer (e.g. cuas::Track) and capture nothing — the
+    // root cause of the "record validates and exits" report. A requested topic
+    // with no writer in the window falls back to RawBytes (so a genuine RawBytes
+    // writer still records) with a warning.
+    let topics = resolve_topic_types(&runtime, &r.topics, Duration::from_secs(3));
+
     let now_unix_ns = unix_ns_now();
     let opts = SessionOptions {
         topics: topics.clone(),
@@ -122,18 +126,34 @@ fn run_record(r: RecordArgs) -> ExitCode {
     let session = Arc::new(RecordingSession::new(BufWriter::new(file), opts));
     let _ = r.max_sample_bytes; // DoS-Cap wird in einer kuenftigen Iteration ueber Config-Hook erzwungen.
 
-    // Pro Topic einen User-Reader registrieren.
+    // One type-following reader per resolved (topic, type) — announces the real
+    // type so it matches the typed writer on both ends.
     let mut readers = Vec::with_capacity(topics.len());
     for (idx, t) in topics.iter().enumerate() {
-        let cfg = user_reader_config(&t.topic);
+        let cfg = user_reader_config(&t.topic, &t.type_name);
         match runtime.register_user_reader(cfg) {
-            Ok((eid, rx)) => readers.push((idx, eid, rx)),
+            Ok((eid, rx)) => {
+                println!(
+                    "zerodds-record: attached topic={} type={}",
+                    t.topic, t.type_name
+                );
+                readers.push((idx, eid, rx));
+            }
             Err(e) => {
-                eprintln!("error: register_user_reader({}): {e:?}", t.topic);
+                eprintln!(
+                    "error: register_user_reader({}, {}): {e:?}",
+                    t.topic, t.type_name
+                );
                 return ExitCode::from(3);
             }
         }
     }
+
+    // Optional decode-sinks (typed JSON / SQLite) on top of the opaque capture.
+    let mut decode = match setup_decode(&r, &topics) {
+        Ok(d) => d,
+        Err(code) => return code,
+    };
 
     // Shutdown-flag — SIGINT triggert ihn.
     let stop = Arc::new(AtomicBool::new(false));
@@ -167,14 +187,27 @@ fn run_record(r: RecordArgs) -> ExitCode {
                     UserSample::Alive {
                         payload,
                         writer_guid,
+                        representation,
+                        big_endian,
                         ..
-                    } => session_for_loop.record_sample(
-                        unix_ns_now(),
-                        writer_guid,
-                        topic,
-                        SampleKind::Alive,
-                        payload.to_vec(),
-                    ),
+                    } => {
+                        let ts = unix_ns_now();
+                        decode.consume(
+                            &topic.topic,
+                            ts,
+                            writer_guid,
+                            &payload,
+                            representation,
+                            big_endian,
+                        );
+                        session_for_loop.record_sample(
+                            ts,
+                            writer_guid,
+                            topic,
+                            SampleKind::Alive,
+                            payload.to_vec(),
+                        )
+                    }
                     UserSample::Lifecycle { kind, .. } => {
                         let mapped = match kind {
                             zerodds_rtps::history_cache::ChangeKind::NotAliveDisposed => {
@@ -215,6 +248,156 @@ fn run_record(r: RecordArgs) -> ExitCode {
     ExitCode::SUCCESS
 }
 
+/// Optional typed sinks layered on top of the opaque `.zddsrec` capture.
+///
+/// When `--decode` is off (or no type resolves for a topic) `consume` is a
+/// no-op: the raw `.zddsrec` capture is always written regardless. The decoded
+/// outputs additionally retain the raw CDR bytes per sample so `zerodds-replay`
+/// can re-publish byte-exact from JSON or SQLite.
+struct DecodeSinks {
+    json: Option<JsonSink<BufWriter<File>>>,
+    sqlite: Option<SqliteSink>,
+    /// topic → (resolved `DynamicType`, DDS type name) for decoded topics.
+    types: std::collections::HashMap<String, (DynamicType, String)>,
+}
+
+impl DecodeSinks {
+    fn disabled() -> Self {
+        Self {
+            json: None,
+            sqlite: None,
+            types: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Decode one Alive sample (if a type is known for `topic`) and fan it out
+    /// to the configured sinks. Decode/write failures warn but never abort the
+    /// capture — the opaque `.zddsrec` write already happened.
+    fn consume(
+        &mut self,
+        topic: &str,
+        recv_ts_ns: i64,
+        writer_guid: [u8; 16],
+        payload: &[u8],
+        representation: u8,
+        big_endian: bool,
+    ) {
+        let Some((ty, type_name)) = self.types.get(topic).cloned() else {
+            return;
+        };
+        let data = match decode_dynamic(&ty, payload, representation == 1, big_endian) {
+            Ok(d) => d,
+            Err(e) => {
+                eprintln!("warn: decode {topic} dropped: {e:?}");
+                return;
+            }
+        };
+        let writer_hex = to_hex(&writer_guid);
+        if let Some(j) = self.json.as_mut() {
+            if let Err(e) =
+                j.write_sample(topic, &type_name, recv_ts_ns, &writer_hex, &data, payload)
+            {
+                eprintln!("warn: json write {topic} dropped: {e}");
+            }
+        }
+        if let Some(s) = self.sqlite.as_mut() {
+            if let Err(e) = s.insert_sample(topic, &ty, recv_ts_ns, &writer_hex, payload, &data) {
+                eprintln!("warn: sqlite write {topic} dropped: {e:?}");
+            }
+        }
+    }
+}
+
+/// Build the typed sinks from CLI flags. Returns a disabled sink when
+/// `--decode` is absent. Errors (exit code 2/3) on a missing `--type-file` or
+/// unreadable IDL / unopenable sink.
+fn setup_decode(r: &RecordArgs, topics: &[TopicKey]) -> Result<DecodeSinks, ExitCode> {
+    if !r.decode {
+        return Ok(DecodeSinks::disabled());
+    }
+    let Some(type_file) = r.type_file.as_deref() else {
+        eprintln!("error: --decode requires --type-file <IDL>");
+        return Err(ExitCode::from(2));
+    };
+    if r.out_json.is_none() && r.out_sqlite.is_none() {
+        eprintln!("warn: --decode without --out-json/--out-sqlite produces no typed output");
+    }
+    let idl_src = match std::fs::read_to_string(type_file) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("error: cannot read type-file {type_file}: {e}");
+            return Err(ExitCode::from(3));
+        }
+    };
+    let book = match TypeBook::from_idl(&idl_src) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("error: parsing {type_file}: {e:?}");
+            return Err(ExitCode::from(3));
+        }
+    };
+    let overrides: std::collections::HashMap<String, String> = match parse_topic_type_map(&r.map) {
+        Ok(v) => v.into_iter().collect(),
+        Err(e) => {
+            eprintln!("error: bad --map entry: {e:?}");
+            return Err(ExitCode::from(2));
+        }
+    };
+
+    let json = match r.out_json.as_deref() {
+        Some(p) => match File::create(p) {
+            Ok(f) => Some(JsonSink::new(BufWriter::new(f))),
+            Err(e) => {
+                eprintln!("error: cannot create {p}: {e}");
+                return Err(ExitCode::from(3));
+            }
+        },
+        None => None,
+    };
+    let mut sqlite = match r.out_sqlite.as_deref() {
+        Some(p) => match SqliteSink::open(p) {
+            Ok(s) => Some(s),
+            Err(e) => {
+                eprintln!("error: cannot open sqlite {p}: {e:?}");
+                return Err(ExitCode::from(3));
+            }
+        },
+        None => None,
+    };
+
+    let mut types = std::collections::HashMap::new();
+    for t in topics {
+        if t.type_name == RAW_BYTES_TYPE_NAME {
+            continue; // opaque fallback — nothing to decode against
+        }
+        let want = overrides.get(&t.topic).unwrap_or(&t.type_name);
+        let ty = match book.resolve(want) {
+            Ok(ty) => ty,
+            Err(e) => {
+                eprintln!(
+                    "warn: no IDL type '{want}' for topic '{}' — captured opaque only ({e:?})",
+                    t.topic
+                );
+                continue;
+            }
+        };
+        if let Some(s) = sqlite.as_mut() {
+            if let Err(e) = s.ensure_topic(&t.topic, want, &idl_src, &ty) {
+                eprintln!("error: sqlite schema for {}: {e:?}", t.topic);
+                return Err(ExitCode::from(3));
+            }
+        }
+        println!("zerodds-record: decode topic={} as {want}", t.topic);
+        types.insert(t.topic.clone(), (ty, want.clone()));
+    }
+
+    Ok(DecodeSinks {
+        json,
+        sqlite,
+        types,
+    })
+}
+
 fn run_info(file: &str) -> ExitCode {
     match read_header_summary(file) {
         Ok(s) => {
@@ -252,10 +435,20 @@ fn run_list(file: &str) -> ExitCode {
     }
 }
 
-fn user_reader_config(topic: &str) -> UserReaderConfig {
+/// The opaque type announced when no concrete writer type is discovered for a
+/// requested topic (so a genuine RawBytes writer still records).
+const RAW_BYTES_TYPE_NAME: &str = "zerodds::RawBytes";
+
+/// Build an opaque (raw-payload) reader config that announces `type_name`.
+///
+/// Type-following: DDS matches reader↔writer by type-name equality on both ends,
+/// so to capture a typed topic (e.g. `cuas::Track`) the recorder must announce
+/// the writer's *real* `type_name`, discovered via SEDP — not a generic
+/// `RawBytes`. The payload is stored opaquely (lossless CDR bytes).
+fn user_reader_config(topic: &str, type_name: &str) -> UserReaderConfig {
     UserReaderConfig {
         topic_name: topic.to_string(),
-        type_name: "zerodds::RawBytes".to_string(),
+        type_name: type_name.to_string(),
         reliable: true,
         durability: DurabilityKind::Volatile,
         deadline: DeadlineQosPolicy::default(),
@@ -269,6 +462,49 @@ fn user_reader_config(topic: &str) -> UserReaderConfig {
         type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
         data_representation_offer: None,
     }
+}
+
+/// Resolve each requested topic to the real `type_name`(s) of its discovered
+/// writers, polling SEDP for up to `settle`. Returns one [`TopicKey`] per
+/// distinct `(topic, type)` pair (so a topic carrying two writer types yields
+/// two keys → two readers). Requested topics with no writer in the window get a
+/// `RawBytes` fallback (+ warning) so a genuine RawBytes writer still records.
+fn resolve_topic_types(rt: &DcpsRuntime, requested: &[String], settle: Duration) -> Vec<TopicKey> {
+    let want: std::collections::HashSet<&str> = requested.iter().map(String::as_str).collect();
+    let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+    let mut found: Vec<TopicKey> = Vec::new();
+    let deadline = Instant::now() + settle;
+    loop {
+        for (t, ty) in rt.discovered_publication_topics() {
+            if want.contains(t.as_str()) && seen.insert((t.clone(), ty.clone())) {
+                found.push(TopicKey {
+                    topic: t,
+                    type_name: ty,
+                });
+            }
+        }
+        // Stop early once every requested topic has at least one writer type.
+        let covered = requested
+            .iter()
+            .all(|t| found.iter().any(|k| &k.topic == t));
+        if covered || Instant::now() >= deadline {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    for t in requested {
+        if !found.iter().any(|k| &k.topic == t) {
+            eprintln!(
+                "warn: no writer discovered for topic '{t}' within the settle window — \
+                 falling back to {RAW_BYTES_TYPE_NAME} (records only a RawBytes writer)"
+            );
+            found.push(TopicKey {
+                topic: t.clone(),
+                type_name: RAW_BYTES_TYPE_NAME.to_string(),
+            });
+        }
+    }
+    found
 }
 
 fn unix_ns_now() -> i64 {
@@ -363,6 +599,13 @@ fn print_help() {
            -t, --topic <NAME>           Topic name to subscribe (repeatable, REQUIRED)\n  \
                --duration <DUR>         Recording duration (5, 30s, 2m, 1h)\n  \
                --max-sample-bytes <N>   DoS cap per sample (default 1048576)\n\
+\n\
+         DECODED OUTPUT for `record` (opaque .zddsrec is always written too):\n  \
+               --decode                 Decode samples to typed values (needs --type-file)\n  \
+               --type-file <IDL>        Out-of-band IDL providing the types\n  \
+               --map <TOPIC=Type>       Override which IDL type decodes a topic (repeatable)\n  \
+               --out-json <FILE>        Write decoded samples as NDJSON\n  \
+               --out-sqlite <FILE>      Write decoded samples to per-topic SQLite\n\
 \n\
          GLOBAL OPTIONS:\n  \
            -h, --help                   Show this message\n  \

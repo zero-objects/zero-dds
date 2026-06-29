@@ -414,13 +414,15 @@ fn interface_with_out_param_uses_reference() {
 }
 
 #[test]
-fn any_member_emits_dds_core_any() {
-    // Spec §7.3: any -> dds::core::Any (omg::types::Any-aequivalent).
-    let cpp = gen_cpp(r#"struct M { any value; };"#);
-    assert!(
-        cpp.contains("dds::core::Any"),
-        "dds::core::Any missing:\n{cpp}"
-    );
+fn any_member_is_rejected_cleanly() {
+    // §7.3: `any` (CORBA TypeCode + dynamic value) has NO DDS-XTypes wire form /
+    // TypeObject and no ZeroDDS XCDR codec yet. Rather than emit a non-compiling
+    // `dds::core::Any` field that silently drops on the wire, the DDS PSM-Cxx
+    // generator rejects it cleanly (like C / Python). Tracked: `any` follow-up.
+    let ast =
+        zerodds_idl::parse(r#"struct M { any value; };"#, &ParserConfig::default()).expect("parse");
+    let res = generate_cpp_header(&ast, &CppGenOptions::default());
+    assert!(res.is_err(), "any member must be a clean codegen error");
 }
 
 // ============================================================================
@@ -551,4 +553,68 @@ fn bitmask_explicit_position_overrides_auto() {
     assert!(cpp.contains("A = 1ULL << 3"));
     // B follows with auto-position 4.
     assert!(cpp.contains("B = 1ULL << 4"));
+}
+
+/// Bug D: the generated header must NOT introduce identifiers reserved to the
+/// C++ implementation (§ [lex.name]/3: any identifier containing a double
+/// underscore, or starting with an underscore followed by an uppercase letter,
+/// at any scope, is reserved). The XCDR2 topic codec previously emitted its own
+/// temporaries as `__v`, `__out`, `__repr`, `__max_align`, `__ns…` etc. This
+/// generates a feature-dense header and asserts no codegen-introduced reserved
+/// identifier remains (the only allowed `__` token is the standard predefined
+/// macro `__cplusplus`).
+#[test]
+fn no_implementation_reserved_identifiers() {
+    let src = "\
+module conf {
+  enum Mode { MODE_IDLE, MODE_ACTIVE };
+  union Reading switch (Mode) {
+    case MODE_IDLE:   long   ticks;
+    default:          string code;
+  };
+  @appendable
+  struct Telemetry {
+    @key long          id;
+    Mode               mode;
+    sequence<long>     history;
+    Reading            reading;
+    map<string, long>  counters;
+    long               window[4];
+  };
+};";
+    let cpp = gen_cpp(src);
+    // Tokenize loosely: collect every identifier-like run, then flag any that is
+    // reserved AND not the whitelisted predefined macro.
+    let mut offenders: Vec<String> = Vec::new();
+    let bytes = cpp.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let c = bytes[i];
+        let is_ident_start = c == b'_' || c.is_ascii_alphabetic();
+        if is_ident_start {
+            let start = i;
+            while i < bytes.len() && (bytes[i] == b'_' || bytes[i].is_ascii_alphanumeric()) {
+                i += 1;
+            }
+            let ident = &cpp[start..i];
+            if ident == "__cplusplus" {
+                continue;
+            }
+            let has_dunder = ident.contains("__");
+            let underscore_upper = ident.len() >= 2
+                && ident.as_bytes()[0] == b'_'
+                && ident.as_bytes()[1].is_ascii_uppercase();
+            if has_dunder || underscore_upper {
+                offenders.push(ident.to_string());
+            }
+        } else {
+            i += 1;
+        }
+    }
+    offenders.sort();
+    offenders.dedup();
+    assert!(
+        offenders.is_empty(),
+        "generated header contains C++-reserved identifiers: {offenders:?}"
+    );
 }

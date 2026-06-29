@@ -44,7 +44,7 @@ tls = ["std", "dep:rustls", "dep:rustls-pki-types", "dep:rcgen"]
 # (DDS-XML module I/J). Optional, because roxmltree (transitively via zerodds-xml)
 # needs `extern crate std` and does not compile in the
 # thumbv7em-none-eabihf build.
-zerodds-xml = { version = "1.0.0-rc.3.1", path = "../xml", default-features = false, features = ["alloc"], optional = true }
+zerodds-xml = { version = "1.0.0-rc.4", path = "../xml", default-features = false, features = ["alloc"], optional = true }
 # DTLS 1.2 (feature `dtls`) — pure-Rust DTLS over UDP. webrtc-util must match
 # webrtc-dtls 0.12's `^0.11` requirement (same pin as crates/coap-bridge).
 webrtc-dtls = { version = "0.12", optional = true }

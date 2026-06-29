@@ -42,7 +42,7 @@ Please include:
    channels; CVE assigned via GitHub Security Advisories or
    MITRE direct.
 6. **Advisory** — published under
-   `docs/security/advisories/` and announced via GitHub Releases.
+   `internal/security/advisories/` and announced via GitHub Releases.
 
 ## Hardening Guidance
 
@@ -70,7 +70,7 @@ Production deployments should additionally:
 
 Layer-3 (DDS-Security) and Layer-5 (bridge-security) are the highest-
 priority audit targets. Independent third-party audit reports are
-published under `docs/security/audits/` once available.
+published under `internal/security/audits/` once available.
 
 ## Bug Bounty
 

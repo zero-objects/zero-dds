@@ -116,6 +116,15 @@ pub struct ReliableReader {
     assembler_caps: AssemblerCaps,
     /// Counter for submessages whose `writer_id` has no proxy.
     unknown_src_count: u64,
+    /// `true` ⇒ this reader's RELIABILITY QoS is BEST_EFFORT. A best-effort
+    /// reader (RTPS §8.4.12.1) never blocks delivery on a missing earlier
+    /// sequence number — it has no in-order-without-loss guarantee and (unlike a
+    /// reliable reader) does not NACK to repair the gap. Defaults to `false`
+    /// (reliable, in-order); the DCPS layer flips it via [`Self::set_best_effort`]
+    /// from the reader QoS. Without this, a leading gap (e.g. SN 1 lost in
+    /// transit, or a late-join against a writer whose history still starts at 1)
+    /// deadlocks the best-effort reader forever.
+    best_effort: bool,
 }
 
 /// Configuration at creation.
@@ -159,6 +168,11 @@ pub struct DeliveredSample {
     /// if the writer does not supply a hash inline (typical for
     /// keyless topics).
     pub key_hash: Option<[u8; 16]>,
+    /// Source timestamp from the preceding INFO_TS submessage (DDSI-RTPS
+    /// §8.7.3), if the writer sent one. Feeds `SampleInfo.source_timestamp` and
+    /// `DESTINATION_ORDER = BY_SOURCE_TIMESTAMP`. `None` ⇒ the reader uses
+    /// reception order.
+    pub source_timestamp: Option<crate::header_extension::HeTimestamp>,
 }
 
 impl ReliableReader {
@@ -189,7 +203,15 @@ impl ReliableReader {
             max_samples_per_proxy: cfg.max_samples_per_proxy,
             assembler_caps: cfg.assembler_caps,
             unknown_src_count: 0,
+            best_effort: false,
         }
+    }
+
+    /// Marks this reader as BEST_EFFORT (`true`) or RELIABLE (`false`, the
+    /// default). Best-effort readers skip leading gaps instead of waiting (see
+    /// the `best_effort` field).
+    pub fn set_best_effort(&mut self, best_effort: bool) {
+        self.best_effort = best_effort;
     }
 
     /// GUID.
@@ -325,6 +347,7 @@ impl ReliableReader {
         &mut self,
         source_prefix: GuidPrefix,
         data: &DataSubmessage,
+        source_timestamp: Option<crate::header_extension::HeTimestamp>,
     ) -> Vec<DeliveredSample> {
         let Some(idx) = self.proxy_index_by_writer(Guid::new(source_prefix, data.writer_id)) else {
             self.unknown_src_count = self.unknown_src_count.saturating_add(1);
@@ -337,6 +360,26 @@ impl ReliableReader {
         }
         state.proxy.received_change_set(sn);
         let kind = Self::classify_change_kind(data);
+        // Key-only ALIVE sample (K-flag set, D-flag clear): the payload holds
+        // only the @key fields — an instance registration (e.g. OpenDDS
+        // `register_instance`), NOT a full sample. Full-decoding its key-only
+        // payload fails with a spurious cross-vendor decode error (OpenDDS sends
+        // one key-only DATA per data DATA). Mark the SN received so reliability
+        // advances past it (collect_in_order_for skips a known-but-uncached SN),
+        // but do not deliver it: the actual data arrives in the D-flag samples.
+        // Dispose/unregister key-only markers (kind != Alive) DO carry lifecycle
+        // semantics and fall through to be delivered below.
+        if data.key_flag && kind == ChangeKind::Alive {
+            // Treat like a GAP for this one SN: mark it irrelevant and, if it is
+            // the next in-order SN, advance the delivery pointer so the reliable
+            // reader does not stall waiting to "fill" a registration that will
+            // never be delivered. The subsequent D-flag data SN then flows.
+            state.proxy.irrelevant_change_set(sn);
+            if sn.0 == state.delivered_up_to.0 + 1 {
+                state.delivered_up_to = sn;
+            }
+            return Self::collect_in_order_for(state, self.best_effort);
+        }
         let key_hash = data
             .inline_qos
             .as_ref()
@@ -349,8 +392,10 @@ impl ReliableReader {
             payload: alloc::sync::Arc::clone(&data.serialized_payload),
             kind,
             key_hash,
+            // From the preceding INFO_TS submessage (DDSI-RTPS §8.7.3).
+            source_timestamp,
         });
-        Self::collect_in_order_for(state)
+        Self::collect_in_order_for(state, self.best_effort)
     }
 
     /// Classifies an incoming DATA as Alive vs lifecycle marker.
@@ -383,6 +428,7 @@ impl ReliableReader {
         source_prefix: GuidPrefix,
         df: &DataFragSubmessage,
         now: Duration,
+        source_timestamp: Option<crate::header_extension::HeTimestamp>,
     ) -> Vec<DeliveredSample> {
         let Some(idx) = self.proxy_index_by_writer(Guid::new(source_prefix, df.writer_id)) else {
             self.unknown_src_count = self.unknown_src_count.saturating_add(1);
@@ -396,10 +442,10 @@ impl ReliableReader {
         }
         let result = if let Some(completed) = state.assembler.insert(df) {
             state.proxy.received_change_set(sn);
-            let _ = state
-                .received_cache
-                .insert(CacheChange::alive(sn, completed.payload));
-            Self::collect_in_order_for(state)
+            let _ = state.received_cache.insert(
+                CacheChange::alive(sn, completed.payload).with_source_timestamp(source_timestamp),
+            );
+            Self::collect_in_order_for(state, self.best_effort)
         } else {
             Vec::new()
         };
@@ -435,7 +481,7 @@ impl ReliableReader {
         // `delivered_up_to` to first_sn-1 and delivers samples from
         // the received_cache that were waiting on the hole fill (e.g. a
         // volatile direct send with SN > delivered_up_to+1).
-        Self::collect_in_order_for(state)
+        Self::collect_in_order_for(state, self.best_effort)
     }
 
     /// Process a GAP. Dispatch by `writer_id`.
@@ -459,7 +505,7 @@ impl ReliableReader {
             state.proxy.irrelevant_change_set(sn);
             state.assembler.discard(sn);
         }
-        Self::collect_in_order_for(state)
+        Self::collect_in_order_for(state, self.best_effort)
     }
 
     /// Tick: returns due ACKNACK/NACK_FRAG datagrams **across all
@@ -526,7 +572,10 @@ impl ReliableReader {
             .position(|s| s.proxy.remote_writer_guid == guid)
     }
 
-    fn collect_in_order_for(state: &mut WriterProxyState) -> Vec<DeliveredSample> {
+    fn collect_in_order_for(
+        state: &mut WriterProxyState,
+        best_effort: bool,
+    ) -> Vec<DeliveredSample> {
         // Typically 1 sample per recv in steady-state, occasionally a burst.
         // Pre-alloc with cap=2 eliminates the Vec::grow reallocs without
         // over-allocating on the single-sample path.
@@ -540,6 +589,7 @@ impl ReliableReader {
                     payload: change.payload.clone(),
                     kind: change.kind,
                     key_hash: change.key_hash,
+                    source_timestamp: change.source_timestamp,
                 });
                 state.delivered_up_to = next;
                 state.received_cache.remove_up_to(next);
@@ -552,6 +602,21 @@ impl ReliableReader {
                 // so that subsequent SNs in the received_cache can finally
                 // be delivered. Spec §8.4.12.4.
                 state.delivered_up_to = next;
+            } else if best_effort {
+                // BEST_EFFORT reader (RTPS §8.4.12.1): never block on a missing
+                // `next`. A best-effort reader makes no in-order-without-loss
+                // guarantee and does not NACK to repair the gap, so waiting for
+                // `next` (a sample lost in transit, or one the writer still lists
+                // in its HEARTBEAT but we never received) would deadlock delivery
+                // forever. Skip ahead to the lowest cached SN and deliver from
+                // there. Cross-vendor: an OpenDDS/RTI writer whose first sample to
+                // us is mid-stream lands here.
+                match state.received_cache.min_sn() {
+                    Some(low) if low.0 > next.0 => {
+                        state.delivered_up_to = SequenceNumber(low.0 - 1);
+                    }
+                    _ => break,
+                }
             } else {
                 break;
             }
@@ -770,7 +835,7 @@ mod tests {
         let mut r = make_reader(10);
         let w_eid = single_writer_guid().entity_id;
         let r_eid = r.guid().entity_id;
-        let delivered = r.handle_data(p1(), &data(w_eid, r_eid, 1, 0xAA));
+        let delivered = r.handle_data(p1(), &data(w_eid, r_eid, 1, 0xAA), None);
         assert_eq!(delivered.len(), 1);
         assert_eq!(delivered[0].payload.as_ref(), &[0xAA][..]);
         assert_eq!(delivered[0].writer_guid, single_writer_guid());
@@ -782,9 +847,9 @@ mod tests {
         let mut r = make_reader(10);
         let w = single_writer_guid().entity_id;
         let rd = r.guid().entity_id;
-        assert!(r.handle_data(p1(), &data(w, rd, 2, 0x22)).is_empty());
-        assert!(r.handle_data(p1(), &data(w, rd, 3, 0x33)).is_empty());
-        let out = r.handle_data(p1(), &data(w, rd, 1, 0x11));
+        assert!(r.handle_data(p1(), &data(w, rd, 2, 0x22), None).is_empty());
+        assert!(r.handle_data(p1(), &data(w, rd, 3, 0x33), None).is_empty());
+        let out = r.handle_data(p1(), &data(w, rd, 1, 0x11), None);
         assert_eq!(
             out.iter().map(|s| s.sequence_number).collect::<Vec<_>>(),
             alloc::vec![sn(1), sn(2), sn(3)]
@@ -792,13 +857,39 @@ mod tests {
         assert_eq!(first_state(&r).delivered_up_to, sn(3));
     }
 
+    /// A BEST_EFFORT reader (RTPS §8.4.12.1) must NOT block on a leading gap —
+    /// it does not NACK to repair it, so waiting would deadlock forever. It
+    /// delivers from the lowest received SN. Regression for the cross-vendor
+    /// OpenDDS/RTI case where the writer's first sample to us is mid-stream.
+    #[test]
+    fn best_effort_reader_skips_leading_gap() {
+        let mut r = make_reader(10);
+        r.set_best_effort(true);
+        let w = single_writer_guid().entity_id;
+        let rd = r.guid().entity_id;
+        // SN 1 never arrives. A reliable reader would buffer SN 2/3 forever
+        // (see `out_of_order_data_buffered_until_gap_filled`); a best-effort
+        // reader delivers SN 2 immediately, skipping the missing SN 1.
+        let out = r.handle_data(p1(), &data(w, rd, 2, 0x22), None);
+        assert_eq!(
+            out.iter().map(|s| s.sequence_number).collect::<Vec<_>>(),
+            alloc::vec![sn(2)],
+            "best-effort reader must deliver SN 2 despite the missing SN 1"
+        );
+        assert_eq!(first_state(&r).delivered_up_to, sn(2));
+        // Subsequent in-order samples keep flowing.
+        let out3 = r.handle_data(p1(), &data(w, rd, 3, 0x33), None);
+        assert_eq!(out3.len(), 1);
+        assert_eq!(out3[0].sequence_number, sn(3));
+    }
+
     #[test]
     fn duplicate_data_is_rejected() {
         let mut r = make_reader(10);
         let w = single_writer_guid().entity_id;
         let rd = r.guid().entity_id;
-        r.handle_data(p1(), &data(w, rd, 1, 0xAA));
-        let second = r.handle_data(p1(), &data(w, rd, 1, 0xAA));
+        r.handle_data(p1(), &data(w, rd, 1, 0xAA), None);
+        let second = r.handle_data(p1(), &data(w, rd, 1, 0xAA), None);
         assert!(second.is_empty());
     }
 
@@ -807,7 +898,10 @@ mod tests {
         let mut r = make_reader(10);
         let rd = r.guid().entity_id;
         let foreign = EntityId::user_writer_with_key([0xFF, 0xFF, 0xFF]);
-        assert!(r.handle_data(p1(), &data(foreign, rd, 1, 0xAA)).is_empty());
+        assert!(
+            r.handle_data(p1(), &data(foreign, rd, 1, 0xAA), None)
+                .is_empty()
+        );
         assert_eq!(r.unknown_src_count(), 1);
     }
 
@@ -818,7 +912,7 @@ mod tests {
         let mut r = make_reader(10);
         let w = single_writer_guid().entity_id;
         let rd = r.guid().entity_id;
-        let delivered = r.handle_data(p1(), &data(w, rd, 1, 0xAA));
+        let delivered = r.handle_data(p1(), &data(w, rd, 1, 0xAA), None);
         assert_eq!(delivered.len(), 1);
         assert_eq!(delivered[0].kind, ChangeKind::Alive);
     }
@@ -859,6 +953,7 @@ mod tests {
                 [0xAB; 16],
                 crate::inline_qos::status_info::DISPOSED,
             ),
+            None,
         );
         assert_eq!(delivered.len(), 1);
         assert_eq!(delivered[0].kind, ChangeKind::NotAliveDisposed);
@@ -878,6 +973,7 @@ mod tests {
                 [0xCD; 16],
                 crate::inline_qos::status_info::UNREGISTERED,
             ),
+            None,
         );
         assert_eq!(delivered.len(), 1);
         assert_eq!(delivered[0].kind, ChangeKind::NotAliveUnregistered);
@@ -890,23 +986,36 @@ mod tests {
         let rd = r.guid().entity_id;
         let bits =
             crate::inline_qos::status_info::DISPOSED | crate::inline_qos::status_info::UNREGISTERED;
-        let delivered = r.handle_data(p1(), &lifecycle_data(w, rd, 1, [0xEF; 16], bits));
+        let delivered = r.handle_data(p1(), &lifecycle_data(w, rd, 1, [0xEF; 16], bits), None);
         assert_eq!(delivered.len(), 1);
         assert_eq!(delivered[0].kind, ChangeKind::NotAliveDisposedUnregistered);
     }
 
     #[test]
-    fn key_flag_without_status_info_falls_back_to_alive() {
-        // key_flag=true without PID_STATUS_INFO is spec-borderline — to be
-        // safe we fall back to Alive instead of guessing.
+    fn key_only_alive_registration_is_acked_but_not_delivered() {
+        // A key_flag=true DATA without a DISPOSED/UNREGISTERED status is a
+        // key-only *instance registration* (e.g. OpenDDS register_instance):
+        // the payload holds only the @key fields, not a full sample. It must
+        // NOT be delivered to the application — full-decoding the key-only
+        // payload would raise a spurious cross-vendor decode error. The SN is
+        // still acknowledged so the reliable protocol advances; the actual data
+        // arrives in the D-flag samples.
         let mut r = make_reader(10);
         let w = single_writer_guid().entity_id;
         let rd = r.guid().entity_id;
         let mut d = data(w, rd, 1, 0xAA);
         d.key_flag = true;
-        let delivered = r.handle_data(p1(), &d);
-        assert_eq!(delivered.len(), 1);
-        assert_eq!(delivered[0].kind, ChangeKind::Alive);
+        let delivered = r.handle_data(p1(), &d, None);
+        assert!(
+            delivered.is_empty(),
+            "key-only ALIVE registration must not be delivered"
+        );
+        // A subsequent full (D-flag) sample at SN 2 is delivered: the reader
+        // advanced past the registration without stalling.
+        let d2 = data(w, rd, 2, 0xBB);
+        let delivered2 = r.handle_data(p1(), &d2, None);
+        assert_eq!(delivered2.len(), 1);
+        assert_eq!(delivered2[0].sequence_number, SequenceNumber(2));
     }
 
     #[test]
@@ -925,7 +1034,7 @@ mod tests {
         let mut r = make_reader(10);
         let w = single_writer_guid().entity_id;
         let rd = r.guid().entity_id;
-        r.handle_data(p1(), &data(w, rd, 1, 0xAA));
+        r.handle_data(p1(), &data(w, rd, 1, 0xAA), None);
         r.handle_heartbeat(p1(), &heartbeat(w, rd, 1, 1, 1, true), Duration::ZERO);
         assert!(r.tick(Duration::from_secs(10)).unwrap().is_empty());
     }
@@ -965,8 +1074,8 @@ mod tests {
         let w2 = second_writer_guid().entity_id;
         let rd = r.guid().entity_id;
 
-        let d1 = r.handle_data(p1(), &data(w1, rd, 1, 0xAA));
-        let d2 = r.handle_data(p2(), &data(w2, rd, 1, 0xBB));
+        let d1 = r.handle_data(p1(), &data(w1, rd, 1, 0xAA), None);
+        let d2 = r.handle_data(p2(), &data(w2, rd, 1, 0xBB), None);
 
         assert_eq!(d1.len(), 1);
         assert_eq!(d1[0].payload.as_ref(), &[0xAA][..]);
@@ -999,7 +1108,7 @@ mod tests {
         assert_eq!(r.writer_proxy_count(), 2);
         let rd = r.guid().entity_id;
         // Sample from B: must be assigned to the B proxy, not A.
-        let d = r.handle_data(prefix_b, &data(eid, rd, 1, 0xBB));
+        let d = r.handle_data(prefix_b, &data(eid, rd, 1, 0xBB), None);
         assert_eq!(d.len(), 1);
         assert_eq!(d[0].writer_guid, guid_b, "sample misattributed");
         // The A proxy (proxy 0) must NOT have advanced.

@@ -77,9 +77,13 @@ fn rustls_handshake_succeeds_through_loopback() {
     // Client side.
     let mut roots = rustls::RootCertStore::empty();
     roots.add(CertificateDer::from(cert_der)).expect("add root");
-    let client_cfg = ClientConfig::builder()
-        .with_root_certificates(roots)
-        .with_no_client_auth();
+    let client_cfg = ClientConfig::builder_with_provider(std::sync::Arc::new(
+        zerodds_bridge_security::tls_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .expect("protocol versions")
+    .with_root_certificates(roots)
+    .with_no_client_auth();
     let server_name = ServerName::try_from("localhost").unwrap().to_owned();
     let mut client_conn =
         rustls::ClientConnection::new(Arc::new(client_cfg), server_name).expect("client-conn");

@@ -223,6 +223,12 @@ fn collect_in_typedecl(td: &TypeDecl, u: &mut Usings) {
                 // Top-level union is topic-capable → ITopicType<Self>.
                 if !is_nested_type(&u_def.annotations) {
                     u.add("Omg.Types");
+                    // CS-cluster #3: the union TypeSupport class needs the
+                    // ZeroDDS.Cdr imports (IDdsTopicType, Xcdr2Writer/Reader,
+                    // ExtensibilityKind, EndianMode).
+                    if crate::typesupport::union_xcdr2_codecable(u_def) {
+                        u.add("ZeroDDS.Cdr");
+                    }
                 }
                 if !type_attributes(&u_def.annotations).attrs.is_empty() {
                     u.add("Omg.Types");
@@ -405,12 +411,19 @@ fn emit_struct(out: &mut String, ctx: &mut EmitCtx<'_>, s: &StructDef) -> Result
     let _name = escape_identifier(&s.name.text)?;
     let _ = _name;
     emit_struct_inner(out, ctx, s)?;
-    // Spec zerodds-xcdr2-csharp-1.0 §3 / §4: each top-level (non-@nested)
-    // `struct` MUST have a `*TypeSupport` class emitted.
+    // Spec zerodds-xcdr2-csharp-1.0 §3 / §4: each `struct` with an XCDR2 wire
+    // codec MUST have a `*TypeSupport` class emitted — INCLUDING a `@nested`
+    // struct: a nested type is never a standalone topic (no `ITopicType<T>`
+    // marker, see `emit_struct_inner`), but a struct that USES it as a member
+    // generates `<Name>TypeSupport.Instance.EncodeInto/DecodeFrom` calls, so the
+    // TypeSupport class must exist or the parent's codec fails to compile
+    // (e.g. `@nested @final NestedKey` inside `OuterKey`). The `IDdsTopicType<T>`
+    // surface it carries (Encode/Decode/KeyHash) is harmless for a nested type —
+    // it is simply never registered as a topic.
     // A struct with a map/fixed/any member has no XCDR2 wire codec yet (see
     // `struct_xcdr2_codecable`); emit the data type but skip the TypeSupport
     // rather than a codec that throws `XcdrException` at runtime.
-    if !is_nested_type(&s.annotations) && crate::typesupport::struct_xcdr2_codecable(s) {
+    if crate::typesupport::struct_xcdr2_codecable(s) {
         let ind = ctx.indent();
         let inner = " ".repeat((ctx.indent_level + 1) * ctx.opts.indent_width);
         let deeper = " ".repeat((ctx.indent_level + 2) * ctx.opts.indent_width);
@@ -573,6 +586,22 @@ fn emit_union(out: &mut String, ctx: &mut EmitCtx<'_>, u: &UnionDef) -> Result<(
 
     emit_verbatim_at(out, &inner, &u.annotations, PlacementKind::EndDeclaration)?;
     writeln!(out, "{ind}}}").map_err(fmt_err)?;
+    writeln!(out).map_err(fmt_err)?;
+
+    // CS-cluster #3: a top-level (non-@nested) union gets a real *TypeSupport
+    // class with a working XCDR2 encode/decode — provided every case element
+    // type is codecable.
+    if !is_nested_type(&u.annotations) && crate::typesupport::union_xcdr2_codecable(u) {
+        let deeper = " ".repeat((ctx.indent_level + 2) * ctx.opts.indent_width);
+        let tctx = crate::typesupport::TsEmitContext {
+            module_path: &ctx.module_path,
+            indent: &ind,
+            inner_indent: &inner,
+            deeper_indent: &deeper,
+        };
+        crate::typesupport::emit_union_typesupport_class(out, &tctx, u)?;
+    }
+
     emit_verbatim_at(out, &ind, &u.annotations, PlacementKind::AfterDeclaration)?;
     writeln!(out).map_err(fmt_err)?;
     Ok(())

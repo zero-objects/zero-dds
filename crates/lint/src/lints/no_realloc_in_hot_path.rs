@@ -23,7 +23,7 @@
 //! `no_alloc_in_hot_path` lint covers them for fully-realtime-
 //! critical loops.
 //!
-//! Spec: WP 5.D.1c (`docs/PHASE5_PLAN.md`).
+//! Spec: WP 5.D.1c (`internal/PHASE5_PLAN.md`).
 //!
 //! # Marking
 //!

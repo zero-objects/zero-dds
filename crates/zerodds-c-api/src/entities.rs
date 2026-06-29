@@ -30,9 +30,11 @@ use alloc::vec::Vec;
 use std::sync::{Mutex, mpsc};
 
 use zerodds_dcps::factory::DomainParticipantFactoryQos;
+use zerodds_dcps::instance_tracker::InstanceTracker;
 use zerodds_dcps::participant::DomainParticipant;
 use zerodds_dcps::qos::{
-    DataReaderQos, DataWriterQos, DomainParticipantQos, PublisherQos, SubscriberQos, TopicQos,
+    DataReaderQos, DataWriterQos, DomainParticipantQos, OwnershipKind, PublisherQos, SubscriberQos,
+    TopicQos,
 };
 use zerodds_dcps::runtime::{DcpsRuntime, UserSample};
 use zerodds_rtps::wire_types::EntityId;
@@ -94,6 +96,11 @@ pub struct ZeroDdsDomainParticipant {
     pub topics: Mutex<Vec<*mut ZeroDdsTopic>>,
     pub publishers: Mutex<Vec<*mut ZeroDdsPublisher>>,
     pub subscribers: Mutex<Vec<*mut ZeroDdsSubscriber>>,
+    /// Stable PARTITION-names backing for `get_default_publisher_qos`
+    /// (see `qos_ffi::PartitionOutCache`).
+    pub default_pub_partition_out: Mutex<crate::qos_ffi::PartitionOutCache>,
+    /// Stable PARTITION-names backing for `get_default_subscriber_qos`.
+    pub default_sub_partition_out: Mutex<crate::qos_ffi::PartitionOutCache>,
 }
 
 // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
@@ -129,6 +136,28 @@ pub struct ZeroDdsContentFilteredTopic {
     pub name: String,
     pub filter_expression: String,
     pub parameters: Mutex<Vec<String>>,
+    /// Positional CDR field schema for the untyped C-FFI: set via
+    /// `zerodds_cft_set_schema` so the filter expression evaluates against
+    /// real decoded members instead of falling back to pass-through.
+    pub schema: Mutex<Vec<CftField>>,
+    /// Type extensibility of the payload (XTypes 1.3 §7.3.1.2.1). In XCDR2 an
+    /// `@appendable`/`@mutable` aggregate is prefixed with a 4-byte DHEADER
+    /// (§7.4.3.4.2) before the first member, so the positional schema must
+    /// skip those 4 bytes; a `@final` type has no DHEADER (offset 0).
+    pub extensibility: Mutex<CftExtensibility>,
+}
+
+/// Payload extensibility for the untyped CFT positional decoder
+/// (XTypes 1.3 §7.3.1.2.1). Determines the byte offset at which the first
+/// schema member starts in an XCDR2 stream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CftExtensibility {
+    /// `@final` — no DHEADER; the first member starts at offset 0.
+    #[default]
+    Final,
+    /// `@appendable`/`@mutable` — a 4-byte DHEADER (UInt32 object length,
+    /// XCDR2 §7.4.3.4.2) precedes the members; the schema starts at offset 4.
+    Appendable,
 }
 
 // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
@@ -147,6 +176,9 @@ pub struct ZeroDdsPublisher {
     pub default_dw_qos: Mutex<DataWriterQos>,
     pub datawriters: Mutex<Vec<*mut ZeroDdsDataWriter>>,
     pub suspended: Mutex<bool>,
+    /// Stable backing for PARTITION names emitted by `get_qos` /
+    /// `get_default_datawriter_qos` (see `qos_ffi::PartitionOutCache`).
+    pub partition_out: Mutex<crate::qos_ffi::PartitionOutCache>,
 }
 
 // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
@@ -164,6 +196,9 @@ pub struct ZeroDdsSubscriber {
     pub qos: Mutex<SubscriberQos>,
     pub default_dr_qos: Mutex<DataReaderQos>,
     pub datareaders: Mutex<Vec<*mut ZeroDdsDataReader>>,
+    /// Stable backing for PARTITION names emitted by `get_qos` /
+    /// `get_default_datareader_qos` (see `qos_ffi::PartitionOutCache`).
+    pub partition_out: Mutex<crate::qos_ffi::PartitionOutCache>,
 }
 
 // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
@@ -182,6 +217,9 @@ pub struct ZeroDdsDataWriter {
     pub rt: Arc<DcpsRuntime>,
     pub eid: EntityId,
     pub qos: Mutex<DataWriterQos>,
+    /// Stable backing for PARTITION names emitted by `dw_get_qos`
+    /// (see `qos_ffi::PartitionOutCache`).
+    pub partition_out: Mutex<crate::qos_ffi::PartitionOutCache>,
 }
 
 // SAFETY: FFI-boundary; pointer validity is the caller's contract per crate-level docs.
@@ -212,6 +250,49 @@ pub struct ZeroDdsDataReader {
     /// because no type info is present (vendor decision: pass-through
     /// instead of block-all).
     pub cft_filter: Option<CftFilter>,
+    /// Reader OWNERSHIP kind (Spec §2.2.3.23). EXCLUSIVE → the take path
+    /// arbitrates per instance through [`InstanceTracker`] so only samples
+    /// from the strongest writer reach the binding.
+    pub ownership: OwnershipKind,
+    /// Per-instance state tracker (Spec §2.2.2.5.4 + §2.2.3.23). Holds the
+    /// stable `InstanceHandle` per instance (surfaced in `SampleInfo`) and
+    /// the current exclusive-ownership owner. Untyped C-FFI derives the
+    /// per-instance KeyHash from the sample payload (no IDL key info).
+    pub instances: InstanceTracker,
+    /// Stable backing for PARTITION names emitted by `dr_get_qos`
+    /// (see `qos_ffi::PartitionOutCache`).
+    pub partition_out: Mutex<crate::qos_ffi::PartitionOutCache>,
+}
+
+/// Primitive CDR field kind for the untyped C-FFI ContentFilteredTopic
+/// row decoder. The C-FFI carries no IDL type info, so a filter on a real
+/// sample payload needs an explicit positional schema declaring how the
+/// leading members are encoded (Spec §2.2.2.3.3 — the filter expression
+/// references the topic's fields by name; here the name→ordinal mapping is
+/// supplied through the schema).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CftFieldKind {
+    /// 1-byte boolean (CDR `boolean`, §9.3.2.2).
+    Bool,
+    /// 4-byte signed integer (`long`).
+    Int32,
+    /// 8-byte signed integer (`long long`).
+    Int64,
+    /// 4-byte IEEE float (`float`).
+    Float32,
+    /// 8-byte IEEE float (`double`).
+    Float64,
+    /// length-prefixed CDR `string` (§9.3.2.7).
+    StringField,
+}
+
+/// One named field in the CFT row schema, decoded in declaration order.
+#[derive(Debug, Clone)]
+pub struct CftField {
+    /// Field name as referenced by the filter expression.
+    pub name: String,
+    /// CDR encoding of the field.
+    pub kind: CftFieldKind,
 }
 
 /// ContentFilteredTopic filter in the DataReader.
@@ -220,20 +301,114 @@ pub struct CftFilter {
     pub expr: zerodds_sql_filter::Expr,
     /// Filter parameters %0..%N as a `Value` vector.
     pub params: Vec<zerodds_sql_filter::Value>,
+    /// Optional positional schema describing the leading CDR members of the
+    /// payload. When present, the filter is evaluated against the decoded
+    /// fields (genuinely filters); when absent, the untyped pass-through
+    /// applies. Encoding follows the wire payload: XCDR (little-endian)
+    /// without the encapsulation header (the same-runtime path strips it).
+    pub schema: Vec<CftField>,
+    /// Payload extensibility (XTypes 1.3 §7.3.1.2.1): for `Appendable` the
+    /// positional decoder skips the leading 4-byte XCDR2 DHEADER
+    /// (§7.4.3.4.2) so the first schema member resolves at the right offset.
+    pub extensibility: CftExtensibility,
+}
+
+/// `RowAccess` over a raw CDR payload using a positional `CftField` schema.
+/// Decodes the requested field lazily by walking the leading members in
+/// declaration order until the named field is reached.
+struct CdrRow<'a> {
+    payload: &'a [u8],
+    schema: &'a [CftField],
+    extensibility: CftExtensibility,
+}
+
+impl zerodds_sql_filter::RowAccess for CdrRow<'_> {
+    fn get(&self, path: &str) -> Option<zerodds_sql_filter::Value> {
+        use zerodds_cdr::{BufferReader, Endianness};
+        use zerodds_sql_filter::Value;
+        // XCDR2 little-endian over the bare body (no encap header). The
+        // same-runtime dispatch hands the reader the CDR body directly.
+        let mut r = BufferReader::new(self.payload, Endianness::Little).xcdr2();
+        // For an @appendable/@mutable aggregate the XCDR2 stream begins with a
+        // 4-byte DHEADER (UInt32 object length, XTypes 1.3 §7.4.3.4.2) before
+        // the first member; consume it so the schema offsets line up. A @final
+        // type has no DHEADER (offset 0).
+        if matches!(self.extensibility, CftExtensibility::Appendable) {
+            r.read_u32().ok()?;
+        }
+        for field in self.schema {
+            let want = field.name == path;
+            match field.kind {
+                CftFieldKind::Bool => {
+                    let v = r.read_u8().ok()?;
+                    if want {
+                        return Some(Value::Bool(v != 0));
+                    }
+                }
+                CftFieldKind::Int32 => {
+                    let v = r.read_u32().ok()? as i32;
+                    if want {
+                        return Some(Value::Int(v as i64));
+                    }
+                }
+                CftFieldKind::Int64 => {
+                    let v = r.read_u64().ok()? as i64;
+                    if want {
+                        return Some(Value::Int(v));
+                    }
+                }
+                CftFieldKind::Float32 => {
+                    let v = f32::from_bits(r.read_u32().ok()?);
+                    if want {
+                        return Some(Value::Float(v as f64));
+                    }
+                }
+                CftFieldKind::Float64 => {
+                    let v = f64::from_bits(r.read_u64().ok()?);
+                    if want {
+                        return Some(Value::Float(v));
+                    }
+                }
+                CftFieldKind::StringField => {
+                    let v = r.read_string().ok()?;
+                    if want {
+                        return Some(Value::String(v));
+                    }
+                }
+            }
+        }
+        None
+    }
 }
 
 impl CftFilter {
-    /// Evaluates the filter against a sample payload.
-    /// Untyped/RawBytes: always returns `true` (spec-conformant pass-through).
-    pub fn evaluate(&self, _payload: &[u8]) -> bool {
-        struct EmptyRow;
-        impl zerodds_sql_filter::RowAccess for EmptyRow {
-            fn get(&self, _path: &str) -> Option<zerodds_sql_filter::Value> {
-                None
+    /// Evaluates the filter against a sample payload (Spec §2.2.2.3.3).
+    ///
+    /// With a positional `schema`, the payload is decoded into a row and the
+    /// SQL filter expression is genuinely applied (e.g. `seq > 4` rejects
+    /// samples whose `seq` member is `<= 4`). Without a schema (untyped
+    /// RawBytes topics that carry no field info), the spec-conformant
+    /// pass-through applies: any field-lookup error → keep the sample.
+    pub fn evaluate(&self, payload: &[u8]) -> bool {
+        if self.schema.is_empty() {
+            // Untyped pass-through: no field info, every lookup yields None.
+            struct EmptyRow;
+            impl zerodds_sql_filter::RowAccess for EmptyRow {
+                fn get(&self, _path: &str) -> Option<zerodds_sql_filter::Value> {
+                    None
+                }
             }
+            return self.expr.evaluate(&EmptyRow, &self.params).unwrap_or(true);
         }
-        // Untyped pass-through: on every field-lookup error → true.
-        self.expr.evaluate(&EmptyRow, &self.params).unwrap_or(true)
+        let row = CdrRow {
+            payload,
+            schema: &self.schema,
+            extensibility: self.extensibility,
+        };
+        // A schema is present but a comparison failed to resolve (truncated
+        // payload, type mismatch): DDS §2.2.2.3.3 — a sample that cannot be
+        // evaluated is not delivered. `unwrap_or(false)` drops it.
+        self.expr.evaluate(&row, &self.params).unwrap_or(false)
     }
 }
 

@@ -31,10 +31,12 @@ case "$1" in
         done
 
         # 3) Default-Config nicht ueberschreiben (dpkg-conffile-Modell).
-        CONF="/etc/zerodds/${DAEMON}.yaml"
-        if [ ! -f "${CONF}" ] && [ -f "/usr/share/zerodds/configs/${DAEMON}.yaml.example" ]; then
+        #    @CONF@ = config basename (e.g. mqtt-bridged.yaml, or router.json
+        #    for the JSON-configured routing service).
+        CONF="/etc/zerodds/@CONF@"
+        if [ ! -f "${CONF}" ] && [ -f "/usr/share/zerodds/configs/@CONF@.example" ]; then
             install -m 0640 -o "${SYSUSER}" -g "${SYSGROUP}" \
-                    "/usr/share/zerodds/configs/${DAEMON}.yaml.example" "${CONF}"
+                    "/usr/share/zerodds/configs/@CONF@.example" "${CONF}"
         fi
 
         # 4) systemd reload + enable (auf Trigger des Admins, nicht autostart bei Erst-Install).

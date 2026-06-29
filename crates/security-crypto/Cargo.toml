@@ -21,17 +21,38 @@ workspace = true
 path = "src/lib.rs"
 
 [features]
-safety = []  # empty marker for safe-profile lints (docs/safety-flag-drift.md)
-default = ["std", "metrics"]
+safety = []  # empty marker for safe-profile lints (internal/safety-flag-drift.md)
+default = ["std", "metrics", "ring-backend"]
 std = []
 # Hook points for zerodds-monitor-1.1 §2.5 (security domain). On by default.
 metrics = ["std", "dep:zerodds-monitor"]
+# --- Crypto primitive backend (pick exactly one; lib.rs enforces it) ---
+# `ring-backend` (default): the `ring` AEAD/HMAC/HKDF primitives; works no_std.
+# `aws-lc`: swap in `aws-lc-rs` (AWS-LC, FIPS-140-3-VALIDATABLE — turn on
+#           aws-lc-rs' own `fips` feature on top for the validated module).
+#           Implies `std` (AWS-LC needs std + a C toolchain). Build a FIPS-
+#           capable lib with:
+#             --no-default-features --features std,metrics,aws-lc
+# `wolfcrypt`: swap in `wolfcrypt-ring-compat` (wolfSSL/wolfCrypt, FIPS-ready,
+#           DO-178/embedded heritage) — also ring-API-compatible, so it slots
+#           through the same `backend` alias. Needs `libwolfssl` + std.
+ring-backend = ["dep:ring"]
+aws-lc = ["dep:aws-lc-rs", "std"]
+wolfcrypt = ["dep:wolfcrypt-compat", "std"]
 
 [dependencies]
-zerodds-security = { version = "1.0.0-rc.3.1", path = "../security" }
+zerodds-security = { version = "1.0.0-rc.4", path = "../security" }
 # AEAD + HMAC primitives. ISC. Already pulled transitively by
-# `zerodds-security-pki` (rustls-webpki) — no additional
-# footprint.
-ring = { workspace = true }
+# `zerodds-security-pki` (rustls-webpki) — no additional footprint.
+# Optional: the default `ring-backend` feature selects it; `aws-lc` swaps it out.
+ring = { workspace = true, optional = true }
+# Third backend: wolfSSL/wolfCrypt via a ring-API-compatible shim. Its `[lib]
+# name` is literally `ring` (drop-in replacement), so it MUST be renamed here to
+# get a distinct extern name that doesn't collide with the real `ring` crate.
+# Pulled only by the `wolfcrypt` feature; needs `libwolfssl` (or WOLFSSL_SRC).
+wolfcrypt-compat = { package = "wolfcrypt-ring-compat", version = "1", optional = true }
+# FIPS-validatable primitive backend (AWS-LC), ring-API-compatible. Pulled only
+# by the `aws-lc` feature.
+aws-lc-rs = { version = "1", optional = true }
 # Hook points for zerodds-monitor-1.1 §2.5. Optional.
-zerodds-monitor = { version = "1.0.0-rc.3.1", path = "../monitor", optional = true, default-features = false, features = ["std"] }
+zerodds-monitor = { version = "1.0.0-rc.4", path = "../monitor", optional = true, default-features = false, features = ["std"] }

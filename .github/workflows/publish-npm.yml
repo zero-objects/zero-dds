@@ -1,27 +1,27 @@
 # npm publish job for @zerodds/node (crates/ts-node).
-# Spec: docs/packaging/language-binding-publish-followup.md
+# Spec: internal/packaging/language-binding-publish-followup.md
 #
-# **Trusted Publishing (OIDC)** — kein NPM_AUTH_TOKEN noetig.
+# **Trusted Publishing (OIDC)** — no NPM_AUTH_TOKEN needed.
 #
-# Setup once (User-Action, nicht in CI):
-#  1. npm-Org `zerodds` reservieren (kostenlos): https://www.npmjs.com/signup
-#     Dann unter Account → Organizations → "Create" → name=zerodds
-#     Damit der Scope @zerodds/node frei ist.
-#  2. Trusted Publisher konfigurieren auf npmjs.com:
-#     Package-Settings (@zerodds/node) → Trusted Publishers → "Add"
+# Setup once (user action, not in CI):
+#  1. Reserve the npm org `zerodds` (free): https://www.npmjs.com/signup
+#     Then under Account → Organizations → "Create" → name=zerodds
+#     so that the scope @zerodds/node is available.
+#  2. Configure a Trusted Publisher on npmjs.com:
+#     Package settings (@zerodds/node) → Trusted Publishers → "Add"
 #     Publisher Type: GitHub Actions
 #     Organization: zero-objects
 #     Repository: zero-dds
 #     Workflow: publish-npm.yml
-#     Environment: (leer)
-#     Damit ist der OIDC-Trust hergestellt und der Workflow kann
-#     publishen ohne Token. Provenance-Attestation wird automatisch
-#     erzeugt (Sigstore-signed, supply-chain-tracked).
+#     Environment: (empty)
+#     This establishes the OIDC trust and the workflow can
+#     publish without a token. The provenance attestation is generated
+#     automatically (Sigstore-signed, supply-chain-tracked).
 #
-# Anmerkung: @zerodds/node ist Pure-TS-FFI (koffi gegen libzerodds.so/dylib/dll).
-# Es gibt KEIN native build im npm-Tarball — der User muss libzerodds via
-# Paketmanager / GitHub-Releases installieren (siehe /bindings/typescript-node/).
-# Das hier publishte Paket ist also klein (~50 KB) und plattformneutral.
+# Note: @zerodds/node is pure-TS FFI (koffi against libzerodds.so/dylib/dll).
+# There is NO native build in the npm tarball — the user must install libzerodds via
+# package manager / GitHub releases (see /bindings/typescript-node/).
+# The package published here is therefore small (~50 KB) and platform-neutral.
 
 name: publish-npm
 on:
@@ -37,12 +37,12 @@ on:
           - beta
           - rc
       dry_run:
-        description: "Nur npm pack, kein push"
+        description: "npm pack only, no push"
         required: false
         type: boolean
         default: false
       version_override:
-        description: "Optional: SemVer ueberschreiben (sonst Cargo.toml workspace.version)"
+        description: "Optional: override SemVer (otherwise Cargo.toml workspace.version)"
         required: false
         type: string
         default: ""
@@ -63,8 +63,8 @@ on:
 
 permissions:
   contents: read
-  # OIDC-Token fuer npm Trusted Publishing (eingerichtet 2026-05-19).
-  # Trust-Anchor in npmjs.com/package/@zerodds/node/access → Trusted Publishers.
+  # OIDC token for npm Trusted Publishing (set up 2026-05-19).
+  # Trust anchor in npmjs.com/package/@zerodds/node/access → Trusted Publishers.
   id-token: write
 
 jobs:
@@ -77,7 +77,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          # 24.x minimum fuer Trusted-Publishing + Provenance (npm CLI >= 11.5.1).
+          # 24.x minimum for Trusted Publishing + provenance (npm CLI >= 11.5.1).
           node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
@@ -92,7 +92,7 @@ jobs:
             WS_VERSION=$(grep '^version = ' ../../Cargo.toml | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
             echo "Using Cargo.toml version: $WS_VERSION"
           fi
-          # npm akzeptiert SemVer-Pre-Release direkt (1.0.0-rc.2).
+          # npm accepts SemVer pre-releases directly (1.0.0-rc.2).
           npm version "$WS_VERSION" --no-git-tag-version --allow-same-version
 
       - name: Install deps
@@ -124,7 +124,7 @@ jobs:
       - name: npm publish (OIDC Trusted Publishing + Provenance)
         if: ${{ !inputs.dry_run }}
         working-directory: crates/ts-node
-        # Kein NODE_AUTH_TOKEN — OIDC via id-token + npmjs.com-Trusted-Publisher-Config.
-        # --provenance erzeugt Sigstore-Attestation (Supply-Chain transparency log).
+        # No NODE_AUTH_TOKEN — OIDC via id-token + npmjs.com Trusted Publisher config.
+        # --provenance generates a Sigstore attestation (supply-chain transparency log).
         run: |
           npm publish --provenance --access public --tag "${{ inputs.tag }}"

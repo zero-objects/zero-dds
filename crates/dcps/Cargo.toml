@@ -33,6 +33,15 @@ security = [
     "dep:zerodds-security",
     "dep:zerodds-security-logging",
 ]
+# FIPS crypto backend: route the whole DDS-Security stack through aws-lc-rs
+# (AWS-LC, FIPS-140-3-validatable) instead of ring. Implies `security`. The
+# validated module becomes the *active* crypto on the live RTPS hot path; ring
+# stays linked unless a no-default-features cascade is added (D1a limitation).
+fips = ["security", "zerodds-security-runtime/fips"]
+# wolfCrypt crypto backend (FIPS-ready, DO-178/embedded heritage) via the
+# ring-API-compatible shim. Implies `security`. Needs libwolfssl / WOLFSSL_SRC
+# (a wolfSSL 5.9.x source tree) at build time.
+wolfcrypt = ["security", "zerodds-security-runtime/wolfcrypt"]
 # Hook points for zerodds-monitor-1.1 §2.3 (DCPS domain). On by default.
 metrics = ["std", "dep:zerodds-monitor"]
 # Cross-vendor live interop. Enables FastDDS and Cyclone live
@@ -67,6 +76,12 @@ tsn-live = ["zerodds-transport-tsn/live"]
 # generic bytes it falls back to the POSIX-shm path.
 # Requires a userspace iceoryx2 daemon setup.
 same-host-iceoryx2 = ["zerodds-flatdata?/iceoryx2-bridge"]
+# Cross-vendor same-host zero-copy with Cyclone DDS over the iceoryx C++ (POSH)
+# transport: a DataWriter/DataReader, once `enable_cyclone_iox`-ed, publishes /
+# subscribes Cyclone-PSMX-shaped chunks via the zerodds-iceoryx-cyclone bridge
+# (libiceoryx_binding_c FFI). Linux + iceoryx POSH + iox-roudi only; off by
+# default (cross-vendor RTPS interop stays the portable path).
+cyclone-iox = ["dep:zerodds-iceoryx-cyclone"]
 # Opt-2 (Spec `zerodds-zero-copy-1.0` §9): Linux recvmmsg batch recv.
 # Forwards the feature to zerodds-transport-udp; `recv_user_data_loop`
 # then uses `recv_batch_linux` instead of the single-recv loop.
@@ -79,37 +94,38 @@ recvmmsg-batch = ["zerodds-transport-udp/recvmmsg-batch"]
 inspect = ["dep:zerodds-inspect-endpoint", "zerodds-inspect-endpoint/inspect"]
 
 [dependencies]
-zerodds-cdr = { version = "1.0.0-rc.3.1", path = "../cdr" }
-zerodds-foundation = { version = "1.0.0-rc.3.1", path = "../foundation" }
-zerodds-qos = { version = "1.0.0-rc.3.1", path = "../qos" }
-zerodds-rtps = { version = "1.0.0-rc.3.1", path = "../rtps" }
-zerodds-types = { version = "1.0.0-rc.3.1", path = "../types" }
-zerodds-transport = { version = "1.0.0-rc.3.1", path = "../transport" }
-zerodds-transport-udp = { version = "1.0.0-rc.3.1", path = "../transport-udp" }
+zerodds-cdr = { version = "1.0.0-rc.4", path = "../cdr" }
+zerodds-foundation = { version = "1.0.0-rc.4", path = "../foundation" }
+zerodds-qos = { version = "1.0.0-rc.4", path = "../qos" }
+zerodds-rtps = { version = "1.0.0-rc.4", path = "../rtps" }
+zerodds-types = { version = "1.0.0-rc.4", path = "../types" }
+zerodds-transport = { version = "1.0.0-rc.4", path = "../transport" }
+zerodds-transport-udp = { version = "1.0.0-rc.4", path = "../transport-udp" }
 # TCP transport (DDSI-RTPS §9.4 LocatorKind=TCPv4=4). Optionally
 # selected via the env var ZERODDS_USER_TRANSPORT=TCPv4.
-zerodds-transport-tcp = { version = "1.0.0-rc.3.1", path = "../transport-tcp" }
+zerodds-transport-tcp = { version = "1.0.0-rc.4", path = "../transport-tcp" }
 # Same-host SHM transport (feature `same-host-shm`). Default off —
 # only ZeroDDS peers on the same host benefit; cross-vendor
 # interop keeps running over UDP.
-zerodds-transport-shm = { version = "1.0.0-rc.3.1", path = "../transport-shm", optional = true }
+zerodds-transport-shm = { version = "1.0.0-rc.4", path = "../transport-shm", optional = true }
 # 4b.5 — same-host UDS datagram transport (feature `same-host-uds`).
-zerodds-transport-uds = { version = "1.0.0-rc.3.1", path = "../transport-uds", optional = true }
+zerodds-transport-uds = { version = "1.0.0-rc.4", path = "../transport-uds", optional = true }
 # Live TSN transport (feature `tsn-live`, Linux-only).
-zerodds-transport-tsn = { version = "1.0.0-rc.3.1", path = "../transport-tsn", optional = true, default-features = false }
-zerodds-discovery = { version = "1.0.0-rc.3.1", path = "../discovery" }
-zerodds-sql-filter = { version = "1.0.0-rc.3.1", path = "../sql-filter" }
-zerodds-security-runtime = { version = "1.0.0-rc.3.1", path = "../security-runtime", optional = true }
+zerodds-transport-tsn = { version = "1.0.0-rc.4", path = "../transport-tsn", optional = true, default-features = false }
+zerodds-discovery = { version = "1.0.0-rc.4", path = "../discovery" }
+zerodds-sql-filter = { version = "1.0.0-rc.4", path = "../sql-filter" }
+zerodds-security-runtime = { version = "1.0.0-rc.4", path = "../security-runtime", optional = true }
 # Auth plugin SPI (AuthenticationPlugin/IdentityHandle) — only needed
 # for the handshake driver path (enable_security_builtins_with_auth).
-zerodds-security = { version = "1.0.0-rc.3.1", path = "../security", optional = true }
+zerodds-security = { version = "1.0.0-rc.4", path = "../security", optional = true }
 # Property-driven security logger (dds.sec.log.*) wireup.
-zerodds-security-logging = { version = "1.0.0-rc.3.1", path = "../security-logging", optional = true }
-zerodds-flatdata = { version = "1.0.0-rc.3.1", path = "../flatdata", optional = true, default-features = false, features = ["std"] }
+zerodds-security-logging = { version = "1.0.0-rc.4", path = "../security-logging", optional = true }
+zerodds-flatdata = { version = "1.0.0-rc.4", path = "../flatdata", optional = true, default-features = false, features = ["std"] }
+zerodds-iceoryx-cyclone = { version = "1.0.0-rc.4", path = "../iceoryx-cyclone", optional = true, features = ["posh"] }
 # Inspect endpoint tap hooks (PDE Reality Inspector).
-zerodds-inspect-endpoint = { version = "1.0.0-rc.3.1", path = "../inspect-endpoint", optional = true }
+zerodds-inspect-endpoint = { version = "1.0.0-rc.4", path = "../inspect-endpoint", optional = true }
 # Hook points for zerodds-monitor-1.1 §2.3. Optional.
-zerodds-monitor = { version = "1.0.0-rc.3.1", path = "../monitor", optional = true, default-features = false, features = ["std"] }
+zerodds-monitor = { version = "1.0.0-rc.4", path = "../monitor", optional = true, default-features = false, features = ["std"] }
 
 # Linux-only: libc for pthread_setschedparam + sched_setaffinity in
 # `apply_thread_tuning` (Sprint D.5d lever C — RT pinning + priority).
@@ -125,6 +141,8 @@ libc = { workspace = true }
 # DynamicType lookup + TypeInformation builder for
 # C4 discovery tests (XTypes 1.3 §7.6.3).
 zerodds-types = { path = "../types" }
+# Record-capture e2e (type_following_record_e2e): drive the real .zddsrec path.
+zerodds-recorder = { path = "../recorder" }
 # Wave 4b.3: tempdir for the same_host_shm::tests roundtrip.
 tempfile = "3"
 # Security-gate construction for security E2E tests needs the

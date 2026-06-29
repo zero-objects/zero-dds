@@ -58,6 +58,10 @@ fn patch_option_fn_typedefs(header_path: &std::path::Path) {
             "typedef int (*zerodds_Option_ZeroDdsDecodeFn)(const uint8_t *buf, size_t len, void *out_sample);",
         ),
         (
+            "typedef struct zerodds_Option_ZeroDdsDecodeReprFn zerodds_Option_ZeroDdsDecodeReprFn;",
+            "typedef int (*zerodds_Option_ZeroDdsDecodeReprFn)(const uint8_t *buf, size_t len, uint8_t representation, void *out_sample);",
+        ),
+        (
             "typedef struct zerodds_Option_ZeroDdsKeyHashFn zerodds_Option_ZeroDdsKeyHashFn;",
             "typedef int (*zerodds_Option_ZeroDdsKeyHashFn)(const void *sample, uint8_t *out_hash);",
         ),
@@ -67,7 +71,7 @@ fn patch_option_fn_typedefs(header_path: &std::path::Path) {
         ),
         (
             "typedef struct zerodds_Option_ZeroDdsDataCallback zerodds_Option_ZeroDdsDataCallback;",
-            "typedef void (*zerodds_Option_ZeroDdsDataCallback)(void *user_data, const uint8_t *payload, size_t payload_len, uint8_t representation);",
+            "typedef void (*zerodds_Option_ZeroDdsDataCallback)(void *user_data, const uint8_t *payload, size_t payload_len, uint8_t representation, uint8_t big_endian);",
         ),
     ];
     let mut out = content;
@@ -78,6 +82,7 @@ fn patch_option_fn_typedefs(header_path: &std::path::Path) {
     for fname in [
         "ZeroDdsEncodeFn",
         "ZeroDdsDecodeFn",
+        "ZeroDdsDecodeReprFn",
         "ZeroDdsKeyHashFn",
         "ZeroDdsSampleFreeFn",
         "ZeroDdsDataCallback",

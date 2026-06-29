@@ -3,7 +3,7 @@
 //! DDS Extensions for Time Sensitive Networking (DDS-TSN) 1.0.
 //!
 //! Crate `zerodds-transport-tsn`. Safety classification: **STANDARD**.
-//! Spec `formal/2024-05-16` (`docs/standards/cache/omg/dds-tsn-1.0-beta2.pdf`).
+//! Spec `formal/2024-05-16` (`internal/standards/cache/omg/dds-tsn-1.0-beta2.pdf`).
 //!
 //! # Scope
 //!

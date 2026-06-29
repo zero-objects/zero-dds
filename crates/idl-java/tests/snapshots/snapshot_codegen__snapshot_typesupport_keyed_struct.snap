@@ -23,8 +23,11 @@ public final class SensorTypeSupport implements org.zerodds.cdr.TopicTypeSupport
     public byte[] encode(Sensor sample) { return encode(sample, org.zerodds.cdr.EndianMode.LITTLE_ENDIAN); }
 
     @Override
-    public byte[] encode(Sensor sample, org.zerodds.cdr.EndianMode endian) {
-        org.zerodds.cdr.Xcdr2Writer w = new org.zerodds.cdr.Xcdr2Writer(endian);
+    public byte[] encode(Sensor sample, org.zerodds.cdr.EndianMode endian) { return encode(sample, endian, 1); }
+
+    public byte[] encode(Sensor sample, org.zerodds.cdr.EndianMode endian, int representation) {
+        int __maxAlign = representation == 0 ? org.zerodds.cdr.Xcdr2Writer.XCDR1_MAX_ALIGN_VALUE : 4;
+        org.zerodds.cdr.Xcdr2Writer w = new org.zerodds.cdr.Xcdr2Writer(endian, __maxAlign);
         w.writeInt32(sample.getId());
         w.writeFloat64(sample.getValue());
         return w.toByteArray();
@@ -34,17 +37,31 @@ public final class SensorTypeSupport implements org.zerodds.cdr.TopicTypeSupport
     public Sensor decode(byte[] bytes) { return decode(bytes, 0, bytes.length); }
 
     @Override
-    public Sensor decode(byte[] bytes, int offset, int length) {
-        org.zerodds.cdr.Xcdr2Reader r = new org.zerodds.cdr.Xcdr2Reader(bytes, offset, length, org.zerodds.cdr.EndianMode.LITTLE_ENDIAN);
+    public Sensor decode(byte[] bytes, int offset, int length) { return decode(bytes, offset, length, org.zerodds.cdr.EndianMode.LITTLE_ENDIAN); }
+    public Sensor decode(byte[] bytes, int offset, int length, org.zerodds.cdr.EndianMode endian) { return decode(bytes, offset, length, endian, 1); }
+    public Sensor decode(byte[] bytes, int offset, int length, org.zerodds.cdr.EndianMode endian, int representation) {
+        int __maxAlign = representation == 0 ? org.zerodds.cdr.Xcdr2Reader.XCDR1_MAX_ALIGN_VALUE : 4;
+        org.zerodds.cdr.Xcdr2Reader r = new org.zerodds.cdr.Xcdr2Reader(bytes, offset, length, endian, __maxAlign);
+        return decodeFrom(r);
+    }
+
+    public static Sensor decodeFrom(org.zerodds.cdr.Xcdr2Reader r) {
         Sensor v = new Sensor();
-        v.setId(r.readInt32());
-        v.setValue(r.readFloat64());
+        {
+            int __rv = r.readInt32();
+            v.setId(__rv);
+        }
+        {
+            double __rv = r.readFloat64();
+            v.setValue(__rv);
+        }
         return v;
     }
 
     @Override
     public byte[] keyHash(Sensor sample) {
-        org.zerodds.cdr.Xcdr2Writer w = new org.zerodds.cdr.Xcdr2Writer(org.zerodds.cdr.EndianMode.BIG_ENDIAN);
+        org.zerodds.cdr.EndianMode endian = org.zerodds.cdr.EndianMode.BIG_ENDIAN;
+        org.zerodds.cdr.Xcdr2Writer w = new org.zerodds.cdr.Xcdr2Writer(endian);
         w.writeInt32(sample.getId());
         byte[] holder = w.toByteArray();
         if (holder.length <= 16) {
@@ -53,5 +70,25 @@ public final class SensorTypeSupport implements org.zerodds.cdr.TopicTypeSupport
             return h;
         }
         return org.zerodds.cdr.Md5.hash(holder);
+    }
+
+    private static void skipByLc(org.zerodds.cdr.Xcdr2Reader r, int lc) {
+        switch (lc) {
+            case 0: r.skip(1); break;
+            case 1: r.skip(2); break;
+            case 2: r.skip(4); break;
+            case 3: r.skip(8); break;
+            default: { int __n = r.readNextInt(); r.skip(__n); break; }
+        }
+    }
+
+    private static byte[] readDelimitedFrame(org.zerodds.cdr.Xcdr2Reader r) {
+        int __sz = r.readDHeader();
+        byte[] __body = r.readBytes(__sz);
+        byte[] __frame = new byte[4 + __sz];
+        __frame[0] = (byte) (__sz & 0xFF); __frame[1] = (byte) ((__sz >>> 8) & 0xFF);
+        __frame[2] = (byte) ((__sz >>> 16) & 0xFF); __frame[3] = (byte) ((__sz >>> 24) & 0xFF);
+        System.arraycopy(__body, 0, __frame, 4, __sz);
+        return __frame;
     }
 }

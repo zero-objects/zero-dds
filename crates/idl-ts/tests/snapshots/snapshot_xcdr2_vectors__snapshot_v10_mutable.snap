@@ -72,25 +72,67 @@ export const MTypeSupport: DdsTopicType<M> = {
     isKeyed: false,
     extensibility: "mutable",
     encodeInto(w: Xcdr2Writer, s: M): void {
-        const _tok = w.beginMutable();
-        w.writeEmHeader(1, 2, false);
-        w.writeInt32(s.a);
+        if (w.isXcdr1) {
+        const _plOuter = w;
         {
-            w.writeEmHeader(2, 3, false, 0);
-            const _bodyStart = w.pos;
+            const _sub = new Xcdr2Writer(_plOuter.endian, 8);
+            { const w = _sub;
+                w.writeInt32(s.a);
+            }
+            _plOuter.writePlCdr1Member(1, _sub.toBytes());
+        }
+        {
+            const _sub = new Xcdr2Writer(_plOuter.endian, 8);
+            { const w = _sub;
+                w.writeString(s.b);
+            }
+            _plOuter.writePlCdr1Member(2, _sub.toBytes());
+        }
+        _plOuter.writePlCdr1Sentinel();
+        } else {
+        const _tok = w.beginMutable();
+        {
+            w.writeEmHeader(1, 2, false);
+            w.pushAlignmentOrigin();
+            w.writeInt32(s.a);
+            w.popAlignmentOrigin();
+        }
+        {
+            w.writeEmHeader(2, 5, false);
+            w.pushAlignmentOrigin();
             w.writeString(s.b);
-            w.patchUint32(_bodyStart - 4, w.pos - _bodyStart);
+            w.popAlignmentOrigin();
         }
         w.endMutable(_tok);
+        }
     },
-    encode(s: M, endian: EndianMode = "le"): Uint8Array {
-        const w = new Xcdr2Writer(endian);
+    encode(s: M, endian: EndianMode = "le", representation = 1): Uint8Array {
+        const w = new Xcdr2Writer(endian, representation === 0 ? 8 : 4);
         this.encodeInto(w, s);
         return w.toBytes();
     },
     decodeFrom(r: Xcdr2Reader): M {
         let _f_a: number | undefined = 0;
         let _f_b: string | undefined = "";
+        if (r.isXcdr1) {
+            let _plm: { memberId: number; bodyEnd: number } | null;
+            while ((_plm = r.beginPlCdr1Member()) !== null) {
+                switch (_plm.memberId) {
+                case 1: {
+                    const _v: number = r.readInt32();
+                    _f_a = _v;
+                    break;
+                }
+                case 2: {
+                    const _v: string = r.readString();
+                    _f_b = _v;
+                    break;
+                }
+                default: break;
+                }
+                r.endPlCdr1Member(_plm);
+            }
+        } else {
         const _tok = r.beginMutable();
         while (r.pos < _tok.bodyEnd) {
             const _emh = r.readEmHeader();
@@ -109,19 +151,21 @@ export const MTypeSupport: DdsTopicType<M> = {
                 default: {
                     // Skip unknown member per XTypes §7.4.2.
                     if (_emh.nextInt !== null) { r.readBytes(_emh.nextInt); }
+                    else if (_emh.lc >= 5) { const _len = r.readUint32(); r.readBytes(_len); }
                     else { const _sz = Xcdr2Reader.lcInlineSize(_emh.lc); if (_sz > 0) r.readBytes(_sz); }
                     break;
                 }
             }
         }
         r.endMutable(_tok);
+        }
         return {
             a: _f_a as number,
             b: _f_b as string,
         };
     },
-    decode(bytes: Uint8Array, offset = 0, length: number = bytes.length - offset): M {
-        const r = new Xcdr2Reader(bytes, offset, length, "le");
+    decode(bytes: Uint8Array, offset = 0, length: number = bytes.length - offset, endian: EndianMode = "le", representation = 1): M {
+        const r = new Xcdr2Reader(bytes, offset, length, endian, representation === 0 ? 8 : 4);
         return this.decodeFrom(r);
     },
     keyHash(s: M): Uint8Array {

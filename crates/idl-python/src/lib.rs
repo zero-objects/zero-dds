@@ -37,16 +37,20 @@
 //! | `float` / `double` / `long double` | `Float32` / `Float64` / `LongDouble` |
 //! | `char` / `wchar` | `Char` / `WChar` |
 //! | `string` / `wstring` | `String` / `WString` |
+//! | `string<N>` / `wstring<N>` | `BoundedString[N]` / `BoundedWString[N]` (bound enforced) |
 //! | `sequence<T>` | `List[T]` |
-//! | `T[N]` | `List[T]` (multi-dim → nested) |
+//! | `sequence<T, N>` | `Sequence[T, N]` (bound enforced) |
+//! | `map<K, V>` / `map<K, V, N>` | `Dict[K, V]` / `Map[K, V, N]` (bound enforced) |
+//! | `T[N]` | `Array[T, N]` (multi-dim → nested) |
 //!
-//! # Phase-2 material (today `Unsupported`)
+//! Bounded collections and strings emit the bound-enforcing `zerodds.idl`
+//! brand so an over-bound value raises at runtime instead of silently
+//! corrupting the wire frame.
 //!
-//! - `union` with a discriminator
-//! - `bitset` / `bitmask`
-//! - `typedef T name` (for now without a comment; phase 2: `typing.TypeAlias`)
-//! - `valuetype`, `interface`, `exception`
-//! - `fixed`, `map`, `any`
+//! # Unsupported (today `Unsupported`)
+//!
+//! - `valuetype`, `interface`
+//! - `fixed`, `any`
 //!
 //! # Example
 //!
@@ -64,7 +68,8 @@
 //! assert!(py_src.contains("@dataclass"));
 //! assert!(py_src.contains("class Greeting:"));
 //! assert!(py_src.contains("id: Int32"));
-//! assert!(py_src.contains("text: String"));
+//! // `string<128>` is bounded → the bound-enforcing brand is emitted.
+//! assert!(py_src.contains("text: BoundedString[128]"));
 //! ```
 
 #![forbid(unsafe_code)]

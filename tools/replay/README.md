@@ -33,7 +33,25 @@ zerodds-replay dump recording.zddsrec
 zerodds-replay replay recording.zddsrec --time-scale 1.0
 zerodds-replay replay recording.zddsrec \
   --inject --inject-domain 0 --topic Pose
+
+# replay also reads the decoded formats written by `record --decode`
+zerodds-replay replay tracks.ndjson --inject
+zerodds-replay replay tracks.db --inject
 ```
+
+## Input formats
+
+`replay` detects the format from the file extension and re-publishes byte-exact
+from the raw CDR bytes each format retains:
+
+| Extension | Format |
+| --- | --- |
+| `.zddsrec` | native binary capture (streamed) |
+| `.json` / `.ndjson` / `.jsonl` | decoded NDJSON (`record --out-json`) |
+| `.db` / `.sqlite` / `.sqlite3` | decoded SQLite (`record --out-sqlite`) |
+
+The NDJSON line carries the DDS `type` name and SQLite carries `_types`, so the
+replay writer is created with the correct type without an out-of-band IDL.
 
 ## Sub-commands
 
@@ -41,7 +59,9 @@ zerodds-replay replay recording.zddsrec \
 | --- | --- |
 | `inspect <file>` | Print recording header and per-topic frame count. |
 | `dump <file>` | List every frame with timestamp, topic, length. |
-| `replay <file> [--time-scale F] [--topic NAME]... [--inject [--inject-domain N]]` | Replay frames at wallclock speed (`F=1.0`) or scaled (`F>1.0` faster); whitelist topics; optionally inject into a live DCPS domain. |
+| `replay <file> [--time-scale F] [--topic NAME]... [--inject [--inject-domain N]]` | Replay frames at wallclock speed (`F=1.0`) or scaled (`F>1.0` faster); whitelist topics; optionally inject into a live DCPS domain. Accepts `.zddsrec`, NDJSON and SQLite (see *Input formats*). |
+
+`inspect` and `dump` operate on `.zddsrec` only.
 
 ## Stability
 

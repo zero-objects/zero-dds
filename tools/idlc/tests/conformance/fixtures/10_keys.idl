@@ -1,0 +1,13 @@
+// Conformance feature: @key members (DDS keyed topic types).
+module conf {
+  struct Keyed {
+    @key long      id;
+    @key string<16> region;
+    double         value;
+  };
+  struct MultiKey {
+    @key long  a;
+    @key long  b;
+    long       payload;
+  };
+};

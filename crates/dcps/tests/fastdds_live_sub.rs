@@ -66,8 +66,8 @@ mod tests {
     };
 
     use super::cross_vendor::{
-        FastDurability, FastQos, FastReliability, SSH_HOST, SSH_PASS, SSH_USER,
-        live_host_available, start_fastdds_sub,
+        FastDurability, FastQos, FastReliability, SSH_HOST, SSH_PASS, SSH_USER, require_or_skip,
+        start_fastdds_sub,
     };
 
     const FASTDDS_DOMAIN: i32 = 143;
@@ -117,8 +117,7 @@ mod tests {
     }
 
     fn run_sub_test(topic: &'static str, fast_qos: FastQos, wr_qos: DataWriterQos) {
-        if !live_host_available() {
-            eprintln!("LLVM_HOST_AVAILABLE not set + sshpass missing — skipping");
+        if !require_or_skip("fastdds_live_sub") {
             return;
         }
 

@@ -1,0 +1,9 @@
+// Conformance feature: maps — primitive keys/values, struct values, bounded.
+module conf {
+  struct Entry { long v; };
+  struct Maps {
+    map<string, long>    byName;
+    map<long, Entry>     byId;
+    map<string, long, 8> bounded;
+  };
+};

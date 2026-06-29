@@ -36,7 +36,7 @@ sha2 = { workspace = true, features = ["oid"] }
 base64 = "0.22"
 
 # For the round-trip self-check against the real verifier.
-zerodds-security-permissions = { version = "1.0.0-rc.3.1", path = "../../crates/security-permissions" }
+zerodds-security-permissions = { version = "1.0.0-rc.4", path = "../../crates/security-permissions" }
 
 [dev-dependencies]
 rand_core = { version = "0.6", features = ["getrandom"] }

@@ -7,6 +7,7 @@
 #define ZERODDS_DDS_SUB_SUBSCRIBER_HPP
 
 #include <cstring>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -18,10 +19,32 @@
 #include "dds/core/qos_bridge.hpp"
 #include "dds/domain/DomainParticipant.hpp"
 #include "dds/topic/Topic.hpp"
+#include "dds/topic/xcdr2.hpp"
 #include "zerodds.h"
 
 namespace dds {
 namespace sub {
+
+namespace detail {
+
+// Decode arity adapter (Spec-neutral). idl-cpp emits a 3-arg
+// decode(buf,len,XcdrVersion); hand-written topic_type_support<T>
+// specializations (TopicTraits.hpp ByteSeq/string) use the 2-arg
+// decode(buf,len). DataReader<T>::take() dispatches to whichever the
+// specialization provides, so the typed reader compiles against both
+// without a hand-added overload in the generated header.
+template <typename TS>
+auto decode_sample(const uint8_t* buf, size_t len, int)
+    -> decltype(TS::decode(buf, len, ::dds::topic::xcdr2::XcdrVersion::Xcdr2)) {
+    return TS::decode(buf, len, ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
+}
+template <typename TS>
+auto decode_sample(const uint8_t* buf, size_t len, long)
+    -> decltype(TS::decode(buf, len)) {
+    return TS::decode(buf, len);
+}
+
+} // namespace detail
 
 /// SampleInfo (Spec §7.5.15.6).
 class SampleInfo {
@@ -104,7 +127,8 @@ public:
     }
     Subscriber(::dds::domain::DomainParticipant& dp, const ::dds::core::SubscriberQos& qos)
         : participant_(dp.native_handle()) {
-        auto native = ::dds::core::detail::to_native(qos);
+        ::dds::core::detail::PartitionPtrs part;
+        auto native = ::dds::core::detail::to_native(qos, part);
         handle_ = zerodds_dp_create_subscriber(participant_, &native);
         if (handle_ == nullptr) {
             throw ::dds::core::Error("Subscriber::create with QoS failed");
@@ -167,10 +191,37 @@ public:
     }
     DataReader(Subscriber& sub, ::dds::topic::Topic<T>& topic, const ::dds::core::DataReaderQos& qos)
         : subscriber_(sub.native_handle()) {
-        auto native = ::dds::core::detail::to_native(qos);
+        ::dds::core::detail::PartitionPtrs part;
+        auto native = ::dds::core::detail::to_native(qos, part);
         handle_ = zerodds_sub_create_datareader(subscriber_, topic.native_handle(), &native);
         if (handle_ == nullptr) {
             throw ::dds::core::Error("DataReader::create with QoS failed");
+        }
+    }
+
+    /// CFT-aware constructors (Spec §7.5.13.7) — binds the reader to a
+    /// ContentFilteredTopic so its filter expression is evaluated on every
+    /// take/read. Templated on the CFT type to avoid a hard include cycle;
+    /// any type exposing `native_cft_handle()` works (i.e.
+    /// `dds::topic::ContentFilteredTopic<T>`).
+    template <typename CftT>
+    DataReader(Subscriber& sub, CftT& cft)
+        : subscriber_(sub.native_handle()) {
+        handle_ = zerodds_sub_create_datareader_with_cft(
+            subscriber_, cft.native_cft_handle(), nullptr);
+        if (handle_ == nullptr) {
+            throw ::dds::core::Error("DataReader::create (CFT) failed");
+        }
+    }
+    template <typename CftT>
+    DataReader(Subscriber& sub, CftT& cft, const ::dds::core::DataReaderQos& qos)
+        : subscriber_(sub.native_handle()) {
+        ::dds::core::detail::PartitionPtrs part;
+        auto native = ::dds::core::detail::to_native(qos, part);
+        handle_ = zerodds_sub_create_datareader_with_cft(
+            subscriber_, cft.native_cft_handle(), &native);
+        if (handle_ == nullptr) {
+            throw ::dds::core::Error("DataReader::create (CFT) with QoS failed");
         }
     }
 
@@ -208,7 +259,7 @@ public:
             size_t len = arr.lengths[i];
             T data{};
             if (arr.infos[i].valid_data) {
-                data = ::dds::topic::topic_type_support<T>::decode(buf, len);
+                data = detail::decode_sample<::dds::topic::topic_type_support<T>>(buf, len, 0);
             }
             out.emplace_back(std::move(data), SampleInfo(arr.infos[i]));
         }
@@ -247,6 +298,19 @@ public:
         ::dds::core::status::SampleLostStatus out;
         out.total_count = s.total_count;
         out.total_count_change = s.total_count_change;
+        return out;
+    }
+    /// `requested_deadline_missed_status` (Spec §2.2.2.5.2.6). Increments
+    /// each time the offered DEADLINE period elapses with no new sample for
+    /// an instance the reader tracks.
+    ::dds::core::status::RequestedDeadlineMissedStatus requested_deadline_missed_status() {
+        zerodds_ZeroDdsRequestedDeadlineMissedStatus s{};
+        ::dds::core::check_status(zerodds_dr_get_requested_deadline_missed_status(handle_, &s),
+                                  "DataReader::requested_deadline_missed_status");
+        ::dds::core::status::RequestedDeadlineMissedStatus out;
+        out.total_count = s.total_count;
+        out.total_count_change = s.total_count_change;
+        out.last_instance_handle = ::dds::core::InstanceHandle(s.last_instance_handle);
         return out;
     }
     /// `liveliness_changed_status`.

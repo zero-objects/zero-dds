@@ -130,6 +130,66 @@ impl DynamicTypeBuilder {
         Ok(())
     }
 
+    /// Adds a member whose type is a fully-resolved `DynamicType` instead of
+    /// being (shallowly) reconstructed from `descriptor.member_type`. Used by
+    /// the TypeObject → DynamicType bridge to attach a recursively-resolved
+    /// nested composite (struct/union/enum) member type — `add_member` would
+    /// otherwise rebuild it from the member's shallow `TypeDescriptor` and lose
+    /// the nested members. Runs the same validity checks as [`add_member`].
+    ///
+    /// # Errors
+    /// `PreconditionNotMet` after `build()`, `IllegalOperation` on a
+    /// non-composite, `Inconsistent`/`Builder` on a malformed or duplicate member.
+    pub fn add_member_resolved(
+        &mut self,
+        mut descriptor: MemberDescriptor,
+        member_type: DynamicType,
+    ) -> Result<(), DynamicError> {
+        if self.sealed.load(Ordering::Acquire) {
+            return Err(DynamicError::PreconditionNotMet(String::from(
+                "add_member after build()",
+            )));
+        }
+        if !self.descriptor.kind.is_aggregable() {
+            return Err(DynamicError::IllegalOperation(alloc::format!(
+                "add_member on non-composite kind {:?}",
+                self.descriptor.kind
+            )));
+        }
+        descriptor
+            .is_consistent()
+            .map_err(DynamicError::inconsistent)?;
+        if self
+            .members
+            .iter()
+            .any(|m| m.descriptor.name == descriptor.name)
+        {
+            return Err(DynamicError::builder(alloc::format!(
+                "duplicate member name {}",
+                descriptor.name
+            )));
+        }
+        if self
+            .members
+            .iter()
+            .any(|m| m.descriptor.id == descriptor.id)
+        {
+            return Err(DynamicError::builder(alloc::format!(
+                "duplicate member id {}",
+                descriptor.id
+            )));
+        }
+        let auto_index = u32::try_from(self.members.len()).unwrap_or(u32::MAX);
+        if descriptor.index == 0 && auto_index != 0 {
+            descriptor.index = auto_index;
+        }
+        self.members.push(DynamicTypeMember {
+            descriptor,
+            member_type,
+        });
+        Ok(())
+    }
+
     /// Convenience wrapper for structs.
     ///
     /// # Errors

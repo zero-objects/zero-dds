@@ -96,3 +96,23 @@ fn snapshot_v11_optional_member_mutable() {
         "@mutable struct O { @id(1) @optional long maybe; };"
     ));
 }
+
+// REGRESSION GATE: @mutable members WITHOUT explicit @id -> SEQUENTIAL 0-based
+// ids (XTypes 1.3 §7.3.4.3; vendor-confirmed vs Cyclone). C# is already correct;
+// this locks it so a future change can't silently regress the @mutable wire.
+#[test]
+fn mutable_autoid_is_zero_based_sequential() {
+    let cs = gen_default("@mutable struct AutoId { long a; long b; };");
+    assert!(
+        cs.contains("WriteEmHeader(0u,"),
+        "first @mutable auto-id must be 0:\n{cs}"
+    );
+    assert!(
+        cs.contains("WriteEmHeader(1u,"),
+        "second @mutable auto-id must be 1:\n{cs}"
+    );
+    assert!(
+        !cs.contains("WriteEmHeader(2u,"),
+        "no member should be id 2 (1-based regression)"
+    );
+}

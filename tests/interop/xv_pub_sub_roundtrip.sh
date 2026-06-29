@@ -75,7 +75,7 @@ mkdir -p "$OUTDIR"
 
 # --- Step 1: ZeroDDS-Examples bauen ---
 echo "[xv-roundtrip] cargo build --example shapes_demo_publisher --example shapes_demo_subscriber"
-cargo build -p dds-dcps --example shapes_demo_publisher --example shapes_demo_subscriber \
+cargo build -p zerodds-dcps --example shapes_demo_publisher --example shapes_demo_subscriber \
     >"$OUTDIR/build.log" 2>&1
 ZD_PUB="$REPO/target/debug/examples/shapes_demo_publisher"
 ZD_SUB="$REPO/target/debug/examples/shapes_demo_subscriber"

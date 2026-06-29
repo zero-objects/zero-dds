@@ -1,0 +1,8 @@
+# Generated test-only CA + certs + signed XML. Reproduzierbar via gen.sh.
+# Wir tracken nur die QUELLEN: gen.sh + governance.xml + permissions_*.xml.
+# Alles Generierte (certs, CMS-p7s, die cyclone-XMLs mit maschinen-
+# spezifischen Absolutpfaden) erzeugt gen.sh und wird NICHT getrackt.
+certs/
+*.p7s
+*.srl
+cyclone_security_*.xml

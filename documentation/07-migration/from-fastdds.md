@@ -140,7 +140,7 @@ zerodds-admin --listen --topic HelloWorldTopic
 ```
 
 Cross-vendor wire-compat smoke runs nightly under
-`docs/interop/` against the latest Fast DDS release.
+`internal/interop/` against the latest Fast DDS release.
 
 ## Reading further
 

@@ -34,6 +34,9 @@ pub fn generate_rust_module(spec: &Specification, opts: &RustGenOptions) -> Resu
     // interface-ref set (no stale state from a previous corba-rust run in
     // the same process, e.g. a two-pass build.rs).
     crate::type_map::set_interface_refs(core::iter::empty());
+    // Record struct/enum/typedef names so `field_value` resolves scoped fields
+    // (struct → forward, enum → int, typedef-to-primitive → leaf).
+    crate::type_map::register_types_for_field_value(spec);
     let mut out = String::new();
     out.push_str("// SPDX-License-Identifier: Apache-2.0\n");
     if let Some(c) = &opts.header_comment {
@@ -47,6 +50,9 @@ pub fn generate_rust_module(spec: &Specification, opts: &RustGenOptions) -> Resu
     out.push('\n');
     out.push_str("#![allow(clippy::too_many_lines)]\n");
     out.push_str("#![allow(unused_imports)]\n");
+    // IDL identifiers may be camelCase (e.g. NGVA headlessCamelCase per
+    // AEP-4754 Vol V §8.1.3); generated structs keep the IDL field spelling.
+    out.push_str("#![allow(non_snake_case)]\n");
     out.push('\n');
     out.push_str("use zerodds_cdr::{BufferReader, BufferWriter, CdrDecode, CdrEncode, DecodeError, EncodeError, Endianness};\n");
     out.push('\n');
@@ -67,6 +73,7 @@ pub fn generate_rust_module(spec: &Specification, opts: &RustGenOptions) -> Resu
 /// # Errors
 /// `Unsupported` for IDL constructs outside the DataType scope.
 pub fn append_data_types(out: &mut String, spec: &Specification, cdr_only: bool) -> Result<()> {
+    crate::type_map::register_types_for_field_value(spec);
     let mut path: Vec<String> = Vec::new();
     for def in &spec.definitions {
         emit_definition(out, def, &mut path, cdr_only)?;

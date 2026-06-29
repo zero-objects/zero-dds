@@ -454,24 +454,20 @@ fn v10_mutable_struct() {
         eprintln!("WARNING: skipping V-10, no C++ compiler");
         return;
     };
-    // Body-Layout (origin = byte after DHEADER), EMHEADER ambient-LE
-    // per XTypes 1.3 §7.4.3.4.5:
-    //   off 0..4  : EMHEADER1 (LC=2, id=1, MU=0) = u32 0x20000001 LE = 01 00 00 20
-    //   off 4..8  : a = 42 (LE int32) = 2A 00 00 00
-    //   off 8..12 : EMHEADER2 (LC=4, id=2, MU=0) = u32 0x40000002 LE = 02 00 00 40
-    //               LC=4 = variable body with NEXTINT (NOT LC=3 = fixed 8-byte;
-    //               a spec/Rust/Cyclone reader desyncs on LC=3 for a string).
-    //   off 12..16: NEXTINT = 7 (string body bytes incl. length-prefix and NUL)
-    //               = 07 00 00 00
-    //   off 16..23: string "hi\0" with 4-byte len-prefix:
-    //               03 00 00 00 68 69 00
-    // Total body = 23 bytes. DHEADER = 23.
+    // Body-Layout (origin = byte after DHEADER). Bug XV-mut: @mutable members use
+    // COMPACT length codes (XTypes 1.3 §7.4.3.4.2), cross-vendor-validated against
+    // CycloneDDS/RTI/FastDDS and the Rust reference (`LengthCode`):
+    //   EMHEADER1 (LC=2, id=1) = u32 0x20000001 LE = 01 00 00 20 (4-byte body, no NEXTINT)
+    //   a = 42 (LE int32) = 2A 00 00 00
+    //   EMHEADER2 (LC=5, id=2) = u32 0x50000002 LE = 02 00 00 50 (string reuses its
+    //     own uint32 len-prefix as NEXTINT — no separate NEXTINT)
+    //   string "hi\0" = 03 00 00 00 68 69 00
+    // Body = 8 (a) + 11 (b) = 19 bytes. DHEADER = 19 (0x13).
     let expected: Vec<u8> = vec![
-        0x17, 0x00, 0x00, 0x00, // DHEADER = 23
+        0x13, 0x00, 0x00, 0x00, // DHEADER = 19
         0x01, 0x00, 0x00, 0x20, // EMHEADER1 LE: M=0 LC=2 id=1
         0x2A, 0x00, 0x00, 0x00, // a = 42
-        0x02, 0x00, 0x00, 0x40, // EMHEADER2 LE: M=0 LC=4 id=2 (variable + NEXTINT)
-        0x07, 0x00, 0x00, 0x00, // NEXTINT = 7
+        0x02, 0x00, 0x00, 0x50, // EMHEADER2 LE: M=0 LC=5 id=2 (string len-prefix = NEXTINT)
         0x03, 0x00, 0x00, 0x00, b'h', b'i', 0x00, // string "hi\0"
     ];
     assert_bytes("V-10", &bytes, &expected);
@@ -495,6 +491,7 @@ fn v11_optional_mutable_some() {
         eprintln!("WARNING: skipping V-11A, no C++ compiler");
         return;
     };
+    // Bug XV-mut: @mutable 4-byte primitive = compact LC=2 (no NEXTINT).
     let expected: Vec<u8> = vec![
         0x08, 0x00, 0x00, 0x00, // DHEADER = 8
         0x01, 0x00, 0x00, 0x20, // EMHEADER LE: M=0 LC=2 id=1
@@ -536,6 +533,7 @@ fn v12_mutable_no_explicit_sentinel() {
         eprintln!("WARNING: skipping V-12, no C++ compiler");
         return;
     };
+    // Bug XV-mut: @mutable 4-byte primitive = compact LC=2 (no NEXTINT).
     let expected: Vec<u8> = vec![
         0x08, 0x00, 0x00, 0x00, // DHEADER = 8
         0x01, 0x00, 0x00, 0x20, // EMHEADER LE: M=0 LC=2 id=1
@@ -571,10 +569,13 @@ fn roundtrip_v2_v4_v5_v9() {
     let bytes = run_encode(idl, body).expect("v2 rt");
     assert_eq!(bytes, vec![0xAA]);
 
-    // V-9 appendable
+    // V-9 appendable — XCDR1 round-trip (encode + decode with the SAME repr).
+    // An @appendable struct carries a DHEADER under XCDR2 but NONE under XCDR1,
+    // so the previous `encode(v)` [XCDR2] + `decode(.., Xcdr1)` was a repr
+    // mismatch that only round-tripped while XCDR1 was (wrongly) XCDR2-framed.
     let idl9 = "@appendable struct V { long a; long b; };";
     let body9 = r#"    ::V v; v.a(11); v.b(22);
-    auto __b = ::dds::topic::topic_type_support<::V>::encode(v);
+    auto __b = ::dds::topic::topic_type_support<::V>::encode(v, ::dds::topic::xcdr2::XcdrVersion::Xcdr1);
     auto __q = ::dds::topic::topic_type_support<::V>::decode(__b.data(), __b.size(), ::dds::topic::xcdr2::XcdrVersion::Xcdr1);
     if (__q.a() != 11 || __q.b() != 22) { std::fprintf(stderr, "v9 roundtrip fail\n"); return 1; }
     __buf.push_back(0xBB);
@@ -664,8 +665,10 @@ fn vxcdr2_final_alignment_differs_from_xcdr1() {
 }
 
 // ---------------------------------------------------------------------------
-// V-wstring  wstring (conformance §9.1: UTF-16 wire, byte-identical to Rust
-// `WString`): uint32 octets = (units+1)*2, BOM (LE = FF FE), UTF-16-LE units.
+// V-wstring  wstring (conformance §9.1: UTF-16 wire, byte-identical to the
+// cross-vendor cdr-core XTypes reference): uint32 octets = (#units * 2), then
+// the raw UTF-16-LE code units — NO byte-order mark, NO terminator. (The
+// CORBA-GIOP `WString` form prepends a BOM; the XTypes/DDS golden does not.)
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -676,11 +679,11 @@ fn v_wstring_bmp_roundtrips_byte_exact() {
         eprintln!("WARNING: skipping V-wstring, no C++ compiler");
         return;
     };
-    // octets=6 (2 units + BOM)*2 ; BOM FF FE ; 'H'=0x48 'i'=0x69 little-endian.
+    // octets=4 (2 units * 2) ; no BOM ; 'H'=0x48 'i'=0x69 little-endian.
     assert_bytes(
         "V-wstring",
         &bytes,
-        &[0x06, 0x00, 0x00, 0x00, 0xFF, 0xFE, 0x48, 0x00, 0x69, 0x00],
+        &[0x04, 0x00, 0x00, 0x00, 0x48, 0x00, 0x69, 0x00],
     );
 }
 
@@ -919,14 +922,14 @@ fn v_sequence_of_wstring() {
         eprintln!("WARNING: skipping V-seqwstring, no C++ compiler");
         return;
     };
-    // DHEADER=0x0E (count4 + 10-byte wstring) + count=1 + "Hi" wstring.
+    // DHEADER=0x0C (count4 + 8-byte wstring) + count=1 + "Hi" wstring (no BOM).
     assert_bytes(
         "V-seqwstring",
         &bytes,
         &[
-            0x0E, 0, 0, 0, // DHEADER = 14
+            0x0C, 0, 0, 0, // DHEADER = 12
             0x01, 0, 0, 0, // count = 1
-            0x06, 0, 0, 0, 0xFF, 0xFE, 0x48, 0x00, 0x69, 0x00, // "Hi"
+            0x04, 0, 0, 0, 0x48, 0x00, 0x69, 0x00, // "Hi" (octets=4, no BOM)
         ],
     );
 }
@@ -1109,12 +1112,14 @@ fn v_map_long_long() {
         eprintln!("WARNING: skipping V-map, no C++ compiler");
         return;
     };
-    // DHEADER=0x14 (count4 + 2 entries*8) + count=2 + (1,10),(2,20) int32-LE.
+    // XCDR2 §7.4.3.5 (MapPrim fix d41cfb33): a map with a PRIMITIVE key AND
+    // primitive value carries NO DHEADER — same rule as sequence<primitive>.
+    // count=2 + (1,10),(2,20) int32-LE, no leading length word. Byte-anchored
+    // against Fast DDS + OpenDDS (proofs/structural/mapbare).
     assert_bytes(
         "V-map",
         &bytes,
         &[
-            0x14, 0, 0, 0, // DHEADER = 20
             0x02, 0, 0, 0, // count = 2
             0x01, 0, 0, 0, 0x0A, 0, 0, 0, // 1 -> 10
             0x02, 0, 0, 0, 0x14, 0, 0, 0, // 2 -> 20
@@ -1281,7 +1286,10 @@ fn v_array_2d_long() {
         eprintln!("WARNING: skipping V-arr2d, no C++ compiler");
         return;
     };
-    // 6 int32-LE in row-major order, no length prefix, no DHEADER.
+    // Bug XV-arr: a multi-dim array of PRIMITIVE elements is a PARRAY (XTypes 1.3
+    // §7.4.3.5 rule 8) — PLAIN-collection regardless of dimensionality, so it
+    // carries NO collection DHEADER. The 6 row-major int32-LE values are written
+    // back-to-back (cross-vendor-validated against the Rust golden).
     assert_bytes(
         "V-arr2d",
         &bytes,
@@ -1385,15 +1393,16 @@ fn v_array_2d_of_string_roundtrips() {
 
 // ---------------------------------------------------------------------------
 // V-mutseqstr-xvendor  @mutable { @id(1) sequence<string> } — BYTE-EXACT against
-// the Rust reference encoder (zerodds-cdr, Cyclone-interop-verified). Resolves
-// Finding 6: a non-primitive collection member carries its OWN inner DHEADER
-// inside the EMHEADER NEXTINT frame. Ground-truth bytes were captured from
-// zerodds_cdr::struct_enc::{encode_appendable, MutableStructEncoder} encoding
-// vec!["hi"] for member id 1 (LE, max_alignment=4):
-//   17 00 00 00            outer DHEADER = 23
-//   01 00 00 40            EMHEADER LC=4 id=1
-//   0F 00 00 00            NEXTINT = 15 (= inner-DHEADER 4 + count 4 + string 7)
-//   0B 00 00 00            inner DHEADER = 11 (= count 4 + string 7)
+// the Rust reference encoder (zerodds-cdr, Cyclone-interop-verified). FINDING
+// T1b: a non-primitive-element sequence's body BEGINS with its own DHEADER (a
+// 4-byte length word), so the EMHEADER uses LengthCode-5 which REUSES that
+// DHEADER as the NEXTINT — there is NO separate NEXTINT. The Rust reference
+// (`member_body_has_leading_dheader` → `LengthCode::Lc5`) generates
+// `encode_member_lc(1, false, Lc5, …)` for this member. Ground-truth bytes,
+// encoding vec!["hi"] for member id 1 (LE, max_alignment=4):
+//   13 00 00 00            outer DHEADER = 19
+//   01 00 00 50            EMHEADER LC=5 id=1
+//   0B 00 00 00            inner DHEADER = 11 (= count 4 + string 7) = the NEXTINT
 //   01 00 00 00            count = 1
 //   03 00 00 00 68 69 00   "hi\0"
 // ---------------------------------------------------------------------------
@@ -1418,12 +1427,290 @@ fn v_mutable_seq_string_matches_rust_wire() {
         "V-mutseqstr-xvendor",
         &bytes,
         &[
-            0x17, 0, 0, 0, // outer DHEADER = 23
-            0x01, 0, 0, 0x40, // EMHEADER LC=4 id=1
-            0x0F, 0, 0, 0, // NEXTINT = 15
-            0x0B, 0, 0, 0, // inner DHEADER = 11
+            0x13, 0, 0, 0, // outer DHEADER = 19
+            0x01, 0, 0, 0x50, // EMHEADER LC=5 id=1
+            0x0B, 0, 0, 0, // inner DHEADER = 11 (= count 4 + string 7) = the NEXTINT
             0x01, 0, 0, 0, // count = 1
             0x03, 0, 0, 0, b'h', b'i', 0x00, // "hi\0"
+        ],
+    );
+}
+
+// ---------------------------------------------------------------------------
+// V-autoid-mut — @mutable members WITHOUT explicit @id must take SEQUENTIAL
+// 0-based member ids (XTypes 1.3 §7.3.4.3: @autoid defaults to SEQUENTIAL).
+// REGRESSION GATE: the C++ backend previously assigned FNV name-hash ids here,
+// diverging from rust/python/ts/csharp + Cyclone on the wire. Bytes are
+// vendor-anchored to CycloneDDS (`idlc -l c` @mutable Pt + dds_stream_writeLE).
+// ---------------------------------------------------------------------------
+#[test]
+fn v_autoid_mutable_sequential() {
+    let idl = r#"@mutable struct AutoId { long a; long b; };"#;
+    let body = r#"    ::AutoId m;
+    m.a(42);
+    m.b(99);
+    __buf = ::dds::topic::topic_type_support<::AutoId>::encode(m);
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-autoid-mut, no C++ compiler");
+        return;
+    };
+    // a has NO @id -> auto-id 0; b -> auto-id 1. Both 4-byte primitives -> LC=2,
+    // no NEXTINT. Body = 8 + 8 = 16 (0x10).
+    let expected: Vec<u8> = vec![
+        0x10, 0x00, 0x00, 0x00, // DHEADER = 16
+        0x00, 0x00, 0x00, 0x20, // EMHEADER1 LE: LC=2 id=0  (NOT a name-hash!)
+        0x2A, 0x00, 0x00, 0x00, // a = 42
+        0x01, 0x00, 0x00, 0x20, // EMHEADER2 LE: LC=2 id=1
+        0x63, 0x00, 0x00, 0x00, // b = 99
+    ];
+    assert_bytes("V-autoid-mut", &bytes, &expected);
+}
+
+// ---------------------------------------------------------------------------
+// V-arr-append-struct — a fixed array of an @appendable struct element. The C++
+// backend used to SILENTLY DROP this member (gate only handled @final/enum
+// elements) = data loss. REGRESSION GATE: the array carries a collection DHEADER
+// (XTypes §7.4.3.5, non-primitive element) and each element carries its own
+// @appendable DHEADER. Vendor-anchored to FastDDS (= ZeroDDS default).
+// ---------------------------------------------------------------------------
+#[test]
+fn v_array_of_appendable_struct() {
+    let idl = r#"@appendable struct Pt { long x; long y; };
+@appendable struct Arr { Pt shape[2]; };"#;
+    let body = r#"    ::Arr a;
+    a.shape()[0].x(1); a.shape()[0].y(2);
+    a.shape()[1].x(3); a.shape()[1].y(4);
+    __buf = ::dds::topic::topic_type_support<::Arr>::encode(a);
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-arr-append-struct, no C++ compiler");
+        return;
+    };
+    let expected: Vec<u8> = vec![
+        0x1C, 0x00, 0x00, 0x00, // Arr DHEADER = 28
+        0x18, 0x00, 0x00, 0x00, // shape[] collection DHEADER = 24 (non-primitive elem)
+        0x08, 0x00, 0x00, 0x00, // Pt[0] @appendable DHEADER = 8
+        0x01, 0x00, 0x00, 0x00, // x = 1
+        0x02, 0x00, 0x00, 0x00, // y = 2
+        0x08, 0x00, 0x00, 0x00, // Pt[1] @appendable DHEADER = 8
+        0x03, 0x00, 0x00, 0x00, // x = 3
+        0x04, 0x00, 0x00, 0x00, // y = 4
+    ];
+    assert_bytes("V-arr-append-struct", &bytes, &expected);
+}
+
+// ---------------------------------------------------------------------------
+// V-bitbound-enum — a `@bit_bound(16)` enum is serialized at its declared holder
+// width (int16, 2 bytes), NOT the default 32-bit int. REGRESSION GATE for T2
+// (narrow-encode, spec §7.4.5.1, vendor-confirmed vs CycloneDDS which honours
+// @bit_bound). Without the fix this member would be 4 bytes.
+// ---------------------------------------------------------------------------
+#[test]
+fn v_bit_bound_enum_narrow_width() {
+    let idl = r#"@bit_bound(16) enum E16 { A, B, C };
+@final struct S { E16 e; };"#;
+    let body = r#"    ::S s;
+    s.e(::E16::B);
+    __buf = ::dds::topic::topic_type_support<::S>::encode(s);
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-bitbound-enum, no C++ compiler");
+        return;
+    };
+    // @final struct -> no DHEADER; e = B = 1 as int16 LE = 2 bytes.
+    assert_bytes("V-bitbound-enum", &bytes, &[0x01, 0x00]);
+}
+
+// ---------------------------------------------------------------------------
+// V-union-final — a @final union is `discriminator + selected branch`, NO
+// DHEADER (XTypes §7.4.4.5 / rule 26). REGRESSION GATE for union wire framing
+// (the corpus only exercised union inside combo::Telemetry — no standalone gate).
+// Vendor-anchored: union byte-identical to Cyclone/RTI/FastDDS (oracle W2-A).
+// ---------------------------------------------------------------------------
+#[test]
+fn v_union_final_selected_branch() {
+    let idl =
+        r#"@final union U switch(long) { case 1: long a; case 2: double b; default: octet c; };"#;
+    let body = r#"    ::U u;
+    u._d(1);
+    u.value() = static_cast<int32_t>(42);
+    __buf = ::dds::topic::topic_type_support<::U>::encode(u);
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-union-final, no C++ compiler");
+        return;
+    };
+    // disc (long) = 1, then the selected branch `a` (long) = 42. No DHEADER (@final).
+    let expected: Vec<u8> = vec![
+        0x01, 0x00, 0x00, 0x00, // discriminator = 1
+        0x2A, 0x00, 0x00, 0x00, // a = 42
+    ];
+    assert_bytes("V-union-final", &bytes, &expected);
+}
+
+// ---------------------------------------------------------------------------
+// V-union-append — an @appendable union (the SX2 default for an unannotated
+// union) prepends a DHEADER over [discriminator + branch]. GATE so the SX2
+// extensibility default can't silently change union framing.
+// ---------------------------------------------------------------------------
+#[test]
+fn v_union_appendable_has_dheader() {
+    let idl = r#"@appendable union U2 switch(long) { case 1: long a; default: octet c; };"#;
+    let body = r#"    ::U2 u;
+    u._d(1);
+    u.value() = static_cast<int32_t>(7);
+    __buf = ::dds::topic::topic_type_support<::U2>::encode(u);
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-union-append, no C++ compiler");
+        return;
+    };
+    // DHEADER = body length = 8 (disc 4 + a 4), then disc=1, a=7.
+    let expected: Vec<u8> = vec![
+        0x08, 0x00, 0x00, 0x00, // DHEADER = 8
+        0x01, 0x00, 0x00, 0x00, // discriminator = 1
+        0x07, 0x00, 0x00, 0x00, // a = 7
+    ];
+    assert_bytes("V-union-append", &bytes, &expected);
+}
+
+// ---------------------------------------------------------------------------
+// V-union-of-struct + V-seq-of-union — compound union framing, both verified
+// byte-identical to CycloneDDS (@appendable). GATEs so the union DHEADER fix +
+// the nested @appendable-struct/sequence splices can't regress together.
+// ---------------------------------------------------------------------------
+#[test]
+fn v_union_of_appendable_struct() {
+    let idl = r#"@appendable struct Pt2 { long x; long y; };
+@appendable union U3 switch(long) { case 1: Pt2 p; default: octet z; };"#;
+    let body = r#"    ::U3 u; u._d(1);
+    ::Pt2 p; p.x(5); p.y(6); u.value() = p;
+    __buf = ::dds::topic::topic_type_support<::U3>::encode(u);
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-union-of-struct, no C++ compiler");
+        return;
+    };
+    // U3 DHEADER(16) + disc(1) + Pt2 DHEADER(8) + x(5) + y(6) = 20 B (== Cyclone).
+    assert_bytes(
+        "V-union-of-struct",
+        &bytes,
+        &[
+            0x10, 0, 0, 0, 0x01, 0, 0, 0, 0x08, 0, 0, 0, 0x05, 0, 0, 0, 0x06, 0, 0, 0,
+        ],
+    );
+}
+
+#[test]
+fn v_sequence_of_union() {
+    let idl = r#"@appendable union U2 switch(long) { case 1: long a; default: octet z; };
+@appendable struct S2 { sequence<U2> s; };"#;
+    let body = r#"    ::S2 s2; ::U2 u; u._d(1); u.value() = static_cast<int32_t>(7);
+    s2.s().push_back(u);
+    __buf = ::dds::topic::topic_type_support<::S2>::encode(s2);
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-seq-of-union, no C++ compiler");
+        return;
+    };
+    // S2 DHEADER(20) + seq DHEADER(16) + count(1) + U2 DHEADER(8) + disc(1) + a(7) = 24 B (== Cyclone).
+    assert_bytes(
+        "V-seq-of-union",
+        &bytes,
+        &[
+            0x14, 0, 0, 0, 0x10, 0, 0, 0, 0x01, 0, 0, 0, 0x08, 0, 0, 0, 0x01, 0, 0, 0, 0x07, 0, 0,
+            0,
+        ],
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Cross-extensibility nesting + mixed @id/auto-id — all verified byte-identical
+// to CycloneDDS. GATEs lock the splice paths + the auto-id @id-reset together.
+// ---------------------------------------------------------------------------
+#[test]
+fn v_mutable_in_appendable() {
+    let idl = r#"@mutable struct Inner { long a; }; @appendable struct Outer { Inner i; };"#;
+    let body = r#"    ::Outer o; ::Inner in_; in_.a(42); o.i(in_);
+    __buf = ::dds::topic::topic_type_support<::Outer>::encode(o);
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-mut-in-append");
+        return;
+    };
+    // Outer DHEADER(12) + Inner @mutable DHEADER(8) + EMHEADER(id0,LC2) + a(42) = 16 B (== Cyclone).
+    assert_bytes(
+        "V-mut-in-append",
+        &bytes,
+        &[
+            0x0c, 0, 0, 0, 0x08, 0, 0, 0, 0x00, 0, 0, 0x20, 0x2a, 0, 0, 0,
+        ],
+    );
+}
+
+#[test]
+fn v_appendable_in_final() {
+    let idl = r#"@appendable struct Inner2 { long a; }; @final struct Outer2 { Inner2 i; };"#;
+    let body = r#"    ::Outer2 o; ::Inner2 in_; in_.a(42); o.i(in_);
+    __buf = ::dds::topic::topic_type_support<::Outer2>::encode(o);
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-append-in-final");
+        return;
+    };
+    // Outer2 @final -> NO DHEADER; Inner2 @appendable DHEADER(4) + a(42) = 8 B (== Cyclone).
+    assert_bytes("V-append-in-final", &bytes, &[0x04, 0, 0, 0, 0x2a, 0, 0, 0]);
+}
+
+#[test]
+fn v_mutable_mixed_explicit_and_auto_id() {
+    // @id(5) sets the id and RESETS the sequential counter to 6, so the next
+    // auto-id member is 6 (not 1, not a name-hash). Vendor-confirmed vs Cyclone.
+    let idl = r#"@mutable struct Mx { @id(5) long a; long b; };"#;
+    let body = r#"    ::Mx m; m.a(1); m.b(2);
+    __buf = ::dds::topic::topic_type_support<::Mx>::encode(m);
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-mixed-id");
+        return;
+    };
+    // DHEADER(16) + EMHEADER(id5,LC2)+a(1) + EMHEADER(id6,LC2)+b(2) = 20 B.
+    assert_bytes(
+        "V-mixed-id",
+        &bytes,
+        &[
+            0x10, 0, 0, 0, 0x05, 0, 0, 0x20, 0x01, 0, 0, 0, 0x06, 0, 0, 0x20, 0x02, 0, 0, 0,
+        ],
+    );
+}
+
+// ---------------------------------------------------------------------------
+// V-map-after-enum — a map<K,V> DHEADER must be 4-aligned even when preceded by
+// a sub-4-byte member (@bit_bound(16) enum). REGRESSION GATE for the map/seq
+// DHEADER alignment bug surfaced by the MapEnum cross-PSM probe.
+// ---------------------------------------------------------------------------
+#[test]
+fn v_map_dheader_aligned_after_bitbound_enum() {
+    let idl = r#"@bit_bound(16) enum E16 { A, B, C };
+@appendable struct EM { E16 e; map<long,long> m; };"#;
+    let body = r#"    ::EM x; x.e(::E16::B);
+    std::map<int32_t,int32_t> mm; mm[5] = 7; x.m(mm);
+    __buf = ::dds::topic::topic_type_support<::EM>::encode(x);
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-map-after-enum, no C++ compiler");
+        return;
+    };
+    // MapPrim fix (d41cfb33): map<long,long> carries NO inner DHEADER. So the EM
+    // DHEADER(16) + e(0x0001 int16) + 2-byte PAD (4-align the map count) + count(1)
+    // + key(5) + val(7). The pad still lands the primitive map count on a 4-byte
+    // boundary — the alignment this test guards — just without the spurious DHEADER.
+    assert_bytes(
+        "V-map-after-enum",
+        &bytes,
+        &[
+            0x10, 0, 0, 0, 0x01, 0x00, 0x00, 0x00, 0x01, 0, 0, 0, 0x05, 0, 0, 0, 0x07, 0, 0, 0,
         ],
     );
 }

@@ -1,0 +1,17 @@
+// Conformance feature: bitset + bitmask (XTypes §7.3.1.2.1).
+module conf {
+  bitmask Permissions {
+    READ,
+    WRITE,
+    EXECUTE
+  };
+  bitset Flags {
+    bitfield<3> kind;
+    bitfield<1> active;
+    bitfield<4> priority;
+  };
+  struct UsesBits {
+    Permissions perms;
+    Flags       flags;
+  };
+};

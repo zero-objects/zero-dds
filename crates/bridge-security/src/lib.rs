@@ -41,6 +41,30 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
 
+// Crypto primitive backend: `ring` (default) or `aws-lc-rs` (FIPS, via `aws-lc`).
+// Swaps the JWT-RS256 verify primitives (`backend::`) and, in lockstep, the
+// rustls TLS provider (`rustls::crypto::ring` ↔ `rustls::crypto::aws_lc_rs`).
+#[cfg(feature = "aws-lc")]
+pub(crate) use aws_lc_rs as backend;
+#[cfg(all(feature = "ring-backend", not(feature = "aws-lc")))]
+pub(crate) use ring as backend;
+#[cfg(not(any(feature = "ring-backend", feature = "aws-lc")))]
+compile_error!("enable exactly one crypto backend: `ring-backend` (default) or `aws-lc`");
+
+/// The rustls [`CryptoProvider`](rustls::crypto::CryptoProvider) for the
+/// selected backend — `ring` by default, `aws_lc_rs` under the `aws-lc` (FIPS)
+/// feature. Pass it to `*_with_provider` builders; the implicit `builder()`
+/// path is ambiguous when both providers are linked.
+#[cfg(not(feature = "aws-lc"))]
+pub fn tls_provider() -> rustls::crypto::CryptoProvider {
+    rustls::crypto::ring::default_provider()
+}
+/// See [`tls_provider`] (ring variant).
+#[cfg(feature = "aws-lc")]
+pub fn tls_provider() -> rustls::crypto::CryptoProvider {
+    rustls::crypto::aws_lc_rs::default_provider()
+}
+
 pub mod acl;
 pub mod auth;
 pub mod connection;

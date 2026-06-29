@@ -65,7 +65,7 @@ cargo test -p zerodds-transport-tsn --features live # 105 (+12 live_frame)
 
 93 tests green (default), 105 with `--features live`; the veth RTPS
 roundtrip (`tests/veth_loopback.rs`) runs as root in CI (see
-`docs/ci/tsn-live.md`). clippy clean; builds on `no_std + alloc`.
+`internal/ci/tsn-live.md`). clippy clean; builds on `no_std + alloc`.
 
 ## License
 

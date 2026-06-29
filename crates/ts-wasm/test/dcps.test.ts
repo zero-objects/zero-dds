@@ -143,3 +143,44 @@ test("wasm DCPS flat C.2 operations: handle table roundtrip", async () => {
 test("wasm DCPS: invalid-handle sentinel rejects at runtime (Annex C.1.1)", () => {
   assert.throws(() => takeSamples(0 as never, 1), RangeError);
 });
+
+// A big-endian notify (`"be":true`) must surface `info.bigEndian === true` so a
+// browser consumer dispatches the big-endian decoder; the LE default omits the
+// field and stays `false`. Drives a fake socket directly to inject the frame.
+test("wasm bridge: notify be:true surfaces info.bigEndian", async () => {
+  const { BridgeTransport } = await import("../src/dcps/transport.js");
+  const { sampleFromBytes } = await import("../src/dcps/operations.js");
+
+  type MsgCb = (ev: { data: unknown }) => void;
+  const listeners: Record<string, ((ev: unknown) => void)[]> = {};
+  const fake = {
+    send() {},
+    close() {},
+    addEventListener(type: string, cb: (ev: unknown) => void) {
+      (listeners[type] ??= []).push(cb);
+    },
+  };
+  const transport = await BridgeTransport.connect("ws://fake", () => {
+    // Open on the next tick so connect() resolves.
+    queueMicrotask(() => listeners["open"]?.forEach((cb) => cb({})));
+    return fake as never;
+  });
+
+  const emit = (obj: unknown) =>
+    (listeners["message"] as MsgCb[] | undefined)?.forEach((cb) =>
+      cb({ data: JSON.stringify(obj) }),
+    );
+
+  // base64("AQI=") == bytes [1,2]; LE then BE on the same topic.
+  emit({ op: "notify", topic: "T", data: "AQI=" });
+  emit({ op: "notify", topic: "T", data: "AQI=", be: true });
+
+  const drained = transport.drain("T", 0);
+  assert.equal(drained.length, 2);
+  assert.equal(drained[0].bigEndian, false);
+  assert.equal(drained[1].bigEndian, true);
+
+  const samples = drained.map(sampleFromBytes);
+  assert.equal(samples[0].info.bigEndian, false);
+  assert.equal(samples[1].info.bigEndian, true);
+});

@@ -5,6 +5,7 @@
 
 using System;
 using System.Runtime.InteropServices;
+using ZeroDDS.Cdr;
 using ZeroDDS.Core;
 using ZeroDDS.Domain;
 
@@ -21,6 +22,23 @@ public interface ITopicTraits<T>
     string TypeName { get; }
     byte[] Encode(T value);
     T Decode(ReadOnlySpan<byte> bytes);
+
+    /// <summary>
+    /// Decodes with an explicit wire byte order. The DCPS layer derives
+    /// <paramref name="endian"/> from the encapsulation header so a
+    /// big-endian peer's sample is read correctly. The default delegates to
+    /// the little-endian <see cref="Decode(ReadOnlySpan{byte})"/> — generated
+    /// TypeSupports override it to honor the order.
+    /// </summary>
+    T Decode(ReadOnlySpan<byte> bytes, EndianMode endian) => Decode(bytes);
+
+    /// <summary>
+    /// Decodes with explicit byte order and XCDR representation
+    /// (<paramref name="representation"/>: 1 = XCDR2, 0 = XCDR1 / classic CDR),
+    /// both derived by the DCPS layer from the encapsulation header. The default
+    /// ignores the representation; generated TypeSupports honor it.
+    /// </summary>
+    T Decode(ReadOnlySpan<byte> bytes, EndianMode endian, int representation) => Decode(bytes, endian);
 }
 
 /// <summary>Default traits for raw bytes.</summary>

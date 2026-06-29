@@ -1,5 +1,6 @@
 ---
 source: crates/idl-rust/tests/snapshot_codegen.rs
+assertion_line: 296
 expression: run(idl)
 ---
 // SPDX-License-Identifier: Apache-2.0
@@ -7,6 +8,7 @@ expression: run(idl)
 
 #![allow(clippy::too_many_lines)]
 #![allow(unused_imports)]
+#![allow(non_snake_case)]
 
 use zerodds_cdr::{BufferReader, BufferWriter, CdrDecode, CdrEncode, DecodeError, EncodeError, Endianness};
 
@@ -19,25 +21,65 @@ pub struct Envelope {
 
 impl zerodds_dcps::DdsType for Envelope {
     const TYPE_NAME: &'static str = "Envelope";
-    const EXTENSIBILITY: zerodds_dcps::Extensibility = zerodds_dcps::Extensibility::Final;
+    const EXTENSIBILITY: zerodds_dcps::Extensibility = zerodds_dcps::Extensibility::Appendable;
     const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::None;
 
     fn encode(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
         let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little).xcdr2();
-        <_ as zerodds_cdr::CdrEncode>::encode(&self.topic, &mut writer)?;
-        <_ as zerodds_cdr::CdrEncode>::encode(&self.payload, &mut writer)?;
+        zerodds_cdr::struct_enc::encode_appendable(&mut writer, |w| {
+            <_ as zerodds_cdr::CdrEncode>::encode(&self.topic, w)?;
+            <_ as zerodds_cdr::CdrEncode>::encode(&self.payload, w)?;
+            Ok(())
+        })?;
+        out.extend_from_slice(&writer.into_bytes());
+        Ok(())
+    }
+
+    fn encode_be(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
+        let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Big).xcdr2();
+        zerodds_cdr::struct_enc::encode_appendable(&mut writer, |w| {
+            <_ as zerodds_cdr::CdrEncode>::encode(&self.topic, w)?;
+            <_ as zerodds_cdr::CdrEncode>::encode(&self.payload, w)?;
+            Ok(())
+        })?;
         out.extend_from_slice(&writer.into_bytes());
         Ok(())
     }
 
     fn decode(bytes: &[u8]) -> ::core::result::Result<Self, zerodds_dcps::DecodeError> {
         let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Little).xcdr2();
-        let topic = <String as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
-        let payload = <zerodds_dcps::DdsAny as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
-        Ok(Self {
-            topic,
-            payload,
-        })
+        zerodds_cdr::struct_enc::decode_appendable(&mut reader, |r| {
+            let topic = <String as zerodds_cdr::CdrDecode>::decode(r)?;
+            let payload = <zerodds_dcps::DdsAny as zerodds_cdr::CdrDecode>::decode(r)?;
+            Ok(Self {
+                topic,
+                payload,
+            })
+        }).map_err(::core::convert::Into::into)
+    }
+
+    fn decode_be(bytes: &[u8]) -> ::core::result::Result<Self, zerodds_dcps::DecodeError> {
+        let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Big).xcdr2();
+        zerodds_cdr::struct_enc::decode_appendable(&mut reader, |r| {
+            let topic = <String as zerodds_cdr::CdrDecode>::decode(r)?;
+            let payload = <zerodds_dcps::DdsAny as zerodds_cdr::CdrDecode>::decode(r)?;
+            Ok(Self {
+                topic,
+                payload,
+            })
+        }).map_err(::core::convert::Into::into)
+    }
+
+    fn encode_xcdr1(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
+        let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little);
+        <Self as zerodds_cdr::CdrEncode>::encode(self, &mut writer)?;
+        out.extend_from_slice(&writer.into_bytes());
+        Ok(())
+    }
+
+    fn decode_xcdr1(bytes: &[u8]) -> ::core::result::Result<Self, zerodds_dcps::DecodeError> {
+        let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Little);
+        <Self as zerodds_cdr::CdrDecode>::decode(&mut reader).map_err(::core::convert::Into::into)
     }
 
     fn field_value(&self, path: &str) -> ::core::option::Option<zerodds_sql_filter::Value> {
@@ -50,19 +92,38 @@ impl zerodds_dcps::DdsType for Envelope {
 
 impl zerodds_cdr::CdrEncode for Envelope {
     fn encode(&self, writer: &mut zerodds_cdr::BufferWriter) -> ::core::result::Result<(), zerodds_cdr::EncodeError> {
-        <_ as zerodds_cdr::CdrEncode>::encode(&self.topic, writer)?;
-        <_ as zerodds_cdr::CdrEncode>::encode(&self.payload, writer)?;
+        if writer.max_alignment() == 4 {
+            zerodds_cdr::struct_enc::encode_appendable(writer, |w| {
+                <_ as zerodds_cdr::CdrEncode>::encode(&self.topic, w)?;
+                <_ as zerodds_cdr::CdrEncode>::encode(&self.payload, w)?;
+                Ok(())
+            })?;
+        } else {
+            <_ as zerodds_cdr::CdrEncode>::encode(&self.topic, writer)?;
+            <_ as zerodds_cdr::CdrEncode>::encode(&self.payload, writer)?;
+        }
         ::core::result::Result::Ok(())
     }
 }
 
 impl zerodds_cdr::CdrDecode for Envelope {
     fn decode(reader: &mut zerodds_cdr::BufferReader<'_>) -> ::core::result::Result<Self, zerodds_cdr::DecodeError> {
-        let topic = <String as zerodds_cdr::CdrDecode>::decode(reader)?;
-        let payload = <zerodds_dcps::DdsAny as zerodds_cdr::CdrDecode>::decode(reader)?;
-        ::core::result::Result::Ok(Self {
-            topic,
-            payload,
-        })
+        if reader.max_alignment() == 4 {
+            zerodds_cdr::struct_enc::decode_appendable(reader, |r| {
+                let topic = <String as zerodds_cdr::CdrDecode>::decode(r)?;
+                let payload = <zerodds_dcps::DdsAny as zerodds_cdr::CdrDecode>::decode(r)?;
+                ::core::result::Result::Ok(Self {
+                    topic,
+                    payload,
+                })
+            })
+        } else {
+            let topic = <String as zerodds_cdr::CdrDecode>::decode(reader)?;
+            let payload = <zerodds_dcps::DdsAny as zerodds_cdr::CdrDecode>::decode(reader)?;
+            ::core::result::Result::Ok(Self {
+                topic,
+                payload,
+            })
+        }
     }
 }

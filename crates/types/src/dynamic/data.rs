@@ -250,6 +250,33 @@ impl DynamicData {
             ))
         })
     }
+
+    /// Generic read of a member's raw [`DynamicValue`], or `None` if unset.
+    ///
+    /// The reflective codec ([`crate::dynamic::codec`]) uses this to walk a
+    /// fully-populated value without the per-kind typed getters.
+    #[must_use]
+    pub fn get_value(&self, member_id: MemberId) -> Option<&DynamicValue> {
+        self.values.get(&member_id)
+    }
+
+    /// Insert a raw [`DynamicValue`] for `member_id` WITHOUT TryConstruct
+    /// bound-application — a faithful set for the reflective decoder, which
+    /// reconstructs exactly what was on the wire. Unknown ids are accepted
+    /// (the decoder only ever passes ids from the type's own members).
+    pub fn set_value_raw(&mut self, member_id: MemberId, value: DynamicValue) {
+        self.values.insert(member_id, value);
+    }
+
+    /// The member ids that currently carry a value, in member (index) order of
+    /// the type. Used by the reflective encoder to emit members deterministically.
+    #[must_use]
+    pub fn set_member_ids(&self) -> alloc::vec::Vec<MemberId> {
+        let mut ids: alloc::vec::Vec<MemberId> = self.values.keys().copied().collect();
+        // Order by the type's declared member index so encode order is stable.
+        ids.sort_by_key(|id| self.type_.member_by_id(*id).map_or(u32::MAX, |m| m.index()));
+        ids
+    }
 }
 
 // ----------------------------------------------------------------------

@@ -1,5 +1,6 @@
 ---
 source: crates/idl-rust/tests/snapshot_codegen.rs
+assertion_line: 79
 expression: run(idl)
 ---
 // SPDX-License-Identifier: Apache-2.0
@@ -7,6 +8,7 @@ expression: run(idl)
 
 #![allow(clippy::too_many_lines)]
 #![allow(unused_imports)]
+#![allow(non_snake_case)]
 
 use zerodds_cdr::{BufferReader, BufferWriter, CdrDecode, CdrEncode, DecodeError, EncodeError, Endianness};
 

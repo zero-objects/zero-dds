@@ -4,7 +4,7 @@
 //! OMG CORBA 3.3 Part 2 §15 — General Inter-ORB Protocol (GIOP).
 //!
 //! Crate `zerodds-corba-giop`. Safety classification: **STANDARD**.
-//! Spec OMG CORBA 3.3 Part 2 §15 (`docs/standards/cache/omg/corba-3.3-part2.pdf`,
+//! Spec OMG CORBA 3.3 Part 2 §15 (`internal/standards/cache/omg/corba-3.3-part2.pdf`,
 //! imported during the Sprint-1 setup phase).
 //!
 //! # Scope

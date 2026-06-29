@@ -51,3 +51,9 @@ dhat = "0.3"
 [[bench]]
 name = "loopback"
 harness = false
+
+# External-iceoryx2 oracle: publishes raw bytes via RawIceoryx2Publisher so the
+# standalone `iceoryx2-oracle-consumer` (iceoryx2-only, no ZeroDDS) can read them.
+[[example]]
+name = "iceoryx2_oracle_publisher"
+required-features = ["iceoryx2-bridge"]

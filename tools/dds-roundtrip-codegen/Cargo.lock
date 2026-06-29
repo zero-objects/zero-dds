@@ -10,7 +10,7 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "dds-roundtrip-codegen"
-version = "0.0.0"
+version = "1.0.0-rc.3"
 dependencies = [
  "zerodds-idl",
  "zerodds-idl-cpp",
@@ -49,6 +49,12 @@ checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
 dependencies = [
  "autocfg",
 ]
+
+[[package]]
+name = "portable-atomic"
+version = "1.13.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c33a9471896f1c69cecef8d20cbe2f7accd12527ce60845ff44c153bb2a21b49"
 
 [[package]]
 name = "roxmltree"
@@ -141,14 +147,14 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
 
 [[package]]
 name = "zerodds-cdr"
-version = "0.0.0"
+version = "1.0.0-rc.3.1"
 dependencies = [
  "zerodds-foundation",
 ]
 
 [[package]]
 name = "zerodds-dcps"
-version = "0.0.0"
+version = "1.0.0-rc.3.1"
 dependencies = [
  "libc",
  "zerodds-cdr",
@@ -159,13 +165,14 @@ dependencies = [
  "zerodds-rtps",
  "zerodds-sql-filter",
  "zerodds-transport",
+ "zerodds-transport-tcp",
  "zerodds-transport-udp",
  "zerodds-types",
 ]
 
 [[package]]
 name = "zerodds-discovery"
-version = "0.0.0"
+version = "1.0.0-rc.3.1"
 dependencies = [
  "zerodds-cdr",
  "zerodds-monitor",
@@ -177,11 +184,11 @@ dependencies = [
 
 [[package]]
 name = "zerodds-foundation"
-version = "0.0.0"
+version = "1.0.0-rc.3.1"
 
 [[package]]
 name = "zerodds-idl"
-version = "0.0.0"
+version = "1.0.0-rc.3.1"
 dependencies = [
  "num-bigint",
  "num-traits",
@@ -190,7 +197,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-idl-cpp"
-version = "0.0.0"
+version = "1.0.0-rc.3.1"
 dependencies = [
  "zerodds-idl",
  "zerodds-rpc",
@@ -198,21 +205,21 @@ dependencies = [
 
 [[package]]
 name = "zerodds-monitor"
-version = "0.0.0"
+version = "1.0.0-rc.3.1"
 dependencies = [
  "zerodds-foundation",
 ]
 
 [[package]]
 name = "zerodds-qos"
-version = "0.0.0"
+version = "1.0.0-rc.3.1"
 dependencies = [
  "zerodds-cdr",
 ]
 
 [[package]]
 name = "zerodds-rpc"
-version = "0.0.0"
+version = "1.0.0-rc.3.1"
 dependencies = [
  "zerodds-dcps",
  "zerodds-idl",
@@ -224,8 +231,9 @@ dependencies = [
 
 [[package]]
 name = "zerodds-rtps"
-version = "0.0.0"
+version = "1.0.0-rc.3.1"
 dependencies = [
+ "portable-atomic",
  "zerodds-cdr",
  "zerodds-foundation",
  "zerodds-monitor",
@@ -235,23 +243,32 @@ dependencies = [
 
 [[package]]
 name = "zerodds-security"
-version = "0.0.0"
+version = "1.0.0-rc.3.1"
 
 [[package]]
 name = "zerodds-sql-filter"
-version = "0.0.0"
+version = "1.0.0-rc.3.1"
 
 [[package]]
 name = "zerodds-transport"
-version = "0.0.0"
+version = "1.0.0-rc.3.1"
 dependencies = [
  "zerodds-rtps",
 ]
 
 [[package]]
-name = "zerodds-transport-udp"
-version = "0.0.0"
+name = "zerodds-transport-tcp"
+version = "1.0.0-rc.3.1"
 dependencies = [
+ "zerodds-rtps",
+ "zerodds-transport",
+]
+
+[[package]]
+name = "zerodds-transport-udp"
+version = "1.0.0-rc.3.1"
+dependencies = [
+ "libc",
  "socket2",
  "zerodds-monitor",
  "zerodds-rtps",
@@ -260,7 +277,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-types"
-version = "0.0.0"
+version = "1.0.0-rc.3.1"
 dependencies = [
  "zerodds-cdr",
  "zerodds-foundation",
@@ -268,7 +285,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-xml"
-version = "0.0.0"
+version = "1.0.0-rc.3.1"
 dependencies = [
  "roxmltree",
  "zerodds-qos",

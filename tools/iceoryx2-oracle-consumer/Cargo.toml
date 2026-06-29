@@ -1,0 +1,17 @@
+[package]
+name = "iceoryx2-oracle-consumer"
+version = "1.0.0-rc.4"
+edition = "2021"
+publish = false
+license = "Apache-2.0"
+description = "External iceoryx2 oracle: a standalone consumer that depends ONLY on the upstream iceoryx2 crate (no ZeroDDS code) and reads a sample published by ZeroDDS over iceoryx2 shared memory. Proves ZeroDDS speaks the real iceoryx2 wire — service naming + chunk payload — not just ZeroDDS-to-ZeroDDS."
+
+[[bin]]
+name = "iceoryx2-oracle-consumer"
+path = "src/main.rs"
+
+# The whole point: the ONLY dependency is the upstream Eclipse iceoryx2 crate.
+# No zerodds-* path/registry dependency may appear here — that is what makes
+# this an independent external oracle rather than dogfooding.
+[dependencies]
+iceoryx2 = "0.8"

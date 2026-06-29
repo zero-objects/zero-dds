@@ -59,7 +59,7 @@ mod tests {
     };
 
     use super::cross_vendor::{
-        FastDurability, FastQos, FastReliability, live_host_available, start_fastdds_pub,
+        FastDurability, FastQos, FastReliability, require_or_skip, start_fastdds_pub,
     };
 
     const FASTDDS_DOMAIN: i32 = 144;
@@ -75,8 +75,7 @@ mod tests {
         zerodds_dur: DurabilityKind,
         min_received: usize,
     ) {
-        if !live_host_available() {
-            eprintln!("LLVM_HOST_AVAILABLE not set + sshpass missing — skipping");
+        if !require_or_skip("qos_matrix") {
             return;
         }
 

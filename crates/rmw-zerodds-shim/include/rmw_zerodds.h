@@ -189,6 +189,26 @@ struct rmw_zerodds_RmwZerodsPublisher *rmw_zerodds_create_publisher(struct rmw_z
                                                                     int reliable);
 
 /**
+ * Number of remote subscriptions currently matched to this publisher — the
+ * value behind `rmw_publisher_count_matched_subscriptions` /
+ * `Publisher.get_subscription_count()`. `0` on NULL.
+ *
+ * # Safety
+ * `pub_` must come from `rmw_zerodds_create_publisher` or be NULL.
+ */
+ uintptr_t rmw_zerodds_publisher_matched_count(struct rmw_zerodds_RmwZerodsPublisher *pub_);
+
+/**
+ * Number of remote publishers currently matched to this subscription — the
+ * value behind `rmw_subscription_count_matched_publishers` /
+ * `Subscription.get_publisher_count()`. `0` on NULL.
+ *
+ * # Safety
+ * `sub` must come from `rmw_zerodds_create_subscription` or be NULL.
+ */
+ uintptr_t rmw_zerodds_subscription_matched_count(struct rmw_zerodds_RmwZerodsSubscription *sub);
+
+/**
  * `rmw_destroy_publisher(*mut Publisher)`.
  *
  * # Safety
@@ -370,7 +390,8 @@ int32_t rmw_zerodds_subscription_enable_iceoryx(struct rmw_zerodds_RmwZerodsSubs
 
 int32_t rmw_zerodds_take(struct rmw_zerodds_RmwZerodsSubscription *sub,
                          uint8_t **out_buf,
-                         uintptr_t *out_len);
+                         uintptr_t *out_len,
+                         uint8_t *out_big_endian);
 
 /**
  * Readiness query: `1` if the subscription has a sample ready to take, `0` if
@@ -469,7 +490,8 @@ int32_t rmw_zerodds_send_request(struct rmw_zerodds_RmwZerodsClient *client,
 
 int32_t rmw_zerodds_take_response(struct rmw_zerodds_RmwZerodsClient *client,
                                   uint8_t **out_buf,
-                                  uintptr_t *out_len);
+                                  uintptr_t *out_len,
+                                  uint8_t *out_big_endian);
 
 /**
  * `1` if a reply is queued for `client`, `0` if none, negative on a bad handle.
@@ -517,7 +539,8 @@ struct rmw_zerodds_RmwZerodsService *rmw_zerodds_create_service(struct rmw_zerod
 
 int32_t rmw_zerodds_take_request(struct rmw_zerodds_RmwZerodsService *service,
                                  uint8_t **out_buf,
-                                 uintptr_t *out_len);
+                                 uintptr_t *out_len,
+                                 uint8_t *out_big_endian);
 
 /**
  * `1` if a request is queued for `service`, `0` if none, negative on bad handle.

@@ -233,6 +233,11 @@ export const SampleInfo = koffi.struct("ZeroDdsSampleInfo", {
   instance_handle: "uint64_t",
   publication_handle: "uint64_t",
   valid_data: "bool",
+  // XCDR representation (0 = XCDR1, 1 = XCDR2) and wire byte order
+  // (0 = little-endian, 1 = big-endian) of the payload, read from the
+  // encapsulation header so the typed decoder can pick decode vs decode_be.
+  representation: "uint8_t",
+  big_endian: "uint8_t",
 });
 
 // take_next_sample / read_next_sample — single-sample data path for the DCPS
@@ -266,3 +271,307 @@ export const zerodds_waitset_destroy = lib.func(
 export const zerodds_waitset_attach_condition = lib.func(
   "int zerodds_waitset_attach_condition(ZeroDdsWaitSet* w, void* c)",
 );
+
+// ============================================================================
+// QoS structs (mirror of zerodds.h §QoS) + QoS-aware entity factories.
+//
+// Layout is byte-identical to the C-API structs so a koffi-encoded buffer can
+// be passed straight through the `const void* qos` slots. Field ORDER matters:
+// it follows the header declaration order exactly. Pointer fields (partition
+// `const char *const *`, *_data `const uint8_t*`) are embedded as koffi
+// pointers built by qos.ts and MUST outlive the create call.
+// ============================================================================
+
+// Duration (Spec §2.2.3.5): seconds + nanoseconds.
+export const Duration = koffi.struct("ZeroDdsDuration", {
+  sec: "int32",
+  nanosec: "uint32",
+});
+
+// Individual policy structs (declaration order per zerodds.h).
+export const DurabilityPolicy = koffi.struct("ZeroDdsDurabilityQosPolicy", {
+  kind: "uint32",
+});
+export const DurabilityServicePolicy = koffi.struct(
+  "ZeroDdsDurabilityServiceQosPolicy",
+  {
+    service_cleanup_delay: Duration,
+    history_kind: "uint32",
+    history_depth: "int32",
+    max_samples: "int32",
+    max_instances: "int32",
+    max_samples_per_instance: "int32",
+  },
+);
+export const DeadlinePolicy = koffi.struct("ZeroDdsDeadlineQosPolicy", {
+  period: Duration,
+});
+export const LatencyBudgetPolicy = koffi.struct(
+  "ZeroDdsLatencyBudgetQosPolicy",
+  { duration: Duration },
+);
+export const LivelinessPolicy = koffi.struct("ZeroDdsLivelinessQosPolicy", {
+  kind: "uint32",
+  lease_duration: Duration,
+});
+export const ReliabilityPolicy = koffi.struct("ZeroDdsReliabilityQosPolicy", {
+  kind: "uint32",
+  max_blocking_time: Duration,
+});
+export const DestinationOrderPolicy = koffi.struct(
+  "ZeroDdsDestinationOrderQosPolicy",
+  { kind: "uint32" },
+);
+export const HistoryPolicy = koffi.struct("ZeroDdsHistoryQosPolicy", {
+  kind: "uint32",
+  depth: "int32",
+});
+export const ResourceLimitsPolicy = koffi.struct(
+  "ZeroDdsResourceLimitsQosPolicy",
+  {
+    max_samples: "int32",
+    max_instances: "int32",
+    max_samples_per_instance: "int32",
+  },
+);
+export const TransportPriorityPolicy = koffi.struct(
+  "ZeroDdsTransportPriorityQosPolicy",
+  { value: "int32" },
+);
+export const LifespanPolicy = koffi.struct("ZeroDdsLifespanQosPolicy", {
+  duration: Duration,
+});
+export const OwnershipPolicy = koffi.struct("ZeroDdsOwnershipQosPolicy", {
+  kind: "uint32",
+});
+export const OwnershipStrengthPolicy = koffi.struct(
+  "ZeroDdsOwnershipStrengthQosPolicy",
+  { value: "int32" },
+);
+export const PresentationPolicy = koffi.struct(
+  "ZeroDdsPresentationQosPolicy",
+  { access_scope: "uint32", coherent_access: "bool", ordered_access: "bool" },
+);
+export const TimeBasedFilterPolicy = koffi.struct(
+  "ZeroDdsTimeBasedFilterQosPolicy",
+  { minimum_separation: Duration },
+);
+export const WriterDataLifecyclePolicy = koffi.struct(
+  "ZeroDdsWriterDataLifecycleQosPolicy",
+  { autodispose_unregistered_instances: "bool" },
+);
+export const ReaderDataLifecyclePolicy = koffi.struct(
+  "ZeroDdsReaderDataLifecycleQosPolicy",
+  {
+    autopurge_nowriter_samples_delay: Duration,
+    autopurge_disposed_samples_delay: Duration,
+  },
+);
+export const EntityFactoryPolicy = koffi.struct(
+  "ZeroDdsEntityFactoryQosPolicy",
+  { autoenable_created_entities: "bool" },
+);
+// UserData/TopicData/GroupData all share this { const uint8_t*; uintptr_t }.
+export const BytesPolicy = koffi.struct("ZeroDdsUserDataQosPolicy", {
+  value: koffi.pointer("uint8_t"),
+  value_len: "size_t",
+});
+// Partition: { const char *const *; uintptr_t }.
+export const PartitionPolicy = koffi.struct("ZeroDdsPartitionQosPolicy", {
+  names: koffi.pointer("char *"),
+  names_len: "size_t",
+});
+
+// Aggregate QoS structs (field order MUST match zerodds.h exactly).
+export const DataWriterQosStruct = koffi.struct("ZeroDdsDataWriterQos", {
+  reliability: ReliabilityPolicy,
+  durability: DurabilityPolicy,
+  durability_service: DurabilityServicePolicy,
+  deadline: DeadlinePolicy,
+  latency_budget: LatencyBudgetPolicy,
+  liveliness: LivelinessPolicy,
+  destination_order: DestinationOrderPolicy,
+  lifespan: LifespanPolicy,
+  ownership: OwnershipPolicy,
+  ownership_strength: OwnershipStrengthPolicy,
+  partition: PartitionPolicy,
+  presentation: PresentationPolicy,
+  history: HistoryPolicy,
+  resource_limits: ResourceLimitsPolicy,
+  transport_priority: TransportPriorityPolicy,
+  writer_data_lifecycle: WriterDataLifecyclePolicy,
+  user_data: BytesPolicy,
+  topic_data: BytesPolicy,
+  group_data: BytesPolicy,
+});
+
+export const DataReaderQosStruct = koffi.struct("ZeroDdsDataReaderQos", {
+  reliability: ReliabilityPolicy,
+  durability: DurabilityPolicy,
+  deadline: DeadlinePolicy,
+  latency_budget: LatencyBudgetPolicy,
+  liveliness: LivelinessPolicy,
+  destination_order: DestinationOrderPolicy,
+  ownership: OwnershipPolicy,
+  partition: PartitionPolicy,
+  presentation: PresentationPolicy,
+  history: HistoryPolicy,
+  resource_limits: ResourceLimitsPolicy,
+  time_based_filter: TimeBasedFilterPolicy,
+  reader_data_lifecycle: ReaderDataLifecyclePolicy,
+  user_data: BytesPolicy,
+  topic_data: BytesPolicy,
+  group_data: BytesPolicy,
+});
+
+export const PublisherQosStruct = koffi.struct("ZeroDdsPublisherQos", {
+  presentation: PresentationPolicy,
+  partition: PartitionPolicy,
+  group_data: BytesPolicy,
+  entity_factory: EntityFactoryPolicy,
+});
+// SubscriberQos is structurally identical to PublisherQos (header typedef).
+export const SubscriberQosStruct = PublisherQosStruct;
+
+export const TopicQosStruct = koffi.struct("ZeroDdsTopicQos", {
+  durability: DurabilityPolicy,
+  durability_service: DurabilityServicePolicy,
+  deadline: DeadlinePolicy,
+  latency_budget: LatencyBudgetPolicy,
+  liveliness: LivelinessPolicy,
+  reliability: ReliabilityPolicy,
+  destination_order: DestinationOrderPolicy,
+  history: HistoryPolicy,
+  resource_limits: ResourceLimitsPolicy,
+  transport_priority: TransportPriorityPolicy,
+  lifespan: LifespanPolicy,
+  ownership: OwnershipPolicy,
+  topic_data: BytesPolicy,
+});
+
+export const ContentFilteredTopicPtr = koffi.pointer(
+  "ZeroDdsContentFilteredTopic",
+  koffi.opaque(),
+);
+
+// QoS-aware factory variants. The C-API takes `const ZeroDds*Qos*`; koffi
+// passes a Buffer's address straight through. Declared separately from the
+// `const void*` variants above so koffi typechecks the struct buffer.
+export const zerodds_dp_create_topic_qos = lib.func(
+  "ZeroDdsTopic* zerodds_dp_create_topic(ZeroDdsDomainParticipant* p, const char* name, const char* type_name, ZeroDdsTopicQos* qos)",
+);
+export const zerodds_dp_create_publisher_qos = lib.func(
+  "ZeroDdsPublisher* zerodds_dp_create_publisher(ZeroDdsDomainParticipant* p, ZeroDdsPublisherQos* qos)",
+);
+export const zerodds_dp_create_subscriber_qos = lib.func(
+  "ZeroDdsSubscriber* zerodds_dp_create_subscriber(ZeroDdsDomainParticipant* p, ZeroDdsPublisherQos* qos)",
+);
+export const zerodds_pub_create_datawriter_qos = lib.func(
+  "ZeroDdsDataWriter* zerodds_pub_create_datawriter(ZeroDdsPublisher* pub, ZeroDdsTopic* topic, ZeroDdsDataWriterQos* qos)",
+);
+export const zerodds_sub_create_datareader_qos = lib.func(
+  "ZeroDdsDataReader* zerodds_sub_create_datareader(ZeroDdsSubscriber* sub, ZeroDdsTopic* topic, ZeroDdsDataReaderQos* qos)",
+);
+
+// ContentFilteredTopic (Spec §2.2.2.3.3).
+export const zerodds_dp_create_contentfilteredtopic = lib.func(
+  "ZeroDdsContentFilteredTopic* zerodds_dp_create_contentfilteredtopic(ZeroDdsDomainParticipant* p, const char* name, ZeroDdsTopic* related, const char* filter_expression, char** parameters, size_t param_count)",
+);
+export const zerodds_cft_set_schema = lib.func(
+  "int zerodds_cft_set_schema(ZeroDdsContentFilteredTopic* cft, char** names, const uint32_t* kinds, size_t count)",
+);
+export const zerodds_dp_delete_contentfilteredtopic = lib.func(
+  "int zerodds_dp_delete_contentfilteredtopic(ZeroDdsDomainParticipant* p, ZeroDdsContentFilteredTopic* cft)",
+);
+export const zerodds_sub_create_datareader_with_cft = lib.func(
+  "ZeroDdsDataReader* zerodds_sub_create_datareader_with_cft(ZeroDdsSubscriber* sub, ZeroDdsContentFilteredTopic* cft, const void* qos)",
+);
+
+// ---- Keyed lifecycle (Spec §2.2.2.4.2 DataWriter instance ops) ----
+export const zerodds_dw_register_instance = lib.func(
+  "int zerodds_dw_register_instance(ZeroDdsDataWriter* dw, const uint8_t* key, size_t key_len, _Out_ uint64_t* out_handle)",
+);
+export const zerodds_dw_register_instance_w_timestamp = lib.func(
+  "int zerodds_dw_register_instance_w_timestamp(ZeroDdsDataWriter* dw, const uint8_t* key, size_t key_len, int32_t ts_sec, uint32_t ts_nanosec, _Out_ uint64_t* out_handle)",
+);
+export const zerodds_dw_unregister_instance = lib.func(
+  "int zerodds_dw_unregister_instance(ZeroDdsDataWriter* dw, uint64_t handle)",
+);
+export const zerodds_dw_unregister_instance_w_timestamp = lib.func(
+  "int zerodds_dw_unregister_instance_w_timestamp(ZeroDdsDataWriter* dw, uint64_t handle, int32_t ts_sec, uint32_t ts_nanosec)",
+);
+export const zerodds_dw_lookup_instance = lib.func(
+  "int zerodds_dw_lookup_instance(ZeroDdsDataWriter* dw, const uint8_t* key, size_t key_len, _Out_ uint64_t* out_handle)",
+);
+export const zerodds_dw_dispose = lib.func(
+  "int zerodds_dw_dispose(ZeroDdsDataWriter* dw, const uint8_t* key_hash, uint64_t handle)",
+);
+export const zerodds_dw_dispose_w_timestamp = lib.func(
+  "int zerodds_dw_dispose_w_timestamp(ZeroDdsDataWriter* dw, const uint8_t* key_hash, uint64_t handle, int32_t ts_sec, uint32_t ts_nanosec)",
+);
+export const zerodds_dr_lookup_instance = lib.func(
+  "int zerodds_dr_lookup_instance(ZeroDdsDataReader* dr, const uint8_t* key, size_t key_len, _Out_ uint64_t* out_handle)",
+);
+
+// ---- DataReader status getters (Spec §2.2.4.1) ----
+export const RequestedDeadlineMissedStatus = koffi.struct(
+  "ZeroDdsRequestedDeadlineMissedStatus",
+  {
+    total_count: "int32",
+    total_count_change: "int32",
+    last_instance_handle: "uint64",
+  },
+);
+export const LivelinessChangedStatus = koffi.struct(
+  "ZeroDdsLivelinessChangedStatus",
+  {
+    alive_count: "int32",
+    not_alive_count: "int32",
+    alive_count_change: "int32",
+    not_alive_count_change: "int32",
+    last_publication_handle: "uint64",
+  },
+);
+export const zerodds_dr_get_requested_deadline_missed_status = lib.func(
+  "int zerodds_dr_get_requested_deadline_missed_status(ZeroDdsDataReader* dr, _Out_ ZeroDdsRequestedDeadlineMissedStatus* out)",
+);
+export const zerodds_dr_get_liveliness_changed_status = lib.func(
+  "int zerodds_dr_get_liveliness_changed_status(ZeroDdsDataReader* dr, _Out_ ZeroDdsLivelinessChangedStatus* out)",
+);
+
+// Manual writer liveliness assertion (Spec §2.2.2.4.2.22).
+export const zerodds_dw_assert_liveliness = lib.func(
+  "int zerodds_dw_assert_liveliness(ZeroDdsDataWriter* dw)",
+);
+
+// Instance-state codes carried by ZeroDdsSampleInfo.instance_state.
+export const InstanceState = {
+  Alive: 1,
+  NotAliveDisposed: 2,
+  NotAliveNoWriters: 4,
+} as const;
+
+// ---- Batch take/read (Spec §2.2.2.5.3) ----
+// The batch `zerodds_dr_take` path applies the ContentFilteredTopic filter
+// (§2.2.2.3.3) AND EXCLUSIVE-ownership arbitration (§2.2.3.23) AND resolves the
+// per-instance InstanceHandle — none of which the single-sample
+// `take_next_sample` path does. The binding uses it for CFT / exclusive-owned
+// readers so those QoS effects are observed.
+export const SampleArray = koffi.struct("ZeroDdsSampleArray", {
+  buffers: koffi.pointer("uint8_t *"),
+  lengths: koffi.pointer("size_t"),
+  infos: koffi.pointer(SampleInfo),
+  count: "size_t",
+  loan_token: "void *",
+});
+export const zerodds_dr_take = lib.func(
+  "int zerodds_dr_take(ZeroDdsDataReader* dr, _Out_ ZeroDdsSampleArray* out, size_t max_samples, uint32_t sample_states, uint32_t view_states, uint32_t instance_states)",
+);
+export const zerodds_dr_read = lib.func(
+  "int zerodds_dr_read(ZeroDdsDataReader* dr, _Out_ ZeroDdsSampleArray* out, size_t max_samples, uint32_t sample_states, uint32_t view_states, uint32_t instance_states)",
+);
+export const zerodds_dr_return_loan = lib.func(
+  "int zerodds_dr_return_loan(ZeroDdsDataReader* dr, ZeroDdsSampleArray* arr)",
+);
+// ANY_* state masks (Spec §2.2.2.5.4): pass 0 = "any" in this C-API.
+export const STATE_ANY = 0;

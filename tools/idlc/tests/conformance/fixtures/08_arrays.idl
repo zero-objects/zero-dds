@@ -1,0 +1,10 @@
+// Conformance feature: arrays — 1-D, multi-dimensional, of structs.
+module conf {
+  struct Point { long x; long y; };
+  struct Arrays {
+    long    vec[3];
+    long    grid[4][4];
+    Point   shape[2];
+    double  cube[2][2][2];
+  };
+};

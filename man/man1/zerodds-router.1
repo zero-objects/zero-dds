@@ -1,0 +1,98 @@
+.TH ZERODDS-ROUTER 1 "2026-06-27" "1.0.0-rc.4" "ZeroDDS Manual"
+.SH NAME
+zerodds-router \- DDS routing-service daemon
+.SH SYNOPSIS
+.B zerodds-router run
+\fB\-\-config\fR \fIFILE\fR
+[\fB\-\-types\fR \fISHAPES.json\fR]
+.br
+.B zerodds-router validate
+\fB\-\-config\fR \fIFILE\fR
+.SH DESCRIPTION
+.B zerodds-router
+is a DDS-to-DDS forwarding daemon: it copies samples between DDS endpoints
+that differ in domain, topic, or partition, optionally filtering and
+transforming each sample on the way. It is a native in-DDS routing service,
+not a protocol bridge \(em both ends speak RTPS.
+.PP
+Each route declares an
+.I input
+and an
+.I output
+endpoint (domain, topic, type name, partitions, QoS). A route may carry a
+content
+.I filter
+(an SQL-like expression that drops non-matching samples) and a field
+.I transform
+(rename / set-const). A built-in loop guard prevents a sample from being
+re-forwarded on a domain that is both an input and an output.
+.SH COMMANDS
+.TP
+.B run
+Start the router and forward until SIGINT/SIGTERM.
+.TP
+.B validate
+Parse and validate the config, print the resolved routes, and exit without
+joining any domain.
+.SH OPTIONS
+.TP
+.BR \-\-config " \fIFILE\fR"
+Route configuration. The format is chosen by extension: a
+.I .xml
+path is parsed as XML, anything else as JSON. Required.
+.TP
+.BR \-\-types " \fISHAPES.json\fR"
+A JSON array of type shapes describing each route's
+.IR type_name ,
+e.g. \fB[{ "name": "ns::T", "members": [{ "name": "v", "kind": "u32" }] }]\fR.
+Required only for routes that use a
+.I filter
+or
+.IR transform ,
+which must understand the sample's fields. Plain raw-byte forwards
+(\fItype_name\fR \fBzerodds::RawBytes\fR) need no shapes.
+.SH CONFIGURATION
+The config has a top-level
+.I name
+and a list of
+.IR routes .
+Each route has
+.IR input " and " output
+endpoints; optional
+.IR filter ", " transform ", "
+.I loop_guard
+(default true) and
+.I preserve_source_timestamp
+(default false). An endpoint has
+.IR domain ", " topic ", " type_name ", "
+optional
+.IR partition " and " qos
+(reliability, durability, ownership, ...). See
+.I /usr/share/zerodds/configs/router.json.example
+for a working two-route configuration.
+.SH SIGNALS
+.B SIGINT
+and
+.B SIGTERM
+trigger a graceful shutdown; the per-route metrics (forwarded, dropped by
+loop guard, dropped by filter, lifecycle, errors) are printed before exit.
+There is no SIGHUP reload \(em edit the config and restart the service.
+.SH FILES
+.TP
+.I /etc/zerodds/router.json
+Default configuration read by the
+.BR zerodds-router.service (8)
+systemd unit.
+.TP
+.I /usr/share/zerodds/configs/router.json.example
+Shipped example configuration.
+.SH EXIT STATUS
+.B 0
+on a clean validate or a clean shutdown,
+.B 1
+on a usage error or a config / startup failure.
+.SH SEE ALSO
+.BR zerodds-admin (1),
+.BR zerodds-spy (1)
+.SH AUTHOR
+ZeroDDS Contributors.

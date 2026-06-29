@@ -41,9 +41,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      # rust-toolchain.toml pinnt 1.88.0; cargo-deny-action's Docker-Image
-      # hat nur 1.85.0-musl praeinstalliert. rust-version-input zwingt
-      # die Action vor cargo-deny rustup-install der gepinten Version.
+      # rust-toolchain.toml pins 1.88.0; the cargo-deny-action Docker image
+      # only has 1.85.0-musl pre-installed. The rust-version input forces
+      # the action to rustup-install the pinned version before cargo-deny.
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
@@ -74,41 +74,46 @@ jobs:
         with:
           targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
-      # The DuckDB lakehouse adapter (ADR 0009) links the *system* libduckdb
-      # v1.5.3 — same as ci/Dockerfile.rust on GitLab. The `bundled` source
-      # build was dropped (OOM-killed the 16 GB runner, +1h/build). amd64 only;
-      # the aarch64 cross build excludes the duckdb-dependent crates below.
-      - name: Install system libduckdb (amd64)
-        if: ${{ !matrix.cross }}
-        run: |
-          curl -fsSL -o /tmp/libduckdb.zip \
-            https://github.com/duckdb/duckdb/releases/download/v1.5.3/libduckdb-linux-amd64.zip
-          unzip -o /tmp/libduckdb.zip -d /tmp/libduckdb
-          sudo install -m644 /tmp/libduckdb/libduckdb.so /usr/local/lib/
-          sudo install -m644 /tmp/libduckdb/duckdb.h /tmp/libduckdb/duckdb.hpp /usr/local/include/
-          sudo ldconfig
-          echo "DUCKDB_LIB_DIR=/usr/local/lib" >> "$GITHUB_ENV"
-          echo "DUCKDB_INCLUDE_DIR=/usr/local/include" >> "$GITHUB_ENV"
       - name: Install cross
         if: matrix.cross
         run: cargo install cross --locked
       - name: Build
         run: |
           if [ "${{ matrix.cross }}" = "true" ]; then
-            # libduckdb is amd64-only; the aarch64 cross-compile is a sanity
-            # check, so exclude the duckdb-linking crates (mirrors .gitlab-ci.yml).
-            cross build --workspace --target ${{ matrix.target }} \
-              --exclude zerodds-durability-store-lakehouse \
-              --exclude zerodds-durability-service-bin
+            cross build --workspace --target ${{ matrix.target }}
           else
             cargo build --workspace --target ${{ matrix.target }}
           fi
       - name: Test (non-DCPS workspace, parallel)
         if: ${{ !matrix.cross }}
         run: cargo test --workspace --exclude zerodds-dcps --target ${{ matrix.target }}
-      - name: Test (DCPS, serial — UDP-Multicast-Tests teilen sich pro Binary die Multicast-Group)
+      - name: Test (DCPS, serial — UDP multicast tests share one multicast group per binary)
         if: ${{ !matrix.cross }}
         run: cargo test -p zerodds-dcps --target ${{ matrix.target }} -- --test-threads=1
+
+  # ---------------------------------------------------------------------------
+  # tsn-live — live AF_PACKET transport (DDS-TSN 1.0 Annex A, EtherType
+  # 0x88B5). The workspace test job builds WITHOUT the transport-tsn
+  # `live` feature, so socket.rs (target_os=linux) and its frame logic
+  # are otherwise never compiled/run. GitHub ubuntu runners allow
+  # `sudo ip link add` (veth) + AF_PACKET, so unlike the internal GitLab
+  # runner the real veth RTPS round trip executes here. See
+  # internal/ci/tsn-live.md.
+  # ---------------------------------------------------------------------------
+  tsn-live:
+    name: TSN live AF_PACKET transport
+    needs: [fmt, clippy]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build socket.rs + run live_frame unit tests
+        run: cargo test -p zerodds-transport-tsn --features live
+      - name: Real RTPS round trip over a veth pair (needs root)
+        run: |
+          sudo -E "$(command -v cargo)" test -p zerodds-transport-tsn \
+            --features live --test veth_loopback -- --ignored --test-threads=1
 
   # ---------------------------------------------------------------------------
   # No-std build for the Safe-Subset crates.
@@ -141,9 +146,9 @@ jobs:
 
   # ---------------------------------------------------------------------------
   # Coverage — cargo-llvm-cov, line/region/function coverage.
-  # Branch-Coverage erfordert nightly Rust und wird spaeter als separater
-  # Nightly-Job aufgenommen. Ziel-Messlatte: 99% (soft gate, kein Merge-Block
-  # waehrend Bootstrap-Era, siehe memory/project_quality_bar_branch_coverage).
+  # Branch coverage requires nightly Rust and will be added later as a separate
+  # nightly job. Target bar: 99% (soft gate, no merge block
+  # during the bootstrap era, see memory/project_quality_bar_branch_coverage).
   # ---------------------------------------------------------------------------
   coverage:
     name: coverage (cargo-llvm-cov)
@@ -155,28 +160,17 @@ jobs:
         with:
           components: llvm-tools-preview
       - uses: Swatinem/rust-cache@v2
-      # libduckdb for the DuckDB lakehouse adapter (see build-test job).
-      - name: Install system libduckdb (amd64)
-        run: |
-          curl -fsSL -o /tmp/libduckdb.zip \
-            https://github.com/duckdb/duckdb/releases/download/v1.5.3/libduckdb-linux-amd64.zip
-          unzip -o /tmp/libduckdb.zip -d /tmp/libduckdb
-          sudo install -m644 /tmp/libduckdb/libduckdb.so /usr/local/lib/
-          sudo install -m644 /tmp/libduckdb/duckdb.h /tmp/libduckdb/duckdb.hpp /usr/local/include/
-          sudo ldconfig
-          echo "DUCKDB_LIB_DIR=/usr/local/lib" >> "$GITHUB_ENV"
-          echo "DUCKDB_INCLUDE_DIR=/usr/local/include" >> "$GITHUB_ENV"
       - name: Install cargo-llvm-cov
         run: cargo install cargo-llvm-cov --version 0.6.21 --locked
       - name: Run coverage
-        # `--lib --bins`: misst nur Library- und Binary-Code-Pfade
-        # (Unit-Tests in den Crates selbst). Integration-Tests
-        # (`tests/*.rs`) sind End-to-End-Discovery-Tests und liefern
-        # primaer Line-Coverage, kaum Branch-Coverage. Sie haben
-        # zudem E2E-Timing-Abhaengigkeiten unter cov-Instrumentation
-        # (siehe docs/timing-architecture-audit.md Prio 4).
-        # build-test x86_64 + aarch64 fuehren die Integration-Tests
-        # weiterhin aus — Coverage misst code, build-test misst Behavior.
+        # `--lib --bins`: measures only library and binary code paths
+        # (unit tests in the crates themselves). Integration tests
+        # (`tests/*.rs`) are end-to-end discovery tests and primarily
+        # yield line coverage, hardly any branch coverage. They also
+        # have E2E timing dependencies under cov instrumentation
+        # (see docs/timing-architecture-audit.md prio 4).
+        # build-test x86_64 + aarch64 still run the integration tests
+        # — coverage measures code, build-test measures behavior.
         run: cargo llvm-cov --workspace --lib --bins --lcov --output-path lcov.info
       - name: Coverage summary
         run: cargo llvm-cov --workspace --lib --bins --summary-only

@@ -10,4 +10,4 @@ cargo +nightly fuzz run parse_qos_libraries
 ```
 
 Known finding 3: stack overflow on deep tag nesting
-(siehe `docs/test-harness/plan.md`).
+(siehe `internal/test-harness/plan.md`).

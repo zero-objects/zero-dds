@@ -7,7 +7,9 @@ use alloc::vec::Vec;
 use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
 
 use crate::type_identifier::TypeIdentifier;
-use crate::type_object::common::{CommonStructMember, NameHash, decode_seq, encode_seq};
+use crate::type_object::common::{
+    CommonStructMember, NameHash, decode_seq_appendable, encode_seq_appendable,
+};
 use crate::type_object::flags::StructTypeFlag;
 
 /// Header for MinimalStructType (only base_type, detail is empty).
@@ -23,7 +25,9 @@ impl MinimalStructHeader {
     /// # Errors
     /// Buffer overflow.
     pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        self.base_type.encode_into(w)
+        // MinimalStructHeader is @appendable (XTypes §7.3.4.4.1) → DHEADER +
+        // body. Body = base_type (the empty MinimalTypeDetail adds no bytes).
+        zerodds_cdr::struct_enc::encode_appendable(w, |w| self.base_type.encode_into(w))
     }
 
     /// Decode.
@@ -31,9 +35,8 @@ impl MinimalStructHeader {
     /// # Errors
     /// Buffer underflow.
     pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
-        Ok(Self {
-            base_type: TypeIdentifier::decode_from(r)?,
-        })
+        let base_type = zerodds_cdr::struct_enc::decode_appendable(r, TypeIdentifier::decode_from)?;
+        Ok(Self { base_type })
     }
 }
 
@@ -53,8 +56,12 @@ impl MinimalStructMember {
     /// # Errors
     /// Buffer overflow.
     pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        self.common.encode_into(w)?;
-        self.detail.encode_into(w)
+        // MinimalStructMember is @appendable (XTypes §7.3.4.4.1) → each element
+        // in the member_seq carries its own DHEADER + body.
+        zerodds_cdr::struct_enc::encode_appendable(w, |w| {
+            self.common.encode_into(w)?;
+            self.detail.encode_into(w)
+        })
     }
 
     /// Decode.
@@ -62,9 +69,11 @@ impl MinimalStructMember {
     /// # Errors
     /// Buffer underflow.
     pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
-        let common = CommonStructMember::decode_from(r)?;
-        let detail = NameHash::decode_from(r)?;
-        Ok(Self { common, detail })
+        zerodds_cdr::struct_enc::decode_appendable(r, |r| {
+            let common = CommonStructMember::decode_from(r)?;
+            let detail = NameHash::decode_from(r)?;
+            Ok(Self { common, detail })
+        })
     }
 }
 
@@ -87,7 +96,7 @@ impl MinimalStructType {
     pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
         w.write_u16(self.struct_flags.0)?;
         self.header.encode_into(w)?;
-        encode_seq(w, &self.member_seq, |w, m| m.encode_into(w))
+        encode_seq_appendable(w, &self.member_seq, |w, m| m.encode_into(w))
     }
 
     /// Decode.
@@ -97,7 +106,7 @@ impl MinimalStructType {
     pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         let struct_flags = StructTypeFlag(r.read_u16()?);
         let header = MinimalStructHeader::decode_from(r)?;
-        let member_seq = decode_seq(r, MinimalStructMember::decode_from)?;
+        let member_seq = decode_seq_appendable(r, MinimalStructMember::decode_from)?;
         Ok(Self {
             struct_flags,
             header,

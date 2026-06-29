@@ -240,6 +240,72 @@ pub const DEFAULT_CAPACITY: usize = 1 << 20;
 /// `Backpressure`.
 const SPIN_LIMIT: u32 = 1024;
 
+/// Event-driven cross-process notify for the SHM ring (Linux, little-endian).
+///
+/// The producer advances the 64-bit `head` write-pointer on every frame and
+/// then [`wake`]s; a parked consumer [`wait`]s on the **low 32 bits** of that
+/// same `head` word (it changes on every push, so it doubles as the futex
+/// sequence). This replaces the previous exponential-backoff sleep-poll, whose
+/// 10→20→40→80 µs steps injected a bimodal 66–140 µs same-host round-trip
+/// latency (vs ~24 µs for the UDP loopback it shadows). The futex is **shared**
+/// (no `FUTEX_PRIVATE_FLAG`), so wait/wake key on the underlying physical page
+/// and work across the two processes despite differing virtual addresses.
+///
+/// Non-Linux / big-endian targets keep the sleep-poll fallback in
+/// [`PosixShmTransport::wait_for_frame`]; the wire format is unchanged.
+#[cfg(all(target_os = "linux", target_endian = "little"))]
+mod ring_futex {
+    use std::time::Duration;
+
+    /// Wake up to `n` consumers parked on `addr` (the low 32 bits of `head`).
+    pub(super) fn wake(addr: *const u32, n: i32) {
+        // SAFETY: `addr` points to a live `u32` inside a shared mapping that
+        // outlives this call. `FUTEX_WAKE` ignores `*addr` and only signals
+        // parked waiters; the trailing args are unused for WAKE.
+        unsafe {
+            libc::syscall(
+                libc::SYS_futex,
+                addr,
+                libc::FUTEX_WAKE,
+                n,
+                core::ptr::null::<libc::timespec>(),
+                core::ptr::null::<u32>(),
+                0,
+            );
+        }
+    }
+
+    /// Park until `*addr != expected`, a [`wake`] arrives, or `timeout`
+    /// elapses. `FUTEX_WAIT` re-checks `*addr == expected` atomically before
+    /// sleeping, so a wake published after the caller read `expected` (but
+    /// before this call) returns `EAGAIN` immediately — no lost wakeup. The
+    /// caller always re-polls the ring afterwards, so `EAGAIN`/`EINTR`/
+    /// `ETIMEDOUT` need no distinction.
+    pub(super) fn wait(addr: *const u32, expected: u32, timeout: Option<Duration>) {
+        let ts = timeout.map(|d| libc::timespec {
+            tv_sec: d.as_secs() as libc::time_t,
+            tv_nsec: d.subsec_nanos() as libc::c_long,
+        });
+        let ts_ptr = ts
+            .as_ref()
+            .map_or(core::ptr::null(), |t| t as *const libc::timespec);
+        // SAFETY: `addr` is a live `u32` in a shared mapping; the relative
+        // `timeout` (or NULL for infinite) points to a valid stack `timespec`
+        // for the duration of the call.
+        unsafe {
+            libc::syscall(
+                libc::SYS_futex,
+                addr,
+                libc::FUTEX_WAIT,
+                expected,
+                ts_ptr,
+                core::ptr::null::<u32>(),
+                0,
+            );
+        }
+    }
+}
+
 /// Default base directory for OS-backed segment files (Linux:
 /// automatically `/dev/shm/` via `shm_open`). This here is only the
 /// sentinel directory in which we place a bookkeeping file with the
@@ -520,6 +586,13 @@ impl Drop for PosixShmTransport {
             self.layout
                 .shutdown()
                 .store(1, core::sync::atomic::Ordering::Release);
+            // Wake any consumer parked in `wait_for_frame` so it observes the
+            // shutdown flag immediately instead of waiting out its
+            // recv_timeout. The futex keys on `head` (the wait address); a
+            // bare wake with no head change still releases the waiter, which
+            // then re-checks shutdown.
+            #[cfg(all(target_os = "linux", target_endian = "little"))]
+            ring_futex::wake(self.layout.head().as_ptr() as *const u32, i32::MAX);
             // 1. Remove the flink file (lookup file, not a segment).
             let _ = std::fs::remove_file(&self.flink_path);
             // 2. Remove the lock file.
@@ -786,6 +859,12 @@ impl PosixShmTransport {
             self.layout.write_u32(h_mod, len_u32);
             self.layout.write_slice(h_mod + 4, data);
             self.layout.head().store(h + needed, Ordering::Release);
+            // Event-driven notify: the `head` store above is published; wake a
+            // consumer parked in `wait_for_frame` on the low 32 bits of `head`.
+            // Wake-all (typically a single consumer) keeps it correct if a
+            // future revision maps several readers onto one segment.
+            #[cfg(all(target_os = "linux", target_endian = "little"))]
+            ring_futex::wake(self.layout.head().as_ptr() as *const u32, i32::MAX);
             return Ok(());
         }
     }
@@ -881,44 +960,68 @@ impl PosixShmTransport {
     }
 
     fn wait_for_frame(&self) -> Result<Vec<u8>, RecvError> {
-        // Sleep-poll model. Instead of a real futex/eventfd notify the
-        // reader polls in exponential-backoff steps. The trade-off is
-        // deliberate:
-        //
-        // - **Low tail latency**: max_backoff capped at 1 ms; the worst
-        //   case between frame arrival and delivery is one millisecond
-        //   instead of the previous 10 ms.
-        // - **CPU cost when idle**: sleep(1 ms) in a loop = ~1000
-        //   polls/s. An empty receiver on an idle host uses <0.1 % CPU —
-        //   acceptable.
-        // - **Full futex/eventfd**: deferred to v1.3 (`eventfd(2)` per
-        //   segment + epoll_wait). It breaks our cross-platform
-        //   abstraction (Linux-only) and only pays off once we hit
-        //   1M+ messages/s.
         let deadline = self.config.recv_timeout.map(|t| Instant::now() + t);
-        let mut backoff = Duration::from_micros(10);
-        let max_backoff = Duration::from_millis(1);
-        loop {
-            if let Some(frame) = self.pop_frame() {
-                return Ok(frame);
-            }
-            // Targeted owner-gone signal:
-            // when the owner drops, it sets shutdown=1. We check only
-            // after pop_frame — so frames published before the drop
-            // still arrive. The acquire load pairs with the owner's
-            // release store.
-            if self.layout.shutdown().load(Ordering::Acquire) != 0 {
-                return Err(RecvError::Io {
-                    message: "shm owner terminated",
-                });
-            }
-            if let Some(d) = deadline {
-                if Instant::now() >= d {
-                    return Err(RecvError::Timeout);
+
+        // Event-driven path (Linux, little-endian): park on the low 32 bits of
+        // `head` and let the producer's `FUTEX_WAKE` (in `push_frame`) deliver
+        // the frame immediately, instead of a sleep-poll backoff. The `head`
+        // value is read **before** `pop_frame`, so a frame published between
+        // the read and the `FUTEX_WAIT` flips `*addr != expected` and returns
+        // `EAGAIN` at once — no lost wakeup.
+        #[cfg(all(target_os = "linux", target_endian = "little"))]
+        {
+            let head_word = self.layout.head().as_ptr() as *const u32;
+            loop {
+                let expected = self.layout.head().load(Ordering::Acquire) as u32;
+                if let Some(frame) = self.pop_frame() {
+                    return Ok(frame);
                 }
+                // Targeted owner-gone signal: the owner sets shutdown=1 (and
+                // wakes us) on drop. Checked after pop_frame, so frames
+                // published before the drop still arrive.
+                if self.layout.shutdown().load(Ordering::Acquire) != 0 {
+                    return Err(RecvError::Io {
+                        message: "shm owner terminated",
+                    });
+                }
+                let remaining = match deadline {
+                    Some(d) => {
+                        let now = Instant::now();
+                        if now >= d {
+                            return Err(RecvError::Timeout);
+                        }
+                        Some(d - now)
+                    }
+                    None => None,
+                };
+                ring_futex::wait(head_word, expected, remaining);
             }
-            std::thread::sleep(backoff);
-            backoff = (backoff * 2).min(max_backoff);
+        }
+
+        // Sleep-poll fallback (non-Linux / big-endian): exponential backoff
+        // 10 µs → 1 ms. Higher tail latency than the futex path, but portable
+        // and identical on the wire.
+        #[cfg(not(all(target_os = "linux", target_endian = "little")))]
+        {
+            let mut backoff = Duration::from_micros(10);
+            let max_backoff = Duration::from_millis(1);
+            loop {
+                if let Some(frame) = self.pop_frame() {
+                    return Ok(frame);
+                }
+                if self.layout.shutdown().load(Ordering::Acquire) != 0 {
+                    return Err(RecvError::Io {
+                        message: "shm owner terminated",
+                    });
+                }
+                if let Some(d) = deadline {
+                    if Instant::now() >= d {
+                        return Err(RecvError::Timeout);
+                    }
+                }
+                std::thread::sleep(backoff);
+                backoff = (backoff * 2).min(max_backoff);
+            }
         }
     }
 }

@@ -112,7 +112,7 @@ DDSI-RTPS 2.5 §8.3 — fully implemented:
 * DATA / DATA_FRAG / GAP / HEARTBEAT / HEARTBEAT_FRAG / ACKNACK /
   NACK_FRAG / INFO_TS / INFO_SRC / INFO_DST / INFO_REPLY
 * Cross-vendor wire compat byte-identical against Cyclone DDS,
-  FastDDS, RTI Connext, OpenSplice (see `docs/interop/`).
+  FastDDS, RTI Connext, OpenSplice (see `internal/interop/`).
 
 ## Cross-vendor compatibility
 

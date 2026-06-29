@@ -13,7 +13,6 @@ CLI:
     python3 cyclone_shapes_pub.py [topic=Square] [color=RED] [domain=0]
 """
 
-from __future__ import annotations
 
 import math
 import sys
@@ -39,10 +38,11 @@ class ShapeType(IdlStruct, typename="ShapeType"):
         };
     """
 
-    color: key[bounded_str[128]] = ""
+    color: bounded_str[128] = ""
     x: int32 = 0
     y: int32 = 0
     shapesize: int32 = 0
+    key("color")
 
 
 def main() -> int:

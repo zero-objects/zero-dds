@@ -1,30 +1,30 @@
 # Maven Central publish job for org.zerodds:omgdds (crates/java-omgdds/java).
-# Spec: docs/packaging/language-binding-publish-followup.md
+# Spec: internal/packaging/language-binding-publish-followup.md
 #
-# Setup once (User-Action, mehrtaegig wegen Sonatype-Buerokratie):
+# Setup once (user action, takes several days due to Sonatype bureaucracy):
 #
-#  1. Sonatype-Central-Portal Account anlegen (kostenlos):
+#  1. Create a Sonatype Central Portal account (free):
 #     https://central.sonatype.com/
-#     Im Portal: "Register new namespace" → Domain `org.zerodds`
-#     Verifikation: TXT-Record `OSSRH-XXXXXX` auf zerodds.org DNS setzen.
-#     Approval-Zeit: 1-3 Werktage.
+#     In the portal: "Register new namespace" → domain `org.zerodds`
+#     Verification: set TXT record `OSSRH-XXXXXX` on zerodds.org DNS.
+#     Approval time: 1-3 business days.
 #
-#  2. User-Token im Portal generieren:
+#  2. Generate a user token in the portal:
 #     central.sonatype.com → View Account → Generate User Token
-#     Liefert ein <username> + <token> Paar fuer das Portal-API.
+#     Yields a <username> + <token> pair for the portal API.
 #
-#  3. GPG-Key fuer Signing erstellen (Maven Central erfordert PGP-Signatur):
+#  3. Create a GPG key for signing (Maven Central requires a PGP signature):
 #     gpg --full-generate-key   # RSA 4096, never expires, mail-only
 #     gpg --list-secret-keys --keyid-format LONG
 #     gpg --armor --export-secret-keys <KEYID> > /tmp/maven-gpg.asc
 #     gpg --keyserver hkps://keys.openpgp.org --send-keys <KEYID>
 #     gpg --keyserver hkps://keyserver.ubuntu.com --send-keys <KEYID>
 #
-#  4. GitHub-Secrets setzen:
-#     SONATYPE_USERNAME       Portal-Token-Username
-#     SONATYPE_PASSWORD       Portal-Token-Wert
-#     MAVEN_GPG_PRIVATE_KEY   Inhalt von /tmp/maven-gpg.asc
-#     MAVEN_GPG_PASSPHRASE    GPG-Key-Passwort
+#  4. Set GitHub secrets:
+#     SONATYPE_USERNAME       portal token username
+#     SONATYPE_PASSWORD       portal token value
+#     MAVEN_GPG_PRIVATE_KEY   contents of /tmp/maven-gpg.asc
+#     MAVEN_GPG_PASSPHRASE    GPG key password
 
 name: publish-maven
 on:
@@ -75,9 +75,9 @@ jobs:
       - name: Verify pom.xml has required Maven-Central metadata
         working-directory: crates/java-omgdds/java
         run: |
-          # Maven Central erfordert: <name>, <description>, <url>, <licenses>,
-          # <scm>, <developers> im pom.xml. Check und faile mit klarem Hinweis
-          # falls fehlt.
+          # Maven Central requires: <name>, <description>, <url>, <licenses>,
+          # <scm>, <developers> in pom.xml. Check and fail with a clear hint
+          # if any are missing.
           missing=""
           for tag in name description url licenses scm developers; do
             if ! grep -q "<$tag>" pom.xml; then
@@ -86,7 +86,7 @@ jobs:
           done
           if [ -n "$missing" ]; then
             echo "::error::pom.xml missing required Maven-Central elements:$missing"
-            echo "::error::Siehe https://central.sonatype.org/publish/requirements/"
+            echo "::error::See https://central.sonatype.org/publish/requirements/"
             exit 1
           fi
 
@@ -102,10 +102,10 @@ jobs:
           SONATYPE_PASSWORD: ${{ secrets.SONATYPE_PASSWORD }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
         run: |
-          # central-publishing-maven-plugin (modern Sonatype-Pfad) muss
-          # in pom.xml als <plugin> registriert sein. Falls noch nicht
-          # eingerichtet: docs/packaging/language-binding-publish-followup.md
-          # listet die Plugin-Konfiguration auf.
+          # The central-publishing-maven-plugin (modern Sonatype path) must
+          # be registered as a <plugin> in pom.xml. If not yet
+          # set up: internal/packaging/language-binding-publish-followup.md
+          # lists the plugin configuration.
           mvn -B -Prelease deploy
 
       - name: Upload Maven artifacts (debug)

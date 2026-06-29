@@ -4,7 +4,7 @@
 //! OMG AMI4CCM 1.1 — Asynchronous Method Invocation for CORBA Component Model.
 //!
 //! Crate `zerodds-ami4ccm`. Safety classification: **STANDARD**.
-//! Spec `formal/2015-08-03` (`docs/standards/cache/omg/ami4ccm-1.1.pdf`).
+//! Spec `formal/2015-08-03` (`internal/standards/cache/omg/ami4ccm-1.1.pdf`).
 //!
 //! # Scope
 //!

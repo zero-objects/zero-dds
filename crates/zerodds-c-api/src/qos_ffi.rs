@@ -378,6 +378,84 @@ pub struct ZeroDdsPartitionQosPolicy {
     pub names_len: usize,
 }
 
+/// Stable backing store for the PARTITION names emitted on a `get_qos` /
+/// `get_default_*_qos` OUT path. The `ZeroDdsPartitionQosPolicy` carries the
+/// names as a `*const *const c_char` borrow — the pointed-to C strings and the
+/// pointer array must outlive the `*_qos_to_c` call, so they are owned by the
+/// entity (a `Mutex<PartitionOutCache>`) and refreshed on each marshalling.
+/// (DDS-PSM-Cxx §7.2.4 PartitionQosPolicy; the names are an
+/// implementation-owned snapshot, not caller-owned like the IN path.)
+#[derive(Default)]
+pub struct PartitionOutCache {
+    /// Owned NUL-terminated copies of each partition name.
+    strings: Vec<std::ffi::CString>,
+    /// `*const c_char` view over `strings`, the array `names` points at.
+    ptrs: Vec<*const c_char>,
+}
+
+// SAFETY: the raw pointers in `ptrs` only ever alias `strings` in the same
+// struct; the cache is always guarded by a Mutex on the owning entity.
+unsafe impl Send for PartitionOutCache {}
+
+impl PartitionOutCache {
+    /// Refresh the cache from the current partition names and point
+    /// `out_names`/`out_len` at the (now stable) internal pointer array.
+    ///
+    /// # Safety
+    /// `out_names`/`out_len` must be valid for writes.
+    unsafe fn marshal(
+        &mut self,
+        names: &[String],
+        out_names: *mut *const *const c_char,
+        out_len: *mut usize,
+    ) {
+        self.strings = names
+            .iter()
+            // A NUL byte inside a partition name is invalid (DDS names are C
+            // strings); truncate at the first interior NUL rather than fail the
+            // whole get_qos. `CString::new` over a NUL-free prefix never errors.
+            .map(|n| {
+                let bytes = n.as_bytes();
+                let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
+                std::ffi::CString::new(&bytes[..end]).unwrap_or_default()
+            })
+            .collect();
+        self.ptrs = self.strings.iter().map(|c| c.as_ptr()).collect();
+        // SAFETY: caller pledge — out pointers are valid for writes.
+        unsafe {
+            if self.ptrs.is_empty() {
+                *out_names = ptr::null();
+            } else {
+                *out_names = self.ptrs.as_ptr();
+            }
+            *out_len = self.ptrs.len();
+        }
+    }
+}
+
+/// Marshals a PARTITION policy onto an OUT struct field, using the entity-owned
+/// `cache` as stable backing for the names (see [`PartitionOutCache`]).
+///
+/// # Safety
+/// `out_names`/`out_len` valid for writes; `cache` guarded by the caller.
+pub unsafe fn marshal_partition_out(
+    cache: &std::sync::Mutex<PartitionOutCache>,
+    names: &[String],
+    out_names: *mut *const *const c_char,
+    out_len: *mut usize,
+) {
+    if let Ok(mut c) = cache.lock() {
+        // SAFETY: out pointers valid (caller pledge); cache held for the write.
+        unsafe { c.marshal(names, out_names, out_len) };
+    } else {
+        // SAFETY: out pointers valid (caller pledge).
+        unsafe {
+            *out_names = ptr::null();
+            *out_len = 0;
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // QoS-Sets (6)
 // ---------------------------------------------------------------------------
@@ -1139,12 +1217,19 @@ pub unsafe fn topic_qos_to_c(r: &TopicQos, out: *mut ZeroDdsTopicQos) -> c_int {
 }
 
 /// Writes a `DataWriterQos` snapshot. UserData/TopicData/GroupData
-/// must have sufficient buffers; Partition is returned as len=0 in RC1
-/// (the caller must read it separately — follow-up patch).
+/// must have sufficient buffers. PARTITION names are round-tripped out via the
+/// entity-owned `partition_cache` (see [`PartitionOutCache`]): the returned
+/// `partition.names`/`names_len` reflect the QoS that was set (DDS 1.4
+/// §2.2.3.10), pointing at implementation-owned C strings valid until the next
+/// `get_qos` on the same entity.
 ///
 /// # Safety
 /// `out` valid.
-pub unsafe fn dw_qos_to_c(r: &DataWriterQos, out: *mut ZeroDdsDataWriterQos) -> c_int {
+pub unsafe fn dw_qos_to_c(
+    r: &DataWriterQos,
+    out: *mut ZeroDdsDataWriterQos,
+    partition_cache: &std::sync::Mutex<PartitionOutCache>,
+) -> c_int {
     if out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
@@ -1185,9 +1270,13 @@ pub unsafe fn dw_qos_to_c(r: &DataWriterQos, out: *mut ZeroDdsDataWriterQos) -> 
         (*out).resource_limits = r.resource_limits.into();
         (*out).transport_priority = r.transport_priority.into();
         (*out).writer_data_lifecycle = r.writer_data_lifecycle.into();
-        // Partition as len=0 (variable-length, follow-up patch).
-        (*out).partition.names = ptr::null();
-        (*out).partition.names_len = 0;
+        // PARTITION round-trips out via the entity-owned cache (DDS 1.4 §2.2.3.10).
+        marshal_partition_out(
+            partition_cache,
+            &r.partition.names,
+            &mut (*out).partition.names,
+            &mut (*out).partition.names_len,
+        );
     }
     ZeroDdsStatus::Ok as c_int
 }
@@ -1196,7 +1285,11 @@ pub unsafe fn dw_qos_to_c(r: &DataWriterQos, out: *mut ZeroDdsDataWriterQos) -> 
 ///
 /// # Safety
 /// `out` valid.
-pub unsafe fn dr_qos_to_c(r: &DataReaderQos, out: *mut ZeroDdsDataReaderQos) -> c_int {
+pub unsafe fn dr_qos_to_c(
+    r: &DataReaderQos,
+    out: *mut ZeroDdsDataReaderQos,
+    partition_cache: &std::sync::Mutex<PartitionOutCache>,
+) -> c_int {
     if out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
@@ -1233,8 +1326,13 @@ pub unsafe fn dr_qos_to_c(r: &DataReaderQos, out: *mut ZeroDdsDataReaderQos) -> 
         (*out).resource_limits = r.resource_limits.into();
         (*out).time_based_filter = r.time_based_filter.into();
         (*out).reader_data_lifecycle = r.reader_data_lifecycle.into();
-        (*out).partition.names = ptr::null();
-        (*out).partition.names_len = 0;
+        // PARTITION round-trips out via the entity-owned cache (DDS 1.4 §2.2.3.10).
+        marshal_partition_out(
+            partition_cache,
+            &r.partition.names,
+            &mut (*out).partition.names,
+            &mut (*out).partition.names_len,
+        );
     }
     ZeroDdsStatus::Ok as c_int
 }
@@ -1243,7 +1341,11 @@ pub unsafe fn dr_qos_to_c(r: &DataReaderQos, out: *mut ZeroDdsDataReaderQos) -> 
 ///
 /// # Safety
 /// `out` valid.
-pub unsafe fn pub_qos_to_c(r: &PublisherQos, out: *mut ZeroDdsPublisherQos) -> c_int {
+pub unsafe fn pub_qos_to_c(
+    r: &PublisherQos,
+    out: *mut ZeroDdsPublisherQos,
+    partition_cache: &std::sync::Mutex<PartitionOutCache>,
+) -> c_int {
     if out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
@@ -1263,8 +1365,13 @@ pub unsafe fn pub_qos_to_c(r: &PublisherQos, out: *mut ZeroDdsPublisherQos) -> c
         (*out).group_data.value_len = needed;
         (*out).presentation = r.presentation.into();
         (*out).entity_factory = r.entity_factory.into();
-        (*out).partition.names = ptr::null();
-        (*out).partition.names_len = 0;
+        // PARTITION round-trips out via the entity-owned cache (DDS 1.4 §2.2.3.10).
+        marshal_partition_out(
+            partition_cache,
+            &r.partition.names,
+            &mut (*out).partition.names,
+            &mut (*out).partition.names_len,
+        );
     }
     ZeroDdsStatus::Ok as c_int
 }
@@ -1274,7 +1381,11 @@ pub unsafe fn pub_qos_to_c(r: &PublisherQos, out: *mut ZeroDdsPublisherQos) -> c
 ///
 /// # Safety
 /// `out` valid.
-pub unsafe fn sub_qos_to_c(r: &SubscriberQos, out: *mut ZeroDdsSubscriberQos) -> c_int {
+pub unsafe fn sub_qos_to_c(
+    r: &SubscriberQos,
+    out: *mut ZeroDdsSubscriberQos,
+    partition_cache: &std::sync::Mutex<PartitionOutCache>,
+) -> c_int {
     if out.is_null() {
         return ZeroDdsStatus::BadParameter as c_int;
     }
@@ -1294,8 +1405,13 @@ pub unsafe fn sub_qos_to_c(r: &SubscriberQos, out: *mut ZeroDdsSubscriberQos) ->
         (*out).group_data.value_len = needed;
         (*out).presentation = r.presentation.into();
         (*out).entity_factory = r.entity_factory.into();
-        (*out).partition.names = ptr::null();
-        (*out).partition.names_len = 0;
+        // PARTITION round-trips out via the entity-owned cache (DDS 1.4 §2.2.3.10).
+        marshal_partition_out(
+            partition_cache,
+            &r.partition.names,
+            &mut (*out).partition.names,
+            &mut (*out).partition.names_len,
+        );
     }
     ZeroDdsStatus::Ok as c_int
 }

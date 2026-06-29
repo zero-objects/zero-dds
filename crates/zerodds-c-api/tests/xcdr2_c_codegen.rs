@@ -110,9 +110,10 @@ fn v9_codegen_appendable() {
 fn v10_codegen_mutable_with_id() {
     let h = gen_c("@mutable struct M { @id(1) long a; @id(2) string b; };");
     assert!(h.contains(".extensibility = 2"));
-    // EMHEADER with LC=4, id=1 → 0x40000001; id=2 → 0x40000002.
-    assert!(h.contains("0x40000001"));
-    assert!(h.contains("0x40000002"));
+    // EMHEADER compact LC (XV-mut #84): long(4B)=LC2 id=1 → 0x20000001;
+    // string=LC5 (NEXTINT reuse) id=2 → 0x50000002.
+    assert!(h.contains("0x20000001"));
+    assert!(h.contains("0x50000002"));
 }
 
 #[test]
@@ -123,7 +124,8 @@ fn v11_codegen_optional_field_present_via_mutable_emheader() {
     // the mutable surface.
     let h = gen_c("@mutable struct O { @id(1) long maybe; };");
     assert!(h.contains(".extensibility = 2"));
-    assert!(h.contains("0x40000001"));
+    // long(4B) compact EMHEADER LC2, id=1 (XV-mut #84).
+    assert!(h.contains("0x20000001"));
 }
 
 #[test]

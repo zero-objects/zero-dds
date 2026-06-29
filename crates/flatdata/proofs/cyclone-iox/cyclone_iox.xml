@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CycloneDDS xmlns="https://cdds.io/config">
+  <Domain id="any">
+    <General>
+      <Interfaces>
+        <PubSubMessageExchange name="iox" library="/opt/cyclone/lib/libpsmx_iox.so" config="SERVICE_NAME=ZeroDDSOracle;KEYED_TOPICS=false;" />
+      </Interfaces>
+    </General>
+    <SharedMemory><Enable>true</Enable></SharedMemory>
+  </Domain>
+</CycloneDDS>

@@ -30,8 +30,33 @@ fn sample(topic: &str, inst: u8, seq: u64) -> DurabilitySample {
         instance_key: [inst; 16],
         sequence: seq,
         payload: format!("payload-{inst}-{seq}").into_bytes(),
+        representation: 1,
+        big_endian: false,
         created_at: SystemTime::UNIX_EPOCH + Duration::from_secs(seq),
     }
+}
+
+#[test]
+fn representation_and_byte_order_survive_reopen() {
+    // A big-endian XCDR1 peer's stored sample must replay with its original
+    // representation + byte order (the on-disk header carries both).
+    let root = tmp("byteorder");
+    {
+        let store = FileStore::open(&root, keep_all()).unwrap();
+        store.set_contract("BeTopic", keep_all()).unwrap();
+        let mut s = sample("BeTopic", 1, 0);
+        s.representation = 0; // XCDR1
+        s.big_endian = true;
+        store.store(s).unwrap();
+    }
+    // Reopen from disk: the header round-trips both fields.
+    let store = FileStore::open(&root, keep_all()).unwrap();
+    let page = store
+        .query("BeTopic", &zerodds_durability_store::Selector::default())
+        .unwrap();
+    assert_eq!(page.samples.len(), 1);
+    assert_eq!(page.samples[0].representation, 0);
+    assert!(page.samples[0].big_endian);
 }
 
 /// Unique temp dir per test (no cross-test contamination).

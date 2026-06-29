@@ -31,6 +31,8 @@ fn sample(topic: &str, inst: u8, seq: u64, bytes: usize) -> DurabilitySample {
         instance_key: [inst; 16],
         sequence: seq,
         payload: vec![inst; bytes],
+        representation: 1,
+        big_endian: false,
         created_at: SystemTime::UNIX_EPOCH + Duration::from_secs(seq),
     }
 }

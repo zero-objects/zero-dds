@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Cyclone config for the WRITE direction (the ZeroDDS writer publishes over
+     iceoryx, a Cyclone subscriber consumes). ALLOW_NONDISCOVERED_WRITERS=true
+     lets Cyclone's reader accept the ZeroDDS writer, which is a raw iceoryx
+     publisher, not a writer Cyclone discovered via DDS SEDP.
+     NB: this option also constrains Cyclone's OWN writers' iox eligibility, so
+     the READ direction uses cyclone_read.xml (without it) instead. -->
+<CycloneDDS xmlns="https://cdds.io/config">
+  <Domain id="any">
+    <General><Interfaces>
+      <PubSubMessageExchange type="iox" library="/opt/cyclone/lib/libpsmx_iox.so" config="INSTANCE_NAME=DDS_CYCLONE;LOG_LEVEL=INFO;ALLOW_NONDISCOVERED_WRITERS=true;" />
+    </Interfaces></General>
+  </Domain>
+</CycloneDDS>

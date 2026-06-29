@@ -57,10 +57,26 @@
 
 extern crate alloc;
 
+// Crypto primitive backend: `ring` (default) or `aws-lc-rs` (FIPS, via `aws-lc`).
+// ring-API-compatible; the agreement/rand calls below go through `backend::`.
+#[cfg(feature = "aws-lc")]
+pub(crate) use aws_lc_rs as backend;
+#[cfg(all(
+    feature = "ring-backend",
+    not(any(feature = "aws-lc", feature = "wolfcrypt"))
+))]
+pub(crate) use ring as backend;
+#[cfg(all(feature = "wolfcrypt", not(feature = "aws-lc")))]
+pub(crate) use wolfcrypt_compat as backend;
+#[cfg(not(any(feature = "ring-backend", feature = "aws-lc", feature = "wolfcrypt")))]
+compile_error!(
+    "enable exactly one crypto backend: `ring-backend` (default), `aws-lc`, or `wolfcrypt`"
+);
+
 use alloc::vec::Vec;
 
-use ring::agreement::{self, ECDH_P256, EphemeralPrivateKey, PublicKey, X25519};
-use ring::rand::SystemRandom;
+use crate::backend::agreement::{self, ECDH_P256, EphemeralPrivateKey, PublicKey, X25519};
+use crate::backend::rand::SystemRandom;
 use zerodds_security::error::{SecurityError, SecurityErrorKind, SecurityResult};
 
 /// DH suite selection.
@@ -182,21 +198,40 @@ impl KeyExchange {
             ));
         }
         let peer = agreement::UnparsedPublicKey::new(self.suite.algorithm(), remote_public_key);
-        agreement::agree_ephemeral(self.private, &peer, |raw_dh| {
-            // Return the **raw** DH output (P-256: 32-byte X coordinate; X25519: 32-byte
-            // shared secret) — NO additional HKDF. DDS-Security
-            // §9.3.2.5 / cyclone `generate_shared_secret`: the SharedSecret is
-            // `SHA256(raw_dh)` (in security-pki). An extra HKDF here would
-            // corrupt the SharedSecret cross-vendor → VolatileSecure Kx key
-            // mismatch → neither side can decode the other's SEC_* DATA.
-            raw_dh.to_vec()
-        })
-        .map_err(|_| {
+        // Return the **raw** DH output (P-256: 32-byte X coordinate; X25519: 32-byte
+        // shared secret) — NO additional HKDF. DDS-Security §9.3.2.5 / cyclone
+        // `generate_shared_secret`: the SharedSecret is `SHA256(raw_dh)` (in
+        // security-pki). An extra HKDF here would corrupt the SharedSecret
+        // cross-vendor → VolatileSecure Kx key mismatch → neither side can decode
+        // the other's SEC_* DATA.
+        // ring 0.17 changed `agree_ephemeral`: 3 args + an infallible kdf
+        // (`FnOnce(&[u8]) -> R`); aws-lc-rs (and wolfcrypt-ring-compat, which
+        // mirrors aws-lc-rs' API) kept the older 4-arg form with an `error_value`
+        // and a fallible kdf (`FnOnce(&[u8]) -> Result<R, E>`).
+        #[cfg(not(any(feature = "aws-lc", feature = "wolfcrypt")))]
+        let agreed = agreement::agree_ephemeral(self.private, &peer, |raw_dh| raw_dh.to_vec());
+        #[cfg(any(feature = "aws-lc", feature = "wolfcrypt"))]
+        let agreed = agreement::agree_ephemeral(self.private, peer, (), |raw_dh| {
+            Ok::<Vec<u8>, ()>(raw_dh.to_vec())
+        });
+        let secret = agreed.map_err(|_| {
             SecurityError::new(
                 SecurityErrorKind::CryptoFailed,
                 "keyexchange: DH agreement rejected (invalid peer key?)",
             )
-        })
+        })?;
+        // Contributory-behaviour / small-subgroup guard (RFC 7748 §6.1). An
+        // all-zero peer X25519 key (identity point) yields an all-zero shared
+        // secret. ring and aws-lc-rs reject this at agreement time; wolfSSL
+        // computes it silently — so we enforce the rejection ourselves and the
+        // contract holds identically across every backend.
+        if secret.iter().all(|&b| b == 0) {
+            return Err(SecurityError::new(
+                SecurityErrorKind::CryptoFailed,
+                "keyexchange: DH agreement produced an all-zero shared secret (degenerate peer key)",
+            ));
+        }
+        Ok(secret)
     }
 }
 

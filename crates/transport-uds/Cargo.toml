@@ -26,8 +26,8 @@ std = ["alloc"]
 alloc = []
 
 [dependencies]
-zerodds-rtps = { version = "1.0.0-rc.3.1", path = "../rtps" }
-zerodds-transport = { version = "1.0.0-rc.3.1", path = "../transport" }
+zerodds-rtps = { version = "1.0.0-rc.4", path = "../rtps" }
+zerodds-transport = { version = "1.0.0-rc.4", path = "../transport" }
 # socket2 for SOCK_SEQPACKET + raw sockaddr_un construction
 # (abstract namespace, macOS fallback to DGRAM).
 socket2 = { workspace = true }

@@ -18,6 +18,9 @@ const INITIAL_CAPACITY = 64;
 /// XCDR2 writer with a dynamically growing Uint8Array backing.
 /// Stateful: has a write cursor `pos` and an "origin"
 /// position for alignment calculations.
+const XCDR2_MAX_ALIGN = 4;
+export const XCDR1_MAX_ALIGN = 8;
+
 export class Xcdr2Writer {
     private buf: Uint8Array;
     private view: DataView;
@@ -25,13 +28,20 @@ export class Xcdr2Writer {
     private readonly littleEndian: boolean;
     /// Stack der Alignment-Origin-Positionen (default: [0]).
     private originStack: number[];
+    private readonly maxAlign: number;
 
-    constructor(endian: EndianMode = 'le') {
+    constructor(endian: EndianMode = 'le', maxAlign: number = XCDR2_MAX_ALIGN) {
         this.buf = new Uint8Array(INITIAL_CAPACITY);
         this.view = new DataView(this.buf.buffer);
         this._pos = 0;
         this.littleEndian = endian === 'le';
         this.originStack = [0];
+        this.maxAlign = maxAlign === XCDR1_MAX_ALIGN ? XCDR1_MAX_ALIGN : XCDR2_MAX_ALIGN;
+    }
+
+    /// `true` when writing the XCDR1 / classic CDR wire.
+    get isXcdr1(): boolean {
+        return this.maxAlign === XCDR1_MAX_ALIGN;
     }
 
     /// Aktuelle Schreib-Position (Bytes geschrieben).
@@ -72,6 +82,9 @@ export class Xcdr2Writer {
     /// Pads the cursor so that `(pos - origin) % alignment == 0`.
     /// Writes null bytes as padding.
     align(alignment: number): void {
+        if (alignment > this.maxAlign) {
+            alignment = this.maxAlign;
+        }
         if (alignment <= 1) {
             return;
         }
@@ -250,7 +263,9 @@ export class Xcdr2Writer {
         this.align(2);
         this.ensureCapacity(byteLen);
         for (let i = 0; i < codeUnits; i++) {
-            this.view.setUint16(this._pos, s.charCodeAt(i), true);
+            // UTF-16 units in the message byte order (mirrors readWString) — a
+            // big-endian stream must carry big-endian units, not a hardcoded LE.
+            this.view.setUint16(this._pos, s.charCodeAt(i), this.littleEndian);
             this._pos += 2;
         }
     }
@@ -281,6 +296,11 @@ export class Xcdr2Writer {
     /// (XTypes §7.4.4.4 — alignment within the DHEADER is
     /// relative to the position right after the DHEADER).
     beginAppendable(): number {
+        // XCDR1 / classic CDR: no DHEADER — write the body inline; -1 marks the
+        // frame-less token so endAppendable patches nothing.
+        if (this.isXcdr1) {
+            return -1;
+        }
         this.align(4);
         const dheaderPos = this._pos;
         this.ensureCapacity(4);
@@ -294,6 +314,9 @@ export class Xcdr2Writer {
     /// Closes an appendable block: computes the body size
     /// and writes it back to the DHEADER position.
     endAppendable(token: number): void {
+        if (token < 0) {
+            return; // XCDR1: no frame to close.
+        }
         const bodyStart = token + 4;
         const size = this._pos - bodyStart;
         this.view.setUint32(token, size, this.littleEndian);
@@ -310,6 +333,37 @@ export class Xcdr2Writer {
     /// die Read-Range via DHEADER, vgl. §6 V-12).
     endMutable(token: number): void {
         this.endAppendable(token);
+    }
+
+    /// Writes one PL_CDR1 (@mutable XCDR1) member: a 4-byte aligned
+    /// [u16 PID][u16 length] header (PID_EXTENDED long form for ids >= 0x3F00 /
+    /// bodies > 0xFFFF), the member `body` bytes (built member-relative), then
+    /// zero-pad to the next 4-byte boundary. Mirrors cdr-core
+    /// `xcdr1::encode_pl_cdr1_member`.
+    writePlCdr1Member(memberId: number, body: Uint8Array): void {
+        this.align(4);
+        const bodyLen = body.length;
+        if (memberId >= 0x3f00 || bodyLen > 0xffff) {
+            this.writeUint16(0x3f01);
+            this.writeUint16(8);
+            this.writeUint32(memberId);
+            this.writeUint32(bodyLen);
+        } else {
+            this.writeUint16(memberId);
+            this.writeUint16(bodyLen);
+        }
+        this.writeBytes(body);
+        const pad = (4 - (bodyLen % 4)) % 4;
+        for (let i = 0; i < pad; i++) {
+            this.writeOctet(0);
+        }
+    }
+
+    /// Writes the PID_LIST_END (0x3F02) terminator of a PL_CDR1 list.
+    writePlCdr1Sentinel(): void {
+        this.align(4);
+        this.writeUint16(0x3f02);
+        this.writeUint16(0);
     }
 
     /// XTypes §7.4.3.4.2 EMHEADER1 Encoding (PL_CDR2).

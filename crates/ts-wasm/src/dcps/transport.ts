@@ -60,10 +60,20 @@ export function base64ToBytes(b64: string): Uint8Array {
   return out;
 }
 
-/// A delivered notification: the raw XCDR2 bytes for one topic.
+/// A delivered notification: the raw XCDR2 bytes for one topic, plus the wire
+/// byte order. The forwarded bytes carry no encapsulation header, so the
+/// bridge reports the order out-of-band (`"be":true` on the notify frame); the
+/// browser dispatches the big-endian decoder on it. `false` = little-endian.
 export interface BridgeNotification {
   readonly topic: string;
   readonly bytes: Uint8Array;
+  readonly bigEndian: boolean;
+}
+
+/// One buffered sample: payload bytes + their wire byte order.
+export interface QueuedSample {
+  readonly bytes: Uint8Array;
+  readonly bigEndian: boolean;
 }
 
 type NotifyHandler = (n: BridgeNotification) => void;
@@ -77,7 +87,7 @@ export class BridgeTransport {
   private readonly handlers = new Set<NotifyHandler>();
   /// Notifications received before any subscriber drained them, per topic. The
   /// browser DCPS reader pulls from here on `take`.
-  private readonly inbox = new Map<string, Uint8Array[]>();
+  private readonly inbox = new Map<string, QueuedSample[]>();
 
   private constructor(private readonly url: string) {}
 
@@ -109,7 +119,7 @@ export class BridgeTransport {
 
   private onMessage(data: unknown): void {
     if (typeof data !== "string") return;
-    let msg: { op?: string; topic?: string; data?: string };
+    let msg: { op?: string; topic?: string; data?: string; be?: boolean };
     try {
       msg = JSON.parse(data);
     } catch {
@@ -117,10 +127,12 @@ export class BridgeTransport {
     }
     if (msg.op !== "notify" || !msg.topic || typeof msg.data !== "string") return;
     const bytes = base64ToBytes(msg.data);
+    // `be` is present (true) only for a big-endian payload; absent ⇒ LE.
+    const bigEndian = msg.be === true;
     const queue = this.inbox.get(msg.topic) ?? [];
-    queue.push(bytes);
+    queue.push({ bytes, bigEndian });
     this.inbox.set(msg.topic, queue);
-    const n: BridgeNotification = { topic: msg.topic, bytes };
+    const n: BridgeNotification = { topic: msg.topic, bytes, bigEndian };
     for (const h of this.handlers) h(n);
   }
 
@@ -143,7 +155,7 @@ export class BridgeTransport {
   }
 
   /// Drains up to `max` buffered samples for `topic`.
-  drain(topic: string, max: number): Uint8Array[] {
+  drain(topic: string, max: number): QueuedSample[] {
     const queue = this.inbox.get(topic);
     if (!queue || queue.length === 0) return [];
     const take = max <= 0 ? queue.length : Math.min(max, queue.length);

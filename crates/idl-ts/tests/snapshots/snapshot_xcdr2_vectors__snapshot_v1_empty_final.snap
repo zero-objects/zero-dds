@@ -47,8 +47,8 @@ export const EmptyTypeSupport: DdsTopicType<Empty> = {
     extensibility: "final",
     encodeInto(w: Xcdr2Writer, s: Empty): void {
     },
-    encode(s: Empty, endian: EndianMode = "le"): Uint8Array {
-        const w = new Xcdr2Writer(endian);
+    encode(s: Empty, endian: EndianMode = "le", representation = 1): Uint8Array {
+        const w = new Xcdr2Writer(endian, representation === 0 ? 8 : 4);
         this.encodeInto(w, s);
         return w.toBytes();
     },
@@ -56,8 +56,8 @@ export const EmptyTypeSupport: DdsTopicType<Empty> = {
         return {
         };
     },
-    decode(bytes: Uint8Array, offset = 0, length: number = bytes.length - offset): Empty {
-        const r = new Xcdr2Reader(bytes, offset, length, "le");
+    decode(bytes: Uint8Array, offset = 0, length: number = bytes.length - offset, endian: EndianMode = "le", representation = 1): Empty {
+        const r = new Xcdr2Reader(bytes, offset, length, endian, representation === 0 ? 8 : 4);
         return this.decodeFrom(r);
     },
     keyHash(s: Empty): Uint8Array {

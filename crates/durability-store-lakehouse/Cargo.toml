@@ -26,10 +26,20 @@ workspace = true
 [lib]
 path = "src/lib.rs"
 
+[features]
+# DuckDB is an OPTIONAL backend (default OFF) so the whole workspace builds
+# without the system `libduckdb` present. The entire crate is gated behind
+# this feature (`#![cfg(feature = "duckdb")]` in lib.rs): with it off the
+# crate is an empty placeholder that links nothing native. Enable it
+# (`--features duckdb`, or via the daemon's `lakehouse` feature) to get the
+# real adapter — that build needs `libduckdb`.
+default = []
+duckdb = ["dep:duckdb"]
+
 [dependencies]
-zerodds-durability-store = { version = "1.0.0-rc.3.1", path = "../durability-store" }
-zerodds-qos = { version = "1.0.0-rc.3.1", path = "../qos" }
-duckdb = { workspace = true }
+zerodds-durability-store = { version = "1.0.0-rc.4", path = "../durability-store" }
+zerodds-qos = { version = "1.0.0-rc.4", path = "../qos" }
+duckdb = { workspace = true, optional = true }
 
 [dev-dependencies]
-zerodds-qos = { version = "1.0.0-rc.3.1", path = "../qos" }
+zerodds-qos = { version = "1.0.0-rc.4", path = "../qos" }

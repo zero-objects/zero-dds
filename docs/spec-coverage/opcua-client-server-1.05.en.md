@@ -1,6 +1,6 @@
 # OPC UA Part 4 — Client/Server (UACP + SecureChannel) — Spec Coverage
 
-**Source:** `docs/standards/cache/opcfoundation/opcua-part4-services-1.05.07.pdf`
+**Source:** `internal/standards/cache/opcfoundation/opcua-part4-services-1.05.07.pdf`
 (Services). Cross-spec:
 `opcua-part6-mappings-1.05.07.pdf` (UACP §7.1, OPC UA Secure Conversation §6.7,
 binary codec §5.2),

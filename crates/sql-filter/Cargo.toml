@@ -21,7 +21,7 @@ workspace = true
 path = "src/lib.rs"
 
 [features]
-safety = []  # empty marker for safe-profile lints (docs/safety-flag-drift.md)
+safety = []  # empty marker for safe-profile lints (internal/safety-flag-drift.md)
 default = ["std"]
 std = ["alloc"]
 alloc = []

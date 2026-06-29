@@ -1,0 +1,80 @@
+.TH ZERODDS-REPLAY 1 "June 2026" "ZeroDDS 1.0.0-rc.4" "User Commands"
+.SH NAME
+zerodds-replay \- replay recorded ZeroDDS captures to stdout or a live domain
+.SH SYNOPSIS
+.B zerodds-replay replay
+.I FILE
+[\fB\-\-time\-scale\fR \fIF\fR]
+[\fB\-\-topic\fR \fINAME\fR]...
+[\fB\-\-inject\fR [\fB\-\-inject\-domain\fR \fIN\fR]]
+.SH DESCRIPTION
+.B zerodds-replay
+reads a capture and re-emits its frames in recorded order, preserving the
+inter-frame timing of the original trace.
+.PP
+The input
+.I FILE
+format is auto-detected from its extension:
+.B .zddsrec
+(binary capture),
+.B .ndjson
+/
+.B .json
+(decoded NDJSON), or
+.B .db
+(decoded SQLite). The NDJSON and SQLite forms carry the original
+.B raw_cdr
+bytes, so a sample captured once replays byte-identically from whichever
+artifact was kept.
+.PP
+By default frames are printed to
+.BR stdout .
+With
+.B \-\-inject
+each frame is re-published into a live DDS domain through a cached per-topic
+writer, re-stamping the recorded wire payload.
+.SH OPTIONS FOR replay
+.TP
+.BR \-\-time\-scale " " \fIF\fR
+Playback speed relative to wallclock.
+.I 1.0
+= real time;
+.I 60.0
+replays a one-hour trace in one minute;
+.I 0.5
+runs at half speed. Default: \fI1.0\fR.
+.TP
+.BR \-\-topic " " \fINAME\fR
+Replay only frames of this DDS / ROS topic name (repeatable). Default: all
+topics in the capture.
+.TP
+.BR \-\-inject
+Re-inject frames into a live DDS domain instead of printing to stdout.
+.TP
+.BR \-\-inject\-domain " " \fIN\fR
+DCPS Domain ID for \fB\-\-inject\fR. Default: 0.
+.SH GLOBAL OPTIONS
+.TP
+.BR \-h ", " \-\-help
+Show help and exit.
+.TP
+.BR \-V ", " \-\-version
+Print version and exit.
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 2
+CLI parse error.
+.TP
+.B 3
+DDS or I/O error.
+.SH SEE ALSO
+.BR zerodds-record (1),
+.BR zerodds-spy (1)
+.PP
+Spec:
+.I docs/specs/zddsrec-1.0.md
+.SH AUTHORS
+ZeroDDS Contributors <release@zerodds.org>

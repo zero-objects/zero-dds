@@ -1,0 +1,16 @@
+// Conformance feature: MUTUALLY recursive types (XTypes §7.4.5) via @external.
+// Vertex references Edge and Edge references Vertex. Known-open for the C++
+// backend: code generates (no crash, no data loss) but the two
+// `topic_type_support<>` specializations reference each other before the
+// second is defined — needs an out-of-line decl/def split (tracked as Bug G2).
+module conf {
+  struct Edge;
+  struct Vertex {
+    long            id;
+    sequence<Edge>  edges;
+  };
+  struct Edge {
+    @external Vertex from;
+    @external Vertex to;
+  };
+};

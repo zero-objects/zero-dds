@@ -35,9 +35,11 @@ public sealed class AllTypeSupport : IDdsTopicType<All>
 
     public byte[] Encode(All sample) => Encode(sample, EndianMode.LittleEndian);
 
-    public byte[] Encode(All sample, EndianMode endian)
+    public byte[] Encode(All sample, EndianMode endian) => Encode(sample, endian, 1);
+    public byte[] Encode(All sample, EndianMode endian, int representation)
     {
-        var w = new Xcdr2Writer(endian);
+        int __maxAlign = representation == 0 ? Xcdr2Writer.Xcdr1MaxAlignmentValue : 4;
+        var w = new Xcdr2Writer(endian, __maxAlign);
         EncodeInto(w, sample);
         return w.ToArray();
     }
@@ -56,33 +58,36 @@ public sealed class AllTypeSupport : IDdsTopicType<All>
         w.WriteFloat64(sample.D);
     }
 
-    public All Decode(ReadOnlySpan<byte> bytes)
+    public All Decode(ReadOnlySpan<byte> bytes) => Decode(bytes, EndianMode.LittleEndian, 1);
+    public All Decode(ReadOnlySpan<byte> bytes, EndianMode endian) => Decode(bytes, endian, 1);
+    public All Decode(ReadOnlySpan<byte> bytes, EndianMode endian, int representation)
     {
-        var r = new Xcdr2Reader(bytes, EndianMode.LittleEndian);
-        return DecodeFrom(r);
+        int __maxAlign = representation == 0 ? Xcdr2Reader.Xcdr1MaxAlignmentValue : 4;
+        var r = new Xcdr2Reader(bytes, endian, __maxAlign);
+        return DecodeFrom(ref r);
     }
 
-    public All DecodeFrom(Xcdr2Reader r)
+    public All DecodeFrom(ref Xcdr2Reader r)
     {
-        bool __m0 = default;
+        bool __m0 = default!;
         __m0 = r.ReadBool();
-        byte __m1 = default;
+        byte __m1 = default!;
         __m1 = r.ReadOctet();
-        short __m2 = default;
+        short __m2 = default!;
         __m2 = r.ReadInt16();
-        ushort __m3 = default;
+        ushort __m3 = default!;
         __m3 = r.ReadUInt16();
-        int __m4 = default;
+        int __m4 = default!;
         __m4 = r.ReadInt32();
-        uint __m5 = default;
+        uint __m5 = default!;
         __m5 = r.ReadUInt32();
-        long __m6 = default;
+        long __m6 = default!;
         __m6 = r.ReadInt64();
-        ulong __m7 = default;
+        ulong __m7 = default!;
         __m7 = r.ReadUInt64();
-        float __m8 = default;
+        float __m8 = default!;
         __m8 = r.ReadFloat32();
-        double __m9 = default;
+        double __m9 = default!;
         __m9 = r.ReadFloat64();
         return new All
         {

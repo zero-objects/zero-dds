@@ -160,7 +160,7 @@ Implementation:
 
 **Repo:** `crates/corba-interop/competitors/` (JacORB/omniORB/TAO-Harness).
 
-**Tests:** `valuetype_cross_orb.rs`, `ami_cross_orb.rs`, `csiv2_cross_orb.rs`, `bidir_cross_orb.rs` (ignored, codepit); `bidir.rs::bidir_sc_byte_identical_to_omniorb`.
+**Tests:** `valuetype_cross_orb.rs`, `ami_cross_orb.rs`, `csiv2_cross_orb.rs`, `bidir_cross_orb.rs` (ignored, Linux bench host); `bidir.rs::bidir_sc_byte_identical_to_omniorb`.
 
 **Status:** done
 

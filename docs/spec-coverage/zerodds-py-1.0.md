@@ -764,7 +764,7 @@ plus `test_rmw_zerodds_interop.py` mit 2 Tests
 `test_rclpy_publish_subscribe_string_roundtrip`).
 
 **Tests:** `test_rclpy_init_succeeds_with_zerodds_rmw` +
-`test_rclpy_publish_subscribe_string_roundtrip` — **codepit-grün verifiziert**
+`test_rclpy_publish_subscribe_string_roundtrip` — **bench-grün verifiziert**
 (2 passed, ROS 2 Humble via RoboStack); host-freier Run skippt sauber.
 
 **Status:** done — echte `launch_pytest`-Integrationstests laufen grün gegen

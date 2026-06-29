@@ -42,16 +42,16 @@ daemon = [
 cross-vendor-tests = ["daemon"]
 
 [dependencies]
-zerodds-dcps = { version = "1.0.0-rc.3.1", path = "../dcps", optional = true, default-features = false, features = ["std"] }
-zerodds-rtps = { version = "1.0.0-rc.3.1", path = "../rtps", optional = true, default-features = false, features = ["std"] }
-zerodds-qos = { version = "1.0.0-rc.3.1", path = "../qos", optional = true, default-features = false, features = ["alloc"] }
-zerodds-types = { version = "1.0.0-rc.3.1", path = "../types", optional = true, default-features = false, features = ["alloc"] }
+zerodds-dcps = { version = "1.0.0-rc.4", path = "../dcps", optional = true, default-features = false, features = ["std"] }
+zerodds-rtps = { version = "1.0.0-rc.4", path = "../rtps", optional = true, default-features = false, features = ["std"] }
+zerodds-qos = { version = "1.0.0-rc.4", path = "../qos", optional = true, default-features = false, features = ["alloc"] }
+zerodds-types = { version = "1.0.0-rc.4", path = "../types", optional = true, default-features = false, features = ["alloc"] }
 # Bridge-Security-Substrat (Bridge-Spec §7.1 TLS / §7.2 Auth / §7.3 ACL).
-zerodds-bridge-security = { version = "1.0.0-rc.3.1", path = "../bridge-security", optional = true }
+zerodds-bridge-security = { version = "1.0.0-rc.4", path = "../bridge-security", optional = true }
 rustls = { workspace = true, optional = true }
 # Cross-Cutting Daemon-Observability: §8.2 Prometheus + §8.3 OTLP + §9.2 Graceful Shutdown.
-zerodds-monitor = { version = "1.0.0-rc.3.1", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
-zerodds-observability-otlp = { version = "1.0.0-rc.3.1", path = "../observability-otlp", optional = true }
+zerodds-monitor = { version = "1.0.0-rc.4", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
+zerodds-observability-otlp = { version = "1.0.0-rc.4", path = "../observability-otlp", optional = true }
 signal-hook = { workspace = true, optional = true }
 
 [[bin]]

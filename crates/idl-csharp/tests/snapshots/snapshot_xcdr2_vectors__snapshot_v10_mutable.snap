@@ -29,45 +29,83 @@ public sealed class MTypeSupport : IDdsTopicType<M>
 
     public byte[] Encode(M sample) => Encode(sample, EndianMode.LittleEndian);
 
-    public byte[] Encode(M sample, EndianMode endian)
+    public byte[] Encode(M sample, EndianMode endian) => Encode(sample, endian, 1);
+    public byte[] Encode(M sample, EndianMode endian, int representation)
     {
-        var w = new Xcdr2Writer(endian);
+        int __maxAlign = representation == 0 ? Xcdr2Writer.Xcdr1MaxAlignmentValue : 4;
+        var w = new Xcdr2Writer(endian, __maxAlign);
         EncodeInto(w, sample);
         return w.ToArray();
     }
 
     public void EncodeInto(Xcdr2Writer w, M sample)
     {
+        if (w.IsXcdr1)
+        {
+            {
+                var __sub = new Xcdr2Writer(w.Endian, Xcdr2Writer.Xcdr1MaxAlignmentValue);
+                __sub.WriteInt32(sample.A);
+                w.WritePlCdr1Member(1u, __sub.ToArray());
+            }
+            {
+                var __sub = new Xcdr2Writer(w.Endian, Xcdr2Writer.Xcdr1MaxAlignmentValue);
+                __sub.WriteString(sample.B);
+                w.WritePlCdr1Member(2u, __sub.ToArray());
+            }
+            w.WritePlCdr1Sentinel();
+        }
+        else
+        {
         using (var __scope = w.BeginMutable())
         {
             w.WriteEmHeader(1u, 2, false);
             w.WriteInt32(sample.A);
-            {
-                var __sub = new Xcdr2Writer(endian);
-                __sub.WriteString(sample.B);
-                var __subBytes = __sub.ToArray();
-                w.WriteEmHeader(2u, 4, false);
-                w.WriteUInt32((uint)__subBytes.Length);
-                w.WriteBytes(__subBytes);
-            }
+            w.WriteEmHeader(2u, 5, false);
+            w.WriteString(sample.B);
+        }
         }
     }
 
-    public M Decode(ReadOnlySpan<byte> bytes)
+    public M Decode(ReadOnlySpan<byte> bytes) => Decode(bytes, EndianMode.LittleEndian, 1);
+    public M Decode(ReadOnlySpan<byte> bytes, EndianMode endian) => Decode(bytes, endian, 1);
+    public M Decode(ReadOnlySpan<byte> bytes, EndianMode endian, int representation)
     {
-        var r = new Xcdr2Reader(bytes, EndianMode.LittleEndian);
-        return DecodeFrom(r);
+        int __maxAlign = representation == 0 ? Xcdr2Reader.Xcdr1MaxAlignmentValue : 4;
+        var r = new Xcdr2Reader(bytes, endian, __maxAlign);
+        return DecodeFrom(ref r);
     }
 
-    public M DecodeFrom(Xcdr2Reader r)
+    public M DecodeFrom(ref Xcdr2Reader r)
     {
-        int __m0 = default;
-        string __m1 = default;
+        int __m0 = default!;
+        string __m1 = default!;
+        if (r.IsXcdr1)
+        {
+            while (r.BeginPlCdr1Member(out var __id, out var __plscope))
+            {
+                switch (__id)
+                {
+                    case 1u:
+                        __m0 = r.ReadInt32();
+                        break;
+                    case 2u:
+                        __m1 = r.ReadString();
+                        break;
+                    default: break;
+                }
+                r.EndPlCdr1Member(__plscope);
+            }
+        return new M
+        {
+            A = __m0!,
+            B = __m1!,
+        };
+        }
         var __scope = r.BeginDHeader();
         while (!r.DHeaderDone(__scope))
         {
             var (__id, __lc, __mu) = r.ReadEmHeader();
-            if (__lc >= 4) { var __nx = r.ReadUInt32(); _ = __nx; }
+            if (__lc == 4) { var __nx = r.ReadUInt32(); _ = __nx; }
             switch (__id)
             {
                 case 1u:

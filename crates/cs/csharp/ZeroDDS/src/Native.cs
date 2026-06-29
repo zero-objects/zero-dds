@@ -119,6 +119,33 @@ internal static class Native
     [DllImport(LibName, EntryPoint = "zerodds_dw_dispose")]
     public static extern int DwDispose(IntPtr dw, IntPtr keyHash, ulong handle);
 
+    [DllImport(LibName, EntryPoint = "zerodds_dw_dispose_w_timestamp")]
+    public static extern int DwDisposeWTimestamp(IntPtr dw, IntPtr keyHash, ulong handle,
+        int tsSec, uint tsNanosec);
+
+    [DllImport(LibName, EntryPoint = "zerodds_dw_register_instance")]
+    public static extern int DwRegisterInstance(IntPtr dw, IntPtr key, UIntPtr keyLen,
+        out ulong outHandle);
+
+    [DllImport(LibName, EntryPoint = "zerodds_dw_register_instance_w_timestamp")]
+    public static extern int DwRegisterInstanceWTimestamp(IntPtr dw, IntPtr key, UIntPtr keyLen,
+        int tsSec, uint tsNanosec, out ulong outHandle);
+
+    [DllImport(LibName, EntryPoint = "zerodds_dw_unregister_instance")]
+    public static extern int DwUnregisterInstance(IntPtr dw, ulong handle);
+
+    [DllImport(LibName, EntryPoint = "zerodds_dw_unregister_instance_w_timestamp")]
+    public static extern int DwUnregisterInstanceWTimestamp(IntPtr dw, ulong handle,
+        int tsSec, uint tsNanosec);
+
+    [DllImport(LibName, EntryPoint = "zerodds_dw_lookup_instance")]
+    public static extern int DwLookupInstance(IntPtr dw, IntPtr key, UIntPtr keyLen,
+        out ulong outHandle);
+
+    [DllImport(LibName, EntryPoint = "zerodds_dr_lookup_instance")]
+    public static extern int DrLookupInstance(IntPtr dr, IntPtr key, UIntPtr keyLen,
+        out ulong outHandle);
+
     [DllImport(LibName, EntryPoint = "zerodds_dw_wait_for_acknowledgments")]
     public static extern int DwWaitForAcks(IntPtr dw, ulong timeoutMs);
 
@@ -170,6 +197,11 @@ internal static class Native
         public ulong PublicationHandle;
         [MarshalAs(UnmanagedType.U1)]
         public bool ValidData;
+        // XCDR representation (0 = XCDR1, 1 = XCDR2) and wire byte order
+        // (0 = little-endian, 1 = big-endian) read from the encapsulation
+        // header, so the typed decoder picks Decode vs the big-endian path.
+        public byte Representation;
+        public byte BigEndian;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -383,4 +415,21 @@ internal static class Native
     [DllImport(LibName, EntryPoint = "zerodds_waitset_wait")]
     public static extern int WaitSetWait(IntPtr w, IntPtr outActive, UIntPtr cap,
         out UIntPtr outCount, int sec, uint nanosec);
+
+    // ====== ContentFilteredTopic (Spec §2.2.2.3.3) ======
+    [DllImport(LibName, EntryPoint = "zerodds_dp_create_contentfilteredtopic", CharSet = CharSet.Ansi)]
+    public static extern IntPtr DpCreateContentFilteredTopic(IntPtr p,
+        [MarshalAs(UnmanagedType.LPStr)] string name,
+        IntPtr related,
+        [MarshalAs(UnmanagedType.LPStr)] string filterExpression,
+        IntPtr parameters, UIntPtr paramCount);
+
+    [DllImport(LibName, EntryPoint = "zerodds_cft_set_schema")]
+    public static extern int CftSetSchema(IntPtr cft, IntPtr names, IntPtr kinds, UIntPtr count);
+
+    [DllImport(LibName, EntryPoint = "zerodds_dp_delete_contentfilteredtopic")]
+    public static extern int DpDeleteContentFilteredTopic(IntPtr p, IntPtr cft);
+
+    [DllImport(LibName, EntryPoint = "zerodds_sub_create_datareader_with_cft")]
+    public static extern IntPtr SubCreateDataReaderWithCft(IntPtr sub, IntPtr cft, IntPtr qos);
 }

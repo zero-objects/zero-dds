@@ -106,6 +106,14 @@ Requires: zerodds-core = %{version}-%{release}
 %description ros2
 Spec: zerodds-ros2-bridge-1.0 §11.
 
+%package router
+Summary: ZeroDDS in-DDS routing service daemon
+Requires: zerodds-core = %{version}-%{release}
+
+%description router
+Spec: zerodds-deployment-1.0 §2.3. DDS-to-DDS forwarding daemon
+(see zerodds-router(1)) with per-route content filter and field transform.
+
 # ---------------------------------------------------------------------------
 # Build orchestration.
 # ---------------------------------------------------------------------------
@@ -154,8 +162,9 @@ done
 install -m 0644 packaging/linux/systemd/zerodds-tmpfiles.conf %{buildroot}%{_tmpfilesdir}/zerodds.conf
 install -m 0644 packaging/linux/systemd/zerodds-sysusers.conf %{buildroot}%{_sysusersdir}/zerodds.conf
 
-# Default-Configs als example.
-for c in packaging/linux/configs/*.yaml.example; do
+# Default-Configs als example (*.yaml.example for the bridges, plus the
+# routing service's *.json.example — glob on *.example covers both).
+for c in packaging/linux/configs/*.example; do
     install -m 0640 "$c" %{buildroot}%{_datadir}/zerodds/configs/
 done
 
@@ -213,6 +222,10 @@ exit 0
 %preun  ros2             %systemd_preun  zerodds-ros2-shim.service
 %postun ros2             %systemd_postun_with_restart zerodds-ros2-shim.service
 
+%post   router           %systemd_post   zerodds-router.service
+%preun  router           %systemd_preun  zerodds-router.service
+%postun router           %systemd_postun_with_restart zerodds-router.service
+
 # ---------------------------------------------------------------------------
 # File-Lists.
 # ---------------------------------------------------------------------------
@@ -250,7 +263,6 @@ exit 0
 %{_bindir}/zerodds-snitch
 %{_bindir}/zerodds-pcap
 %{_bindir}/zerodds-mq
-%{_bindir}/zerodds-router
 %{_bindir}/zerodds-secure-permissions
 %{_mandir}/man1/zerodds-admin.1*
 %{_mandir}/man1/zerodds-idlc.1*
@@ -315,6 +327,12 @@ exit 0
 %{_datadir}/zerodds/configs/ros2-shim.yaml.example
 %{_mandir}/man1/zerodds-ros2-shim.1*
 %{_mandir}/man5/zerodds-ros2-shim.yaml.5*
+
+%files router
+%{_bindir}/zerodds-router
+%{_unitdir}/zerodds-router.service
+%{_datadir}/zerodds/configs/router.json.example
+%{_mandir}/man1/zerodds-router.1*
 
 %changelog
 * Wed May 06 2026 ZeroDDS Contributors <release@zerodds.org> - 1.0.0-0.rc1

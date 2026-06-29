@@ -43,17 +43,17 @@ jobs:
             echo "AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar" >> $GITHUB_ENV
           fi
       - name: cargo build (release)
-        run: cargo build --release --workspace --exclude zerodds-durability-store-lakehouse --exclude zerodds-durability-service-bin --target ${{ matrix.target }}
+        run: cargo build --release --workspace --target ${{ matrix.target }}
       - name: Assemble debs (per sub-package)
         run: |
           bash packaging/linux/deb/assemble-debs.sh \
                --target ${{ matrix.target }} \
                --version "$(echo '${{ github.ref_name }}' | sed 's/^v//')" \
                --out dist/
-      # APT-Repo wird auf packages.zerodds.org via Pull-Deploy
-      # (nr3 cron alle 5 min) gebaut, nicht in CI gepusht. Hier nur
-      # die .deb-Files als GH-Release-Asset hochladen — der
-      # Pull-Deploy zieht sie und signiert lokal mit dem Server-GPG-Key.
+      # The APT repo is built on packages.zerodds.org via pull-deploy
+      # (the server host's cron, every 5 min), not pushed from CI. Here we
+      # only upload the .deb files as GH release assets — the
+      # pull-deploy fetches them and signs them locally with the server GPG key.
       - name: Upload artifacts (release attachments)
         uses: actions/upload-artifact@v4
         with:

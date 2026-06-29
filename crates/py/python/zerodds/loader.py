@@ -168,6 +168,16 @@ def _bind(lib: ctypes.CDLL) -> ctypes.CDLL:
     ]
     lib.zerodds_reader_take.restype = ctypes.c_int
 
+    # Endian-aware take: like zerodds_reader_take + out_be (0=little, 1=big).
+    lib.zerodds_reader_take_endian.argtypes = [
+        p_r,
+        ctypes.POINTER(ctypes.POINTER(ctypes.c_uint8)),
+        ctypes.POINTER(ctypes.c_size_t),
+        ctypes.POINTER(ctypes.c_uint8),  # out_repr (nullable)
+        ctypes.POINTER(ctypes.c_uint8),  # out_be (nullable): wire byte order
+    ]
+    lib.zerodds_reader_take_endian.restype = ctypes.c_int
+
     lib.zerodds_reader_wait_for_matched.argtypes = [
         p_r,
         ctypes.c_int,
@@ -369,6 +379,36 @@ class Reader:
             )
         finally:
             self._lib.zerodds_buffer_free(out_buf, out_len)
+
+    def take_endian(self) -> "Optional[tuple[bytes, bool, int]]":
+        """Take a single sample as ``(bytes, big_endian, representation)``.
+        ``big_endian`` is the wire byte order from the encapsulation header
+        (RTPS 2.5 §10.5) and ``representation`` is the XCDR version (``0`` =
+        XCDR1 / classic CDR, ``1`` = XCDR2), so a typed consumer can pick
+        ``decode(.., endian, representation)`` and read a big-endian and/or
+        XCDR1 peer correctly. ``None`` if no sample is ready."""
+        out_buf = ctypes.POINTER(ctypes.c_uint8)()
+        out_len = ctypes.c_size_t(0)
+        out_be = ctypes.c_uint8(0)
+        out_repr = ctypes.c_uint8(1)
+        rc = self._lib.zerodds_reader_take_endian(
+            self._ptr,
+            ctypes.byref(out_buf),
+            ctypes.byref(out_len),
+            ctypes.byref(out_repr),
+            ctypes.byref(out_be),
+        )
+        if rc != 0:
+            raise ZeroDdsError(f"zerodds_reader_take_endian rc={rc}")
+        if not out_buf or out_len.value == 0:
+            return None
+        try:
+            data = bytes(
+                ctypes.cast(out_buf, ctypes.POINTER(ctypes.c_uint8 * out_len.value))[0]
+            )
+        finally:
+            self._lib.zerodds_buffer_free(out_buf, out_len)
+        return data, bool(out_be.value), int(out_repr.value)
 
     def take_all(self, max_samples: int = 16) -> list[bytes]:
         out: list[bytes] = []

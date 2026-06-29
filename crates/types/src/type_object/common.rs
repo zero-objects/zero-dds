@@ -242,10 +242,13 @@ impl AppliedBuiltinTypeAnnotations {
     /// # Errors
     /// Buffer overflow.
     pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
+        // `@optional` member (XTypes §7.3.4.5.4): a 1-byte XCDR2 presence
+        // boolean (§7.4.3.4.4), NOT a sequence count — byte-verified against
+        // CycloneDDS + FastDDS. Absent (no `@verbatim`) ⇒ a single `0`.
         match &self.verbatim {
-            None => w.write_u32(0),
+            None => w.write_u8(0),
             Some(v) => {
-                w.write_u32(1)?;
+                w.write_u8(1)?;
                 v.encode_into(w)
             }
         }
@@ -256,17 +259,12 @@ impl AppliedBuiltinTypeAnnotations {
     /// # Errors
     /// Buffer underflow.
     pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
-        let len = r.read_u32()?;
-        let verbatim = if len == 0 {
+        let present = r.read_u8()?;
+        let verbatim = if present == 0 {
             None
         } else {
             Some(AppliedVerbatimAnnotation::decode_from(r)?)
         };
-        // Any further entries (forward-compat) are simply skipped: we
-        // accept up to `len` verbatims but store only the first.
-        for _ in 1..len {
-            let _ = AppliedVerbatimAnnotation::decode_from(r)?;
-        }
         Ok(Self { verbatim })
     }
 }
@@ -346,10 +344,14 @@ impl OptionalAppliedAnnotationSeq {
     /// # Errors
     /// Buffer overflow.
     pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
+        // `@optional AppliedAnnotationSeq` (§7.3.4.5.4): a 1-byte XCDR2 presence
+        // boolean (§7.4.3.4.4); when present, the AppliedAnnotationSeq follows
+        // with its own 4-byte length. Absent ⇒ a single `0` (byte-verified
+        // against CycloneDDS + FastDDS).
         match &self.0 {
-            None => w.write_u32(0),
+            None => w.write_u8(0),
             Some(seq) => {
-                w.write_u32(1)?;
+                w.write_u8(1)?;
                 encode_seq(w, seq, |w, a| a.encode_into(w))
             }
         }
@@ -360,15 +362,11 @@ impl OptionalAppliedAnnotationSeq {
     /// # Errors
     /// Buffer-Underflow.
     pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
-        let len = r.read_u32()?;
-        if len == 0 {
+        let present = r.read_u8()?;
+        if present == 0 {
             return Ok(Self(None));
         }
         let seq = decode_seq(r, AppliedAnnotation::decode_from)?;
-        for _ in 1..len {
-            // skip forward-compat duplicate inner seqs
-            let _ = decode_seq(r, AppliedAnnotation::decode_from)?;
-        }
         Ok(Self(Some(seq)))
     }
 }
@@ -434,41 +432,33 @@ pub struct AppliedBuiltinMemberAnnotations {
 
 impl AppliedBuiltinMemberAnnotations {
     fn write_opt_string(w: &mut BufferWriter, s: &Option<String>) -> Result<(), EncodeError> {
+        // `@optional` scalar (§7.3.4.8): a 1-byte XCDR2 presence boolean
+        // (§7.4.3.4.4), not a sequence count — byte-verified vs Cyclone/FastDDS.
         match s {
-            None => w.write_u32(0),
+            None => w.write_u8(0),
             Some(v) => {
-                w.write_u32(1)?;
+                w.write_u8(1)?;
                 w.write_string(v)
             }
         }
     }
 
     fn read_opt_string(r: &mut BufferReader<'_>) -> Result<Option<String>, DecodeError> {
-        let len = r.read_u32()?;
-        if len == 0 {
+        let present = r.read_u8()?;
+        if present == 0 {
             return Ok(None);
-        }
-        // XTypes spec §7.3.4.8: AppliedBuiltinMemberAnnotations fields
-        // (unit, min, max, hash_id) are scalar-optional, not a sequence.
-        // len > 1 is protocol-violating — strictly reject instead of silently
-        // dropping multiple entries (which previously prevented the
-        // diagnosis of faulty peer encoders).
-        if len != 1 {
-            return Err(DecodeError::LengthExceeded {
-                announced: len as usize,
-                remaining: 1,
-                offset: 0,
-            });
         }
         let out = r.read_string()?;
         Ok(Some(out))
     }
 
     fn write_opt_bytes(w: &mut BufferWriter, b: &Option<Vec<u8>>) -> Result<(), EncodeError> {
+        // `@optional` (§7.3.4.8): 1-byte presence boolean; when present the
+        // value's own 4-byte length follows.
         match b {
-            None => w.write_u32(0),
+            None => w.write_u8(0),
             Some(v) => {
-                w.write_u32(1)?;
+                w.write_u8(1)?;
                 let len = u32::try_from(v.len()).map_err(|_| EncodeError::ValueOutOfRange {
                     message: "annotation value exceeds u32::MAX",
                 })?;
@@ -479,22 +469,24 @@ impl AppliedBuiltinMemberAnnotations {
     }
 
     fn read_opt_bytes(r: &mut BufferReader<'_>) -> Result<Option<Vec<u8>>, DecodeError> {
-        let len = r.read_u32()?;
-        if len == 0 {
+        let present = r.read_u8()?;
+        if present == 0 {
             return Ok(None);
-        }
-        // See read_opt_string: scalar-optional, len > 1 is a
-        // protocol error, not silent data loss.
-        if len != 1 {
-            return Err(DecodeError::LengthExceeded {
-                announced: len as usize,
-                remaining: 1,
-                offset: 0,
-            });
         }
         let inner_len = r.read_u32()? as usize;
         let out = r.read_bytes(inner_len)?.to_vec();
         Ok(Some(out))
+    }
+
+    /// `true` if no builtin member annotation is set — the whole record is
+    /// then absent (the `@optional` wrapper writes a single `0` byte).
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.unit.is_none()
+            && self.min.is_none()
+            && self.max.is_none()
+            && self.hash_id.is_none()
+            && self.default_value.is_none()
     }
 
     /// Encode.
@@ -554,7 +546,15 @@ impl CompleteMemberDetail {
     /// Buffer overflow.
     pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
         w.write_string(&self.name)?;
-        self.ann_builtin.encode_into(w)?;
+        // ann_builtin is `@optional` (§7.3.4.5): a 1-byte presence boolean,
+        // absent when no builtin member annotation is set (byte-verified vs
+        // Cyclone/FastDDS — the whole record collapses to a single `0`).
+        if self.ann_builtin.is_empty() {
+            w.write_u8(0)?;
+        } else {
+            w.write_u8(1)?;
+            self.ann_builtin.encode_into(w)?;
+        }
         self.ann_custom.encode_into(w)
     }
 
@@ -564,7 +564,12 @@ impl CompleteMemberDetail {
     /// Buffer-Underflow.
     pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         let name = r.read_string()?;
-        let ann_builtin = AppliedBuiltinMemberAnnotations::decode_from(r)?;
+        let present = r.read_u8()?;
+        let ann_builtin = if present == 0 {
+            AppliedBuiltinMemberAnnotations::default()
+        } else {
+            AppliedBuiltinMemberAnnotations::decode_from(r)?
+        };
         let ann_custom = OptionalAppliedAnnotationSeq::decode_from(r)?;
         Ok(Self {
             name,
@@ -636,6 +641,34 @@ where
         out.push(f(r)?);
     }
     Ok(out)
+}
+
+/// Like [`encode_seq`], but with XCDR2 `@appendable` framing: the whole
+/// sequence (length + elements) is wrapped in a 4-byte DHEADER. XTypes 1.3
+/// §7.3.4.5 — the TypeObject member/literal sequences are `@appendable`, so a
+/// peer (and the vendors) prefix the member-seq with its byte length. Each
+/// element additionally carries its own DHEADER via its `encode_into`.
+pub(crate) fn encode_seq_appendable<T, F>(
+    w: &mut BufferWriter,
+    items: &[T],
+    f: F,
+) -> Result<(), EncodeError>
+where
+    F: FnMut(&mut BufferWriter, &T) -> Result<(), EncodeError>,
+{
+    zerodds_cdr::struct_enc::encode_appendable(w, move |w| encode_seq(w, items, f))
+}
+
+/// Decode counterpart to [`encode_seq_appendable`]: strips the member-seq
+/// DHEADER, then decodes `length + elements`.
+pub(crate) fn decode_seq_appendable<T, F>(
+    r: &mut BufferReader<'_>,
+    f: F,
+) -> Result<alloc::vec::Vec<T>, DecodeError>
+where
+    F: FnMut(&mut BufferReader<'_>) -> Result<T, DecodeError>,
+{
+    zerodds_cdr::struct_enc::decode_appendable(r, move |r| decode_seq(r, f))
 }
 
 #[cfg(test)]

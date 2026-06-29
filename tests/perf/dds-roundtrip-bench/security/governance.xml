@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dds xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+     xsi:noNamespaceSchemaLocation="http://www.omg.org/spec/DDS-SECURITY/20170801/omg_shared_ca_governance.xsd">
+  <domain_access_rules>
+    <domain_rule>
+      <domains><id>200</id></domains>
+      <allow_unauthenticated_participants>false</allow_unauthenticated_participants>
+      <enable_join_access_control>true</enable_join_access_control>
+      <discovery_protection_kind>ENCRYPT</discovery_protection_kind>
+      <liveliness_protection_kind>ENCRYPT</liveliness_protection_kind>
+      <rtps_protection_kind>ENCRYPT</rtps_protection_kind>
+      <topic_access_rules>
+        <topic_rule>
+          <topic_expression>*</topic_expression>
+          <enable_discovery_protection>true</enable_discovery_protection>
+          <enable_liveliness_protection>true</enable_liveliness_protection>
+          <!-- Per-topic read/write Access-Control-Enforcement AUS: OpenDDS'
+               AccessControl lehnt die Kombination aus per-Topic-read/write-AC +
+               dieser (FastDDS-orientierten) Permissions-Datei ab und meldet das
+               irrefuehrend als "No governance exists for this domain", was sogar
+               opendds<->opendds secure blockiert. Mit =false akzeptieren ALLE
+               vier Stacks (Cyclone/FastDDS/OpenDDS/ZeroDDS) dieselbe Governance.
+               Verschluesselung (ENCRYPT data/metadata/rtps/discovery/liveliness),
+               Authentifizierung (PKI-DH) und participant-level join_access_control
+               bleiben voll aktiv — nur die per-Topic-Permission-Enforcement
+               entfaellt (die Permissions granten ohnehin "*"-Topics). -->
+          <enable_read_access_control>false</enable_read_access_control>
+          <enable_write_access_control>false</enable_write_access_control>
+          <metadata_protection_kind>ENCRYPT</metadata_protection_kind>
+          <data_protection_kind>ENCRYPT</data_protection_kind>
+        </topic_rule>
+      </topic_access_rules>
+    </domain_rule>
+  </domain_access_rules>
+</dds>

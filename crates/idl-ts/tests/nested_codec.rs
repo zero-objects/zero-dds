@@ -35,10 +35,10 @@ fn nested_struct_uses_nested_codec_not_int32() {
 }
 
 #[test]
-fn struct_with_union_member_is_gated_not_broken() {
-    // Unions have no XCDR2 codec in idl-ts, so a struct containing a union
-    // member must be gated (data type emitted, TypeSupport skipped) — NOT a
-    // reference to a non-existent UnionTypeSupport (which would not compile).
+fn struct_with_union_member_routes_through_union_codec() {
+    // TS-cluster #1: a union now has an XCDR2 codec, so a struct containing a
+    // union member must emit a TypeSupport that routes the member through the
+    // union's `TypeSupport.encodeInto`/`decodeFrom` (shared CDR stream).
     let ts = gen_ts(
         "union Choice switch (long) { case 1: long a; case 2: double b; }; \
          struct Holder { Choice c; long n; };",
@@ -48,12 +48,20 @@ fn struct_with_union_member_is_gated_not_broken() {
         "data type must emit"
     );
     assert!(
-        !ts.contains("ChoiceTypeSupport"),
-        "must not reference a non-existent union TypeSupport:\n{ts}"
+        ts.contains("export const ChoiceTypeSupport"),
+        "union must get its own XCDR2 TypeSupport:\n{ts}"
     );
     assert!(
-        !ts.contains("export const HolderTypeSupport"),
-        "struct with a union member must be gated (no TypeSupport):\n{ts}"
+        ts.contains("export const HolderTypeSupport"),
+        "struct with a union member must NOT be gated anymore:\n{ts}"
+    );
+    assert!(
+        ts.contains("ChoiceTypeSupport.encodeInto(w, s.c)"),
+        "union member must encode via the union codec:\n{ts}"
+    );
+    assert!(
+        ts.contains("ChoiceTypeSupport.decodeFrom(r)"),
+        "union member must decode via the union codec:\n{ts}"
     );
 }
 
@@ -83,10 +91,68 @@ fn typedef_of_primitive_stays_primitive() {
 }
 
 #[test]
-fn enum_field_still_uses_int32() {
+fn nested_and_sibling_collections_use_unique_loop_vars() {
+    // Edge-hardening regression: a `sequence<sequence<T>>` reused the loop var
+    // `_e` (`for (const _e of _e)`) and two SIBLING collection members reused
+    // the `_seqtok` token (a `const` re-declare that won't parse). Each
+    // collection loop must now get a unique run-global temporary.
+    let ts = gen_ts(
+        "struct A { long x; }; \
+         struct S { sequence<sequence<A>> grid; sequence<long> nums; map<string,A> m; };",
+    );
+    // No loop ever iterates its own iterator.
+    assert!(
+        !ts.contains("for (const _e of _e)"),
+        "nested sequence must not reuse the loop var:\n{ts}"
+    );
+    // `_seqtok` is suffixed (e.g. `_seqtok0`), never the bare form that a
+    // sibling member would re-declare in the same scope.
+    assert!(
+        !ts.contains("const _seqtok ="),
+        "sequence tokens must be uniquely suffixed:\n{ts}"
+    );
+    // At least two distinct suffixed loop vars exist (grid outer + inner / map).
+    assert!(
+        ts.contains("for (const _e0 of") && ts.contains("for (const _e1 of"),
+        "distinct collection loops must get distinct loop vars:\n{ts}"
+    );
+}
+
+#[test]
+fn bounded_collections_emit_capacity_guard() {
+    // Edge-hardening regression: a bounded sequence/string/map over its bound
+    // silently corrupted; encode must now emit a capacity guard that throws.
+    let ts = gen_ts("struct B { sequence<long,2> bs; string<3> name; map<string,long,4> m; };");
+    assert!(
+        ts.contains("bs.length > 2") && ts.contains("throw new RangeError"),
+        "bounded sequence must guard its capacity:\n{ts}"
+    );
+    assert!(
+        ts.contains("].length > 3"),
+        "bounded string must guard its capacity (by code points):\n{ts}"
+    );
+    assert!(
+        ts.contains(".size > 4"),
+        "bounded map must guard its capacity:\n{ts}"
+    );
+}
+
+#[test]
+fn enum_field_routes_through_ordinal_map() {
+    // TS-cluster #3: an enum's TS surface type is a string-literal union, so the
+    // codec must map through the emitted `<Enum>Ordinal` / `<Enum>FromOrdinal`
+    // maps — a bare `as unknown as number` cast would write NaN over the wire.
     let ts = gen_ts("enum Color { RED, GREEN, BLUE }; struct S { Color c; };");
     assert!(
-        ts.contains("s.c as unknown as number"),
-        "enum field keeps the int32 representation:\n{ts}"
+        ts.contains("w.writeInt32(ColorOrdinal[s.c])"),
+        "enum field must encode via the ordinal map:\n{ts}"
+    );
+    assert!(
+        ts.contains("ColorFromOrdinal.get(r.readInt32())"),
+        "enum field must decode via the from-ordinal map:\n{ts}"
+    );
+    assert!(
+        !ts.contains("s.c as unknown as number"),
+        "enum field must NOT use the broken numeric cast:\n{ts}"
     );
 }

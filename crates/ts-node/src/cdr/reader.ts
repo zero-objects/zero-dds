@@ -7,6 +7,13 @@
 import { XcdrError } from './errors.js';
 import type { EndianMode } from './types.js';
 
+/// XCDR2 maximum alignment (XTypes 1.3 §7.4.1.1.1 / §7.4.3.2.3 MAXALIGN(2)=4).
+/// 64-bit primitives align to 4, not 8 — mirrors the Xcdr2Writer clamp.
+const XCDR2_MAX_ALIGN = 4;
+/// XCDR1 / classic CDR alignment cap (8). Pass to the reader ctor to decode
+/// the legacy wire (no DHEADER on aggregates, PL_CDR1 for @mutable).
+export const XCDR1_MAX_ALIGN = 8;
+
 /// XCDR2 reader. Reads from a Uint8Array slice.
 export class Xcdr2Reader {
     private readonly view: DataView;
@@ -16,12 +23,14 @@ export class Xcdr2Reader {
     private _pos: number;
     private readonly littleEndian: boolean;
     private originStack: number[];
+    private readonly maxAlign: number;
 
     constructor(
         bytes: Uint8Array,
         offset = 0,
         length: number = bytes.length - offset,
         endian: EndianMode = 'le',
+        maxAlign: number = XCDR2_MAX_ALIGN,
     ) {
         if (offset < 0 || length < 0 || offset + length > bytes.length) {
             throw new XcdrError(`reader bounds: offset=${offset} length=${length} buf=${bytes.length}`);
@@ -33,6 +42,14 @@ export class Xcdr2Reader {
         this._pos = offset;
         this.littleEndian = endian === 'le';
         this.originStack = [offset];
+        // XCDR1 / classic CDR uses an 8-byte alignment cap (no DHEADER,
+        // PL_CDR1 for @mutable); XCDR2 caps at 4.
+        this.maxAlign = maxAlign === XCDR1_MAX_ALIGN ? XCDR1_MAX_ALIGN : XCDR2_MAX_ALIGN;
+    }
+
+    /// `true` when reading the XCDR1 / classic CDR wire.
+    get isXcdr1(): boolean {
+        return this.maxAlign === XCDR1_MAX_ALIGN;
     }
 
     /// Aktueller Lese-Cursor (absolute Position im Backing-Buffer).
@@ -54,7 +71,11 @@ export class Xcdr2Reader {
     }
 
     /// Advances `pos` so that `(pos - origin) % alignment == 0`.
+    /// XCDR2 caps the maximum alignment at 4 (XTypes 1.3 §7.4.1.1.1).
     align(alignment: number): void {
+        if (alignment > this.maxAlign) {
+            alignment = this.maxAlign;
+        }
         if (alignment <= 1) {
             return;
         }
@@ -208,7 +229,9 @@ export class Xcdr2Reader {
         const codeUnits = byteLen / 2;
         let s = '';
         for (let i = 0; i < codeUnits; i++) {
-            s += String.fromCharCode(this.view.getUint16(this._pos, true));
+            // UTF-16 units in the message byte order, not a hardcoded LE — a
+            // big-endian stream carries big-endian units (mirrors writeWString).
+            s += String.fromCharCode(this.view.getUint16(this._pos, this.littleEndian));
             this._pos += 2;
         }
         return s;
@@ -221,17 +244,54 @@ export class Xcdr2Reader {
         return slice;
     }
 
+    /// Reads an IDL `fixed<P,S>` value: (P+2)/2 packed-BCD octets back into a
+    /// decimal string (e.g. "123.45"). Inverse of `Xcdr2Writer.writeFixedBcd`;
+    /// ported from crates/cdr/src/fixed.rs::to_string_repr.
+    readFixedBcd(p: number, s: number): string {
+        const n = (p + 2) >> 1;
+        const bytes = this.readBytes(n);
+        const chars: string[] = [];
+        let sign = "+";
+        for (let i = 0; i < n; i++) {
+            const hi = (bytes[i] >> 4) & 0x0f;
+            const lo = bytes[i] & 0x0f;
+            chars.push(String.fromCharCode(48 + (hi % 10)));
+            if (i === n - 1) sign = lo === 0x0d ? "-" : "+";
+            else chars.push(String.fromCharCode(48 + (lo % 10)));
+        }
+        while (chars.length > s + 1 && chars[0] === "0") chars.shift();
+        let out = sign === "-" ? "-" : "";
+        if (s > 0) {
+            const dotPos = Math.max(chars.length - s, 0);
+            for (let i = 0; i < chars.length; i++) {
+                if (i === dotPos) out += ".";
+                out += chars[i];
+            }
+        } else {
+            out += chars.join("");
+        }
+        return out;
+    }
+
     /// Begins an appendable block: reads the DHEADER, pushes the origin
     /// to the body-start position, and returns the `bodyEnd` offset
     /// (absolute position in the buffer).
-    beginAppendable(): { bodyEnd: number } {
+    beginAppendable(): { bodyEnd: number; noFrame?: boolean } {
+        // XCDR1 / classic CDR: no DHEADER — the aggregate continues in the same
+        // stream with the parent's alignment origin. Frame-less no-op.
+        if (this.isXcdr1) {
+            return { bodyEnd: this.end, noFrame: true };
+        }
         const size = this.readUint32();
         const bodyStart = this._pos;
         this.pushAlignmentOrigin();
         return { bodyEnd: bodyStart + size };
     }
 
-    endAppendable(token: { bodyEnd: number }): void {
+    endAppendable(token: { bodyEnd: number; noFrame?: boolean }): void {
+        if (token.noFrame) {
+            return; // XCDR1: no frame to close.
+        }
         // Skip over unknown trailing bytes.
         if (this._pos < token.bodyEnd) {
             this._pos = token.bodyEnd;
@@ -243,8 +303,51 @@ export class Xcdr2Reader {
         return this.beginAppendable();
     }
 
-    endMutable(token: { bodyEnd: number }): void {
+    endMutable(token: { bodyEnd: number; noFrame?: boolean }): void {
         this.endAppendable(token);
+    }
+
+    /// Begins one PL_CDR1 (@mutable XCDR1) member: a 4-byte aligned
+    /// [u16 PID][u16 length] header, then pushes a member-relative origin so the
+    /// member's body decodes inline. Returns `null` at the PID_LIST_END sentinel.
+    /// PID_EXTENDED (length 8) carries a 32-bit member id + 32-bit body length.
+    /// Mirrors cdr-core `xcdr1::read_pl_cdr1_member`.
+    beginPlCdr1Member(): { memberId: number; bodyEnd: number } | null {
+        const PID_LIST_END = 0x3f02;
+        const PID_EXTENDED = 0x3f01;
+        this.align(4);
+        if (this._pos + 4 > this.end) {
+            return null;
+        }
+        const pid = this.readUint16();
+        const lenU16 = this.readUint16();
+        if (pid === PID_LIST_END) {
+            return null;
+        }
+        let memberId: number;
+        let bodyLen: number;
+        if (pid === PID_EXTENDED) {
+            memberId = this.readUint32();
+            bodyLen = this.readUint32();
+        } else {
+            memberId = pid;
+            bodyLen = lenU16;
+        }
+        const bodyStart = this._pos;
+        this.requireBytes(bodyLen);
+        this.pushAlignmentOrigin();
+        return { memberId, bodyEnd: bodyStart + bodyLen };
+    }
+
+    /// Closes a `beginPlCdr1Member`: pops the origin, positions at the body end,
+    /// and skips the trailing 4-byte pad.
+    endPlCdr1Member(token: { memberId: number; bodyEnd: number }): void {
+        this.popAlignmentOrigin();
+        this._pos = token.bodyEnd;
+        const pad = (4 - (this._pos & 3)) & 3;
+        for (let i = 0; i < pad && this._pos < this.end; i++) {
+            this._pos++;
+        }
     }
 
     /// Reads EMHEADER1 (4 bytes BE; see the writer docs) plus
@@ -262,8 +365,13 @@ export class Xcdr2Reader {
         const mustUnderstand = (word >>> 31) === 1;
         const lc = (word >>> 28) & 0x7;
         const memberId = word & 0x0fffffff;
+        // Only LC4 carries a SEPARATE NEXTINT (uint32 body length) after the
+        // EMHEADER. LC5/6/7 reuse the member body's OWN leading 4-byte length
+        // word as the framing length (XTypes 1.3 §7.4.3.4.2 /
+        // zerodds_cdr::struct_enc::LengthCode::reuses_leading_len), so reading a
+        // separate NEXTINT here would wrongly swallow the body's length prefix.
         let nextInt: number | null = null;
-        if (lc >= 4) {
+        if (lc === 4) {
             nextInt = this.readUint32();
         }
         return { memberId, lc, mustUnderstand, nextInt };

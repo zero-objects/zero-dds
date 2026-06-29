@@ -4,7 +4,7 @@
 //! OMG DDS-OPCUA Gateway 1.0 — Type-System + AddressSpace Mapping.
 //!
 //! Crate `zerodds-opcua-gateway`. Safety classification: **STANDARD**.
-//! Spec `formal/2020-01-01` (`docs/standards/cache/omg/dds-opcua-1.0.pdf`).
+//! Spec `formal/2020-01-01` (`internal/standards/cache/omg/dds-opcua-1.0.pdf`).
 //!
 //! # Scope
 //!

@@ -13,4 +13,4 @@ enum class Color : int32_t {
     BLUE,
 };
 
-using Hue = Color;
+using Hue = ::Color;

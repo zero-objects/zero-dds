@@ -1,6 +1,6 @@
 # OPC UA Part 14 — PubSub (UADP) — Spec Coverage
 
-**Source:** `docs/standards/cache/opcfoundation/opcua-part14-pubsub-1.05.06.pdf`
+**Source:** `internal/standards/cache/opcfoundation/opcua-part14-pubsub-1.05.06.pdf`
 (274 pp., v1.05.06, 2025-10-31). Cross-spec:
 `opcua-part6-mappings-1.05.07.pdf`, `opcua-part4-services-1.05.07.pdf`,
 `opcua-part3-addressspace-1.05.06.pdf`, `opcua-part7-profiles-1.05.02.pdf`

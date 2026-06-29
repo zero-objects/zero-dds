@@ -26,25 +26,52 @@ public sealed class Xcdr2Writer
     private readonly EndianMode _endian;
 
     /// <summary>
+    /// XCDR2 maximum alignment (XTypes 1.3 §7.4.1.1.1): every member's required
+    /// alignment is capped at 4, so 8-byte primitives (double / int64 / uint64)
+    /// align to 4, NEVER to 8. Mirrors the cross-vendor-validated zerodds-cdr
+    /// core (`crates/cdr/src/buffer.rs`: `alignment.min(self.max_alignment)`,
+    /// XCDR2_MAX_ALIGNMENT == 4).
+    /// </summary>
+    private const int Xcdr2MaxAlignment = 4;
+    private const int Xcdr1MaxAlignment = 8;
+
+    /// <summary>XCDR1 alignment-cap value (8) for the 2-arg constructor.</summary>
+    public const int Xcdr1MaxAlignmentValue = Xcdr1MaxAlignment;
+
+    /// <summary>Effective alignment cap: 4 for XCDR2, 8 for XCDR1 / classic CDR.</summary>
+    private readonly int _maxAlignment;
+
+    /// <summary>
     /// Current alignment origin as a buffer position. On `BeginAppendable`
     /// and `BeginMutable` it is set to `Position` after the DHEADER reservation;
     /// all subsequent `Align(N)` calls are relative to it.
     /// </summary>
     private long _alignOrigin;
 
-    /// <summary>Constructor with default endianness (little-endian).</summary>
+    /// <summary>Constructor with default endianness (little-endian), XCDR2.</summary>
     public Xcdr2Writer() : this(EndianMode.LittleEndian) { }
 
-    /// <summary>Constructor with explicit endianness.</summary>
-    public Xcdr2Writer(EndianMode endian)
+    /// <summary>Constructor with explicit endianness, XCDR2 representation.</summary>
+    public Xcdr2Writer(EndianMode endian) : this(endian, Xcdr2MaxAlignment) { }
+
+    /// <summary>
+    /// Constructor with explicit endianness + alignment cap. Pass
+    /// <see cref="Xcdr1MaxAlignmentValue"/> (8) to write the XCDR1 / classic CDR
+    /// wire (no DHEADER, PL_CDR1 for @mutable); the default 4 writes XCDR2.
+    /// </summary>
+    public Xcdr2Writer(EndianMode endian, int maxAlignment)
     {
         _buf = new MemoryStream();
         _endian = endian;
         _alignOrigin = 0;
+        _maxAlignment = maxAlignment == Xcdr1MaxAlignment ? Xcdr1MaxAlignment : Xcdr2MaxAlignment;
     }
 
     /// <summary>Active endianness (read-only).</summary>
     public EndianMode Endian => _endian;
+
+    /// <summary>`true` when writing the XCDR1 / classic CDR wire.</summary>
+    public bool IsXcdr1 => _maxAlignment == Xcdr1MaxAlignment;
 
     /// <summary>Number of bytes written so far.</summary>
     public long Position => _buf.Position;
@@ -65,8 +92,11 @@ public sealed class Xcdr2Writer
             throw new ArgumentOutOfRangeException(nameof(alignment),
                 "alignment must be one of {1,2,4,8}");
         }
+        // Caps the effective alignment at the representation max (XCDR2 = 4,
+        // XCDR1 = 8); cdr-core does the same via `alignment.min(max_alignment)`.
+        int effective = alignment < _maxAlignment ? alignment : _maxAlignment;
         long offset = _buf.Position - _alignOrigin;
-        long pad = (alignment - (offset % alignment)) % alignment;
+        long pad = (effective - (offset % effective)) % effective;
         for (long i = 0; i < pad; i++)
         {
             _buf.WriteByte(0);
@@ -85,6 +115,42 @@ public sealed class Xcdr2Writer
 #else
         _buf.Write(data);
 #endif
+    }
+
+    /// <summary>
+    /// Writes an IDL <c>fixed&lt;P,S&gt;</c> value as CORBA/GIOP §9.3.2.7 packed
+    /// BCD: P digit nibbles MSB-first + a sign nibble (0xC pos, 0xD neg), a
+    /// leading 0x0 pad when P+1 is odd, packed 2 nibbles/byte high-first.
+    /// (P+2)/2 octets, no length prefix, no alignment, endian-independent.
+    /// Ported from <c>crates/cdr/src/fixed.rs</c> (oracle-validated).
+    /// </summary>
+    public void WriteFixedBcd(decimal value, int p, int s)
+    {
+        var text = value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        bool positive = true;
+        if (text.StartsWith("-", StringComparison.Ordinal)) { positive = false; text = text.Substring(1); }
+        else if (text.StartsWith("+", StringComparison.Ordinal)) { text = text.Substring(1); }
+        int dot = text.IndexOf('.');
+        string intPart = dot < 0 ? text : text.Substring(0, dot);
+        string fracPart = dot < 0 ? string.Empty : text.Substring(dot + 1);
+        int intNeeded = p - s;
+        if (intPart.Length > intNeeded)
+            throw new XcdrException($"fixed: integer part '{intPart}' exceeds P-S={intNeeded}");
+        if (fracPart.Length > s)
+            throw new XcdrException($"fixed: fractional part '{fracPart}' exceeds S={s}");
+        string digits = intPart.PadLeft(intNeeded, '0') + fracPart.PadRight(s, '0');
+        var nibbles = new System.Collections.Generic.List<int>();
+        if ((p + 1) % 2 == 1) nibbles.Add(0);
+        foreach (char c in digits)
+        {
+            if (c < '0' || c > '9') throw new XcdrException($"fixed: non-digit '{c}'");
+            nibbles.Add(c - '0');
+        }
+        nibbles.Add(positive ? 0x0C : 0x0D);
+        var outBytes = new byte[nibbles.Count / 2];
+        for (int b = 0; b < outBytes.Length; b++)
+            outBytes[b] = (byte)((nibbles[2 * b] << 4) | nibbles[2 * b + 1]);
+        WriteBytes(outBytes);
     }
 
     // ---------------------------------------------------------------------
@@ -283,6 +349,12 @@ public sealed class Xcdr2Writer
     /// </summary>
     public DHeaderScope BeginDHeader()
     {
+        // XCDR1 / classic CDR has no DHEADER — write the body inline in the same
+        // stream. Return a frame-less scope so EndDHeader patches nothing.
+        if (IsXcdr1)
+        {
+            return new DHeaderScope(this, 0, _alignOrigin, _buf.Position, hasFrame: false);
+        }
         Align(4);
         long headerPos = _buf.Position;
         // Placeholder for the size written in later:
@@ -299,6 +371,10 @@ public sealed class Xcdr2Writer
     /// </summary>
     internal void EndDHeader(DHeaderScope scope)
     {
+        if (!scope.HasFrame)
+        {
+            return; // XCDR1: no frame to patch.
+        }
         long endPos = _buf.Position;
         long bodyStart = scope.BodyStart;
         long size = endPos - bodyStart;
@@ -363,6 +439,47 @@ public sealed class Xcdr2Writer
     }
 
     // ---------------------------------------------------------------------
+    // PL_CDR1 (Mutable XCDR1)
+    // ---------------------------------------------------------------------
+
+    /// <summary>
+    /// Writes one PL_CDR1 (@mutable XCDR1) member: a 4-byte aligned
+    /// [u16 PID][u16 length] header (or the PID_EXTENDED long form for ids
+    /// >= 0x3F00 / bodies > 0xFFFF), the member <paramref name="body"/> bytes
+    /// (built by a fresh member-relative sub-writer), then zero-pad to the next
+    /// 4-byte boundary (not counted in length). Mirrors cdr-core
+    /// `xcdr1::encode_pl_cdr1_member`.
+    /// </summary>
+    public void WritePlCdr1Member(uint memberId, byte[] body)
+    {
+        Align(4);
+        int bodyLen = body.Length;
+        if (memberId >= 0x3F00 || bodyLen > 0xFFFF)
+        {
+            WriteUInt16(0x3F01); // PID_EXTENDED
+            WriteUInt16(8);
+            WriteUInt32(memberId);
+            WriteUInt32((uint)bodyLen);
+        }
+        else
+        {
+            WriteUInt16((ushort)memberId);
+            WriteUInt16((ushort)bodyLen);
+        }
+        WriteBytes(body);
+        int pad = (4 - (bodyLen % 4)) % 4;
+        for (int i = 0; i < pad; i++) _buf.WriteByte(0);
+    }
+
+    /// <summary>Writes the PID_LIST_END (0x3F02) terminator of a PL_CDR1 list.</summary>
+    public void WritePlCdr1Sentinel()
+    {
+        Align(4);
+        WriteUInt16(0x3F02);
+        WriteUInt16(0);
+    }
+
+    // ---------------------------------------------------------------------
     // Final assembly
     // ---------------------------------------------------------------------
 
@@ -380,13 +497,15 @@ public readonly struct DHeaderScope : IDisposable
     internal long HeaderPos { get; }
     internal long PreviousOrigin { get; }
     internal long BodyStart { get; }
+    internal bool HasFrame { get; }
 
-    internal DHeaderScope(Xcdr2Writer writer, long headerPos, long previousOrigin, long bodyStart)
+    internal DHeaderScope(Xcdr2Writer writer, long headerPos, long previousOrigin, long bodyStart, bool hasFrame = true)
     {
         _writer = writer;
         HeaderPos = headerPos;
         PreviousOrigin = previousOrigin;
         BodyStart = bodyStart;
+        HasFrame = hasFrame;
     }
 
     /// <summary>Patches the DHEADER and closes the scope.</summary>

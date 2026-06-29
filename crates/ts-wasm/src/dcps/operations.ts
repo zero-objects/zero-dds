@@ -31,10 +31,11 @@ import {
   Topic,
 } from "./facade.js";
 
-/// Builds a C.1.2 Sample from raw XCDR2 `bytes`. Source info that the bridge
-/// JSON protocol does not carry (timestamps, sequence number, writer GUID) is
-/// filled with neutral defaults; `validData` is true for a real payload.
-export function sampleFromBytes(bytes: Uint8Array): Sample {
+/// Builds a C.1.2 Sample from a buffered bridge sample (raw XCDR2 `bytes` +
+/// their wire byte order). Source info that the bridge JSON protocol does not
+/// carry (timestamps, sequence number, writer GUID) is filled with neutral
+/// defaults; `validData` is true for a real payload.
+export function sampleFromBytes(s: { bytes: Uint8Array; bigEndian: boolean }): Sample {
   const info: SampleInfo = {
     validData: true,
     sampleState: "not_read",
@@ -44,8 +45,9 @@ export function sampleFromBytes(bytes: Uint8Array): Sample {
     sequenceNumber: 0n,
     publicationHandle: nullGuid(),
     instanceHandle: 0n,
+    bigEndian: s.bigEndian,
   };
-  return { bytes, info };
+  return { bytes: s.bytes, info };
 }
 
 // ---- Resource table (Annex C.1.1) ----

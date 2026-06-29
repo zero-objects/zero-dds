@@ -72,6 +72,9 @@ pub mod builtin_topics;
 pub mod coherent_set;
 #[cfg(feature = "std")]
 pub mod condition;
+/// Cross-vendor same-host zero-copy with Cyclone over iceoryx C++ (POSH).
+#[cfg(all(feature = "std", feature = "cyclone-iox", target_os = "linux"))]
+pub mod cyclone_iox_integration;
 pub mod dds_type;
 #[cfg(feature = "std")]
 pub mod durability_service;

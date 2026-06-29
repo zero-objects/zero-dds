@@ -7,6 +7,10 @@
 import { XcdrError } from './errors.js';
 import type { EndianMode } from './types.js';
 
+/// XCDR2 (4) / XCDR1 (8) alignment caps (XTypes 1.3 §7.4.1.1.1).
+const XCDR2_MAX_ALIGN = 4;
+export const XCDR1_MAX_ALIGN = 8;
+
 /// XCDR2 reader. Reads from a Uint8Array slice.
 export class Xcdr2Reader {
     private readonly view: DataView;
@@ -16,12 +20,14 @@ export class Xcdr2Reader {
     private _pos: number;
     private readonly littleEndian: boolean;
     private originStack: number[];
+    private readonly maxAlign: number;
 
     constructor(
         bytes: Uint8Array,
         offset = 0,
         length: number = bytes.length - offset,
         endian: EndianMode = 'le',
+        maxAlign: number = XCDR2_MAX_ALIGN,
     ) {
         if (offset < 0 || length < 0 || offset + length > bytes.length) {
             throw new XcdrError(`reader bounds: offset=${offset} length=${length} buf=${bytes.length}`);
@@ -33,6 +39,12 @@ export class Xcdr2Reader {
         this._pos = offset;
         this.littleEndian = endian === 'le';
         this.originStack = [offset];
+        this.maxAlign = maxAlign === XCDR1_MAX_ALIGN ? XCDR1_MAX_ALIGN : XCDR2_MAX_ALIGN;
+    }
+
+    /// `true` when reading the XCDR1 / classic CDR wire.
+    get isXcdr1(): boolean {
+        return this.maxAlign === XCDR1_MAX_ALIGN;
     }
 
     /// Aktueller Lese-Cursor (absolute Position im Backing-Buffer).
@@ -55,6 +67,9 @@ export class Xcdr2Reader {
 
     /// Advances `pos` so that `(pos - origin) % alignment == 0`.
     align(alignment: number): void {
+        if (alignment > this.maxAlign) {
+            alignment = this.maxAlign;
+        }
         if (alignment <= 1) {
             return;
         }
@@ -208,7 +223,9 @@ export class Xcdr2Reader {
         const codeUnits = byteLen / 2;
         let s = '';
         for (let i = 0; i < codeUnits; i++) {
-            s += String.fromCharCode(this.view.getUint16(this._pos, true));
+            // UTF-16 units in the message byte order, not a hardcoded LE — a
+            // big-endian stream carries big-endian units (mirrors writeWString).
+            s += String.fromCharCode(this.view.getUint16(this._pos, this.littleEndian));
             this._pos += 2;
         }
         return s;
@@ -224,14 +241,20 @@ export class Xcdr2Reader {
     /// Begins an appendable block: reads DHEADER, pushes origin
     /// to the body start position, and returns the `bodyEnd` offset
     /// back (absolute position in the buffer).
-    beginAppendable(): { bodyEnd: number } {
+    beginAppendable(): { bodyEnd: number; noFrame?: boolean } {
+        if (this.isXcdr1) {
+            return { bodyEnd: this.end, noFrame: true };
+        }
         const size = this.readUint32();
         const bodyStart = this._pos;
         this.pushAlignmentOrigin();
         return { bodyEnd: bodyStart + size };
     }
 
-    endAppendable(token: { bodyEnd: number }): void {
+    endAppendable(token: { bodyEnd: number; noFrame?: boolean }): void {
+        if (token.noFrame) {
+            return;
+        }
         // Skip over unknown trailing bytes.
         if (this._pos < token.bodyEnd) {
             this._pos = token.bodyEnd;
@@ -243,8 +266,47 @@ export class Xcdr2Reader {
         return this.beginAppendable();
     }
 
-    endMutable(token: { bodyEnd: number }): void {
+    endMutable(token: { bodyEnd: number; noFrame?: boolean }): void {
         this.endAppendable(token);
+    }
+
+    /// PL_CDR1 (@mutable XCDR1) member: [u16 PID][u16 length] header (4-byte
+    /// aligned), member-relative body, 4-byte pad. `null` at PID_LIST_END.
+    /// Mirrors cdr-core `xcdr1::read_pl_cdr1_member`.
+    beginPlCdr1Member(): { memberId: number; bodyEnd: number } | null {
+        const PID_LIST_END = 0x3f02;
+        const PID_EXTENDED = 0x3f01;
+        this.align(4);
+        if (this._pos + 4 > this.end) {
+            return null;
+        }
+        const pid = this.readUint16();
+        const lenU16 = this.readUint16();
+        if (pid === PID_LIST_END) {
+            return null;
+        }
+        let memberId: number;
+        let bodyLen: number;
+        if (pid === PID_EXTENDED) {
+            memberId = this.readUint32();
+            bodyLen = this.readUint32();
+        } else {
+            memberId = pid;
+            bodyLen = lenU16;
+        }
+        const bodyStart = this._pos;
+        this.requireBytes(bodyLen);
+        this.pushAlignmentOrigin();
+        return { memberId, bodyEnd: bodyStart + bodyLen };
+    }
+
+    endPlCdr1Member(token: { memberId: number; bodyEnd: number }): void {
+        this.popAlignmentOrigin();
+        this._pos = token.bodyEnd;
+        const pad = (4 - (this._pos & 3)) & 3;
+        for (let i = 0; i < pad && this._pos < this.end; i++) {
+            this._pos++;
+        }
     }
 
     /// Reads EMHEADER1 (4 bytes BE; see writer docs) plus

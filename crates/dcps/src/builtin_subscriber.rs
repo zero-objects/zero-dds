@@ -158,8 +158,10 @@ fn push_into<T: DdsType>(
         writer_guid: [0u8; 16],
         writer_strength: 0,
         // Built-in-topic samples are encoded ZeroDDS-internally —
-        // XCDR1 baseline.
+        // XCDR1 baseline, little-endian.
         representation: 0,
+        big_endian: false,
+        source_timestamp: None,
     });
     Ok(())
 }

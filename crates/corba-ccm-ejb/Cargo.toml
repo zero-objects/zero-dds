@@ -29,4 +29,4 @@ alloc = []
 # Spec CCM 4.0 §2 CP6 wire-up — PSS-session bind helper for
 # `ConnectorBean`. Optional (std-only), so that the no_std path
 # does not force std.
-zerodds-corba-ccm = { version = "1.0.0-rc.3.1", path = "../corba-ccm", optional = true }
+zerodds-corba-ccm = { version = "1.0.0-rc.4", path = "../corba-ccm", optional = true }

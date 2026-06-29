@@ -269,8 +269,8 @@ fn validate_jwt_rs256(
         v.extend_from_slice(p_b64.as_bytes());
         v
     };
-    let pubkey = ring::signature::UnparsedPublicKey::new(
-        &ring::signature::RSA_PKCS1_2048_8192_SHA256,
+    let pubkey = crate::backend::signature::UnparsedPublicKey::new(
+        &crate::backend::signature::RSA_PKCS1_2048_8192_SHA256,
         pkcs1_pubkey_der,
     );
     pubkey
@@ -475,7 +475,7 @@ mod tests {
         // Bogus pubkey + bogus token. We only test the reject path — a
         // fully-signed round-trip test would need an RSA key-gen lib
         // (rcgen can't do that for JWT). The code path itself is driven
-        // against `ring::signature::UnparsedPublicKey::verify`.
+        // against `crate::backend::signature::UnparsedPublicKey::verify`.
         let m = AuthMode::Jwt {
             pkcs1_pubkey_der: vec![0u8; 32],
             expected_issuer: None,

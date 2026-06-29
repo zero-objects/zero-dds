@@ -38,6 +38,16 @@ pub const PID_EXTENDED: u16 = 0x3F01;
 /// reserved 0x3FXX PIDs and MUST be encoded extended.
 pub const PID_EXTENDED_THRESHOLD: u32 = 0x3F00;
 
+/// Mask for the actual PID value. RTPS (§9.6.2.2.1) reserves the top two
+/// bits of the 16-bit PID as flags: bit 15 (`0x8000`) IMPLEMENTATION-SPECIFIC
+/// and bit 14 (`0x4000`) MUST_UNDERSTAND. The parameter id / member id is the
+/// low 14 bits. RTI Connext sets the MUST_UNDERSTAND flag on its `@mutable`
+/// members (e.g. an extended PID arrives as `0x7F01` = `0x4000 | 0x3F01`), so
+/// the flags MUST be stripped before comparing against PID_EXTENDED /
+/// PID_LIST_END or deriving a short-form member id — otherwise the sentinel
+/// and extended markers are missed and the parameter list mis-parses.
+pub const PID_VALUE_MASK: u16 = 0x3FFF;
+
 /// Parsed PL_CDR1 member.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlCdr1Member {
@@ -62,12 +72,15 @@ where
 {
     let mut inner = BufferWriter::new(writer.endianness());
     body(&mut inner)?;
-    let mut body_bytes = inner.into_bytes();
-    // Pad to a 4-byte boundary.
-    while body_bytes.len() % 4 != 0 {
-        body_bytes.push(0);
-    }
+    let body_bytes = inner.into_bytes();
+    // The PID length field carries the UNPADDED parameter-value length.
+    // Trailing pad bytes (to the next 4-byte boundary) follow the value but
+    // are NOT counted in the length — matching Fast DDS / FastCDR's PL_CDR1
+    // (a `string<8>="ok"` member is length 7, then a single pad byte; not
+    // length 8). The decoder reads `length` value bytes then skips the pad
+    // to the 4-boundary (see `read_pl_cdr1_member`).
     let body_len = body_bytes.len();
+    let pad = (4 - (body_len % 4)) % 4;
     let needs_extended = member_id >= PID_EXTENDED_THRESHOLD || body_len > 0xFFFF;
     if needs_extended {
         // Extended header: PID_EXTENDED, length=8 (header length), then
@@ -90,6 +103,9 @@ where
         writer.write_u16(id_u16)?;
         writer.write_u16(len_u16)?;
         writer.write_bytes(&body_bytes)?;
+    }
+    for _ in 0..pad {
+        writer.write_u8(0)?;
     }
     Ok(())
 }
@@ -117,7 +133,11 @@ pub fn read_pl_cdr1_member(
             offset: reader.position(),
         });
     }
-    let pid = reader.read_u16()?;
+    // Strip the RTPS MUST_UNDERSTAND / impl-specific flag bits (top two bits);
+    // the parameter id is the low 14 bits. RTI sets MUST_UNDERSTAND on its
+    // `@mutable` members, so an unmasked compare would miss PID_EXTENDED and
+    // the sentinel.
+    let pid = reader.read_u16()? & PID_VALUE_MASK;
     let len_u16 = reader.read_u16()?;
     if pid == PID_LIST_END {
         return Ok(None);
@@ -149,6 +169,18 @@ pub fn read_pl_cdr1_member(
         });
     }
     let body = reader.read_bytes(body_len)?.to_vec();
+    // The PID length is the UNPADDED value length; trailing pad bytes (to the
+    // next 4-byte boundary) follow but are not counted — skip them so the next
+    // member's header starts on a 4-byte boundary (symmetric to
+    // `encode_pl_cdr1_member`). Tolerate truncation of the trailing pad at the
+    // very end of the buffer (some producers omit the final pad before EOF).
+    let pad = (4 - (body_len % 4)) % 4;
+    for _ in 0..pad {
+        if reader.remaining() == 0 {
+            break;
+        }
+        let _ = reader.read_bytes(1)?;
+    }
     Ok(Some(PlCdr1Member { member_id, body }))
 }
 
@@ -267,6 +299,35 @@ mod tests {
         let mut r = BufferReader::new(&bytes, Endianness::Little);
         let members = read_all_pl_cdr1_members(&mut r).unwrap();
         assert!(members.is_empty());
+    }
+
+    #[test]
+    fn rti_must_understand_flag_on_extended_pid_is_stripped() {
+        // RTI Connext sets the RTPS MUST_UNDERSTAND flag (0x4000) on its
+        // `@mutable` members, so an extended-PID member arrives on the wire as
+        // 0x7F01 = 0x4000 | PID_EXTENDED, NOT a bare 0x3F01. Captured live from
+        // RTI 7.7: `01 7f 08 00 | 02 00 00 00 | 38 00 00 00 | <56-byte body>`.
+        // The decoder must mask the flag bits before recognising PID_EXTENDED,
+        // otherwise it mis-reads 0x7F01 as an ordinary short member and the
+        // whole parameter list de-syncs.
+        let mut bytes = vec![0x01, 0x7F, 0x08, 0x00]; // PID 0x7F01, len 8
+        bytes.extend_from_slice(&2u32.to_le_bytes()); // member_id = 2
+        bytes.extend_from_slice(&8u32.to_le_bytes()); // body_len = 8
+        bytes.extend_from_slice(&0x1122_3344_5566_7788u64.to_le_bytes());
+        // sentinel ALSO carries the flag in RTI's output: 0x7F02 = MU | LIST_END
+        bytes.extend_from_slice(&[0x02, 0x7F, 0x00, 0x00]);
+
+        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let members = read_all_pl_cdr1_members(&mut r).unwrap();
+        assert_eq!(members.len(), 1);
+        assert_eq!(
+            members[0].member_id, 2,
+            "flag bits must be stripped from id"
+        );
+        assert_eq!(
+            &members[0].body[..8],
+            &0x1122_3344_5566_7788u64.to_le_bytes()
+        );
     }
 
     #[test]

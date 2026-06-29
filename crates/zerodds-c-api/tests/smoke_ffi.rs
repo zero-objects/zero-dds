@@ -29,10 +29,10 @@ use core::ffi::c_void;
 
 use zerodds::{
     zerodds_buffer_free, zerodds_reader_create, zerodds_reader_destroy, zerodds_reader_loan,
-    zerodds_reader_return_loan, zerodds_reader_take, zerodds_reader_take_into,
-    zerodds_runtime_create, zerodds_runtime_destroy, zerodds_runtime_wait_for_peers,
-    zerodds_writer_create, zerodds_writer_destroy, zerodds_writer_wait_for_matched,
-    zerodds_writer_write,
+    zerodds_reader_return_loan, zerodds_reader_set_time_based_filter_ns, zerodds_reader_take,
+    zerodds_reader_take_into, zerodds_runtime_create, zerodds_runtime_create_ros_defaults,
+    zerodds_runtime_destroy, zerodds_runtime_wait_for_peers, zerodds_writer_create,
+    zerodds_writer_destroy, zerodds_writer_wait_for_matched, zerodds_writer_write,
 };
 
 /// Pub-sub roundtrip over the FFI with TWO participants (pub + sub).
@@ -104,6 +104,141 @@ fn ffi_pub_sub_roundtrip() {
         zerodds_runtime_destroy(rt_sub);
 
         assert!(received >= 1, "expected ≥1 sample, got {received}");
+    }
+}
+
+/// A5: the ROS-2 out-of-the-box runtime (`zerodds_runtime_create_ros_defaults`,
+/// what `rmw_zerodds` uses) is a healthy runtime — full pub→sub roundtrip.
+/// Proves the FFI entry point wires `RuntimeConfig::ros_defaults()` without
+/// breaking the data path. On macOS: ignored (multicast loopback unreliable,
+/// same as `ffi_pub_sub_roundtrip`).
+#[cfg_attr(target_os = "macos", ignore)]
+#[test]
+fn ffi_ros_defaults_runtime_roundtrip() {
+    // Stay <= 232: domain 233+ overflows the SPDP port mapping (7400 + 250*D
+    // exceeds u16). The PID jitter only isolates concurrent test processes.
+    let domain: u32 = 200 + (std::process::id() % 30);
+    let topic = CString::new("CFfiRosDefaults").unwrap();
+    let typ = CString::new("RawBytes").unwrap();
+
+    // SAFETY: valid C strings; pointers NULL-checked per each fn # Safety.
+    unsafe {
+        let rt_pub = zerodds_runtime_create_ros_defaults(domain);
+        let rt_sub = zerodds_runtime_create_ros_defaults(domain);
+        assert!(
+            !rt_pub.is_null() && !rt_sub.is_null(),
+            "runtime_create_ros_defaults failed"
+        );
+
+        assert_eq!(zerodds_runtime_wait_for_peers(rt_pub, 1, 5_000), 0);
+        assert_eq!(zerodds_runtime_wait_for_peers(rt_sub, 1, 5_000), 0);
+
+        let writer = zerodds_writer_create(rt_pub, topic.as_ptr(), typ.as_ptr(), 1);
+        let reader = zerodds_reader_create(rt_sub, topic.as_ptr(), typ.as_ptr(), 1);
+        assert!(!writer.is_null() && !reader.is_null());
+        let _ = zerodds_writer_wait_for_matched(writer, 1, 5_000);
+
+        let payload = [0x05u8, 0x06, 0x07, 0x08];
+        for _ in 0..5u8 {
+            assert_eq!(
+                zerodds_writer_write(writer, payload.as_ptr(), payload.len()),
+                0
+            );
+        }
+
+        let mut received = 0;
+        let deadline = std::time::Instant::now() + Duration::from_secs(3);
+        while received < 5 && std::time::Instant::now() < deadline {
+            let mut buf: *mut u8 = ptr::null_mut();
+            let mut len: usize = 0;
+            assert_eq!(
+                zerodds_reader_take(reader, &mut buf, &mut len, ptr::null_mut()),
+                0
+            );
+            if !buf.is_null() && len > 0 {
+                zerodds_buffer_free(buf, len);
+                received += 1;
+            } else {
+                thread::sleep(Duration::from_millis(20));
+            }
+        }
+
+        zerodds_writer_destroy(writer);
+        zerodds_reader_destroy(reader);
+        zerodds_runtime_destroy(rt_pub);
+        zerodds_runtime_destroy(rt_sub);
+        assert!(received >= 1, "expected ≥1 sample, got {received}");
+    }
+}
+
+/// A2 — TIME_BASED_FILTER: a reader armed with a 10 s `minimum_separation`
+/// receives only the FIRST of a rapid burst on one instance (keyless RawBytes =
+/// a single instance); the rest are dropped before `take`. On macOS: ignored
+/// (multicast loopback unreliable).
+#[cfg_attr(target_os = "macos", ignore)]
+#[test]
+fn ffi_time_based_filter_drops_rapid_samples() {
+    let domain: u32 = 30 + (std::process::id() % 50);
+    let topic = CString::new("CFfiTbf").unwrap();
+    let typ = CString::new("RawBytes").unwrap();
+
+    // SAFETY: valid C strings; pointers NULL-checked per each fn # Safety.
+    unsafe {
+        let rt_pub = zerodds_runtime_create(domain);
+        let rt_sub = zerodds_runtime_create(domain);
+        assert!(!rt_pub.is_null() && !rt_sub.is_null());
+        assert_eq!(zerodds_runtime_wait_for_peers(rt_pub, 1, 5_000), 0);
+        assert_eq!(zerodds_runtime_wait_for_peers(rt_sub, 1, 5_000), 0);
+
+        let writer = zerodds_writer_create(rt_pub, topic.as_ptr(), typ.as_ptr(), 1);
+        let reader = zerodds_reader_create(rt_sub, topic.as_ptr(), typ.as_ptr(), 1);
+        assert!(!writer.is_null() && !reader.is_null());
+
+        // Arm TIME_BASED_FILTER: at most one sample per 10 s.
+        assert_eq!(
+            zerodds_reader_set_time_based_filter_ns(reader, 10_000_000_000),
+            0,
+            "set_time_based_filter_ns failed"
+        );
+        let _ = zerodds_writer_wait_for_matched(writer, 1, 5_000);
+
+        // Burst of 8 samples well within the 10 s window.
+        for i in 0..8u8 {
+            let payload = [i, 0xAA, 0xBB, 0xCC];
+            assert_eq!(
+                zerodds_writer_write(writer, payload.as_ptr(), payload.len()),
+                0
+            );
+            thread::sleep(Duration::from_millis(10));
+        }
+
+        let mut received = 0;
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while std::time::Instant::now() < deadline {
+            let mut buf: *mut u8 = ptr::null_mut();
+            let mut len: usize = 0;
+            assert_eq!(
+                zerodds_reader_take(reader, &mut buf, &mut len, ptr::null_mut()),
+                0
+            );
+            if !buf.is_null() && len > 0 {
+                zerodds_buffer_free(buf, len);
+                received += 1;
+            } else {
+                thread::sleep(Duration::from_millis(20));
+            }
+        }
+
+        zerodds_writer_destroy(writer);
+        zerodds_reader_destroy(reader);
+        zerodds_runtime_destroy(rt_pub);
+        zerodds_runtime_destroy(rt_sub);
+
+        // TIME_BASED_FILTER must collapse the 8-sample burst to exactly one.
+        assert_eq!(
+            received, 1,
+            "TIME_BASED_FILTER should pass exactly 1 of the burst, got {received}"
+        );
     }
 }
 

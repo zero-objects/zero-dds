@@ -1,18 +1,122 @@
-target/
+# Rust build artifacts
+/target
+**/target/
 **/*.rs.bk
+Cargo.lock.bak
+
+# Lockfile: fuer Libraries nicht gecheckt,
+# fuer Binaries (tools/*) in separatem Workflow-Schritt behandelt.
+# Entscheidung: Workspace mit Bindings und Tools -> Cargo.lock committen.
+# Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Secrets / Local Environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+!tests/fixtures/**/*.pem
+!tests/fixtures/**/*.key
+!**/tests/fixtures/**/*.pem
+!**/tests/fixtures/**/*.key
+
+# github/ ist ein kuratierter Mirror (eigenes Sub-Repo mit eigenem .git),
+# der per Hand vom root-Stand befuellt wird. Vom root-Repo aus NICHT
+# tracken — sonst doppelte Versionierung.
+/github/
+
+# LLVM coverage instrumentation output (neben den bereits erfassten *.profraw/profdata)
+/target/llvm-cov-target
+/target/nextest
+
+# Claude Code working artifacts
+.claude/
+
+# Coverage
 *.profraw
 *.profdata
-.DS_Store
-**/.DS_Store
-Cargo.lock.bak
-tools/dashboard-tauri/dist/
+/coverage
 
-# Python build/test caches (vom Sync mitgekommen)
-**/__pycache__/
-**/*.pyc
+# Fuzzing
+/fuzz/target
+/fuzz/corpus
+/fuzz/artifacts
+
+# Benchmarks
+/target/criterion
+
+# Python artifacts (fuer dds-py Wheel-Builds)
+__pycache__/
+*.pyc
+*.egg-info/
 .pytest_cache/
-.DS_Store
 
-# C# build artifacts (stale rc.2 leftovers, never ship)
-crates/cs/csharp/**/bin/
-crates/cs/csharp/**/obj/
+# C# / .NET artifacts
+# (bin/obj nur in den tatsaechlichen .NET-Projekt-Verzeichnissen, nicht
+# global — sonst werden Rust-Binary-Module unter crates/*/src/bin/ auch
+# ignoriert. Pragmatischer Scope: das dds-cs-Crate und ggf. Tauri-Dashboard.)
+crates/cs/**/bin/
+crates/cs/**/obj/
+tools/dashboard/**/bin/
+tools/dashboard/**/obj/
+*.user
+
+# Java artifacts
+*.class
+/target-java
+crates/java-omgdds/java/target/
+
+# Node/Tauri artifacts (dds-dashboard)
+node_modules/
+/tools/dashboard/src-tauri/target
+/tools/dashboard/dist
+
+# Dokumentations-Builds
+/documentation/_build
+/documentation/.venv
+
+# LaTeX-Spec-Builds (Build-Output unter dds-*-1.0/main.pdf nicht
+# committen; releases/ wird hingegen explizit getrackt fuer Phase F).
+/documentation/specs/dds-amqp-1.0/main.pdf
+/documentation/specs/dds-ts-1.0/main.pdf
+/documentation/specs/**/main.aux
+/documentation/specs/**/main.log
+/documentation/specs/**/main.out
+/documentation/specs/**/main.toc
+/documentation/specs/**/main.synctex.gz
+/documentation/specs/**/build/
+
+# Standards-Cache — per internal/standards/fetch.sh lokal erzeugt,
+# aus IP-/Copyright-Gruenden nicht im Repo tracken (siehe internal/standards/README.md)
+/internal/standards/cache/*
+!/internal/standards/cache/.gitkeep
+interop-artifacts/
+
+# cargo-mutants output (regeneriert pro Run, sehr gross)
+/mutants-out
+
+# Lokales Test-Konzept-Doc (Input-Only, nicht versioniert)
+tests.docx
+
+# Maturin/PyO3 compiled Python module (built by 'maturin develop')
+crates/py/python/zerodds/_core*.so
+crates/py/python/zerodds/_core*.dylib
+
+# Playwright MCP cache
+.playwright-mcp/
+
+# Publish-run artifacts (manually generated, run-specific). scripts/publish-crates.sh
+# writes .publish-<version>.{order,log}; the broad glob covers every version slug.
+.publish-*
+.dryrun-*
+
+# The public example mirror (zerodds-examples / "zero-dds-snippets") is its own
+# git repository checked out inside this tree — never track it from the root.
+/zerodds-examples/

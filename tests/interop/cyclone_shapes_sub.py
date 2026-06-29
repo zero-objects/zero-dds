@@ -9,7 +9,6 @@ CLI:
     python3 cyclone_shapes_sub.py [topic=Square] [domain=0]
 """
 
-from __future__ import annotations
 
 import sys
 import time
@@ -25,10 +24,11 @@ from cyclonedds.topic import Topic  # type: ignore[import-not-found]
 
 @dataclass
 class ShapeType(IdlStruct, typename="ShapeType"):
-    color: key[bounded_str[128]] = ""
+    color: bounded_str[128] = ""
     x: int32 = 0
     y: int32 = 0
     shapesize: int32 = 0
+    key("color")
 
 
 def main() -> int:
@@ -47,7 +47,7 @@ def main() -> int:
 
     try:
         while True:
-            samples = reader.take(n=100)
+            samples = reader.take(N=100)
             for s in samples:
                 # `s.sample_info` ist cyclonedds-python-spezifisch;
                 # auf einigen Versionen ist es direkt auf der Instance.

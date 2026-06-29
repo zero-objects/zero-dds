@@ -4,7 +4,7 @@
 //! OMG RTC 1.0 — Robotic Technology Component.
 //!
 //! Crate `zerodds-rtc`. Safety classification: **STANDARD**.
-//! Spec `formal/2008-04-04` (`docs/standards/cache/omg/rtc-1.0.pdf`).
+//! Spec `formal/2008-04-04` (`internal/standards/cache/omg/rtc-1.0.pdf`).
 //!
 //! # Scope
 //!

@@ -67,7 +67,7 @@ The workspace comprises the following crates. Each row marks the safety classifi
 | `zerodds-cdr` | Safe | Yes | XCDR1/XCDR2 encoder/decoder, endianness, alignment |
 | `zerodds-types` | Safe | Yes | XTypes type system, TypeObject, TypeIdentifier, compatibility |
 | `zerodds-qos` | Safe | Yes | QoS policies, request/offered compatibility matrix, typestate compatibility |
-| `zerodds-idl` | Safe | No (std-only) | IDL4 parser, AST, semantic model (OMG IDL 4.2). Grammar-driven (Earley engine), build-time tool — no embedded use case. Consumed by `zerodds-idlc`. See `docs/rfcs/0001-idl-parser-architecture.md` |
+| `zerodds-idl` | Safe | No (std-only) | IDL4 parser, AST, semantic model (OMG IDL 4.2). Grammar-driven (Earley engine), build-time tool — no embedded use case. Consumed by `zerodds-idlc`. See `internal/rfcs/0001-idl-parser-architecture.md` |
 | `zerodds-rtps` | Safe | Yes | Writer/reader state machines, Heartbeat/Acknack/Gap/Data submessages, fragmentation |
 | `zerodds-discovery` | Safe | Yes | SPDP, SEDP, TypeLookup service |
 

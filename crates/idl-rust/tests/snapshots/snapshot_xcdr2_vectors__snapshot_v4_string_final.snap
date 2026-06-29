@@ -1,5 +1,6 @@
 ---
 source: crates/idl-rust/tests/snapshot_xcdr2_vectors.rs
+assertion_line: 52
 expression: "gen_default(\"@final struct Greeting { string text; };\")"
 ---
 // SPDX-License-Identifier: Apache-2.0
@@ -7,6 +8,7 @@ expression: "gen_default(\"@final struct Greeting { string text; };\")"
 
 #![allow(clippy::too_many_lines)]
 #![allow(unused_imports)]
+#![allow(non_snake_case)]
 
 use zerodds_cdr::{BufferReader, BufferWriter, CdrDecode, CdrEncode, DecodeError, EncodeError, Endianness};
 
@@ -19,10 +21,17 @@ pub struct Greeting {
 impl zerodds_dcps::DdsType for Greeting {
     const TYPE_NAME: &'static str = "Greeting";
     const EXTENSIBILITY: zerodds_dcps::Extensibility = zerodds_dcps::Extensibility::Final;
-    const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0xed, 0xcf, 0x50, 0xd2, 0x7a, 0x69, 0x4f, 0x5e, 0x86, 0xc7, 0x12, 0x29, 0x07, 0xdf]));
+    const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0xc2, 0x01, 0xa8, 0xbe, 0x77, 0x6d, 0x62, 0x0f, 0xe2, 0x69, 0x94, 0x15, 0xa5, 0xc6]));
 
     fn encode(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
         let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little).xcdr2();
+        <_ as zerodds_cdr::CdrEncode>::encode(&self.text, &mut writer)?;
+        out.extend_from_slice(&writer.into_bytes());
+        Ok(())
+    }
+
+    fn encode_be(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
+        let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Big).xcdr2();
         <_ as zerodds_cdr::CdrEncode>::encode(&self.text, &mut writer)?;
         out.extend_from_slice(&writer.into_bytes());
         Ok(())
@@ -34,6 +43,26 @@ impl zerodds_dcps::DdsType for Greeting {
         Ok(Self {
             text,
         })
+    }
+
+    fn decode_be(bytes: &[u8]) -> ::core::result::Result<Self, zerodds_dcps::DecodeError> {
+        let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Big).xcdr2();
+        let text = <String as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
+        Ok(Self {
+            text,
+        })
+    }
+
+    fn encode_xcdr1(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
+        let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little);
+        <Self as zerodds_cdr::CdrEncode>::encode(self, &mut writer)?;
+        out.extend_from_slice(&writer.into_bytes());
+        Ok(())
+    }
+
+    fn decode_xcdr1(bytes: &[u8]) -> ::core::result::Result<Self, zerodds_dcps::DecodeError> {
+        let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Little);
+        <Self as zerodds_cdr::CdrDecode>::decode(&mut reader).map_err(::core::convert::Into::into)
     }
 
     fn field_value(&self, path: &str) -> ::core::option::Option<zerodds_sql_filter::Value> {

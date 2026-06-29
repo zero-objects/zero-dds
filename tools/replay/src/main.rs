@@ -25,6 +25,7 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use zerodds_recorder::{RecordReader, ZDDSREC_VERSION};
+use zerodds_recorder_decode::replay_source::{RecordedSample, from_ndjson, from_sqlite};
 
 fn print_help() {
     println!(
@@ -35,6 +36,10 @@ USAGE:
   zerodds-replay dump FILE
   zerodds-replay replay FILE [--time-scale F] [--topic NAME]...
                          [--inject [--inject-domain N]]
+
+  replay accepts .zddsrec (native), .json/.ndjson (decoded NDJSON) and
+  .db/.sqlite (decoded SQLite). All three re-publish byte-exact from the
+  retained raw CDR bytes.
 
 OPTIONS:
   --time-scale F      1.0 = wallclock; 60.0 = 1h Trace in 1min, etc.
@@ -129,7 +134,96 @@ struct ReplayOptions {
     inject_domain: u32,
 }
 
+/// Input capture format, detected from the file extension.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Format {
+    /// Native `.zddsrec` binary capture (streamed via `RecordReader`).
+    Zddsrec,
+    /// Decoded NDJSON (one sample per line, `raw_cdr` hex).
+    Ndjson,
+    /// Decoded SQLite (per-topic tables, `raw_cdr` BLOB).
+    Sqlite,
+}
+
+/// Detect the capture format from the path extension. Unknown / absent
+/// extensions default to `.zddsrec` (the native binary format).
+fn detect_format(path: &std::path::Path) -> Format {
+    match path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("json" | "ndjson" | "jsonl") => Format::Ndjson,
+        Some("db" | "sqlite" | "sqlite3") => Format::Sqlite,
+        _ => Format::Zddsrec,
+    }
+}
+
+/// Replay dispatcher: pick the reader by format. All three formats carry the
+/// raw CDR bytes, so re-injection is byte-exact regardless of source.
 fn cmd_replay(path: &PathBuf, opts: &ReplayOptions) -> Result<(), String> {
+    match detect_format(path) {
+        Format::Zddsrec => cmd_replay_zddsrec(path, opts),
+        Format::Ndjson => {
+            let f = fs::File::open(path).map_err(|e| format!("open {path:?}: {e}"))?;
+            let samples =
+                from_ndjson(std::io::BufReader::new(f)).map_err(|e| format!("ndjson: {e}"))?;
+            replay_decoded(&samples, opts)
+        }
+        Format::Sqlite => {
+            let p = path.to_str().ok_or("non-UTF8 path")?;
+            let samples = from_sqlite(p).map_err(|e| format!("sqlite: {e}"))?;
+            replay_decoded(&samples, opts)
+        }
+    }
+}
+
+/// Replay a flat list of decoded samples (NDJSON / SQLite source). Shares the
+/// pacing + inject/stdout behaviour of the `.zddsrec` path; the `raw_cdr` bytes
+/// re-publish byte-exact.
+fn replay_decoded(samples: &[RecordedSample], opts: &ReplayOptions) -> Result<(), String> {
+    let scale = if opts.time_scale > 0.0 {
+        opts.time_scale
+    } else {
+        1.0
+    };
+    let mut inject_state = if opts.inject_dcps {
+        Some(InjectState::new(opts.inject_domain)?)
+    } else {
+        None
+    };
+    let start_wall = Instant::now();
+    let mut first_ts: Option<i64> = None;
+    let mut emitted = 0u64;
+    for s in samples {
+        if !opts.topic_filter.is_empty() && !opts.topic_filter.contains(&s.topic) {
+            continue;
+        }
+        let first = *first_ts.get_or_insert(s.recv_ts_ns);
+        let rel_ns = s.recv_ts_ns - first;
+        let target = Duration::from_nanos((rel_ns as f64 / scale).max(0.0) as u64);
+        let now = start_wall.elapsed();
+        if target > now {
+            thread::sleep(target - now);
+        }
+        match &mut inject_state {
+            Some(st) => st.publish(&s.topic, &s.type_name, &s.raw_cdr)?,
+            None => println!(
+                "REPLAY t={} topic={} type={} bytes={}",
+                s.recv_ts_ns,
+                s.topic,
+                s.type_name,
+                s.raw_cdr.len()
+            ),
+        }
+        emitted += 1;
+    }
+    eprintln!("replay: {emitted} samples emitted");
+    Ok(())
+}
+
+fn cmd_replay_zddsrec(path: &PathBuf, opts: &ReplayOptions) -> Result<(), String> {
     let bytes = fs::read(path).map_err(|e| format!("read {path:?}: {e}"))?;
     let mut r = RecordReader::new(&bytes);
     let h = r.parse_header().map_err(|e| format!("parse header: {e}"))?;

@@ -284,7 +284,86 @@ mod tests {
     #[test]
     fn inheritance_emits_public_base() {
         let cpp = gen_cpp("struct Parent { long x; }; struct Child : Parent { long y; };");
-        assert!(cpp.contains("class Child : public Parent"));
+        // Base reference is absolutely qualified (`::Parent`) so it resolves at
+        // any scope — see the type-path registry in emitter.rs.
+        assert!(cpp.contains("class Child : public ::Parent"));
+    }
+
+    /// Regression for Bug B (unqualified nested types) + Bug F (typedef-to-
+    /// primitive members silently dropped). Models the NGVA shape (AEP-4754
+    /// Vol V §8.1.3): typedef-in-units + enum + nested struct as members.
+    #[test]
+    fn ngva_typedef_serialized_and_nested_qualified() {
+        let cpp = gen_cpp(
+            "module nga { \
+               typedef double CurrentInAmpsType; \
+               enum CoordinateSystemType { COORDINATE_SYSTEM_TYPE__BNG }; \
+               struct LinearVelocity2DType { double xComponent; double yComponent; }; \
+               struct Navigation_Resource_Specification { \
+                 @key string<32>      vehicleId; \
+                 CurrentInAmpsType    batteryCurrent; \
+                 CoordinateSystemType coordinateSystem; \
+                 LinearVelocity2DType velocity; \
+               }; };",
+        );
+        // Bug F: no member is skipped (typedef-to-primitive resolves to double).
+        assert!(
+            !cpp.contains("not supported (skip)"),
+            "typedef/nested members must not be skipped (Bug F)"
+        );
+        // Bug B: nested struct + enum referenced with absolute namespace.
+        assert!(
+            cpp.contains("::nga::LinearVelocity2DType"),
+            "nested struct must be absolutely qualified (Bug B)"
+        );
+        assert!(
+            cpp.contains("::nga::CoordinateSystemType"),
+            "nested enum must be absolutely qualified (Bug B)"
+        );
+    }
+
+    /// Regression for Bug G: a self-referential recursive type
+    /// (XTypes §7.4.5) once stack-overflowed the generator (the encodability
+    /// walk `scoped_struct` → `typespec_supported` → `scoped_struct` cycled
+    /// forever). It must now generate without panicking, store the recursion
+    /// behind a `std::vector` (heap indirection), and serialize the recursive
+    /// member via the splice path — never dropping it ("not supported (skip)").
+    #[test]
+    fn recursive_struct_generates_without_overflow_and_no_skip() {
+        let cpp = gen_cpp(
+            "module conf { \
+               struct TreeNode { long value; sequence<TreeNode> children; }; \
+             };",
+        );
+        assert!(
+            cpp.contains("std::vector<::conf::TreeNode>"),
+            "recursion must be stored behind a vector (heap indirection)"
+        );
+        assert!(
+            !cpp.contains("not supported (skip)"),
+            "recursive member must be serialized, not dropped (no wire data loss)"
+        );
+        // The splice path references the type's own type_support, not an
+        // (infinite) inline expansion.
+        assert!(
+            cpp.contains("topic_type_support<::conf::TreeNode>"),
+            "recursive member must splice via its own topic_type_support"
+        );
+    }
+
+    /// Regression for Bug G: a forward-declared struct that is then
+    /// self-referential must also generate cleanly (the forward decl was the
+    /// second crash trigger).
+    #[test]
+    fn forward_declared_recursive_struct_generates() {
+        let cpp = gen_cpp(
+            "module conf { \
+               struct Node; \
+               struct Node { long v; sequence<Node> next; }; \
+             };",
+        );
+        assert!(cpp.contains("std::vector<::conf::Node>"));
+        assert!(!cpp.contains("not supported (skip)"));
     }
 
     #[test]

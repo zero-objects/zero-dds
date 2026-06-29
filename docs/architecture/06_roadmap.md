@@ -36,7 +36,7 @@
   at least one vendor delta (RTI or Cyclone) as proof of concept.
   Migration capability is an explicit sales argument against eProsima/RTI
   (see `07_risks_and_strategy.md §3.2`). Scope and milestones:
-  `docs/rfcs/0001-idl-parser-architecture.md` and
+  `internal/rfcs/0001-idl-parser-architecture.md` and
   `.planning/wp-0.3-idl-parser/PLAN.md`
 - CDR/XCDR1 prototype: serializes/deserializes the base types from the XTypes spec annex
 - UDP transport and a simplest best-effort writer/reader communicate between two test binaries
@@ -50,7 +50,7 @@
 |---|---|---|
 | WP 0.1: Architecture review cycle | Team internal, moderated by the tech lead | Document coherence checks |
 | WP 0.2: Workspace skeleton + CI | Platform | Template generation, CI config |
-| WP 0.3: IDL4 parser (grammar-driven, full scope) | Protocol | Earley engine, BNF transcription, AST, vendor-delta PoC. See `docs/rfcs/0001-idl-parser-architecture.md` and `.planning/wp-0.3-idl-parser/PLAN.md`. **Scope change 2026-04-17:** expanded from "prototype parses samples" to a full IDL 4.2 parser with migration capability; duration 5–7 weeks instead of 1–2 weeks. **Status 2026-04-18: COMPLETE** (M1–M7 reached; 442 lib + integration tests green, RTI delta as PoC, `zerodds-idlc --parse-only` functional; see `crates/idl/README.md`) |
+| WP 0.3: IDL4 parser (grammar-driven, full scope) | Protocol | Earley engine, BNF transcription, AST, vendor-delta PoC. See `internal/rfcs/0001-idl-parser-architecture.md` and `.planning/wp-0.3-idl-parser/PLAN.md`. **Scope change 2026-04-17:** expanded from "prototype parses samples" to a full IDL 4.2 parser with migration capability; duration 5–7 weeks instead of 1–2 weeks. **Status 2026-04-18: COMPLETE** (M1–M7 reached; 442 lib + integration tests green, RTI delta as PoC, `zerodds-idlc --parse-only` functional; see `crates/idl/README.md`) |
 | WP 0.4: CDR prototype | Protocol | XCDR2 encoder/decoder (primitives/composite/extensibility). **Status 2026-04-18: COMPLETE** (4-week spike; 84 lib + 7 integration tests; see `crates/cdr/README.md` and `.planning/wp-0.4-cdr-prototyp/PLAN.md`) |
 | WP 0.5: UDP + minimal RTPS writer | Protocol | RTPS wire types + submessages (DATA/HEARTBEAT/ACKNACK/GAP) + UDP transport + best-effort writer/reader. **Status 2026-04-18: COMPLETE** (4-week spike; 88 zerodds-rtps + 6 zerodds-transport + 9 zerodds-transport-udp tests; E2E write→UDP→read functional; see `crates/rtps/README.md`) |
 | WP 0.6: Cyclone interop harness | Platform | Wire compliance against Cyclone DDS reference frames + docker-compose harness for future live captures. **Status 2026-04-18: COMPLETE** (2-week spike; 11 compliance tests; ZeroDDS DATA bytes byte-identical to the Cyclone layout. Live interop needs discovery from Phase 1 — see `tests/interop/COMPLIANCE.md`) |

@@ -42,9 +42,9 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use ring::hkdf;
-use ring::hmac;
-use ring::rand::{SecureRandom, SystemRandom};
+use crate::backend::hkdf;
+use crate::backend::hmac;
+use crate::backend::rand::{SecureRandom, SystemRandom};
 use zerodds_security::authentication::{
     AuthenticationPlugin, HandshakeHandle, HandshakeStepOutcome, IdentityHandle,
     SharedSecretHandle, SharedSecretProvider,

@@ -32,7 +32,7 @@ set -euo pipefail
 
 GITREF="${GITREF:-main}"
 COMMIT="${COMMIT:-${GITREF}}"
-REPO_URL="${REPO_URL:-https://gitlab.sandra-kessler.eu/fishermen21/zerodds.git}"
+REPO_URL="${REPO_URL:-https://github.com/zero-objects/zero-dds.git}"
 WORKDIR="${WORKDIR:-$HOME/zerodds-bench/$COMMIT}"
 OUTDIR="${OUTDIR:-$WORKDIR/bench-output}"
 RUNTIME_SECS="${RUNTIME_SECS:-60}"

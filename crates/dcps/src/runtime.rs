@@ -106,6 +106,47 @@ fn deadline_compat(offered_nanos: u64, requested_nanos: u64) -> bool {
 
 /// Partition matching: both sides have at least one common partition OR
 /// both are empty (default partition "").
+/// Enforces a per-instance KeepLast depth over a TransientLocal retained-sample
+/// buffer (DDS 1.4 §2.2.3.18). Keeps at most `depth` *Alive* entries per
+/// instance key (oldest evicted first), preserving order; terminal lifecycle
+/// markers (dispose/unregister) are never counted against the depth and are
+/// always retained so a late joiner observes the final NOT_ALIVE state.
+fn enforce_retained_depth(
+    retained: &mut alloc::collections::VecDeque<RetainedSample>,
+    depth: usize,
+) {
+    use alloc::collections::BTreeMap;
+    // Count alive samples per key.
+    let mut alive_per_key: BTreeMap<[u8; 16], usize> = BTreeMap::new();
+    for s in retained.iter() {
+        if s.lifecycle.is_none() {
+            *alive_per_key.entry(s.key_hash).or_insert(0) += 1;
+        }
+    }
+    // Determine how many to drop per key.
+    let mut to_drop: BTreeMap<[u8; 16], usize> = BTreeMap::new();
+    for (k, count) in &alive_per_key {
+        if *count > depth {
+            to_drop.insert(*k, count - depth);
+        }
+    }
+    if to_drop.is_empty() {
+        return;
+    }
+    retained.retain(|s| {
+        if s.lifecycle.is_some() {
+            return true;
+        }
+        if let Some(rem) = to_drop.get_mut(&s.key_hash) {
+            if *rem > 0 {
+                *rem -= 1;
+                return false; // evict this (oldest) alive sample for the key
+            }
+        }
+        true
+    });
+}
+
 fn partitions_overlap(offered: &[String], requested: &[String]) -> bool {
     if offered.is_empty() && requested.is_empty() {
         return true;
@@ -293,7 +334,11 @@ pub const USER_PAYLOAD_ENCAP: [u8; 4] = [0x00, 0x01, 0x00, 0x00];
 ///   XCDR2 appendable       -> D_CDR2_LE      `0x0009`
 ///   XCDR2 mutable          -> PL_CDR2_LE     `0x000b`
 #[must_use]
-fn user_payload_encap(offer_first: i16, ext: zerodds_types::qos::ExtensibilityForRepr) -> [u8; 4] {
+fn user_payload_encap(
+    offer_first: i16,
+    ext: zerodds_types::qos::ExtensibilityForRepr,
+    big_endian: bool,
+) -> [u8; 4] {
     use zerodds_rtps::publication_data::data_representation as dr;
     use zerodds_types::qos::ExtensibilityForRepr::{Appendable, Final, Mutable};
     let id: u8 = match (offer_first, ext) {
@@ -306,6 +351,10 @@ fn user_payload_encap(offer_first: i16, ext: zerodds_types::qos::ExtensibilityFo
         // (dr::XCDR, Final|Appendable) as well as XML/unknown -> CDR_LE.
         _ => 0x01,
     };
+    // RTPS 2.5 §10.5: the `_LE` representation ids are odd, the matching `_BE`
+    // ones are the even predecessor (CDR_BE 0x00, CDR2_BE 0x06, D_CDR2_BE 0x08,
+    // PL_CDR2_BE 0x0a). Clearing the low bit converts LE -> BE.
+    let id = if big_endian { id & 0xFE } else { id };
     [0x00, id, 0x00, 0x00]
 }
 
@@ -345,8 +394,12 @@ fn write_user_sample_pooled(
     // `heartbeat_period` ms, default 100 ms); we no longer attach `_now`
     // to `last_heartbeat`, because we emit nothing.
     let _ = now;
+    // RTPS-F1: attach the wall-clock source timestamp so the peer can populate
+    // SampleInfo.source_timestamp + honour DESTINATION_ORDER = BY_SOURCE_TIMESTAMP
+    // (DDSI-RTPS §8.7.3). The writer prepends an INFO_TS before the DATA.
+    let source_ts = crate::time::time_to_he_timestamp(crate::time::get_current_time());
     writer
-        .write(frame.as_slice())
+        .write_stamped(frame.as_slice(), Some(source_ts))
         .map_err(|_| DdsError::WireError {
             message: String::from("user writer encode"),
         })
@@ -565,6 +618,18 @@ pub struct RuntimeConfig {
     /// multicast packet — for networks that drop multicast (WiFi/cloud
     /// VPC), and for a rigorous multicast-free discovery proof.
     pub spdp_multicast_send: bool,
+
+    /// A1: **discovery-server** mode. When `true`, this participant relays the
+    /// raw SPDP (participant-locator) announcements between the clients that
+    /// point their [`Self::initial_peers`] at it — so N clients discover each
+    /// other through one well-known address instead of an O(N²) peer list or
+    /// multicast. Crucially it relays **only SPDP** (participant discovery);
+    /// SEDP (endpoint discovery, incl. dynamically-created ROS-2 Action
+    /// endpoints) then happens **directly peer-to-peer** between the real
+    /// participants — which is exactly why ROS-2 Actions work over it, unlike a
+    /// SEDP-proxying discovery server. Default `false`. Plain discovery only
+    /// (DDS-Security secured discovery-server relay is a follow-up).
+    pub discovery_server: bool,
 
     /// C3: max reassemblable sample size (DoS cap of the fragment
     /// assembler). Larger samples are silently discarded. The rtps
@@ -1069,6 +1134,11 @@ impl Default for RuntimeConfig {
             spdp_multicast_send: std::env::var("ZERODDS_NO_MULTICAST")
                 .map(|v| v.is_empty())
                 .unwrap_or(true),
+            // A1: off by default; env `ZERODDS_DISCOVERY_SERVER` (any non-empty
+            // value) or `RuntimeConfig::discovery_server()` turns the relay on.
+            discovery_server: std::env::var("ZERODDS_DISCOVERY_SERVER")
+                .map(|v| !v.is_empty())
+                .unwrap_or(false),
             // C3: 16 MiB default (suitable for ROS PointCloud2/Image),
             // env override `ZERODDS_MAX_SAMPLE_BYTES`.
             max_reassembly_sample_bytes: std::env::var("ZERODDS_MAX_SAMPLE_BYTES")
@@ -1227,6 +1297,29 @@ impl RuntimeConfig {
             spdp_multicast_send: false,
             participant_lease_duration: Duration::from_secs(300),
             ..Self::default()
+        }
+    }
+
+    /// A1 — **discovery-server** profile (the server side). Multicast-free, with
+    /// the SPDP relay on ([`Self::discovery_server`]): clients point their
+    /// `initial_peers`/`ZERODDS_PEERS` at this one well-known address and the
+    /// server bridges their participant discovery, so N clients find each other
+    /// without an O(N²) peer list or multicast. SEDP (incl. ROS-2 Action
+    /// endpoints) stays direct peer-to-peer — no SEDP proxy, no Action breakage.
+    ///
+    /// Clients run with [`RuntimeConfig::multi_robot`] (or any multicast-free
+    /// config) and set `ZERODDS_PEERS` to the server's address.
+    ///
+    /// ```
+    /// use zerodds_dcps::runtime::RuntimeConfig;
+    /// let server = RuntimeConfig::discovery_server();
+    /// assert!(server.discovery_server);
+    /// assert!(!server.spdp_multicast_send); // unicast-only
+    /// ```
+    pub fn discovery_server() -> Self {
+        Self {
+            discovery_server: true,
+            ..Self::multi_robot()
         }
     }
 }
@@ -1921,6 +2014,12 @@ struct UserWriterSlot {
     /// `set_user_writer_wire_extensibility` when the type
     /// is appendable/mutable (relevant for XCDR2 wire: D_CDR2/PL_CDR2).
     wire_extensibility: zerodds_types::qos::ExtensibilityForRepr,
+    /// Emit the big-endian encapsulation variant (`_BE`, RTPS 2.5 §10.5)
+    /// instead of the little-endian default. Set by the durability service
+    /// replay path so a big-endian peer's stored sample is re-published with a
+    /// matching BE encap header (the body bytes are already big-endian). `false`
+    /// = little-endian (the canonical wire for a normal writer).
+    big_endian_override: bool,
     /// Spec §2.2.3.5 DurabilityService — with Durability=Transient/
     /// Persistent the backend holds in addition to the writer's own
     /// HistoryCache. On the first late-joiner match in
@@ -1932,6 +2031,45 @@ struct UserWriterSlot {
     /// `true` as soon as the backend has been replayed once into the
     /// HistoryCache. Prevents repeated re-injection on further matches.
     backend_primed: bool,
+    /// HISTORY KeepLast depth (DDS 1.4 §2.2.3.18). Per-instance retained-sample
+    /// depth for the same-runtime durability replay path. Default
+    /// [`DEFAULT_INTRA_HISTORY_DEPTH`]. KeepAll is modelled as `usize::MAX`.
+    /// Settable via [`DcpsRuntime::set_user_writer_history_depth`].
+    history_depth: usize,
+    /// TRANSIENT_LOCAL retained samples (DDS 1.4 §2.2.3.4) for the
+    /// same-runtime late-joiner replay path. Holds the *most recent*
+    /// `history_depth` Alive samples **per instance key** plus any
+    /// terminal lifecycle marker for an instance. A reader that joins an
+    /// intra-runtime route AFTER these writes replays this buffer so it sees
+    /// the retained history (the wire/SEDP path is separate, see
+    /// `wire_writer_to_remote_reader`). Empty unless durability is
+    /// TransientLocal or stronger.
+    retained: alloc::collections::VecDeque<RetainedSample>,
+    /// Set of intra-runtime reader EntityIds that have already received the
+    /// TransientLocal retained-sample replay, so a route recompute does not
+    /// replay the same history twice to the same reader.
+    intra_replayed_readers: alloc::collections::BTreeSet<EntityId>,
+}
+
+/// Default same-runtime HISTORY KeepLast depth when the user has not called
+/// [`DcpsRuntime::set_user_writer_history_depth`]. Mirrors the DDS spec default
+/// of `depth = 1` for KEEP_LAST (DDS 1.4 §2.2.3.18 Table).
+const DEFAULT_INTRA_HISTORY_DEPTH: usize = 1;
+
+/// One retained sample for the same-runtime TransientLocal replay path.
+#[derive(Debug, Clone)]
+struct RetainedSample {
+    /// Instance key hash (16 byte). All-zero for NoKey topics / unknown key.
+    key_hash: [u8; 16],
+    /// CDR body without encapsulation header.
+    payload: Vec<u8>,
+    /// XCDR version tag (`0` = XCDR1, `1` = XCDR2).
+    representation: u8,
+    /// Writer ownership strength at write time.
+    strength: i32,
+    /// `Some(kind)` if this entry is a terminal lifecycle marker
+    /// (dispose / unregister) rather than an alive sample.
+    lifecycle: Option<zerodds_rtps::history_cache::ChangeKind>,
 }
 
 /// The listener dispatch carries, alongside the `UserSample`, a
@@ -1969,6 +2107,18 @@ pub enum UserSample {
         /// needs this to decode the body with the correct alignment rule
         /// (XTypes 1.3 §7.4.3.4.2).
         representation: u8,
+        /// Byte order of the `payload` — extracted from the encapsulation
+        /// representation identifier's low bit (RTPS 2.5 §10.5: the `_BE`
+        /// variants 0x0000/0x0002/0x0006/0x0008/0x000a are even, the `_LE`
+        /// variants odd). `false` = little-endian (the canonical wire and the
+        /// intra-runtime default), `true` = big-endian. The typed consumer
+        /// dispatches `DdsType::decode` vs `decode_be` on this.
+        big_endian: bool,
+        /// Source timestamp from the writer's INFO_TS submessage (DDSI-RTPS
+        /// §8.7.3), if any. Threaded into `SampleInfo.source_timestamp` and the
+        /// `DESTINATION_ORDER = BY_SOURCE_TIMESTAMP` decision. `None` ⇒ the
+        /// reader uses reception order.
+        source_timestamp: Option<zerodds_rtps::header_extension::HeTimestamp>,
     },
     /// Lifecycle marker (dispose / unregister) — the reader sets
     /// InstanceState accordingly.
@@ -2006,7 +2156,7 @@ pub enum UserSample {
 /// header) and the XCDR version of the sample (`0` = XCDR1, `1` = XCDR2)
 /// — the typed consumer needs the latter for the alignment
 /// rule on decode (XTypes 1.3 §7.4.3.4.2).
-pub type UserReaderListener = alloc::boxed::Box<dyn Fn(&[u8], u8) + Send + Sync + 'static>;
+pub type UserReaderListener = alloc::boxed::Box<dyn Fn(&[u8], u8, u8) + Send + Sync + 'static>;
 
 struct UserReaderSlot {
     reader: ReliableReader,
@@ -2059,6 +2209,11 @@ struct UserReaderSlot {
     liveliness_not_alive_count: u64,
     /// Current "alive/not-alive" state from the reader's view.
     liveliness_alive: bool,
+    /// QR-cluster (e): set of writer GUIDs the reader currently considers alive
+    /// via an AUTOMATIC-liveliness same-runtime match. Used to bump
+    /// `liveliness_alive_count` exactly once per writer-alive transition on the
+    /// intra-runtime path (the wire DATA path tracks this via reader proxies).
+    liveliness_alive_writers: alloc::collections::BTreeSet<[u8; 16]>,
     /// Ownership.
     ownership: zerodds_qos::OwnershipKind,
     /// Partition.
@@ -2078,6 +2233,38 @@ struct UserReaderSlot {
     /// XTypes 1.3 §7.6.3.7 — TCE policy controlling the strictness
     /// of the XTypes match path.
     type_consistency: zerodds_types::qos::TypeConsistencyEnforcement,
+    /// A2 — TIME_BASED_FILTER `minimum_separation` (DDS 1.4 §2.2.3.12), in
+    /// nanoseconds, for the runtime/C-FFI delivery path. `0` (default) = off.
+    /// Set via [`DcpsRuntime::set_user_reader_time_based_filter`] (the
+    /// `rmw_zerodds` / C-FFI path; the typed entity reader enforces TBF on its
+    /// own QoS). See [`UserReaderSlot::tbf_should_deliver`].
+    tbf_min_separation_nanos: u128,
+    /// Per-instance last-delivered timestamp (nanoseconds since runtime start),
+    /// keyed by the sample KeyHash (keyless types share the all-zero key). Only
+    /// populated when `tbf_min_separation_nanos > 0`.
+    tbf_last_delivered: alloc::collections::BTreeMap<[u8; 16], u128>,
+}
+
+impl UserReaderSlot {
+    /// A2 — TIME_BASED_FILTER gate (DDS 1.4 §2.2.3.12) for the runtime delivery
+    /// path: returns `true` if a sample of the given instance may be delivered,
+    /// i.e. at least `minimum_separation` has elapsed since the last delivered
+    /// sample of that instance. The first sample of an instance always passes.
+    /// `key_hash = None` (keyless type) collapses to a single instance. A
+    /// `minimum_separation` of 0 disables the filter (always `true`).
+    fn tbf_should_deliver(&mut self, key_hash: Option<[u8; 16]>, now_nanos: u128) -> bool {
+        if self.tbf_min_separation_nanos == 0 {
+            return true;
+        }
+        let inst = key_hash.unwrap_or([0u8; 16]);
+        match self.tbf_last_delivered.get(&inst) {
+            Some(&last) if now_nanos.saturating_sub(last) < self.tbf_min_separation_nanos => false,
+            _ => {
+                self.tbf_last_delivered.insert(inst, now_nanos);
+                true
+            }
+        }
+    }
 }
 
 /// Helper struct for announcing a local publication/subscription
@@ -2255,6 +2442,32 @@ fn build_publication_data(
     }
 }
 
+/// The `DataRepresentation` set a **DataReader** announces (PID_DATA_REPRESENTATION
+/// in its SEDP subscription). Per OMG XTypes 1.3 §7.6.2, a reader with the
+/// default (empty) policy accepts **both** XCDR1 and XCDR2 — and ZeroDDS decodes
+/// both (the read path dispatches on the per-sample encapsulation id). So the
+/// reader advertises every representation it can decode, not just the writer's
+/// preferred one.
+///
+/// This matters cross-vendor: CycloneDDS (and legacy RTI / OpenDDS < 3.16)
+/// default their *writers* to **XCDR1** for `@final` types (non-XTypes backward
+/// compat). A reader that only announces XCDR2 makes those writers fail the
+/// `DataRepresentation` RxO check — the writer never forms a connection, and the
+/// samples are dropped before any are sent. We therefore start from the
+/// configured offer (which fixes the *preferred* order) and ensure both XCDR2
+/// and XCDR1 are present. A WRITER keeps the narrow offer (`build_publication_data`),
+/// because the generated encoder emits one representation.
+fn reader_accept_repr(configured_offer: &[i16]) -> Vec<i16> {
+    use zerodds_rtps::publication_data::data_representation as dr;
+    let mut out: Vec<i16> = configured_offer.to_vec();
+    for id in [dr::XCDR2, dr::XCDR] {
+        if !out.contains(&id) {
+            out.push(id);
+        }
+    }
+    out
+}
+
 fn build_subscription_data(
     owner_prefix: GuidPrefix,
     reader_eid: EntityId,
@@ -2349,6 +2562,11 @@ pub struct DcpsRuntime {
     spdp_reader: SpdpReader,
     /// Discovered remote participants (prefix → data).
     discovered: Arc<Mutex<DiscoveredParticipantsCache>>,
+    /// A1 discovery-server relay: cache of the last raw SPDP datagram per
+    /// discovered participant prefix. Only populated in `discovery_server` mode;
+    /// used to forward a newly-joined client the SPDP of every already-known
+    /// client (and vice versa). Empty otherwise.
+    spdp_relay_cache: Mutex<alloc::collections::BTreeMap<GuidPrefix, Vec<u8>>>,
     /// SEDP stack for publication/subscription announce + discovery.
     pub sedp: Arc<Mutex<SedpStack>>,
     /// TypeLookup-Service Builtin-Endpoint-GUIDs (XTypes 1.3 §7.6.3.3.4).
@@ -2506,6 +2724,16 @@ type WriterSlotArc = Arc<Mutex<UserWriterSlot>>;
 type ReaderSlotArc = Arc<Mutex<UserReaderSlot>>;
 
 impl DcpsRuntime {
+    /// The 16-byte RTPS GUID of a local writer with EntityId `eid` (this
+    /// participant's GUID prefix ++ the entity id). Used by the cross-vendor
+    /// iceoryx-cyclone bridge to stamp the PSMX chunk with the writer's real
+    /// GUID so a peer that discovered the writer over RTPS SEDP associates the
+    /// shared-memory sample with it.
+    #[must_use]
+    pub fn writer_guid(&self, eid: EntityId) -> [u8; 16] {
+        Guid::new(self.guid_prefix, eid).to_bytes()
+    }
+
     // ========================================================================
     // --- Per-Slot-Mutex-Helpers
     //
@@ -2804,6 +3032,7 @@ impl DcpsRuntime {
             announced_subs: Mutex::new(Vec::new()),
             spdp_reader: SpdpReader::new(),
             discovered: Arc::new(Mutex::new(DiscoveredParticipantsCache::new())),
+            spdp_relay_cache: Mutex::new(alloc::collections::BTreeMap::new()),
             sedp: Arc::new(Mutex::new(sedp)),
             type_lookup_endpoints: TypeLookupEndpoints::new(guid_prefix),
             type_lookup_server: Arc::new(Mutex::new(TypeLookupServer::new())),
@@ -4194,8 +4423,12 @@ impl DcpsRuntime {
                     // @final types. Appendable/mutable types set this later via
                     // set_user_writer_wire_extensibility.
                     wire_extensibility: zerodds_types::qos::ExtensibilityForRepr::Final,
+                    big_endian_override: false,
                     durability_backend: None,
                     backend_primed: false,
+                    history_depth: DEFAULT_INTRA_HISTORY_DEPTH,
+                    retained: alloc::collections::VecDeque::new(),
+                    intra_replayed_readers: alloc::collections::BTreeSet::new(),
                 })),
             );
         // FIRST match locally, THEN announce — symmetric to
@@ -4393,12 +4626,21 @@ impl DcpsRuntime {
                 ..AssemblerCaps::default()
             },
         });
+        // BEST_EFFORT readers must not block delivery on a leading sequence-number
+        // gap (RTPS §8.4.12.1) — they don't NACK to repair it, so waiting would
+        // deadlock against e.g. an OpenDDS/RTI writer whose first sample to us is
+        // mid-stream. Reliable readers keep strict in-order delivery.
+        let mut reader = reader;
+        reader.set_best_effort(!cfg.reliable);
         let (tx, rx) = mpsc::channel();
+        // A DataReader announces every representation it can decode (XCDR2 +
+        // XCDR1), not just the writer-preferred one — see `reader_accept_repr`.
+        let reader_repr = reader_accept_repr(&self.config.data_representation_offer);
         let mut sub_data = build_subscription_data(
             self.guid_prefix,
             eid,
             &cfg,
-            &self.config.data_representation_offer,
+            &reader_repr,
             self.user_announce_locator,
         );
         // FU2 cross-vendor: EndpointSecurityInfo from the governance (see writer).
@@ -4434,11 +4676,16 @@ impl DcpsRuntime {
                     // Optimistic init: we see the writer via SEDP,
                     // until the lease expires it counts as alive.
                     liveliness_alive: true,
+                    liveliness_alive_writers: alloc::collections::BTreeSet::new(),
                     ownership: cfg.ownership,
                     partition: cfg.partition.clone(),
                     writer_strengths: alloc::collections::BTreeMap::new(),
                     type_identifier: cfg.type_identifier.clone(),
                     type_consistency: cfg.type_consistency,
+                    // A2 — TIME_BASED_FILTER off by default; the C-FFI/rmw path
+                    // arms it via `set_user_reader_time_based_filter`.
+                    tbf_min_separation_nanos: 0,
+                    tbf_last_delivered: alloc::collections::BTreeMap::new(),
                 })),
             );
         // FIRST match locally (create the writer proxy on the reader),
@@ -4477,24 +4724,58 @@ impl DcpsRuntime {
         let writer_snap = self.writer_slots_snapshot();
         let reader_snap = self.reader_slots_snapshot();
         let mut new_map: BTreeMap<EntityId, Vec<EntityId>> = BTreeMap::new();
+        // QR-cluster (b): writers whose route gained a new reader and which are
+        // TransientLocal must replay their retained history to those readers.
+        // (writer_eid, reader_eid) pairs collected here, replayed after the
+        // routing lock is released.
+        let mut replay_targets: Vec<(EntityId, EntityId)> = Vec::new();
         for (writer_eid, w_arc) in writer_snap {
-            let (w_topic, w_type) = match w_arc.lock() {
-                Ok(s) => (s.topic_name.clone(), s.type_name.clone()),
+            let (w_topic, w_type, w_partition, w_transient_local) = match w_arc.lock() {
+                Ok(s) => (
+                    s.topic_name.clone(),
+                    s.type_name.clone(),
+                    s.partition.clone(),
+                    !matches!(s.durability, zerodds_qos::DurabilityKind::Volatile),
+                ),
                 Err(_) => continue,
             };
             let mut readers: Vec<EntityId> = Vec::new();
             for (reader_eid, r_arc) in &reader_snap {
                 let matches = match r_arc.lock() {
-                    Ok(s) => s.topic_name == w_topic && s.type_name == w_type,
+                    Ok(s) => {
+                        s.topic_name == w_topic
+                            && s.type_name == w_type
+                            // QR-cluster (c): PARTITION gates the same-runtime
+                            // match exactly as on the wire (DDS 1.4 §2.2.3.13).
+                            && partitions_overlap(&w_partition, &s.partition)
+                    }
                     Err(_) => false,
                 };
                 if matches {
                     readers.push(*reader_eid);
+                    // Schedule a TransientLocal replay if this writer has not yet
+                    // replayed to this reader.
+                    if w_transient_local {
+                        let already = w_arc
+                            .lock()
+                            .map(|s| s.intra_replayed_readers.contains(reader_eid))
+                            .unwrap_or(true);
+                        if !already {
+                            replay_targets.push((writer_eid, *reader_eid));
+                        }
+                    }
                 }
             }
             if !readers.is_empty() {
                 new_map.insert(writer_eid, readers);
             }
+        }
+        // Perform the TransientLocal retained-sample replay to each new reader
+        // (DDS 1.4 §2.2.3.4 late-joiner delivery). Done outside the routing
+        // lock; the per-writer slot lock guards `retained` + the
+        // already-replayed dedup set.
+        for (writer_eid, reader_eid) in replay_targets {
+            self.intra_runtime_replay_retained(writer_eid, reader_eid);
         }
         let changed = match self.intra_runtime_routes.write() {
             Ok(mut g) => {
@@ -4512,6 +4793,137 @@ impl DcpsRuntime {
         }
     }
 
+    /// QR-cluster (b): replays a TransientLocal writer's retained samples
+    /// (DDS 1.4 §2.2.3.4) to a single late-joining intra-runtime reader. Each
+    /// retained Alive entry is delivered as `UserSample::Alive`; each terminal
+    /// lifecycle entry as `UserSample::Lifecycle`, so the reader's instance
+    /// state reflects the most recent NOT_ALIVE_DISPOSED / NOT_ALIVE_NO_WRITERS.
+    /// Idempotent via the per-writer `intra_replayed_readers` set.
+    fn intra_runtime_replay_retained(&self, writer_eid: EntityId, reader_eid: EntityId) {
+        // Snapshot retained under the writer lock, mark replayed, then release.
+        let samples: Vec<RetainedSample> = {
+            let Some(w_arc) = self.writer_slot(writer_eid) else {
+                return;
+            };
+            let Ok(mut w) = w_arc.lock() else {
+                return;
+            };
+            if !w.intra_replayed_readers.insert(reader_eid) {
+                return; // already replayed to this reader
+            }
+            w.retained.iter().cloned().collect()
+        };
+        if samples.is_empty() {
+            return;
+        }
+        let Some(r_arc) = self.reader_slot(reader_eid) else {
+            return;
+        };
+        let writer_guid = Guid::new(self.guid_prefix, writer_eid).to_bytes();
+        let (listener, waker, sender) = {
+            let Ok(r) = r_arc.lock() else {
+                return;
+            };
+            (
+                r.listener.clone(),
+                Arc::clone(&r.async_waker),
+                r.sample_tx.clone(),
+            )
+        };
+        for s in samples {
+            match s.lifecycle {
+                None => {
+                    if let Some(l) = &listener {
+                        // Durability replay is little-endian (the store does not
+                        // retain the original byte order) → big_endian = 0.
+                        l(&s.payload, s.representation, 0);
+                    } else {
+                        let sample = UserSample::Alive {
+                            payload: crate::sample_bytes::SampleBytes::from_vec(s.payload.clone()),
+                            writer_guid,
+                            writer_strength: s.strength,
+                            representation: s.representation,
+                            // Durability replay: the store does not yet retain
+                            // the original byte order (ZeroDDS-internal samples
+                            // are little-endian); a big-endian peer's durable
+                            // sample would replay LE. Tracked as a durability
+                            // followup, not part of the live RTPS BE path.
+                            big_endian: false,
+                            // Durability replay: original source timestamp not
+                            // retained in the store today → reception order.
+                            source_timestamp: None,
+                        };
+                        let _ = sender.send(sample);
+                        wake_async_waker(&waker);
+                    }
+                }
+                Some(kind) => {
+                    // Lifecycle markers always go to the MPSC channel (the
+                    // alive-only listener does not carry instance state).
+                    let _ = sender.send(UserSample::Lifecycle {
+                        key_hash: s.key_hash,
+                        kind,
+                    });
+                    wake_async_waker(&waker);
+                }
+            }
+        }
+    }
+
+    /// QR-cluster (d): delivers a lifecycle marker (dispose / unregister) to all
+    /// matched intra-runtime readers (DDS 1.4 §2.2.2.4.2.10 / §2.2.2.4.2.7) so
+    /// their instance state becomes NOT_ALIVE_DISPOSED / NOT_ALIVE_NO_WRITERS,
+    /// and records it in the writer's retained buffer so a later late joiner
+    /// also observes the terminal state. The wire path is handled separately by
+    /// [`Self::write_user_lifecycle`].
+    fn intra_runtime_dispatch_lifecycle(
+        &self,
+        writer_eid: EntityId,
+        key_hash: [u8; 16],
+        kind: zerodds_rtps::history_cache::ChangeKind,
+    ) {
+        // Record in retained (terminal marker for the key) so future late
+        // joiners observe the NOT_ALIVE state.
+        if let Some(w_arc) = self.writer_slot(writer_eid) {
+            if let Ok(mut w) = w_arc.lock() {
+                if !matches!(w.durability, zerodds_qos::DurabilityKind::Volatile) {
+                    // Replace any prior terminal marker for this key; keep the
+                    // retained alive samples (the reader saw them already, but a
+                    // brand-new late joiner needs both the data and the state).
+                    w.retained
+                        .retain(|s| !(s.lifecycle.is_some() && s.key_hash == key_hash));
+                    w.retained.push_back(RetainedSample {
+                        key_hash,
+                        payload: Vec::new(),
+                        representation: 0,
+                        strength: 0,
+                        lifecycle: Some(kind),
+                    });
+                }
+            }
+        }
+        let routes: Vec<EntityId> = match self.intra_runtime_routes.read() {
+            Ok(g) => match g.get(&writer_eid) {
+                Some(v) => v.clone(),
+                None => return,
+            },
+            Err(_) => return,
+        };
+        for reader_eid in routes {
+            let Some(slot_arc) = self.reader_slot(reader_eid) else {
+                continue;
+            };
+            let (waker, sender) = {
+                let Ok(slot) = slot_arc.lock() else {
+                    continue;
+                };
+                (Arc::clone(&slot.async_waker), slot.sample_tx.clone())
+            };
+            let _ = sender.send(UserSample::Lifecycle { key_hash, kind });
+            wake_async_waker(&waker);
+        }
+    }
+
     /// Same-runtime direct dispatch: pushes the just-written
     /// sample directly into the `sample_tx` channel of all local readers
     /// on the same topic+type. Avoids an RTPS wire roundtrip + UDP
@@ -4523,6 +4935,14 @@ impl DcpsRuntime {
         writer_eid: EntityId,
         payload: &[u8],
         writer_strength: i32,
+        // XCDR version tag of the writer's effective offer (`0` = XCDR1,
+        // `1` = XCDR2), matching `encap_representation`'s convention on the
+        // wire-receive path. On the wire path the reader recovers this from
+        // byte[1] of the encap header; here the intra-runtime payload carries
+        // no encap header, so the writer's actual representation must be
+        // threaded through explicitly (Bug R4 — previously hardcoded `0`,
+        // losing the XCDR version on the same-runtime loopback path).
+        representation: u8,
     ) {
         let routes: Vec<EntityId> = match self.intra_runtime_routes.read() {
             Ok(g) => match g.get(&writer_eid) {
@@ -4535,6 +4955,15 @@ impl DcpsRuntime {
             return;
         }
         let writer_guid = Guid::new(self.guid_prefix, writer_eid).to_bytes();
+        // QR-cluster (e): LIVELINESS AUTOMATIC auto-renew. A delivered sample
+        // proves the matched writer is alive (DDS 1.4 §2.2.3.11). For AUTOMATIC
+        // kind the infrastructure renews liveliness implicitly, so each
+        // intra-runtime delivery marks the writer alive at the reader.
+        let writer_liveliness_automatic = self
+            .writer_slot(writer_eid)
+            .and_then(|arc| arc.lock().ok().map(|s| s.liveliness_kind))
+            .map(|k| matches!(k, zerodds_qos::LivelinessKind::Automatic))
+            .unwrap_or(false);
         for reader_eid in routes {
             let Some(slot_arc) = self.reader_slot(reader_eid) else {
                 continue;
@@ -4546,9 +4975,18 @@ impl DcpsRuntime {
             let waker;
             let sender;
             {
-                let Ok(slot) = slot_arc.lock() else {
+                let Ok(mut slot) = slot_arc.lock() else {
                     continue;
                 };
+                // Liveliness renew: bump alive_count once per writer-alive
+                // transition (the reader sees this writer become alive).
+                if writer_liveliness_automatic {
+                    let newly_alive = slot.liveliness_alive_writers.insert(writer_guid);
+                    if newly_alive {
+                        slot.liveliness_alive = true;
+                        slot.liveliness_alive_count = slot.liveliness_alive_count.saturating_add(1);
+                    }
+                }
                 listener = slot.listener.clone();
                 waker = Arc::clone(&slot.async_waker);
                 sender = slot.sample_tx.clone();
@@ -4557,15 +4995,23 @@ impl DcpsRuntime {
             // if a listener is set, the sample only goes to it;
             // otherwise to the MPSC receiver.
             if let Some(l) = listener {
-                // The listener signature is `(payload: &[u8], representation: u8)`.
-                // Intra-runtime: no encap header, `0` = native.
-                l(payload, 0);
+                // The listener signature is `(payload, representation, big_endian)`.
+                // Intra-runtime: no encap header, so carry the writer's
+                // actual representation tag (Bug R4); same-process delivery is
+                // always native little-endian → big_endian = 0.
+                l(payload, representation, 0);
             } else {
                 let sample = UserSample::Alive {
                     payload: crate::sample_bytes::SampleBytes::from_vec(payload.to_vec()),
                     writer_guid,
                     writer_strength,
-                    representation: 0,
+                    representation,
+                    // Intra-runtime same-process delivery always produces the
+                    // native little-endian wire.
+                    big_endian: false,
+                    // Intra-runtime same-process delivery bypasses the INFO_TS
+                    // wire path → reception order.
+                    source_timestamp: None,
                 };
                 let _ = sender.send(sample);
                 wake_async_waker(&waker);
@@ -4775,6 +5221,15 @@ impl DcpsRuntime {
                 // with the real reader TCE.
                 if slot.type_identifier != zerodds_types::TypeIdentifier::None
                     && sub.type_identifier != zerodds_types::TypeIdentifier::None
+                    // Equal TypeIdentifiers are by definition the same type
+                    // (XTypes 1.3 §7.2.4.1 identity). This is the typed-endpoint
+                    // case: writer + reader of the same generated type carry the
+                    // same (possibly complete) TypeIdentifier, whose TypeObject
+                    // is NOT in this fresh registry. Without this short-circuit a
+                    // complete-hash type-id would fail the assignability lookup
+                    // (Bug QT). Skip the registry-backed structural check when the
+                    // ids are identical.
+                    && slot.type_identifier != sub.type_identifier
                 {
                     let registry = zerodds_types::resolve::TypeRegistry::new();
                     let tce = zerodds_types::qos::TypeConsistencyEnforcement::default();
@@ -4930,7 +5385,11 @@ impl DcpsRuntime {
                             .and_then(|v| v.first().copied())
                             .or_else(|| self.config.data_representation_offer.first().copied())
                             .unwrap_or(zerodds_rtps::publication_data::data_representation::XCDR);
-                        user_payload_encap(offer_first, slot.wire_extensibility)
+                        user_payload_encap(
+                            offer_first,
+                            slot.wire_extensibility,
+                            slot.big_endian_override,
+                        )
                     };
                     let original_kind = slot.writer.cache().kind();
                     let original_max = slot.writer.cache().max_samples();
@@ -5117,6 +5576,11 @@ impl DcpsRuntime {
                 // the match falls back to a pure type_name comparison (default path).
                 if slot.type_identifier != zerodds_types::TypeIdentifier::None
                     && pubd.type_identifier != zerodds_types::TypeIdentifier::None
+                    // Equal TypeIdentifiers ⇒ same type (XTypes 1.3 §7.2.4.1).
+                    // The typed-endpoint case carries a complete TypeIdentifier
+                    // whose TypeObject is not in this fresh registry; identity
+                    // is decisive without a structural lookup (Bug QT).
+                    && pubd.type_identifier != slot.type_identifier
                 {
                     let registry = zerodds_types::resolve::TypeRegistry::new();
                     let matcher =
@@ -5233,6 +5697,62 @@ impl DcpsRuntime {
         Ok(())
     }
 
+    /// Forces the writer to emit the big-endian (`_BE`) encapsulation variant
+    /// (RTPS 2.5 §10.5) instead of the little-endian default. Used by the
+    /// durability service replay path: a big-endian peer's stored sample holds
+    /// big-endian body bytes, so its replay must carry a matching BE encap
+    /// header. `false` restores the canonical little-endian wire.
+    ///
+    /// # Errors
+    /// `BadParameter` for an unknown writer entity id; `PreconditionNotMet` on a
+    /// poisoned slot lock.
+    pub fn set_user_writer_byte_order_override(
+        &self,
+        eid: EntityId,
+        big_endian: bool,
+    ) -> Result<()> {
+        let slot_arc = self.writer_slot(eid).ok_or(DdsError::BadParameter {
+            what: "unknown writer entity id",
+        })?;
+        let mut slot = slot_arc.lock().map_err(|_| DdsError::PreconditionNotMet {
+            reason: "user_writer slot poisoned",
+        })?;
+        slot.big_endian_override = big_endian;
+        Ok(())
+    }
+
+    /// Sets the HISTORY KeepLast depth (DDS 1.4 §2.2.3.18) for a user writer.
+    /// This governs how many of the most-recent samples **per instance key**
+    /// are retained for the same-runtime TransientLocal late-joiner replay path
+    /// (`intra_runtime_dispatch_alive` retains, a new route replays). Pass
+    /// `usize::MAX` for KeepAll. A binding maps its HistoryQosPolicy here.
+    ///
+    /// # Errors
+    /// `BadParameter` for an unknown writer entity id; `PreconditionNotMet` on a
+    /// poisoned slot lock.
+    pub fn set_user_writer_history_depth(&self, eid: EntityId, depth: usize) -> Result<()> {
+        let slot_arc = self.writer_slot(eid).ok_or(DdsError::BadParameter {
+            what: "unknown writer entity id",
+        })?;
+        let mut slot = slot_arc.lock().map_err(|_| DdsError::PreconditionNotMet {
+            reason: "user_writer slot poisoned",
+        })?;
+        slot.history_depth = depth.max(1);
+        // Re-enforce the new depth over the already-retained samples per key.
+        let d = slot.history_depth;
+        enforce_retained_depth(&mut slot.retained, d);
+        Ok(())
+    }
+
+    /// Reads the current TransientLocal retained-sample count for a user writer
+    /// (test/introspection helper). `0` for an unknown writer.
+    #[must_use]
+    pub fn user_writer_retained_len(&self, eid: EntityId) -> usize {
+        self.writer_slot(eid)
+            .and_then(|arc| arc.lock().ok().map(|s| s.retained.len()))
+            .unwrap_or(0)
+    }
+
     /// Writes a user sample from a borrowed byte slice.
     /// **Zero-copy path** for the loan API and SHM backend: avoids
     /// the Vec materialization when the caller holds a slot/stack buffer.
@@ -5243,6 +5763,25 @@ impl DcpsRuntime {
     /// # Errors
     /// As `write_user_sample`.
     pub fn write_user_sample_borrowed(&self, eid: EntityId, payload: &[u8]) -> Result<()> {
+        self.write_user_sample_keyed(eid, payload, [0u8; 16])
+    }
+
+    /// Like [`write_user_sample_borrowed`] but with an explicit 16-byte instance
+    /// `key_hash` (DDS 1.4 §2.2.2.4.2 keyed topics). The key is used by the
+    /// same-runtime TransientLocal retention path so KeepLast depth is enforced
+    /// **per instance** and a late joiner replays the most-recent samples of
+    /// every live instance (and any disposed/unregistered terminal marker).
+    /// A binding that does not key its topic passes the all-zero key (one
+    /// default instance), which is what `write_user_sample_borrowed` does.
+    ///
+    /// # Errors
+    /// As [`write_user_sample_borrowed`].
+    pub fn write_user_sample_keyed(
+        &self,
+        eid: EntityId,
+        payload: &[u8],
+        key_hash: [u8; 16],
+    ) -> Result<()> {
         let _phase_guard = if phase_timing_enabled() {
             Some(PhaseTimer {
                 start: std::time::Instant::now(),
@@ -5265,6 +5804,12 @@ impl DcpsRuntime {
         let now = self.start_instant.elapsed();
         let total = USER_PAYLOAD_ENCAP.len() + payload.len();
         let pt_t2_out: Option<std::time::Instant>;
+        // XCDR version tag of the writer's effective offer (`0` = XCDR1,
+        // `1` = XCDR2), set below from the same `offer_first` that drives the
+        // wire encap header. Carried into the same-runtime loopback dispatch
+        // so the intra-runtime reader sees the writer's real representation
+        // (Bug R4) instead of an unconditional `0`.
+        let intra_representation: u8;
         let out_datagrams = {
             let slot_arc = self.writer_slot(eid).ok_or(DdsError::BadParameter {
                 what: "unknown writer entity id",
@@ -5309,7 +5854,22 @@ impl DcpsRuntime {
                     .and_then(|v| v.first().copied())
                     .or_else(|| self.config.data_representation_offer.first().copied())
                     .unwrap_or(zerodds_rtps::publication_data::data_representation::XCDR);
-                user_payload_encap(offer_first, slot.wire_extensibility)
+                // Map the negotiated i16 DataRepresentationId to the u8 XCDR
+                // version tag used by `UserSample::Alive.representation` /
+                // `encap_representation` (`1` = XCDR2, `0` = XCDR1). Mirrors
+                // the wire path where the reader derives this from the encap
+                // header byte[1].
+                intra_representation =
+                    if offer_first == zerodds_rtps::publication_data::data_representation::XCDR2 {
+                        1
+                    } else {
+                        0
+                    };
+                user_payload_encap(
+                    offer_first,
+                    slot.wire_extensibility,
+                    slot.big_endian_override,
+                )
             };
             // Spec §2.2.3.5 backend filling happens in
             // `DataWriter::write` (publisher.rs) with the **raw** payload —
@@ -5334,6 +5894,25 @@ impl DcpsRuntime {
                 if let Some(sn) = slot.writer.cache().max_sn() {
                     slot.sample_insert_times.push_back((sn, now));
                 }
+            }
+            // QR-cluster (a)+(b): TRANSIENT_LOCAL same-runtime retention with
+            // per-instance HISTORY KeepLast depth (DDS 1.4 §2.2.3.4 + §2.2.3.18).
+            // A new sample for a key clears any prior terminal lifecycle marker
+            // for that key (the instance is alive again) and is appended; the
+            // depth is then re-enforced per key.
+            if !matches!(slot.durability, zerodds_qos::DurabilityKind::Volatile) {
+                slot.retained
+                    .retain(|s| !(s.lifecycle.is_some() && s.key_hash == key_hash));
+                let strength = slot.ownership_strength;
+                slot.retained.push_back(RetainedSample {
+                    key_hash,
+                    payload: payload.to_vec(),
+                    representation: intra_representation,
+                    strength,
+                    lifecycle: None,
+                });
+                let depth = slot.history_depth;
+                enforce_retained_depth(&mut slot.retained, depth);
             }
             dgs
         };
@@ -5447,7 +6026,7 @@ impl DcpsRuntime {
             .writer_slot(eid)
             .and_then(|arc| arc.lock().ok().map(|s| s.ownership_strength))
             .unwrap_or(0);
-        self.intra_runtime_dispatch_alive(eid, payload, writer_strength);
+        self.intra_runtime_dispatch_alive(eid, payload, writer_strength, intra_representation);
         // Embargo inspect tap at the DCPS layer (path-separated from the
         // production path). Only compiled when the `inspect` feature is
         // on. The topic name is fetched via a separate lookup, outside
@@ -5612,6 +6191,21 @@ impl DcpsRuntime {
                 }
             }
         }
+        // QR-cluster (d): also deliver the lifecycle marker to matched
+        // same-runtime readers — the wire targets above never include
+        // intra-runtime local readers (those go via the direct dispatch path).
+        // Map the PID_STATUS_INFO bits to the HistoryCache ChangeKind.
+        use zerodds_rtps::inline_qos::status_info;
+        let disposed = status_bits & status_info::DISPOSED != 0;
+        let unregistered = status_bits & status_info::UNREGISTERED != 0;
+        let kind = match (disposed, unregistered) {
+            (true, true) => zerodds_rtps::history_cache::ChangeKind::NotAliveDisposedUnregistered,
+            (true, false) => zerodds_rtps::history_cache::ChangeKind::NotAliveDisposed,
+            (false, true) => zerodds_rtps::history_cache::ChangeKind::NotAliveUnregistered,
+            // No status bits set: nothing to deliver as a lifecycle marker.
+            (false, false) => return Ok(()),
+        };
+        self.intra_runtime_dispatch_lifecycle(eid, key_hash, kind);
         Ok(())
     }
 
@@ -5995,6 +6589,30 @@ impl DcpsRuntime {
             .unwrap_or(0)
     }
 
+    /// A2 — arm TIME_BASED_FILTER (DDS 1.4 §2.2.3.12) on a runtime/C-FFI user
+    /// reader: it then receives at most one sample per instance per
+    /// `min_separation_nanos`; closer-spaced samples are dropped before they
+    /// reach the reader's channel. `0` disables the filter. Returns `true` if
+    /// the reader exists. This is the seam `rmw_zerodds` uses to rate-limit ROS-2
+    /// subscriptions (`rmw_qos_profile_t` carries no TIME_BASED_FILTER field).
+    pub fn set_user_reader_time_based_filter(
+        &self,
+        eid: EntityId,
+        min_separation_nanos: u128,
+    ) -> bool {
+        let Some(arc) = self.reader_slot(eid) else {
+            return false;
+        };
+        let Ok(mut slot) = arc.lock() else {
+            return false;
+        };
+        slot.tbf_min_separation_nanos = min_separation_nanos;
+        if min_separation_nanos == 0 {
+            slot.tbf_last_delivered.clear();
+        }
+        true
+    }
+
     /// Bug-2 diagnosis (2026-05-19): number of submessages dropped
     /// because of an unknown writer_id. If this value is incremented
     /// after a write, it indicates an SEDP match
@@ -6104,6 +6722,8 @@ impl DcpsRuntime {
                 writer_guid: [0u8; 16],
                 writer_strength: 0,
                 representation: 0,
+                big_endian: false,
+                source_timestamp: None,
             })
             .is_ok();
         if sent {
@@ -6690,7 +7310,7 @@ fn recv_metatraffic_loop(rt: Arc<DcpsRuntime>, stop: Arc<AtomicBool>) {
             } else {
                 None
             };
-            // OPEN (phase 3, docs/security/per-endpoint-crypto-followup.md):
+            // OPEN (phase 3, internal/security/per-endpoint-crypto-followup.md):
             // if `unprotect_user_datagram` fails for a secure-SEDP DATA
             // (cyclone's per-endpoint token not yet installed — race),
             // `sedp_input` falls back to the SEC_* bytes and the DATA is discarded.
@@ -6742,83 +7362,128 @@ fn recv_metatraffic_loop(rt: Arc<DcpsRuntime>, stop: Arc<AtomicBool>) {
     }
 }
 
-/// Worker: wave 4b.4 (Spec `zerodds-zero-copy-1.0` §6) — per-owner
-/// SHM recv loop. Iterates round-robin over all bound-consumer
-/// entries of the [`SameHostTracker`](crate::same_host::SameHostTracker)
-/// and calls `recv()` with the configured per-transport timeout
-/// (50 ms default). On data, dispatches via [`handle_user_datagram`]
-/// analogous to the UDP path.
+/// Supervisor: wave 4b.4 (Spec `zerodds-zero-copy-1.0` §6) — same-host SHM
+/// receive. Spawns **one dedicated receive thread per bound SHM consumer**, so
+/// each blocks on its own segment futex ([`PosixShmTransport::recv`] →
+/// `wait_for_frame`) and dispatches a sample the instant it lands.
 ///
-/// Latency tradeoff: with N consumers the worst-case latency
-/// for a sample is (N-1) × recv_timeout. Acceptable for small
-/// N (typically <10 same-host peers); for larger topologies
-/// this would have to be switched to multiple threads or epoll-style
-/// multiplexing (wave 4b.4 follow-up).
+/// History: the original single loop iterated all consumers round-robin and
+/// called the blocking `recv()` on each in turn. With N consumers the
+/// worst-case per-sample latency was `(N-1) × recv_timeout` (1 ms each, see
+/// [`crate::same_host_shm::shm_config_for_pair`]) — a single thread cannot wait
+/// on N futexes at once, so the active consumer's sample waited while the loop
+/// sat in idle consumers' `recv()` timeouts. Fine for 1-2 same-host peers, but
+/// it dominated at the many-endpoint scale ROS hits (user topics +
+/// `ros_discovery_info` + parameter services + `rosout` = a dozen same-host SHM
+/// consumers), turning a ~30 µs delivery into ~570 µs. The documented fix
+/// ("multiple threads or epoll-style multiplexing") is realized here as one
+/// thread per consumer. The supervisor only polls *membership* (discovery-rate,
+/// not the data path) to spawn/reap workers.
 #[cfg(feature = "same-host-shm")]
 fn recv_user_shm_loop(rt: Arc<DcpsRuntime>, stop: Arc<AtomicBool>) {
     use crate::same_host::{Role, SameHostState};
-    use zerodds_transport::Transport;
     use zerodds_transport_shm::PosixShmTransport;
 
     apply_thread_tuning(
-        "recv-shm",
+        "recv-shm-sup",
         rt.config.recv_thread_priority,
         rt.config.recv_thread_cpus.as_deref(),
     );
-    let idle_sleep = Duration::from_millis(100);
+    // segment-id → (per-worker stop flag, join handle).
+    let mut workers: std::collections::HashMap<
+        [u8; 16],
+        (Arc<AtomicBool>, thread::JoinHandle<()>),
+    > = std::collections::HashMap::new();
+    // Membership poll is discovery-rate, NOT the data path: it only detects
+    // newly-bound / vanished consumers to spawn / reap their worker thread.
+    let membership_poll = Duration::from_millis(100);
     while !stop.load(Ordering::Relaxed) {
-        // SHM bind now happens synchronously in the SEDP hook (transport-shm
-        // 2026-05-19 idempotent open_or_create). Here only the bound-
-        // consumer drain — no lazy retry needed anymore.
-        let consumers: Vec<Arc<PosixShmTransport>> = rt
-            .same_host
-            .snapshot()
-            .into_iter()
-            .filter_map(|(_, _, state)| match state {
-                SameHostState::Bound { transport, role } => {
-                    if !matches!(role, Role::Consumer) {
-                        return None;
-                    }
-                    transport.downcast::<PosixShmTransport>().ok()
-                }
-                _ => None,
-            })
-            .collect();
-        if consumers.is_empty() {
-            thread::sleep(idle_sleep);
-            continue;
+        let mut live: std::collections::HashSet<[u8; 16]> = std::collections::HashSet::new();
+        for (w, r, state) in rt.same_host.snapshot() {
+            let SameHostState::Bound { transport, role } = state else {
+                continue;
+            };
+            if !matches!(role, Role::Consumer) {
+                continue;
+            }
+            let Ok(consumer) = transport.downcast::<PosixShmTransport>() else {
+                continue;
+            };
+            let key = crate::same_host::shm_segment_id_for_pair(w, r);
+            live.insert(key);
+            if workers.contains_key(&key) {
+                continue;
+            }
+            let wstop = Arc::new(AtomicBool::new(false));
+            let (rt_w, stop_w, wstop_w) = (Arc::clone(&rt), Arc::clone(&stop), Arc::clone(&wstop));
+            if let Ok(h) = thread::Builder::new()
+                .name(String::from("zdds-recv-shm-c"))
+                .spawn(move || shm_consumer_recv_loop(rt_w, consumer, stop_w, wstop_w))
+            {
+                workers.insert(key, (wstop, h));
+            }
         }
-        let elapsed = rt.start_instant.elapsed();
-        let sedp_now = Duration::from_secs(elapsed.as_secs())
-            + Duration::from_nanos(u64::from(elapsed.subsec_nanos()));
-        for consumer in &consumers {
-            if stop.load(Ordering::Relaxed) {
-                break;
+        // Reap workers whose consumer disappeared.
+        let gone: Vec<[u8; 16]> = workers
+            .keys()
+            .filter(|k| !live.contains(*k))
+            .copied()
+            .collect();
+        for k in gone {
+            if let Some((wstop, h)) = workers.remove(&k) {
+                wstop.store(true, Ordering::Relaxed);
+                let _ = h.join();
             }
-            match consumer.recv() {
-                Ok(dg) => {
-                    // Security gate (analogous to the UDP path). SHM is
-                    // same-host-only — if the policy allows plaintext,
-                    // the datagram comes through unchanged.
-                    #[cfg(feature = "security")]
-                    let clear = secure_inbound_bytes(&rt, &dg.data, &DEFAULT_INBOUND_IFACE);
-                    #[cfg(not(feature = "security"))]
-                    let clear = secure_inbound_bytes(&rt, &dg.data);
-                    if let Some(clear) = clear {
-                        handle_user_datagram(&rt, &clear, sedp_now);
-                    }
-                }
-                // A timeout is normal — recv has the configured
-                // 50 ms limit, an empty segment is not an error.
-                Err(zerodds_transport::RecvError::Timeout) => {}
-                Err(_) => {
-                    // Hard error (broken segment, peer crashed).
-                    // We could set the tracker entry to
-                    // Failed here — for the first cut we leave
-                    // it at silence + the UDP fallback
-                    // stays active.
+        }
+        thread::sleep(membership_poll);
+    }
+    // Shutdown: stop + join every worker (each wakes within its 1 ms recv_timeout).
+    for (_, (wstop, h)) in workers {
+        wstop.store(true, Ordering::Relaxed);
+        let _ = h.join();
+    }
+}
+
+/// One per-consumer SHM receive thread: blocks on this segment's futex and
+/// dispatches each frame the instant it arrives — no cross-consumer
+/// serialization. Exits when the runtime stops, the worker is reaped, or the
+/// segment dies. See [`recv_user_shm_loop`].
+#[cfg(feature = "same-host-shm")]
+fn shm_consumer_recv_loop(
+    rt: Arc<DcpsRuntime>,
+    consumer: Arc<zerodds_transport_shm::PosixShmTransport>,
+    stop: Arc<AtomicBool>,
+    wstop: Arc<AtomicBool>,
+) {
+    use zerodds_transport::Transport;
+    apply_thread_tuning(
+        "recv-shm-c",
+        rt.config.recv_thread_priority,
+        rt.config.recv_thread_cpus.as_deref(),
+    );
+    while !stop.load(Ordering::Relaxed) && !wstop.load(Ordering::Relaxed) {
+        match consumer.recv() {
+            Ok(dg) => {
+                let elapsed = rt.start_instant.elapsed();
+                let sedp_now = Duration::from_secs(elapsed.as_secs())
+                    + Duration::from_nanos(u64::from(elapsed.subsec_nanos()));
+                // Security gate (analogous to the UDP path). SHM is
+                // same-host-only — if the policy allows plaintext, the
+                // datagram comes through unchanged.
+                #[cfg(feature = "security")]
+                let clear = secure_inbound_bytes(&rt, &dg.data, &DEFAULT_INBOUND_IFACE);
+                #[cfg(not(feature = "security"))]
+                let clear = secure_inbound_bytes(&rt, &dg.data);
+                if let Some(clear) = clear {
+                    handle_user_datagram(&rt, &clear, sedp_now);
                 }
             }
+            // A timeout is normal — the 1 ms recv_timeout just lets the loop
+            // re-check the stop flags; an empty segment is not an error.
+            Err(zerodds_transport::RecvError::Timeout) => {}
+            // Hard error (broken segment / peer crashed): drop this worker; the
+            // supervisor respawns if the segment is re-bound, UDP stays fallback.
+            Err(_) => break,
         }
     }
 }
@@ -7951,11 +8616,14 @@ fn delivered_to_user_sample(
             // (RTPS 2.5 §10.5) — BEFORE stripping. 0x00–0x03 = XCDR1
             // (CDR/PL_CDR), 0x06–0x0b = XCDR2 (CDR2/D_CDR2/PL_CDR2).
             let representation = encap_representation(&sample.payload);
+            let big_endian = encap_big_endian(&sample.payload);
             strip_user_encap_arc(&sample.payload).map(|payload| UserSample::Alive {
                 payload,
                 writer_guid,
                 writer_strength,
                 representation,
+                big_endian,
+                source_timestamp: sample.source_timestamp,
             })
         }
         ChangeKind::NotAliveDisposed
@@ -7991,6 +8659,16 @@ fn encap_representation(payload: &[u8]) -> u8 {
     } else {
         0
     }
+}
+
+/// Returns the byte order from the 4-byte encapsulation representation
+/// identifier (RTPS 2.5 §10.5). The repr-id is a big-endian `uint16`; its low
+/// bit selects the byte order — the `_BE` variants (CDR_BE 0x0000, PL_CDR_BE
+/// 0x0002, CDR2_BE 0x0006, D_CDR2_BE 0x0008, PL_CDR2_BE 0x000a) are even, the
+/// `_LE` variants odd. `true` ⇒ big-endian. A too-short / header-less payload
+/// (e.g. the intra-runtime bare body) defaults to little-endian (`false`).
+fn encap_big_endian(payload: &[u8]) -> bool {
+    payload.len() >= 2 && (payload[1] & 0x01) == 0
 }
 
 /// Checks whether `payload` has a known 4-byte encapsulation header.
@@ -8151,8 +8829,22 @@ fn handle_user_datagram(rt: &Arc<DcpsRuntime>, bytes: &[u8], now: Duration) {
     // submessage — no global user_writers/user_readers lock anymore.
     // With per-submessage granularity, reader datagrams can be processed in parallel
     // to writer AckNacks.
+    //
+    // RTPS-F1 (DDSI-RTPS §8.3.4 ReceiverState.haveTimestamp): an INFO_TS
+    // submessage sets the source timestamp applied to every following DATA in
+    // the same message, until another INFO_TS (or an I-flag clears it). We
+    // carry it forward and hand it to the reader so it lands in
+    // `SampleInfo.source_timestamp`.
+    let mut cur_source_ts: Option<zerodds_rtps::header_extension::HeTimestamp> = None;
     for sub in parsed.submessages {
         match sub {
+            ParsedSubmessage::InfoTimestamp(its) => {
+                cur_source_ts = if its.invalidate {
+                    None
+                } else {
+                    Some(its.timestamp)
+                };
+            }
             ParsedSubmessage::Data(d) => {
                 // Sprint D.5d lever B — collect-then-dispatch:
                 // sample conversion + liveliness update inside slot.lock,
@@ -8207,10 +8899,22 @@ fn handle_user_datagram(rt: &Arc<DcpsRuntime>, bytes: &[u8], now: Duration) {
                         let Ok(mut slot) = arc.lock() else { continue };
                         let hd_samples: Vec<_> = slot
                             .reader
-                            .handle_data(src_prefix, &d)
+                            .handle_data(src_prefix, &d, cur_source_ts)
                             .into_iter()
                             .collect();
                         for sample in hd_samples {
+                            // A2 TIME_BASED_FILTER (§2.2.3.12): drop alive samples
+                            // that arrive within minimum_separation of the last
+                            // delivered sample of the same instance. No-op when
+                            // the filter is disabled (tbf_min_separation_nanos==0).
+                            if matches!(
+                                sample.kind,
+                                zerodds_rtps::history_cache::ChangeKind::Alive
+                                    | zerodds_rtps::history_cache::ChangeKind::AliveFiltered
+                            ) && !slot.tbf_should_deliver(sample.key_hash, now.as_nanos())
+                            {
+                                continue;
+                            }
                             // Listener zero-copy view only for alive samples
                             // with a valid encap header. Arc::clone is
                             // an atomic refcount inc, no data copy.
@@ -8269,17 +8973,22 @@ fn handle_user_datagram(rt: &Arc<DcpsRuntime>, bytes: &[u8], now: Duration) {
                     // at the same time simply sets NO listener
                     // and polls via take().
                     for (item, listener_view) in items {
-                        let item_repr = if let UserSample::Alive { representation, .. } = &item {
-                            *representation
+                        let (item_repr, item_be) = if let UserSample::Alive {
+                            representation,
+                            big_endian,
+                            ..
+                        } = &item
+                        {
+                            (*representation, u8::from(*big_endian))
                         } else {
-                            0
+                            (0, 0)
                         };
                         #[cfg(feature = "inspect")]
                         dispatch_inspect_dcps_receive_tap(&topic_name, d.reader_id, &item);
                         if let Some(ref l) = listener {
                             if let Some((arc_payload, off)) = listener_view {
                                 // Zero-copy: slice view into the original Arc.
-                                l(&arc_payload[off..], item_repr);
+                                l(&arc_payload[off..], item_repr, item_be);
                             }
                         } else {
                             let _ = sender.send(item);
@@ -8312,7 +9021,19 @@ fn handle_user_datagram(rt: &Arc<DcpsRuntime>, bytes: &[u8], now: Duration) {
                     let topic_name;
                     {
                         let Ok(mut slot) = arc.lock() else { continue };
-                        for sample in slot.reader.handle_data_frag(src_prefix, &df, now) {
+                        for sample in
+                            slot.reader
+                                .handle_data_frag(src_prefix, &df, now, cur_source_ts)
+                        {
+                            // A2 TIME_BASED_FILTER (§2.2.3.12) — see DATA path.
+                            if matches!(
+                                sample.kind,
+                                zerodds_rtps::history_cache::ChangeKind::Alive
+                                    | zerodds_rtps::history_cache::ChangeKind::AliveFiltered
+                            ) && !slot.tbf_should_deliver(sample.key_hash, now.as_nanos())
+                            {
+                                continue;
+                            }
                             let listener_view: Option<(Arc<[u8]>, usize)> = match sample.kind {
                                 zerodds_rtps::history_cache::ChangeKind::Alive
                                 | zerodds_rtps::history_cache::ChangeKind::AliveFiltered => {
@@ -8347,17 +9068,22 @@ fn handle_user_datagram(rt: &Arc<DcpsRuntime>, bytes: &[u8], now: Duration) {
                         }
                     }
                     for (item, listener_view) in items {
-                        let item_repr = if let UserSample::Alive { representation, .. } = &item {
-                            *representation
+                        let (item_repr, item_be) = if let UserSample::Alive {
+                            representation,
+                            big_endian,
+                            ..
+                        } = &item
+                        {
+                            (*representation, u8::from(*big_endian))
                         } else {
-                            0
+                            (0, 0)
                         };
                         #[cfg(feature = "inspect")]
                         dispatch_inspect_dcps_receive_tap(&topic_name, df.reader_id, &item);
                         // See the Data arm: listener and MPSC are exclusive.
                         if let Some(ref l) = listener {
                             if let Some((arc_payload, off)) = listener_view {
-                                l(&arc_payload[off..], item_repr);
+                                l(&arc_payload[off..], item_repr, item_be);
                             }
                         } else {
                             let _ = sender.send(item);
@@ -8396,6 +9122,15 @@ fn handle_user_datagram(rt: &Arc<DcpsRuntime>, bytes: &[u8], now: Duration) {
                     {
                         let Ok(mut slot) = arc.lock() else { continue };
                         for sample in slot.reader.handle_heartbeat(src_prefix, &h, now) {
+                            // A2 TIME_BASED_FILTER (§2.2.3.12) — see DATA path.
+                            if matches!(
+                                sample.kind,
+                                zerodds_rtps::history_cache::ChangeKind::Alive
+                                    | zerodds_rtps::history_cache::ChangeKind::AliveFiltered
+                            ) && !slot.tbf_should_deliver(sample.key_hash, now.as_nanos())
+                            {
+                                continue;
+                            }
                             if let Some(item) =
                                 delivered_to_user_sample(&sample, &slot.writer_strengths)
                             {
@@ -8449,6 +9184,15 @@ fn handle_user_datagram(rt: &Arc<DcpsRuntime>, bytes: &[u8], now: Duration) {
                 for arc in target_slots {
                     if let Ok(mut slot) = arc.lock() {
                         for sample in slot.reader.handle_gap(src_prefix, &g) {
+                            // A2 TIME_BASED_FILTER (§2.2.3.12) — see DATA path.
+                            if matches!(
+                                sample.kind,
+                                zerodds_rtps::history_cache::ChangeKind::Alive
+                                    | zerodds_rtps::history_cache::ChangeKind::AliveFiltered
+                            ) && !slot.tbf_should_deliver(sample.key_hash, now.as_nanos())
+                            {
+                                continue;
+                            }
                             if let Some(item) =
                                 delivered_to_user_sample(&sample, &slot.writer_strengths)
                             {
@@ -8533,6 +9277,42 @@ fn handle_spdp_datagram(rt: &Arc<DcpsRuntime>, bytes: &[u8]) {
     // On first discovery: wire the SEDP stack + send out initial
     // announcements.
     if is_new {
+        // A1 discovery-server relay: bridge the newly-joined client to every
+        // already-known client over a single well-known address. Forwards ONLY
+        // raw SPDP (participant locators) — SEDP (endpoint discovery, incl. ROS-2
+        // Action endpoints) then proceeds DIRECTLY peer-to-peer, which is exactly
+        // why Actions keep working (unlike a SEDP-proxying discovery server).
+        // Plain discovery only; secured relay is a follow-up.
+        #[cfg(feature = "security")]
+        let relay_plain = rt.config.security.is_none();
+        #[cfg(not(feature = "security"))]
+        let relay_plain = true;
+        if rt.config.discovery_server && relay_plain {
+            let new_client = wlp_unicast_targets(core::slice::from_ref(&parsed));
+            let others: Vec<_> = rt
+                .discovered_participants()
+                .into_iter()
+                .filter(|dp| dp.sender_prefix != parsed.sender_prefix)
+                .collect();
+            if let Ok(mut relay) = rt.spdp_relay_cache.lock() {
+                // 1) tell the new client about every already-known client.
+                for dp in &others {
+                    if let Some(raw) = relay.get(&dp.sender_prefix) {
+                        for loc in &new_client {
+                            let _ = rt.spdp_unicast.send(loc, raw);
+                        }
+                    }
+                }
+                // 2) tell every already-known client about the new client.
+                for dp in &others {
+                    for loc in wlp_unicast_targets(core::slice::from_ref(dp)) {
+                        let _ = rt.spdp_unicast.send(&loc, bytes);
+                    }
+                }
+                // 3) remember the new client's SPDP for future joiners.
+                relay.insert(parsed.sender_prefix, bytes.to_vec());
+            }
+        }
         if let Ok(mut sedp) = rt.sedp.lock() {
             sedp.on_participant_discovered(&parsed);
         }
@@ -10321,6 +11101,107 @@ pub fn user_multicast_endpoint(domain_id: i32) -> SocketAddr {
 mod tests {
     use super::*;
 
+    /// A's the last mile of the big-endian decode path: a big-endian
+    /// encapsulation header on a received DATA sample must route the typed
+    /// decode to `DdsType::decode_be`, not `decode`. Builds a CDR2_BE wire
+    /// sample, runs it through `delivered_to_user_sample` (the real recv→sample
+    /// conversion), and asserts the resulting `big_endian` flag drives a correct
+    /// decode — while the little-endian `decode` on the same BE body is wrong.
+    #[test]
+    fn big_endian_encap_routes_to_decode_be() {
+        use crate::dds_type::{DdsType, DecodeError, EncodeError};
+        #[derive(Debug, PartialEq, Clone)]
+        struct BeProbe {
+            v: i32,
+        }
+        impl DdsType for BeProbe {
+            const TYPE_NAME: &'static str = "BeProbe";
+            fn encode(&self, out: &mut Vec<u8>) -> core::result::Result<(), EncodeError> {
+                let mut w = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little).xcdr2();
+                <i32 as zerodds_cdr::CdrEncode>::encode(&self.v, &mut w)?;
+                out.extend_from_slice(&w.into_bytes());
+                Ok(())
+            }
+            fn encode_be(&self, out: &mut Vec<u8>) -> core::result::Result<(), EncodeError> {
+                let mut w = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Big).xcdr2();
+                <i32 as zerodds_cdr::CdrEncode>::encode(&self.v, &mut w)?;
+                out.extend_from_slice(&w.into_bytes());
+                Ok(())
+            }
+            fn decode(b: &[u8]) -> core::result::Result<Self, DecodeError> {
+                let mut r =
+                    zerodds_cdr::BufferReader::new(b, zerodds_cdr::Endianness::Little).xcdr2();
+                Ok(BeProbe {
+                    v: <i32 as zerodds_cdr::CdrDecode>::decode(&mut r)?,
+                })
+            }
+            fn decode_be(b: &[u8]) -> core::result::Result<Self, DecodeError> {
+                let mut r = zerodds_cdr::BufferReader::new(b, zerodds_cdr::Endianness::Big).xcdr2();
+                Ok(BeProbe {
+                    v: <i32 as zerodds_cdr::CdrDecode>::decode(&mut r)?,
+                })
+            }
+        }
+
+        // A value whose 4 LE bytes differ from its 4 BE bytes.
+        let orig = BeProbe { v: 0x0102_0304 };
+        let strengths = alloc::collections::BTreeMap::new();
+
+        let mk = |repr_lo: u8, body: Vec<u8>| {
+            let mut wire = alloc::vec![0x00u8, repr_lo, 0x00, 0x00];
+            wire.extend_from_slice(&body);
+            zerodds_rtps::reliable_reader::DeliveredSample {
+                writer_guid: Guid::new(GuidPrefix::from_bytes([0x11; 12]), EntityId::PARTICIPANT),
+                sequence_number: zerodds_rtps::wire_types::SequenceNumber(1),
+                payload: alloc::sync::Arc::from(wire.into_boxed_slice()),
+                kind: zerodds_rtps::history_cache::ChangeKind::Alive,
+                key_hash: None,
+                source_timestamp: None,
+            }
+        };
+
+        // --- big-endian wire: CDR2_BE (repr low byte 0x06) ---
+        let mut be_body = Vec::new();
+        orig.encode_be(&mut be_body).unwrap();
+        let us = delivered_to_user_sample(&mk(0x06, be_body), &strengths).expect("alive");
+        let UserSample::Alive {
+            payload,
+            big_endian,
+            representation,
+            ..
+        } = us
+        else {
+            panic!("expected Alive");
+        };
+        assert!(big_endian, "CDR2_BE encap must set big_endian");
+        assert_eq!(representation, 1, "0x06 = XCDR2");
+        // The subscriber dispatch: decode_be for a big-endian sample.
+        let decoded = if big_endian {
+            BeProbe::decode_be(&payload)
+        } else {
+            BeProbe::decode(&payload)
+        }
+        .unwrap();
+        assert_eq!(decoded, orig, "BE wire decodes correctly via decode_be");
+        // The dispatch matters: little-endian decode on the BE body is wrong.
+        assert_ne!(BeProbe::decode(&payload).unwrap(), orig);
+
+        // --- little-endian control: CDR2_LE (repr low byte 0x07) ---
+        let mut le_body = Vec::new();
+        orig.encode(&mut le_body).unwrap();
+        let us_le = delivered_to_user_sample(&mk(0x07, le_body), &strengths).expect("alive");
+        let UserSample::Alive {
+            payload: le_payload,
+            big_endian: be_le,
+            ..
+        } = us_le
+        else {
+            panic!("expected Alive");
+        };
+        assert!(!be_le, "CDR2_LE encap must NOT set big_endian");
+        assert_eq!(BeProbe::decode(&le_payload).unwrap(), orig);
+    }
+
     /// FU1 diagnosis: inject a REAL FastDDS-3.6 SPDP datagram (domain 205,
     /// codepit capture 2026-05-29) directly into handle_spdp_datagram
     /// — does the runtime register FastDDS as a peer? Separates the
@@ -10426,6 +11307,31 @@ mod tests {
         assert_ne!(parse_data_repr_offer_str("XCDR1"), Some(vec![dr::XML]));
     }
 
+    /// A DataReader announces every representation it can decode (XCDR2 + XCDR1)
+    /// — XTypes 1.3 §7.6.2: the default reader policy accepts both. CycloneDDS
+    /// (and legacy RTI / OpenDDS < 3.16) default their writers to XCDR1 for
+    /// `@final` types; without XCDR1 in the reader's announced set those writers
+    /// fail the DataRepresentation RxO check and never deliver. Regression for
+    /// Bug DR1.
+    #[test]
+    fn reader_accept_repr_always_includes_both_representations() {
+        use zerodds_rtps::publication_data::data_representation as dr;
+        // Default writer offer [XCDR2] -> reader must also accept XCDR1.
+        let widened = reader_accept_repr(&[dr::XCDR2]);
+        assert!(widened.contains(&dr::XCDR2));
+        assert!(widened.contains(&dr::XCDR));
+        // XCDR2 stays first (the preferred / generated encoding).
+        assert_eq!(widened[0], dr::XCDR2);
+        // Already-both list is preserved (idempotent, order kept).
+        assert_eq!(
+            reader_accept_repr(&[dr::XCDR, dr::XCDR2]),
+            alloc::vec![dr::XCDR, dr::XCDR2]
+        );
+        // Empty config still yields both.
+        let from_empty = reader_accept_repr(&[]);
+        assert!(from_empty.contains(&dr::XCDR2) && from_empty.contains(&dr::XCDR));
+    }
+
     #[test]
     fn user_payload_encap_maps_repr_and_extensibility() {
         use zerodds_rtps::publication_data::data_representation as dr;
@@ -10438,35 +11344,62 @@ mod tests {
         //   XCDR2 appendable       -> D_CDR2_LE      0x0009
         //   XCDR2 mutable          -> PL_CDR2_LE     0x000b
         assert_eq!(
-            user_payload_encap(dr::XCDR, Ext::Final),
+            user_payload_encap(dr::XCDR, Ext::Final, false),
             [0x00, 0x01, 0x00, 0x00]
         );
         assert_eq!(
-            user_payload_encap(dr::XCDR, Ext::Appendable),
+            user_payload_encap(dr::XCDR, Ext::Appendable, false),
             [0x00, 0x01, 0x00, 0x00]
         );
         assert_eq!(
-            user_payload_encap(dr::XCDR, Ext::Mutable),
+            user_payload_encap(dr::XCDR, Ext::Mutable, false),
             [0x00, 0x03, 0x00, 0x00]
         );
         assert_eq!(
-            user_payload_encap(dr::XCDR2, Ext::Final),
+            user_payload_encap(dr::XCDR2, Ext::Final, false),
             [0x00, 0x07, 0x00, 0x00]
         );
         assert_eq!(
-            user_payload_encap(dr::XCDR2, Ext::Appendable),
+            user_payload_encap(dr::XCDR2, Ext::Appendable, false),
             [0x00, 0x09, 0x00, 0x00]
         );
         assert_eq!(
-            user_payload_encap(dr::XCDR2, Ext::Mutable),
+            user_payload_encap(dr::XCDR2, Ext::Mutable, false),
             [0x00, 0x0b, 0x00, 0x00]
         );
         // The default const is exactly the (XCDR1, Final) case.
-        assert_eq!(user_payload_encap(dr::XCDR, Ext::Final), USER_PAYLOAD_ENCAP);
+        assert_eq!(
+            user_payload_encap(dr::XCDR, Ext::Final, false),
+            USER_PAYLOAD_ENCAP
+        );
         // Unknown/XML repr falls back safely to CDR_LE.
         assert_eq!(
-            user_payload_encap(dr::XML, Ext::Final),
+            user_payload_encap(dr::XML, Ext::Final, false),
             [0x00, 0x01, 0x00, 0x00]
+        );
+        // big_endian=true selects the `_BE` variant (the even predecessor of
+        // the odd `_LE` id): CDR_BE 0x00, PL_CDR_BE 0x02, PLAIN_CDR2_BE 0x06,
+        // D_CDR2_BE 0x08, PL_CDR2_BE 0x0a (RTPS 2.5 §10.5). Used by the
+        // durability service to replay a big-endian peer's stored sample.
+        assert_eq!(
+            user_payload_encap(dr::XCDR, Ext::Final, true),
+            [0x00, 0x00, 0x00, 0x00]
+        );
+        assert_eq!(
+            user_payload_encap(dr::XCDR, Ext::Mutable, true),
+            [0x00, 0x02, 0x00, 0x00]
+        );
+        assert_eq!(
+            user_payload_encap(dr::XCDR2, Ext::Final, true),
+            [0x00, 0x06, 0x00, 0x00]
+        );
+        assert_eq!(
+            user_payload_encap(dr::XCDR2, Ext::Appendable, true),
+            [0x00, 0x08, 0x00, 0x00]
+        );
+        assert_eq!(
+            user_payload_encap(dr::XCDR2, Ext::Mutable, true),
+            [0x00, 0x0a, 0x00, 0x00]
         );
     }
 
@@ -11036,6 +11969,107 @@ mod tests {
             other => panic!("expected Alive, got {other:?}"),
         }
         rt.shutdown();
+    }
+
+    /// Bug R4 (#63): the same-runtime writer→reader loopback path
+    /// (`intra_runtime_dispatch_alive`) used to hardcode the XCDR
+    /// data-representation tag = `0`, so a DataWriter and DataReader sharing
+    /// one `DcpsRuntime` lost the writer's real representation. Asserts the
+    /// tag is carried through: default offer (`[XCDR2]`) → `1`, and an
+    /// explicit `[XCDR1]` per-writer override → `0`. Also confirms a typed
+    /// sample (XCDR2-framed body) round-trips intact alongside the tag.
+    #[test]
+    fn intra_runtime_loopback_preserves_representation_tag() {
+        use zerodds_rtps::publication_data::data_representation as dr;
+
+        fn run_case(domain: i32, prefix: u8, offer: Option<Vec<i16>>, expected_rep: u8) {
+            let rt = DcpsRuntime::start(
+                domain,
+                GuidPrefix::from_bytes([prefix; 12]),
+                RuntimeConfig::default(),
+            )
+            .expect("start runtime");
+            let writer_eid = rt
+                .register_user_writer(UserWriterConfig {
+                    topic_name: "RepTopic".into(),
+                    type_name: "RepType".into(),
+                    reliable: true,
+                    durability: zerodds_qos::DurabilityKind::Volatile,
+                    deadline: zerodds_qos::DeadlineQosPolicy::default(),
+                    lifespan: zerodds_qos::LifespanQosPolicy::default(),
+                    liveliness: zerodds_qos::LivelinessQosPolicy::default(),
+                    ownership: zerodds_qos::OwnershipKind::Shared,
+                    ownership_strength: 0,
+                    partition: alloc::vec![],
+                    user_data: alloc::vec![],
+                    topic_data: alloc::vec![],
+                    group_data: alloc::vec![],
+                    type_identifier: zerodds_types::TypeIdentifier::None,
+                    data_representation_offer: offer,
+                })
+                .expect("register writer");
+            let (_reader_eid, rx) = rt
+                .register_user_reader(UserReaderConfig {
+                    topic_name: "RepTopic".into(),
+                    type_name: "RepType".into(),
+                    reliable: true,
+                    durability: zerodds_qos::DurabilityKind::Volatile,
+                    deadline: zerodds_qos::DeadlineQosPolicy::default(),
+                    liveliness: zerodds_qos::LivelinessQosPolicy::default(),
+                    ownership: zerodds_qos::OwnershipKind::Shared,
+                    partition: alloc::vec![],
+                    user_data: alloc::vec![],
+                    topic_data: alloc::vec![],
+                    group_data: alloc::vec![],
+                    type_identifier: zerodds_types::TypeIdentifier::None,
+                    type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
+                    data_representation_offer: None,
+                })
+                .expect("register reader");
+
+            // Typed sample: a `struct { long seq; }` XCDR2-aligned body
+            // (little-endian 4-byte long). The intra-runtime path carries the
+            // RAW body (no encap header), so the representation tag is the
+            // only carrier of the wire version — exactly the lost signal.
+            let seq: i32 = 0x0A0B_0C0D;
+            let typed_payload = seq.to_le_bytes().to_vec();
+
+            rt.write_user_sample(writer_eid, typed_payload.clone())
+                .expect("write");
+
+            let sample = rx
+                .recv_timeout(core::time::Duration::from_millis(100))
+                .expect("intra-runtime reader should receive sample");
+            match sample {
+                UserSample::Alive {
+                    payload,
+                    representation,
+                    ..
+                } => {
+                    assert_eq!(
+                        representation, expected_rep,
+                        "intra-runtime loopback must carry the writer's XCDR \
+                         version tag (offer→rep), not a hardcoded 0"
+                    );
+                    // Typed round-trip: the recovered body decodes to the
+                    // original long.
+                    assert_eq!(payload.as_ref(), typed_payload.as_slice());
+                    let recovered =
+                        i32::from_le_bytes(payload.as_ref()[..4].try_into().expect("4-byte long"));
+                    assert_eq!(recovered, seq, "typed sample must round-trip");
+                }
+                other => panic!("expected Alive, got {other:?}"),
+            }
+            rt.shutdown();
+        }
+
+        // Default offer is `[XCDR2]` → tag `1`.
+        run_case(19, 0x60, None, 1);
+        // Explicit per-writer XCDR1 override → tag `0` (proves the value is
+        // actually carried from the writer, not constant).
+        run_case(20, 0x61, Some(alloc::vec![dr::XCDR]), 0);
+        // Explicit per-writer XCDR2 override → tag `1`.
+        run_case(21, 0x62, Some(alloc::vec![dr::XCDR2]), 1);
     }
 
     #[test]
@@ -13841,5 +14875,477 @@ mod tests {
             pending_endpoint_tokens(vec![builtin, user], &sent2).is_empty(),
             "already-sent tokens must not become pending again"
         );
+    }
+
+    /// QT (#76, FOUNDATIONAL): a writer and reader of the SAME type whose
+    /// TypeIdentifier is a *complete* hash (EquivalenceHashComplete) absent from
+    /// any registry must still match and exchange data. Before the fix the
+    /// runtime type-consistency check resolved against a fresh empty registry
+    /// and rejected the match with TYPE_CONSISTENCY_ENFORCEMENT.
+    #[test]
+    fn qt_same_complete_type_identifier_matches_and_exchanges() {
+        let rt = DcpsRuntime::start(
+            60,
+            GuidPrefix::from_bytes([0x60; 12]),
+            RuntimeConfig::default(),
+        )
+        .expect("start");
+        let complete = zerodds_types::TypeIdentifier::EquivalenceHashComplete(
+            zerodds_types::type_identifier::EquivalenceHash([0xC0; 14]),
+        );
+        let mut w_cfg = qr_writer_cfg(
+            "QtTopic",
+            zerodds_qos::DurabilityKind::Volatile,
+            alloc::vec![],
+            zerodds_qos::LivelinessKind::Automatic,
+        );
+        w_cfg.type_identifier = complete.clone();
+        let mut r_cfg = qr_reader_cfg(
+            "QtTopic",
+            zerodds_qos::DurabilityKind::Volatile,
+            alloc::vec![],
+            zerodds_qos::LivelinessKind::Automatic,
+        );
+        r_cfg.type_identifier = complete;
+        let w = rt.register_user_writer(w_cfg).expect("writer");
+        let (_r, rx) = rt.register_user_reader(r_cfg).expect("reader");
+        rt.write_user_sample(w, b"complete-typed".to_vec())
+            .expect("write");
+        let s = rx
+            .recv_timeout(core::time::Duration::from_millis(200))
+            .expect("complete-TypeIdentifier writer+reader must match + exchange");
+        match s {
+            UserSample::Alive { payload, .. } => assert_eq!(payload.as_ref(), b"complete-typed"),
+            other => panic!("expected Alive, got {other:?}"),
+        }
+        rt.shutdown();
+    }
+
+    // ===================================================================
+    // QR-cluster (#77) — same-runtime QoS behavioral regression tests.
+    // ===================================================================
+
+    fn qr_writer_cfg(
+        topic: &str,
+        durability: zerodds_qos::DurabilityKind,
+        partition: Vec<String>,
+        liveliness: zerodds_qos::LivelinessKind,
+    ) -> UserWriterConfig {
+        UserWriterConfig {
+            topic_name: topic.into(),
+            type_name: "QrType".into(),
+            reliable: true,
+            durability,
+            deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            lifespan: zerodds_qos::LifespanQosPolicy::default(),
+            liveliness: zerodds_qos::LivelinessQosPolicy {
+                kind: liveliness,
+                lease_duration: QosDuration::INFINITE,
+            },
+            ownership: zerodds_qos::OwnershipKind::Shared,
+            ownership_strength: 0,
+            partition,
+            user_data: alloc::vec![],
+            topic_data: alloc::vec![],
+            group_data: alloc::vec![],
+            type_identifier: zerodds_types::TypeIdentifier::None,
+            data_representation_offer: None,
+        }
+    }
+
+    fn qr_reader_cfg(
+        topic: &str,
+        durability: zerodds_qos::DurabilityKind,
+        partition: Vec<String>,
+        liveliness: zerodds_qos::LivelinessKind,
+    ) -> UserReaderConfig {
+        UserReaderConfig {
+            topic_name: topic.into(),
+            type_name: "QrType".into(),
+            reliable: true,
+            durability,
+            deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            liveliness: zerodds_qos::LivelinessQosPolicy {
+                kind: liveliness,
+                lease_duration: QosDuration::INFINITE,
+            },
+            ownership: zerodds_qos::OwnershipKind::Shared,
+            partition,
+            user_data: alloc::vec![],
+            topic_data: alloc::vec![],
+            group_data: alloc::vec![],
+            type_identifier: zerodds_types::TypeIdentifier::None,
+            type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
+            data_representation_offer: None,
+        }
+    }
+
+    /// QR (a) HISTORY KeepLast: a TransientLocal writer with depth=2 retains
+    /// only the last 2 samples per instance; a late-joining reader replays
+    /// exactly those 2 (not all 3 written).
+    #[test]
+    fn qr_history_keep_last_depth_enforced_on_replay() {
+        let rt = DcpsRuntime::start(
+            61,
+            GuidPrefix::from_bytes([0x61; 12]),
+            RuntimeConfig::default(),
+        )
+        .expect("start");
+        let w = rt
+            .register_user_writer(qr_writer_cfg(
+                "QrHistory",
+                zerodds_qos::DurabilityKind::TransientLocal,
+                alloc::vec![],
+                zerodds_qos::LivelinessKind::Automatic,
+            ))
+            .expect("writer");
+        rt.set_user_writer_history_depth(w, 2).expect("set depth");
+
+        // Three writes BEFORE any reader exists.
+        rt.write_user_sample(w, b"s1".to_vec()).expect("w1");
+        rt.write_user_sample(w, b"s2".to_vec()).expect("w2");
+        rt.write_user_sample(w, b"s3".to_vec()).expect("w3");
+        assert_eq!(
+            rt.user_writer_retained_len(w),
+            2,
+            "KeepLast(2) must retain only the 2 most recent samples"
+        );
+
+        // Late-joining reader replays exactly the last 2 (s2, s3).
+        let (_r, rx) = rt
+            .register_user_reader(qr_reader_cfg(
+                "QrHistory",
+                zerodds_qos::DurabilityKind::TransientLocal,
+                alloc::vec![],
+                zerodds_qos::LivelinessKind::Automatic,
+            ))
+            .expect("reader");
+
+        let mut got: Vec<Vec<u8>> = Vec::new();
+        while let Ok(s) = rx.recv_timeout(core::time::Duration::from_millis(200)) {
+            if let UserSample::Alive { payload, .. } = s {
+                got.push(payload.as_ref().to_vec());
+            }
+            if got.len() == 2 {
+                break;
+            }
+        }
+        assert_eq!(got, alloc::vec![b"s2".to_vec(), b"s3".to_vec()]);
+        rt.shutdown();
+    }
+
+    /// QR (b) DURABILITY TRANSIENT_LOCAL: a late-joining reader receives the
+    /// retained sample written before it matched. A VOLATILE writer replays
+    /// nothing.
+    #[test]
+    fn qr_transient_local_late_join_replay_vs_volatile() {
+        // TransientLocal: late joiner sees the prior sample.
+        let rt = DcpsRuntime::start(
+            62,
+            GuidPrefix::from_bytes([0x62; 12]),
+            RuntimeConfig::default(),
+        )
+        .expect("start");
+        let w = rt
+            .register_user_writer(qr_writer_cfg(
+                "QrTL",
+                zerodds_qos::DurabilityKind::TransientLocal,
+                alloc::vec![],
+                zerodds_qos::LivelinessKind::Automatic,
+            ))
+            .expect("writer");
+        rt.write_user_sample(w, b"retained".to_vec())
+            .expect("write");
+        let (_r, rx) = rt
+            .register_user_reader(qr_reader_cfg(
+                "QrTL",
+                zerodds_qos::DurabilityKind::TransientLocal,
+                alloc::vec![],
+                zerodds_qos::LivelinessKind::Automatic,
+            ))
+            .expect("reader");
+        let s = rx
+            .recv_timeout(core::time::Duration::from_millis(200))
+            .expect("TransientLocal late joiner must replay the retained sample");
+        match s {
+            UserSample::Alive { payload, .. } => assert_eq!(payload.as_ref(), b"retained"),
+            other => panic!("expected Alive, got {other:?}"),
+        }
+        rt.shutdown();
+
+        // Volatile: late joiner gets nothing for the pre-match write.
+        let rt2 = DcpsRuntime::start(
+            63,
+            GuidPrefix::from_bytes([0x63; 12]),
+            RuntimeConfig::default(),
+        )
+        .expect("start");
+        let w2 = rt2
+            .register_user_writer(qr_writer_cfg(
+                "QrVol",
+                zerodds_qos::DurabilityKind::Volatile,
+                alloc::vec![],
+                zerodds_qos::LivelinessKind::Automatic,
+            ))
+            .expect("writer");
+        rt2.write_user_sample(w2, b"lost".to_vec()).expect("write");
+        assert_eq!(
+            rt2.user_writer_retained_len(w2),
+            0,
+            "Volatile retains nothing"
+        );
+        let (_r2, rx2) = rt2
+            .register_user_reader(qr_reader_cfg(
+                "QrVol",
+                zerodds_qos::DurabilityKind::Volatile,
+                alloc::vec![],
+                zerodds_qos::LivelinessKind::Automatic,
+            ))
+            .expect("reader");
+        assert!(
+            rx2.recv_timeout(core::time::Duration::from_millis(120))
+                .is_err(),
+            "Volatile late joiner must NOT replay a pre-match sample"
+        );
+        rt2.shutdown();
+    }
+
+    /// QR (c) PARTITION: a writer in partition ["A"] and a reader in ["B"]
+    /// must NOT match (no intra-runtime route); a matching partition delivers.
+    #[test]
+    fn qr_partition_gates_intra_runtime_match() {
+        let rt = DcpsRuntime::start(
+            64,
+            GuidPrefix::from_bytes([0x64; 12]),
+            RuntimeConfig::default(),
+        )
+        .expect("start");
+        // Mismatched partitions.
+        let w = rt
+            .register_user_writer(qr_writer_cfg(
+                "QrPart",
+                zerodds_qos::DurabilityKind::Volatile,
+                alloc::vec!["A".into()],
+                zerodds_qos::LivelinessKind::Automatic,
+            ))
+            .expect("writer");
+        let (_r_mismatch, rx_mismatch) = rt
+            .register_user_reader(qr_reader_cfg(
+                "QrPart",
+                zerodds_qos::DurabilityKind::Volatile,
+                alloc::vec!["B".into()],
+                zerodds_qos::LivelinessKind::Automatic,
+            ))
+            .expect("reader");
+        rt.write_user_sample(w, b"x".to_vec()).expect("write");
+        assert!(
+            rx_mismatch
+                .recv_timeout(core::time::Duration::from_millis(120))
+                .is_err(),
+            "partitions [A] vs [B] must not match"
+        );
+
+        // Matching partition reader added → now delivers.
+        let (_r_match, rx_match) = rt
+            .register_user_reader(qr_reader_cfg(
+                "QrPart",
+                zerodds_qos::DurabilityKind::Volatile,
+                alloc::vec!["A".into()],
+                zerodds_qos::LivelinessKind::Automatic,
+            ))
+            .expect("reader");
+        rt.write_user_sample(w, b"y".to_vec()).expect("write");
+        let s = rx_match
+            .recv_timeout(core::time::Duration::from_millis(200))
+            .expect("partition [A] vs [A] must match");
+        match s {
+            UserSample::Alive { payload, .. } => assert_eq!(payload.as_ref(), b"y"),
+            other => panic!("expected Alive, got {other:?}"),
+        }
+        rt.shutdown();
+    }
+
+    /// QR (d) KEYED LIFECYCLE: dispose(key) delivers a Lifecycle marker to a
+    /// matched same-runtime reader; a later late joiner observes the terminal
+    /// NOT_ALIVE_DISPOSED state.
+    #[test]
+    fn qr_dispose_delivers_lifecycle_to_intra_reader() {
+        use zerodds_rtps::history_cache::ChangeKind;
+        use zerodds_rtps::inline_qos::status_info;
+        let rt = DcpsRuntime::start(
+            65,
+            GuidPrefix::from_bytes([0x65; 12]),
+            RuntimeConfig::default(),
+        )
+        .expect("start");
+        let w = rt
+            .register_user_writer_kind(
+                qr_writer_cfg(
+                    "QrLifecycle",
+                    zerodds_qos::DurabilityKind::TransientLocal,
+                    alloc::vec![],
+                    zerodds_qos::LivelinessKind::Automatic,
+                ),
+                true,
+            )
+            .expect("writer");
+        let (_r, rx) = rt
+            .register_user_reader_kind(
+                qr_reader_cfg(
+                    "QrLifecycle",
+                    zerodds_qos::DurabilityKind::TransientLocal,
+                    alloc::vec![],
+                    zerodds_qos::LivelinessKind::Automatic,
+                ),
+                true,
+            )
+            .expect("reader");
+
+        let key = [0xAB_u8; 16];
+        rt.write_user_sample_keyed(w, b"alive", key).expect("write");
+        // First the alive sample.
+        let first = rx
+            .recv_timeout(core::time::Duration::from_millis(200))
+            .expect("alive sample");
+        assert!(matches!(first, UserSample::Alive { .. }));
+
+        // dispose(key) → Lifecycle marker NOT_ALIVE_DISPOSED.
+        rt.write_user_lifecycle(w, key, status_info::DISPOSED)
+            .expect("dispose");
+        let life = rx
+            .recv_timeout(core::time::Duration::from_millis(200))
+            .expect("dispose must deliver a Lifecycle marker to the matched reader");
+        match life {
+            UserSample::Lifecycle { key_hash, kind } => {
+                assert_eq!(key_hash, key);
+                assert_eq!(kind, ChangeKind::NotAliveDisposed);
+            }
+            other => panic!("expected Lifecycle, got {other:?}"),
+        }
+
+        // A brand-new late joiner replays the alive sample AND the terminal
+        // disposed marker, so it learns the instance is NOT_ALIVE_DISPOSED.
+        let (_r2, rx2) = rt
+            .register_user_reader_kind(
+                qr_reader_cfg(
+                    "QrLifecycle",
+                    zerodds_qos::DurabilityKind::TransientLocal,
+                    alloc::vec![],
+                    zerodds_qos::LivelinessKind::Automatic,
+                ),
+                true,
+            )
+            .expect("reader2");
+        let mut saw_disposed = false;
+        while let Ok(s) = rx2.recv_timeout(core::time::Duration::from_millis(200)) {
+            if let UserSample::Lifecycle { kind, .. } = s {
+                if kind == ChangeKind::NotAliveDisposed {
+                    saw_disposed = true;
+                    break;
+                }
+            }
+        }
+        assert!(
+            saw_disposed,
+            "late joiner must observe the terminal NOT_ALIVE_DISPOSED state"
+        );
+        rt.shutdown();
+    }
+
+    /// QR (d) KEYED LIFECYCLE — unregister(key) maps to NOT_ALIVE (NO_WRITERS).
+    #[test]
+    fn qr_unregister_delivers_no_writers_lifecycle() {
+        use zerodds_rtps::history_cache::ChangeKind;
+        use zerodds_rtps::inline_qos::status_info;
+        let rt = DcpsRuntime::start(
+            66,
+            GuidPrefix::from_bytes([0x66; 12]),
+            RuntimeConfig::default(),
+        )
+        .expect("start");
+        let w = rt
+            .register_user_writer_kind(
+                qr_writer_cfg(
+                    "QrUnreg",
+                    zerodds_qos::DurabilityKind::Volatile,
+                    alloc::vec![],
+                    zerodds_qos::LivelinessKind::Automatic,
+                ),
+                true,
+            )
+            .expect("writer");
+        let (_r, rx) = rt
+            .register_user_reader_kind(
+                qr_reader_cfg(
+                    "QrUnreg",
+                    zerodds_qos::DurabilityKind::Volatile,
+                    alloc::vec![],
+                    zerodds_qos::LivelinessKind::Automatic,
+                ),
+                true,
+            )
+            .expect("reader");
+        let key = [0x11_u8; 16];
+        rt.write_user_lifecycle(w, key, status_info::UNREGISTERED)
+            .expect("unregister");
+        let life = rx
+            .recv_timeout(core::time::Duration::from_millis(200))
+            .expect("unregister must deliver a Lifecycle marker");
+        match life {
+            UserSample::Lifecycle { key_hash, kind } => {
+                assert_eq!(key_hash, key);
+                assert_eq!(kind, ChangeKind::NotAliveUnregistered);
+            }
+            other => panic!("expected Lifecycle, got {other:?}"),
+        }
+        rt.shutdown();
+    }
+
+    /// QR (e) LIVELINESS AUTOMATIC: the reader's liveliness_changed alive_count
+    /// tracks a live matched writer on the same-runtime path.
+    #[test]
+    fn qr_liveliness_automatic_bumps_reader_alive_count() {
+        let rt = DcpsRuntime::start(
+            67,
+            GuidPrefix::from_bytes([0x67; 12]),
+            RuntimeConfig::default(),
+        )
+        .expect("start");
+        let w = rt
+            .register_user_writer(qr_writer_cfg(
+                "QrLive",
+                zerodds_qos::DurabilityKind::Volatile,
+                alloc::vec![],
+                zerodds_qos::LivelinessKind::Automatic,
+            ))
+            .expect("writer");
+        let (r, rx) = rt
+            .register_user_reader(qr_reader_cfg(
+                "QrLive",
+                zerodds_qos::DurabilityKind::Volatile,
+                alloc::vec![],
+                zerodds_qos::LivelinessKind::Automatic,
+            ))
+            .expect("reader");
+
+        let (_alive0, count0, _na0) = rt.user_reader_liveliness_status(r);
+        assert_eq!(count0, 0, "no writer has delivered yet");
+
+        rt.write_user_sample(w, b"beat".to_vec()).expect("write");
+        let _ = rx.recv_timeout(core::time::Duration::from_millis(200));
+
+        let (alive, count, _na) = rt.user_reader_liveliness_status(r);
+        assert!(alive, "AUTOMATIC writer keeps the reader's match alive");
+        assert_eq!(
+            count, 1,
+            "alive_count must bump to 1 for the live matched AUTOMATIC writer"
+        );
+
+        // A second write from the same writer does NOT double-count.
+        rt.write_user_sample(w, b"beat2".to_vec()).expect("write");
+        let _ = rx.recv_timeout(core::time::Duration::from_millis(200));
+        let (_a, count2, _n) = rt.user_reader_liveliness_status(r);
+        assert_eq!(count2, 1, "same writer must not bump alive_count twice");
+        rt.shutdown();
     }
 }

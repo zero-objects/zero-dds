@@ -21,9 +21,9 @@ workspace = true
 path = "src/lib.rs"
 
 [dependencies]
-zerodds-durability-store = { version = "1.0.0-rc.3.1", path = "../durability-store" }
-zerodds-qos = { version = "1.0.0-rc.3.1", path = "../qos" }
+zerodds-durability-store = { version = "1.0.0-rc.4", path = "../durability-store" }
+zerodds-qos = { version = "1.0.0-rc.4", path = "../qos" }
 rusqlite = { workspace = true }
 
 [dev-dependencies]
-zerodds-qos = { version = "1.0.0-rc.3.1", path = "../qos" }
+zerodds-qos = { version = "1.0.0-rc.4", path = "../qos" }

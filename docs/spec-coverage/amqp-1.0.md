@@ -586,4 +586,4 @@ Test-Lauf: `cargo test -p zerodds-amqp-bridge` — 87 lib-Tests grün,
 (`extended_types`/`frame`/`performatives`/`sections`/`types`, inkl. der
 SASL-Performative- + attach/transfer-Codec-Tests). RabbitMQ-Interop
 zusätzlich live: `cargo test -p zerodds-amqp-endpoint --test
-rabbitmq_amqp10_e2e -- --ignored` (codepit, `AMQP_RABBITMQ=1`).
+rabbitmq_amqp10_e2e -- --ignored` (Linux bench host, `AMQP_RABBITMQ=1`).

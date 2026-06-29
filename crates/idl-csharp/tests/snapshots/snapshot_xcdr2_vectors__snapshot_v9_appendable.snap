@@ -27,9 +27,11 @@ public sealed class VTypeSupport : IDdsTopicType<V>
 
     public byte[] Encode(V sample) => Encode(sample, EndianMode.LittleEndian);
 
-    public byte[] Encode(V sample, EndianMode endian)
+    public byte[] Encode(V sample, EndianMode endian) => Encode(sample, endian, 1);
+    public byte[] Encode(V sample, EndianMode endian, int representation)
     {
-        var w = new Xcdr2Writer(endian);
+        int __maxAlign = representation == 0 ? Xcdr2Writer.Xcdr1MaxAlignmentValue : 4;
+        var w = new Xcdr2Writer(endian, __maxAlign);
         EncodeInto(w, sample);
         return w.ToArray();
     }
@@ -43,18 +45,21 @@ public sealed class VTypeSupport : IDdsTopicType<V>
         }
     }
 
-    public V Decode(ReadOnlySpan<byte> bytes)
+    public V Decode(ReadOnlySpan<byte> bytes) => Decode(bytes, EndianMode.LittleEndian, 1);
+    public V Decode(ReadOnlySpan<byte> bytes, EndianMode endian) => Decode(bytes, endian, 1);
+    public V Decode(ReadOnlySpan<byte> bytes, EndianMode endian, int representation)
     {
-        var r = new Xcdr2Reader(bytes, EndianMode.LittleEndian);
-        return DecodeFrom(r);
+        int __maxAlign = representation == 0 ? Xcdr2Reader.Xcdr1MaxAlignmentValue : 4;
+        var r = new Xcdr2Reader(bytes, endian, __maxAlign);
+        return DecodeFrom(ref r);
     }
 
-    public V DecodeFrom(Xcdr2Reader r)
+    public V DecodeFrom(ref Xcdr2Reader r)
     {
         var __scope = r.BeginDHeader();
-        int __m0 = default;
+        int __m0 = default!;
         __m0 = r.ReadInt32();
-        int __m1 = default;
+        int __m1 = default!;
         __m1 = r.ReadInt32();
         r.EndDHeader(__scope);
         return new V

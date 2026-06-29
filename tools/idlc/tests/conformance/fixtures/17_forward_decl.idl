@@ -1,0 +1,13 @@
+// Conformance feature: forward declaration of structs and unions.
+module conf {
+  struct Node;            // forward
+  union  Variant;         // forward union
+  struct Node {
+    long             value;
+    sequence<Node>   next;
+  };
+  union Variant switch (long) {
+    case 0: long  a;
+    case 1: Node  n;
+  };
+};

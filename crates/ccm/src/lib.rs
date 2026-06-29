@@ -4,7 +4,7 @@
 //! OMG CCM 4.0 — CORBA Component Model.
 //!
 //! Crate `zerodds-ccm`. Safety classification: **STANDARD**.
-//! Spec `formal/06-04-01` (`docs/standards/cache/omg/ccm-4.0.pdf`).
+//! Spec `formal/06-04-01` (`internal/standards/cache/omg/ccm-4.0.pdf`).
 //!
 //! # Scope
 //!

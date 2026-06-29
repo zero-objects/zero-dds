@@ -150,18 +150,22 @@ pub unsafe extern "C" fn zerodds_sub_create_datareader(
             deadline: qos.deadline.clone(),
             liveliness: qos.liveliness.clone(),
             ownership: qos.ownership.kind,
-            partition: Vec::new(),
-            user_data: Vec::new(),
-            topic_data: Vec::new(),
-            group_data: Vec::new(),
+            // QB-cluster: plumb PARTITION from the Subscriber/reader QoS onto the
+            // endpoint config so `partitions_overlap` (DDS 1.4 §2.2.3.10) gates
+            // matching. Previously hardcoded empty.
+            partition: qos.partition.names.clone(),
+            user_data: qos.user_data.value.clone(),
+            topic_data: qos.topic_data.value.clone(),
+            group_data: qos.group_data.value.clone(),
             type_identifier: zerodds_types::TypeIdentifier::default(),
             type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
-            data_representation_offer: None,
+            data_representation_offer: qos.data_representation.clone(),
         };
         let (eid, rx) = match rt.register_user_reader(cfg) {
             Ok(pair) => pair,
             Err(_) => return ptr::null_mut(),
         };
+        let ownership = qos.ownership.kind;
         let dr = Box::new(ZeroDdsDataReader {
             subscriber: sub,
             topic,
@@ -171,6 +175,9 @@ pub unsafe extern "C" fn zerodds_sub_create_datareader(
             rx: Mutex::new(rx),
             read_cache: Mutex::new(Vec::new()),
             cft_filter: None,
+            ownership,
+            instances: zerodds_dcps::instance_tracker::InstanceTracker::new(),
+            partition_out: Mutex::new(Default::default()),
         });
         let dr_ptr = Box::into_raw(dr);
         if let Ok(mut list) = sb.datareaders.lock() {
@@ -218,12 +225,21 @@ pub unsafe extern "C" fn zerodds_sub_create_datareader_with_cft(
             })
             .unwrap_or_default();
 
+        let schema: Vec<crate::entities::CftField> =
+            cft_ref.schema.lock().map(|g| g.clone()).unwrap_or_default();
+        let extensibility = cft_ref.extensibility.lock().map(|g| *g).unwrap_or_default();
+
         let dr = zerodds_sub_create_datareader(sub, related_topic, qos);
         if dr.is_null() {
             return ptr::null_mut();
         }
         let mut boxed = Box::from_raw(dr);
-        boxed.cft_filter = Some(crate::entities::CftFilter { expr, params });
+        boxed.cft_filter = Some(crate::entities::CftFilter {
+            expr,
+            params,
+            schema,
+            extensibility,
+        });
         Box::into_raw(boxed)
     }
 }
@@ -392,6 +408,16 @@ pub struct ZeroDdsSampleInfo {
     pub publication_handle: u64,
     /// `true` if the payload actually has data (vs. a lifecycle marker).
     pub valid_data: bool,
+    /// XCDR version of the payload from the encapsulation header (RTPS 2.5
+    /// §10.5): `0` = XCDR1 (CDR/PL_CDR), `1` = XCDR2 (CDR2/D_CDR2/PL_CDR2).
+    /// The typed consumer needs this to apply the correct alignment rule.
+    /// `0` for lifecycle markers (no payload).
+    pub representation: u8,
+    /// Wire byte order of the payload: `0` = little-endian (the canonical
+    /// XCDR2 wire), `1` = big-endian — from the encapsulation representation
+    /// identifier's low bit. The typed consumer dispatches its little-endian
+    /// vs big-endian decoder on this. `0` for lifecycle markers.
+    pub big_endian: u8,
 }
 
 /// Sample array (Spec §5 mini-spec).
@@ -420,18 +446,21 @@ struct LoanMemory {
 
 impl LoanMemory {
     fn new(samples: Vec<UserSample>) -> Box<Self> {
-        let with_state: Vec<(UserSample, crate::entities::ReadSampleState)> = samples
+        // Single-sample helper path (no instance resolution): handle = NIL(0).
+        let with_state: Vec<(UserSample, crate::entities::ReadSampleState, SampleHandle)> = samples
             .into_iter()
-            .map(|s| (s, crate::entities::ReadSampleState::NotRead))
+            .map(|s| (s, crate::entities::ReadSampleState::NotRead, 0u64))
             .collect();
         Self::from_state(with_state)
     }
 
-    fn from_state(samples: Vec<(UserSample, crate::entities::ReadSampleState)>) -> Box<Self> {
+    fn from_state(
+        samples: Vec<(UserSample, crate::entities::ReadSampleState, SampleHandle)>,
+    ) -> Box<Self> {
         let mut payloads: Vec<Vec<u8>> = Vec::with_capacity(samples.len());
         let mut infos: Vec<ZeroDdsSampleInfo> = Vec::with_capacity(samples.len());
 
-        for (s, state) in samples {
+        for (s, state, handle) in samples {
             let sample_state_bit = match state {
                 crate::entities::ReadSampleState::Read => 1u32, // READ
                 crate::entities::ReadSampleState::NotRead => 2u32, // NOT_READ
@@ -440,6 +469,8 @@ impl LoanMemory {
                 UserSample::Alive {
                     payload,
                     writer_guid,
+                    representation,
+                    big_endian,
                     ..
                 } => {
                     let pub_handle = u64_from_guid(writer_guid);
@@ -454,9 +485,11 @@ impl LoanMemory {
                         absolute_generation_rank: 0,
                         source_timestamp_sec: 0,
                         source_timestamp_nanosec: 0,
-                        instance_handle: 0,
+                        instance_handle: handle,
                         publication_handle: pub_handle,
                         valid_data: true,
+                        representation,
+                        big_endian: u8::from(big_endian),
                     });
                     payloads.push(payload.to_vec());
                 }
@@ -480,9 +513,11 @@ impl LoanMemory {
                         absolute_generation_rank: 0,
                         source_timestamp_sec: 0,
                         source_timestamp_nanosec: 0,
-                        instance_handle: 0,
+                        instance_handle: handle,
                         publication_handle: 0,
                         valid_data: false,
+                        representation: 0,
+                        big_endian: 0,
                     });
                     payloads.push(Vec::new());
                 }
@@ -507,13 +542,90 @@ impl LoanMemory {
     }
 }
 
-fn u64_from_guid(g: [u8; 16]) -> u64 {
+pub(crate) fn u64_from_guid(g: [u8; 16]) -> u64 {
     let mut h: u64 = 0xcbf29ce484222325;
     for &b in g.iter() {
         h ^= b as u64;
         h = h.wrapping_mul(0x100000001b3);
     }
     h
+}
+
+/// Untyped per-instance KeyHash for the C-FFI take path. The C-FFI carries
+/// no IDL key info, so the instance identity is derived from the full sample
+/// payload: each distinct payload is one instance (Spec §2.2.2.5.4 — the
+/// reader distinguishes instances by their KeyHash). For genuinely keyed
+/// applications a writer that disposes an instance supplies the matching
+/// `key_hash` directly, which the lifecycle path uses verbatim.
+fn payload_key_hash(payload: &[u8]) -> [u8; 16] {
+    let mut kh = [0u8; 16];
+    // Two independent FNV-1a streams (different seeds) fill the 16-byte hash,
+    // giving a low-collision instance identity for the untyped surface.
+    let seeds: [u64; 2] = [0xcbf2_9ce4_8422_2325, 0x1000_0000_01b3_27d4];
+    for (i, &seed) in seeds.iter().enumerate() {
+        let mut h = seed;
+        for &b in payload {
+            h ^= b as u64;
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        kh[i * 8..i * 8 + 8].copy_from_slice(&h.to_le_bytes());
+    }
+    kh
+}
+
+/// Per-collected-sample side data computed in the take/read path: the
+/// resolved `InstanceHandle` (Spec §2.2.2.5.4) surfaced in `SampleInfo`.
+type SampleHandle = u64;
+
+/// Walks the collected `Alive`/`Lifecycle` samples and (1) applies the
+/// EXCLUSIVE-ownership arbitration via the validated dcps core
+/// [`InstanceTracker::should_accept_sample_under_exclusive_ownership`]
+/// (Spec §2.2.3.23) and (2) resolves the real per-instance `InstanceHandle`
+/// for each surviving sample so dispose/unregister transitions are
+/// distinguishable from C-FFI bindings.
+fn resolve_instances_and_ownership(
+    drr: &ZeroDdsDataReader,
+    collected: Vec<(UserSample, crate::entities::ReadSampleState)>,
+) -> Vec<(UserSample, crate::entities::ReadSampleState, SampleHandle)> {
+    let exclusive = matches!(drr.ownership, zerodds_dcps::qos::OwnershipKind::Exclusive);
+    let mut out = Vec::with_capacity(collected.len());
+    for (s, state) in collected {
+        match &s {
+            UserSample::Alive {
+                payload,
+                writer_guid,
+                writer_strength,
+                ..
+            } => {
+                let kh = payload_key_hash(payload.as_ref());
+                // Register the instance so the owner tracker has a slot
+                // (mirrors dcps::Subscriber::passes_exclusive_ownership).
+                let (handle, _new) = drr.instances.observe_sample(kh, payload.to_vec(), None);
+                if exclusive
+                    && !drr
+                        .instances
+                        .should_accept_sample_under_exclusive_ownership(
+                            &kh,
+                            *writer_guid,
+                            *writer_strength,
+                        )
+                {
+                    // Weaker writer's sample on an owned instance → drop.
+                    continue;
+                }
+                out.push((s, state, handle.as_raw()));
+            }
+            UserSample::Lifecycle { key_hash, .. } => {
+                // Lifecycle markers carry the real KeyHash; surface the same
+                // handle as the matching Alive instance.
+                let (handle, _new) =
+                    drr.instances
+                        .observe_sample(*key_hash, key_hash.to_vec(), None);
+                out.push((s, state, handle.as_raw()));
+            }
+        }
+    }
+    out
 }
 
 /// Take: consumes samples from the cache + channel (Spec §2.2.2.5.3).
@@ -563,7 +675,7 @@ pub unsafe extern "C" fn zerodds_dr_take(
         // 3) ContentFilteredTopic filter (Spec §2.2.2.3.3).
         if let Some(filter) = &drr.cft_filter {
             collected.retain(|(s, _)| match s {
-                UserSample::Alive { payload, .. } => filter.evaluate(payload),
+                UserSample::Alive { payload, .. } => filter.evaluate(payload.as_ref()),
                 UserSample::Lifecycle { .. } => true,
             });
         }
@@ -581,7 +693,23 @@ pub unsafe extern "C" fn zerodds_dr_take(
     if empty_out {
         return ZeroDdsStatus::NoData as c_int;
     }
-    finalize_loan(out, collected)
+    // 4) EXCLUSIVE-ownership arbitration (Spec §2.2.3.23) + per-instance
+    //    InstanceHandle resolution (Spec §2.2.2.5.4).
+    // SAFETY: dr NULL-checked at entry; the reader lives for this call.
+    let resolved = unsafe { resolve_instances_and_ownership(&*dr, collected) };
+    if resolved.is_empty() {
+        // All samples filtered out by exclusive-ownership arbitration.
+        // SAFETY: out NULL-checked at entry.
+        unsafe {
+            (*out).buffers = ptr::null_mut();
+            (*out).lengths = ptr::null_mut();
+            (*out).infos = ptr::null_mut();
+            (*out).count = 0;
+            (*out).loan_token = ptr::null_mut();
+        }
+        return ZeroDdsStatus::NoData as c_int;
+    }
+    finalize_loan(out, resolved)
 }
 
 /// Read: non-destructive variant of take (Spec §2.2.2.5.3).
@@ -616,7 +744,7 @@ pub unsafe extern "C" fn zerodds_dr_read(
             while let Ok(s) = rx.try_recv() {
                 let pass = if let Some(filter) = &drr.cft_filter {
                     match &s {
-                        UserSample::Alive { payload, .. } => filter.evaluate(payload),
+                        UserSample::Alive { payload, .. } => filter.evaluate(payload.as_ref()),
                         UserSample::Lifecycle { .. } => true,
                     }
                 } else {
@@ -656,12 +784,27 @@ pub unsafe extern "C" fn zerodds_dr_read(
     if empty_out {
         return ZeroDdsStatus::NoData as c_int;
     }
-    finalize_loan(out, collected)
+    // EXCLUSIVE-ownership arbitration (Spec §2.2.3.23) + per-instance
+    // InstanceHandle resolution (Spec §2.2.2.5.4), as in `take`.
+    // SAFETY: dr NULL-checked at entry; the reader lives for this call.
+    let resolved = unsafe { resolve_instances_and_ownership(&*dr, collected) };
+    if resolved.is_empty() {
+        // SAFETY: out NULL-checked at entry.
+        unsafe {
+            (*out).buffers = ptr::null_mut();
+            (*out).lengths = ptr::null_mut();
+            (*out).infos = ptr::null_mut();
+            (*out).count = 0;
+            (*out).loan_token = ptr::null_mut();
+        }
+        return ZeroDdsStatus::NoData as c_int;
+    }
+    finalize_loan(out, resolved)
 }
 
 fn finalize_loan(
     out: *mut ZeroDdsSampleArray,
-    collected: Vec<(UserSample, crate::entities::ReadSampleState)>,
+    collected: Vec<(UserSample, crate::entities::ReadSampleState, SampleHandle)>,
 ) -> c_int {
     let mut loan = LoanMemory::from_state(collected);
     let buffers_ptr = loan.buffers.as_mut_ptr();
@@ -1228,6 +1371,38 @@ mod tests {
     }
 
     #[test]
+    fn from_state_fills_representation_and_byte_order() {
+        // A loan-batch sample carries its wire representation + byte order out
+        // to the FFI consumer (TS/C++) so it can dispatch decode vs decode_be.
+        use zerodds_dcps::sample_bytes::SampleBytes;
+        let alive = UserSample::Alive {
+            payload: SampleBytes::from_vec(vec![1, 2, 3, 4]),
+            writer_guid: [0xAB; 16],
+            writer_strength: 0,
+            representation: 1, // XCDR2
+            big_endian: true,  // big-endian peer
+            source_timestamp: None,
+        };
+        let lifecycle = UserSample::Lifecycle {
+            key_hash: [0; 16],
+            kind: zerodds_rtps::history_cache::ChangeKind::NotAliveDisposed,
+        };
+        let mem = LoanMemory::from_state(vec![
+            (alive, crate::entities::ReadSampleState::NotRead, 7u64),
+            (lifecycle, crate::entities::ReadSampleState::NotRead, 8u64),
+        ]);
+        assert_eq!(mem.infos.len(), 2);
+        // Alive sample reflects the wire encap.
+        assert!(mem.infos[0].valid_data);
+        assert_eq!(mem.infos[0].representation, 1);
+        assert_eq!(mem.infos[0].big_endian, 1);
+        // Lifecycle marker has no payload → neutral 0/0.
+        assert!(!mem.infos[1].valid_data);
+        assert_eq!(mem.infos[1].representation, 0);
+        assert_eq!(mem.infos[1].big_endian, 0);
+    }
+
+    #[test]
     fn take_on_empty_returns_no_data() {
         let (p, sub, t) = mk(53);
         let mut arr = ZeroDdsSampleArray {
@@ -1385,6 +1560,412 @@ mod tests {
             let dr = zerodds_sub_create_datareader(sub, t, ptr::null());
             assert_eq!(zerodds_dr_get_topicdescription(dr), t);
             assert_eq!(zerodds_dr_get_subscriber(dr), sub);
+        }
+        cleanup(p);
+    }
+
+    // ===================================================================
+    // QR-cluster regression tests (#77): exclusive-ownership arbitration,
+    // CFT payload decode, keyed-lifecycle InstanceHandle on the take path.
+    // ===================================================================
+
+    use crate::entities::ZeroDdsDataReader;
+    use zerodds_dcps::sample_bytes::SampleBytes;
+    use zerodds_rtps::history_cache::ChangeKind;
+
+    /// Builds a standalone DataReader with a controlled sample channel so a
+    /// test can inject `UserSample`s with explicit writer GUID/strength —
+    /// i.e. a real same-runtime writer→reader observation of the QoS effect
+    /// on the C-FFI take path. `rt`/`eid` come from the participant; the
+    /// reader is NOT registered in the subscriber list, so the test drops it
+    /// explicitly.
+    fn mk_channel_reader(
+        p: *mut ZeroDdsDomainParticipant,
+        sub: *mut ZeroDdsSubscriber,
+        topic: *mut ZeroDdsTopic,
+        ownership: zerodds_dcps::qos::OwnershipKind,
+        cft_filter: Option<crate::entities::CftFilter>,
+    ) -> (*mut ZeroDdsDataReader, mpsc::Sender<UserSample>) {
+        // SAFETY: p from mk; dp.rt is Some for an online participant.
+        let rt = unsafe { (*p).rt.as_ref().expect("participant runtime").clone() };
+        let eid = zerodds_rtps::wire_types::EntityId::user_reader_with_key([9, 9, 9]);
+        let (tx, rx) = mpsc::channel::<UserSample>();
+        let dr = Box::new(ZeroDdsDataReader {
+            subscriber: sub,
+            topic,
+            rt,
+            eid,
+            qos: Mutex::new(DataReaderQos::default()),
+            rx: Mutex::new(rx),
+            read_cache: Mutex::new(Vec::new()),
+            cft_filter,
+            ownership,
+            instances: zerodds_dcps::instance_tracker::InstanceTracker::new(),
+            partition_out: Mutex::new(Default::default()),
+        });
+        (Box::into_raw(dr), tx)
+    }
+
+    fn alive(payload: Vec<u8>, guid_byte: u8, strength: i32) -> UserSample {
+        let mut g = [0u8; 16];
+        g[0] = guid_byte;
+        UserSample::Alive {
+            payload: SampleBytes::from_vec(payload),
+            writer_guid: g,
+            writer_strength: strength,
+            representation: 1,
+            big_endian: false,
+            source_timestamp: None,
+        }
+    }
+
+    fn empty_arr() -> ZeroDdsSampleArray {
+        ZeroDdsSampleArray {
+            buffers: ptr::null_mut(),
+            lengths: ptr::null_mut(),
+            infos: ptr::null_mut(),
+            count: 0,
+            loan_token: ptr::null_mut(),
+        }
+    }
+
+    /// EXCLUSIVE ownership (Spec §2.2.3.23): two writers send to the SAME
+    /// instance (identical payload-key). The stronger writer (strength 20)
+    /// owns the instance; the weaker writer's (strength 5) sample on that
+    /// instance is filtered out on the take path. Routes through the
+    /// validated dcps `InstanceTracker::should_accept_sample_under_exclusive_ownership`.
+    #[test]
+    fn exclusive_ownership_drops_weaker_writer_on_take() {
+        let (p, sub, t) = mk(60);
+        let (dr, tx) =
+            mk_channel_reader(p, sub, t, zerodds_dcps::qos::OwnershipKind::Exclusive, None);
+        // Same instance payload from a strong writer first.
+        let inst = alloc::vec![0x10u8, 0x20, 0x30, 0x40];
+        tx.send(alive(inst.clone(), 0x01, 20)).unwrap();
+        // Weaker writer, same instance → must be rejected.
+        tx.send(alive(inst.clone(), 0x02, 5)).unwrap();
+        // A second sample from the strong owner → accepted.
+        tx.send(alive(inst.clone(), 0x01, 20)).unwrap();
+
+        let mut arr = empty_arr();
+        // SAFETY: dr+arr valid for the test.
+        let rc = unsafe { zerodds_dr_take(dr, &mut arr, 10, 0, 0, 0) };
+        assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
+        // Only the two strong-writer samples survive; weaker one filtered.
+        assert_eq!(arr.count, 2, "weaker writer's sample must be dropped");
+        // SAFETY: arr from take; dr valid.
+        unsafe {
+            let pubh = (*arr.infos.add(0)).publication_handle;
+            assert_eq!(
+                (*arr.infos.add(1)).publication_handle,
+                pubh,
+                "both surviving samples come from the same (strong) writer"
+            );
+            zerodds_dr_return_loan(dr, &mut arr);
+            let _ = Box::from_raw(dr);
+        }
+        cleanup(p);
+    }
+
+    /// SHARED ownership (default): both writers' samples are delivered (no
+    /// arbitration). Confirms the filter is gated on EXCLUSIVE only.
+    #[test]
+    fn shared_ownership_delivers_all_writers() {
+        let (p, sub, t) = mk(61);
+        let (dr, tx) = mk_channel_reader(p, sub, t, zerodds_dcps::qos::OwnershipKind::Shared, None);
+        let inst = alloc::vec![1u8, 2, 3, 4];
+        tx.send(alive(inst.clone(), 0x01, 20)).unwrap();
+        tx.send(alive(inst.clone(), 0x02, 5)).unwrap();
+        let mut arr = empty_arr();
+        // SAFETY: dr+arr valid.
+        let rc = unsafe { zerodds_dr_take(dr, &mut arr, 10, 0, 0, 0) };
+        assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
+        assert_eq!(arr.count, 2, "shared ownership delivers every writer");
+        // SAFETY: cleanup.
+        unsafe {
+            zerodds_dr_return_loan(dr, &mut arr);
+            let _ = Box::from_raw(dr);
+        }
+        cleanup(p);
+    }
+
+    /// CFT (Spec §2.2.2.3.3): a `seq > 4` filter with an Int32 schema on the
+    /// leading member genuinely filters the decoded payload. Samples with
+    /// seq <= 4 are dropped; seq > 4 pass.
+    #[test]
+    fn cft_seq_filter_decodes_and_filters_payload() {
+        use crate::entities::{CftField, CftFieldKind, CftFilter};
+        let (p, sub, t) = mk(62);
+        let expr = zerodds_sql_filter::parse("seq > 4").expect("parse seq>4");
+        let filter = CftFilter {
+            expr,
+            params: Vec::new(),
+            schema: alloc::vec![CftField {
+                name: "seq".into(),
+                kind: CftFieldKind::Int32,
+            }],
+            extensibility: crate::entities::CftExtensibility::Final,
+        };
+        let (dr, tx) = mk_channel_reader(
+            p,
+            sub,
+            t,
+            zerodds_dcps::qos::OwnershipKind::Shared,
+            Some(filter),
+        );
+        // XCDR2 little-endian i32 payloads: 3 (drop), 7 (keep), 5 (keep).
+        for v in [3i32, 7, 5] {
+            tx.send(alive(v.to_le_bytes().to_vec(), 0x01, 0)).unwrap();
+        }
+        let mut arr = empty_arr();
+        // SAFETY: dr+arr valid.
+        let rc = unsafe { zerodds_dr_take(dr, &mut arr, 10, 0, 0, 0) };
+        assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
+        assert_eq!(arr.count, 2, "only seq=7 and seq=5 pass seq>4");
+        // SAFETY: cleanup.
+        unsafe {
+            zerodds_dr_return_loan(dr, &mut arr);
+            let _ = Box::from_raw(dr);
+        }
+        cleanup(p);
+    }
+
+    /// CFT string field: `name = 'foo'` over a length-prefixed CDR string
+    /// payload genuinely filters.
+    #[test]
+    fn cft_string_filter_decodes_payload() {
+        use crate::entities::{CftField, CftFieldKind, CftFilter};
+        let (p, sub, t) = mk(63);
+        let expr = zerodds_sql_filter::parse("name = 'foo'").expect("parse name=foo");
+        let filter = CftFilter {
+            expr,
+            params: Vec::new(),
+            schema: alloc::vec![CftField {
+                name: "name".into(),
+                kind: CftFieldKind::StringField,
+            }],
+            extensibility: crate::entities::CftExtensibility::Final,
+        };
+        let (dr, tx) = mk_channel_reader(
+            p,
+            sub,
+            t,
+            zerodds_dcps::qos::OwnershipKind::Shared,
+            Some(filter),
+        );
+        // CDR string: u32 len (incl NUL) + bytes + NUL, XCDR LE.
+        let cdr_string = |s: &str| -> Vec<u8> {
+            let mut v = Vec::new();
+            let len = (s.len() + 1) as u32;
+            v.extend_from_slice(&len.to_le_bytes());
+            v.extend_from_slice(s.as_bytes());
+            v.push(0);
+            v
+        };
+        tx.send(alive(cdr_string("foo"), 0x01, 0)).unwrap();
+        tx.send(alive(cdr_string("bar"), 0x01, 0)).unwrap();
+        let mut arr = empty_arr();
+        // SAFETY: dr+arr valid.
+        let rc = unsafe { zerodds_dr_take(dr, &mut arr, 10, 0, 0, 0) };
+        assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
+        assert_eq!(arr.count, 1, "only name='foo' passes");
+        // SAFETY: cleanup.
+        unsafe {
+            zerodds_dr_return_loan(dr, &mut arr);
+            let _ = Box::from_raw(dr);
+        }
+        cleanup(p);
+    }
+
+    /// QB-rest regression (#79, issue 3): CFT untyped positional schema for an
+    /// `@appendable` type. In XCDR2 an @appendable/@mutable aggregate is
+    /// prefixed with a 4-byte DHEADER (XTypes 1.3 §7.4.3.4.2) before the first
+    /// member, so the positional decoder must skip those 4 bytes — otherwise it
+    /// reads the DHEADER as the first column and every comparison resolves at
+    /// the wrong offset. With `CftExtensibility::Appendable` set, both a numeric
+    /// (`seq` int32) and a string (`name`) column resolve, so the filter
+    /// `seq > 4 AND name = 'keep'` genuinely filters.
+    #[test]
+    fn cft_appendable_dheader_offset_resolves_columns() {
+        use crate::entities::{CftExtensibility, CftField, CftFieldKind, CftFilter};
+        let (p, sub, t) = mk(65);
+        let expr = zerodds_sql_filter::parse("seq > 4 AND name = 'keep'")
+            .expect("parse appendable filter");
+        let filter = CftFilter {
+            expr,
+            params: Vec::new(),
+            schema: alloc::vec![
+                CftField {
+                    name: "seq".into(),
+                    kind: CftFieldKind::Int32,
+                },
+                CftField {
+                    name: "name".into(),
+                    kind: CftFieldKind::StringField,
+                },
+            ],
+            // @appendable → leading 4-byte DHEADER is skipped.
+            extensibility: CftExtensibility::Appendable,
+        };
+        let (dr, tx) = mk_channel_reader(
+            p,
+            sub,
+            t,
+            zerodds_dcps::qos::OwnershipKind::Shared,
+            Some(filter),
+        );
+
+        // Build an @appendable XCDR2 body: 4-byte DHEADER (object length) then
+        // the members. After the i32 `seq`, the `name` string is 4-byte aligned
+        // (already aligned here: 4 DHEADER + 4 seq = offset 8). CDR string =
+        // u32 length (incl NUL) + bytes + NUL.
+        let appendable = |seq: i32, name: &str| -> Vec<u8> {
+            let mut body = Vec::new();
+            body.extend_from_slice(&seq.to_le_bytes());
+            let len = (name.len() + 1) as u32;
+            body.extend_from_slice(&len.to_le_bytes());
+            body.extend_from_slice(name.as_bytes());
+            body.push(0);
+            // DHEADER = byte length of the member block that follows.
+            let mut v = Vec::new();
+            v.extend_from_slice(&(body.len() as u32).to_le_bytes());
+            v.extend_from_slice(&body);
+            v
+        };
+
+        // seq=3,"keep" → drop (seq<=4); seq=7,"drop" → drop (name); seq=9,"keep" → keep.
+        tx.send(alive(appendable(3, "keep"), 0x01, 1)).unwrap();
+        tx.send(alive(appendable(7, "drop"), 0x01, 1)).unwrap();
+        tx.send(alive(appendable(9, "keep"), 0x01, 1)).unwrap();
+
+        let mut arr = empty_arr();
+        // SAFETY: dr+arr valid.
+        let rc = unsafe { zerodds_dr_take(dr, &mut arr, 10, 0, 0, 0) };
+        assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
+        assert_eq!(
+            arr.count, 1,
+            "only seq=9,name='keep' passes once the DHEADER offset is honored"
+        );
+        // SAFETY: cleanup.
+        unsafe {
+            zerodds_dr_return_loan(dr, &mut arr);
+            let _ = Box::from_raw(dr);
+        }
+        cleanup(p);
+    }
+
+    /// Control for the DHEADER fix: the SAME @appendable payload with the
+    /// extensibility left at `Final` (offset 0) reads the DHEADER as `seq` and
+    /// thus does NOT resolve the columns correctly — proving the offset is
+    /// load-bearing. The DHEADER value (a small object length) is < 5, so a
+    /// `seq > 4` filter on the misread offset rejects the sample.
+    #[test]
+    fn cft_appendable_payload_misreads_without_dheader_skip() {
+        use crate::entities::{CftExtensibility, CftField, CftFieldKind, CftFilter};
+        let (p, sub, t) = mk(66);
+        let expr = zerodds_sql_filter::parse("seq > 4").expect("parse seq>4");
+        let filter = CftFilter {
+            expr,
+            params: Vec::new(),
+            schema: alloc::vec![CftField {
+                name: "seq".into(),
+                kind: CftFieldKind::Int32,
+            }],
+            // WRONG on purpose: payload is @appendable but declared @final.
+            extensibility: CftExtensibility::Final,
+        };
+        let (dr, tx) = mk_channel_reader(
+            p,
+            sub,
+            t,
+            zerodds_dcps::qos::OwnershipKind::Shared,
+            Some(filter),
+        );
+        // @appendable body: DHEADER(=4) + seq(=9). Read at offset 0 the decoder
+        // sees the DHEADER (4) as `seq`, so `seq > 4` is FALSE and the sample is
+        // dropped — even though the real seq is 9.
+        let mut payload = Vec::new();
+        payload.extend_from_slice(&4u32.to_le_bytes()); // DHEADER
+        payload.extend_from_slice(&9i32.to_le_bytes()); // real seq
+        tx.send(alive(payload, 0x01, 1)).unwrap();
+        let mut arr = empty_arr();
+        // SAFETY: dr+arr valid.
+        let rc = unsafe { zerodds_dr_take(dr, &mut arr, 10, 0, 0, 0) };
+        // Misread offset → seq looks like 4 → seq>4 false → NoData.
+        assert_eq!(rc, ZeroDdsStatus::NoData as c_int);
+        assert_eq!(arr.count, 0);
+        // SAFETY: cleanup.
+        unsafe {
+            zerodds_dr_return_loan(dr, &mut arr);
+            let _ = Box::from_raw(dr);
+        }
+        cleanup(p);
+    }
+
+    /// Keyed lifecycle (Spec §2.2.2.5.4): the take path surfaces a real,
+    /// non-zero, per-instance InstanceHandle. Two distinct payloads yield two
+    /// distinct handles; a DISPOSED lifecycle marker for an instance carries
+    /// the SAME handle as that instance's alive sample AND reports
+    /// instance_state = NOT_ALIVE_DISPOSED (2).
+    #[test]
+    fn keyed_lifecycle_surfaces_real_instance_handle() {
+        let (p, sub, t) = mk(64);
+        let (dr, tx) = mk_channel_reader(p, sub, t, zerodds_dcps::qos::OwnershipKind::Shared, None);
+        let inst_a = alloc::vec![0xAAu8, 0xAA, 0xAA, 0xAA];
+        let inst_b = alloc::vec![0xBBu8, 0xBB, 0xBB, 0xBB];
+        tx.send(alive(inst_a.clone(), 0x01, 0)).unwrap();
+        tx.send(alive(inst_b.clone(), 0x01, 0)).unwrap();
+
+        let mut arr = empty_arr();
+        // SAFETY: dr+arr valid.
+        let rc = unsafe { zerodds_dr_take(dr, &mut arr, 10, 0, 0, 0) };
+        assert_eq!(rc, ZeroDdsStatus::Ok as c_int);
+        assert_eq!(arr.count, 2);
+        // SAFETY: take returned count==2, so infos[0..2] are initialized.
+        let (handle_a, handle_b) = unsafe {
+            let h0 = (*arr.infos.add(0)).instance_handle;
+            let h1 = (*arr.infos.add(1)).instance_handle;
+            (h0, h1)
+        };
+        assert_ne!(handle_a, 0, "alive instance handle must be non-zero");
+        assert_ne!(handle_b, 0, "alive instance handle must be non-zero");
+        assert_ne!(
+            handle_a, handle_b,
+            "distinct instances must have distinct handles"
+        );
+        // SAFETY: return first loan before the next take.
+        unsafe { zerodds_dr_return_loan(dr, &mut arr) };
+
+        // Now dispose instance A via a Lifecycle marker carrying its KeyHash.
+        // The C-FFI derives the alive instance handle from the payload; the
+        // dispose path must produce the SAME handle so the transition is
+        // correlatable. We reconstruct A's payload-key hash the same way the
+        // take path does.
+        let kh_a = payload_key_hash(&inst_a);
+        tx.send(UserSample::Lifecycle {
+            key_hash: kh_a,
+            kind: ChangeKind::NotAliveDisposed,
+        })
+        .unwrap();
+        let mut arr2 = empty_arr();
+        // SAFETY: dr+arr2 valid.
+        let rc2 = unsafe { zerodds_dr_take(dr, &mut arr2, 10, 0, 0, 0) };
+        assert_eq!(rc2, ZeroDdsStatus::Ok as c_int);
+        assert_eq!(arr2.count, 1);
+        // SAFETY: arr2 from take.
+        unsafe {
+            let info = *arr2.infos.add(0);
+            assert_eq!(
+                info.instance_state, 2,
+                "DISPOSED → NOT_ALIVE_DISPOSED state"
+            );
+            assert!(!info.valid_data, "lifecycle marker carries no data");
+            assert_eq!(
+                info.instance_handle, handle_a,
+                "dispose marker handle must match the alive instance handle"
+            );
+            zerodds_dr_return_loan(dr, &mut arr2);
+            let _ = Box::from_raw(dr);
         }
         cleanup(p);
     }

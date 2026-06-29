@@ -38,6 +38,16 @@ pub struct RecordArgs {
     pub duration: Option<Duration>,
     /// Maximale Sample-Größe (DoS-Cap). Default 1 MiB.
     pub max_sample_bytes: usize,
+    /// Decode opaque CDR samples to typed values (needs `type_file`).
+    pub decode: bool,
+    /// Out-of-band IDL file providing the types to decode against.
+    pub type_file: Option<String>,
+    /// `topic=TypeName` mappings; resolves which IDL type decodes a topic.
+    pub map: Vec<String>,
+    /// Write decoded samples as NDJSON to this path.
+    pub out_json: Option<String>,
+    /// Write decoded samples to a per-topic relational SQLite DB at this path.
+    pub out_sqlite: Option<String>,
 }
 
 impl Default for RecordArgs {
@@ -48,6 +58,11 @@ impl Default for RecordArgs {
             topics: Vec::new(),
             duration: None,
             max_sample_bytes: 1 << 20,
+            decode: false,
+            type_file: None,
+            map: Vec::new(),
+            out_json: None,
+            out_sqlite: None,
         }
     }
 }
@@ -140,6 +155,38 @@ fn parse_record(rest: &[String]) -> Result<RecordArgs, ParseError> {
                     flag: "max-sample-bytes",
                     got: v.clone(),
                 })?;
+            }
+            "--decode" => {
+                out.decode = true;
+            }
+            "--type-file" => {
+                i += 1;
+                out.type_file = Some(
+                    rest.get(i)
+                        .ok_or(ParseError::MissingArg("type-file"))?
+                        .clone(),
+                );
+            }
+            "--map" => {
+                i += 1;
+                out.map
+                    .push(rest.get(i).ok_or(ParseError::MissingArg("map"))?.clone());
+            }
+            "--out-json" => {
+                i += 1;
+                out.out_json = Some(
+                    rest.get(i)
+                        .ok_or(ParseError::MissingArg("out-json"))?
+                        .clone(),
+                );
+            }
+            "--out-sqlite" => {
+                i += 1;
+                out.out_sqlite = Some(
+                    rest.get(i)
+                        .ok_or(ParseError::MissingArg("out-sqlite"))?
+                        .clone(),
+                );
             }
             other => return Err(ParseError::Unknown(other.to_string())),
         }

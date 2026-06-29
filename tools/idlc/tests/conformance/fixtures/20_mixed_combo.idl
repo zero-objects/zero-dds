@@ -1,0 +1,33 @@
+// Conformance feature COMBINATION: one keyed topic type that exercises many
+// features together — enum, nested struct, sequence-of-struct, bounded string,
+// union member, map, optional, array, typedef — to catch cross-feature
+// interactions over a real DCPS roundtrip.
+module combo {
+  enum Mode { MODE_IDLE, MODE_ACTIVE, MODE_FAULT };
+
+  typedef double CurrentInAmpsType;
+
+  struct Sample {
+    long  seq;
+    double value;
+  };
+
+  union Reading switch (Mode) {
+    case MODE_IDLE:   long      idleTicks;
+    case MODE_ACTIVE: double    activeRate;
+    default:          string<16> faultCode;
+  };
+
+  @appendable
+  struct Telemetry {
+    @key long              unitId;
+    @key string<32>        region;
+    Mode                   mode;
+    CurrentInAmpsType      batteryCurrent;
+    sequence<Sample>       history;
+    Reading                reading;
+    map<string, long>      counters;
+    @optional double       calibration;
+    long                   window[4];
+  };
+};

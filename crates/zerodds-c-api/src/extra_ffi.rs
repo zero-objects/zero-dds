@@ -282,7 +282,7 @@ pub unsafe extern "C" fn zerodds_dp_get_default_publisher_qos(
             .lock()
             .map(|g| g.clone())
             .unwrap_or_default();
-        crate::qos_ffi::pub_qos_to_c(&qos, out)
+        crate::qos_ffi::pub_qos_to_c(&qos, out, &pp.default_pub_partition_out)
     }
 }
 
@@ -333,7 +333,7 @@ pub unsafe extern "C" fn zerodds_dp_get_default_subscriber_qos(
             .lock()
             .map(|g| g.clone())
             .unwrap_or_default();
-        crate::qos_ffi::sub_qos_to_c(&qos, out)
+        crate::qos_ffi::sub_qos_to_c(&qos, out, &pp.default_sub_partition_out)
     }
 }
 
@@ -380,7 +380,7 @@ pub unsafe extern "C" fn zerodds_pub_get_qos(
     unsafe {
         let pp = &*pub_;
         let qos = pp.qos.lock().map(|g| g.clone()).unwrap_or_default();
-        crate::qos_ffi::pub_qos_to_c(&qos, out)
+        crate::qos_ffi::pub_qos_to_c(&qos, out, &pp.partition_out)
     }
 }
 
@@ -431,7 +431,7 @@ pub unsafe extern "C" fn zerodds_pub_get_default_datawriter_qos(
             .lock()
             .map(|g| g.clone())
             .unwrap_or_default();
-        crate::qos_ffi::dw_qos_to_c(&qos, out)
+        crate::qos_ffi::dw_qos_to_c(&qos, out, &pp.partition_out)
     }
 }
 
@@ -511,7 +511,7 @@ pub unsafe extern "C" fn zerodds_sub_get_qos(
     unsafe {
         let sb = &*sub;
         let qos = sb.qos.lock().map(|g| g.clone()).unwrap_or_default();
-        crate::qos_ffi::sub_qos_to_c(&qos, out)
+        crate::qos_ffi::sub_qos_to_c(&qos, out, &sb.partition_out)
     }
 }
 
@@ -562,7 +562,7 @@ pub unsafe extern "C" fn zerodds_sub_get_default_datareader_qos(
             .lock()
             .map(|g| g.clone())
             .unwrap_or_default();
-        crate::qos_ffi::dr_qos_to_c(&qos, out)
+        crate::qos_ffi::dr_qos_to_c(&qos, out, &sb.partition_out)
     }
 }
 
@@ -638,7 +638,7 @@ pub unsafe extern "C" fn zerodds_dw_get_qos(
     unsafe {
         let dwr = &*dw;
         let qos = dwr.qos.lock().map(|g| g.clone()).unwrap_or_default();
-        crate::qos_ffi::dw_qos_to_c(&qos, out)
+        crate::qos_ffi::dw_qos_to_c(&qos, out, &dwr.partition_out)
     }
 }
 
@@ -685,7 +685,7 @@ pub unsafe extern "C" fn zerodds_dr_get_qos(
     unsafe {
         let drr = &*dr;
         let qos = drr.qos.lock().map(|g| g.clone()).unwrap_or_default();
-        crate::qos_ffi::dr_qos_to_c(&qos, out)
+        crate::qos_ffi::dr_qos_to_c(&qos, out, &drr.partition_out)
     }
 }
 
@@ -1686,6 +1686,308 @@ mod tests {
             );
             assert_eq!(dwqos.history.depth, 42);
             assert_eq!(dwqos.reliability.kind, 2);
+        }
+        cleanup(p);
+    }
+
+    /// QB-cluster regression: the C-FFI create path MUST plumb the
+    /// PARTITION names from the writer/reader QoS onto the runtime endpoint
+    /// config so `partitions_overlap` (DDS 1.4 §2.2.3.10) gates intra-runtime
+    /// matching. A writer in partition ["A"] and a reader in ["B"] must NOT
+    /// exchange data; a reader in ["A"] receives it. Before the fix the
+    /// create path hardcoded an empty partition → every endpoint landed in
+    /// the default partition and the mismatched reader wrongly received data.
+    #[test]
+    fn partition_isolation_over_ffi_create_path() {
+        use super::{
+            zerodds_pub_get_default_datawriter_qos, zerodds_sub_get_default_datareader_qos,
+        };
+        use crate::publisher_ffi::zerodds_dw_write;
+        use crate::qos_ffi::{ZeroDdsDataReaderQos, ZeroDdsDataWriterQos};
+        use crate::subscriber_ffi::{ZeroDdsSampleArray, zerodds_dr_return_loan, zerodds_dr_take};
+        use std::ffi::CString;
+
+        let p = mk(78);
+        let n = c"PartTopic";
+        let tn = c"RawBytes";
+        // Caller-owned C-string array for the partition name lists. Must
+        // outlive the create calls (cstr_vec copies during decode, but keep
+        // them alive for the whole block to be safe).
+        let part_a = CString::new("A").unwrap();
+        let part_b = CString::new("B").unwrap();
+        let a_arr: [*const core::ffi::c_char; 1] = [part_a.as_ptr()];
+        let b_arr: [*const core::ffi::c_char; 1] = [part_b.as_ptr()];
+
+        // SAFETY: p+topic+CStrings live for the whole block; out-pointers on
+        // stack-local slots; the extern fns document their pledges.
+        unsafe {
+            let t = zerodds_dp_create_topic(p, n.as_ptr(), tn.as_ptr(), ptr::null());
+            let pubh = zerodds_dp_create_publisher(p, ptr::null());
+            let sub = zerodds_dp_create_subscriber(p, ptr::null());
+
+            // Writer in partition ["A"].
+            let mut wqos: ZeroDdsDataWriterQos = core::mem::zeroed();
+            assert_eq!(
+                zerodds_pub_get_default_datawriter_qos(pubh, &mut wqos),
+                ZeroDdsStatus::Ok as c_int
+            );
+            wqos.partition.names = a_arr.as_ptr();
+            wqos.partition.names_len = 1;
+            let dw = zerodds_pub_create_datawriter(pubh, t, &wqos);
+            assert!(!dw.is_null());
+
+            // Reader 1 in partition ["B"] — must NOT match.
+            let mut rqos_b: ZeroDdsDataReaderQos = core::mem::zeroed();
+            assert_eq!(
+                zerodds_sub_get_default_datareader_qos(sub, &mut rqos_b),
+                ZeroDdsStatus::Ok as c_int
+            );
+            rqos_b.partition.names = b_arr.as_ptr();
+            rqos_b.partition.names_len = 1;
+            let dr_b = zerodds_sub_create_datareader(sub, t, &rqos_b);
+            assert!(!dr_b.is_null());
+
+            // Reader 2 in partition ["A"] — must match.
+            let mut rqos_a: ZeroDdsDataReaderQos = core::mem::zeroed();
+            assert_eq!(
+                zerodds_sub_get_default_datareader_qos(sub, &mut rqos_a),
+                ZeroDdsStatus::Ok as c_int
+            );
+            rqos_a.partition.names = a_arr.as_ptr();
+            rqos_a.partition.names_len = 1;
+            let dr_a = zerodds_sub_create_datareader(sub, t, &rqos_a);
+            assert!(!dr_a.is_null());
+
+            // Write a few samples; intra-runtime dispatch is synchronous via
+            // the reader mpsc channel.
+            let payload = [0x11u8, 0x22, 0x33, 0x44];
+            for _ in 0..3 {
+                assert_eq!(
+                    zerodds_dw_write(dw, payload.as_ptr(), payload.len(), 0),
+                    ZeroDdsStatus::Ok as c_int
+                );
+            }
+
+            // Give the dispatch a brief, bounded window. Mismatched reader
+            // must stay empty; matching reader must receive.
+            let mut got_a = 0usize;
+            let mut got_b = 0usize;
+            let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
+            while std::time::Instant::now() < deadline && got_a == 0 {
+                let mut arr_a: ZeroDdsSampleArray = core::mem::zeroed();
+                let mut arr_b: ZeroDdsSampleArray = core::mem::zeroed();
+                let _ = zerodds_dr_take(dr_a, &mut arr_a, 10, 0, 0, 0);
+                let _ = zerodds_dr_take(dr_b, &mut arr_b, 10, 0, 0, 0);
+                got_a += arr_a.count;
+                got_b += arr_b.count;
+                zerodds_dr_return_loan(dr_a, &mut arr_a);
+                zerodds_dr_return_loan(dr_b, &mut arr_b);
+                if got_a == 0 {
+                    std::thread::sleep(std::time::Duration::from_millis(10));
+                }
+            }
+
+            assert!(
+                got_a >= 1,
+                "reader in matching partition [A] must receive data, got {got_a}"
+            );
+            assert_eq!(
+                got_b, 0,
+                "reader in mismatched partition [B] must receive NOTHING, got {got_b}"
+            );
+            // dr_a/dr_b/dw are tracked by the participant and freed by
+            // cleanup() → delete_contained_entities; do NOT free here.
+        }
+        cleanup(p);
+    }
+
+    /// QB-rest regression (#79, issue 1): EXCLUSIVE ownership on the C-FFI
+    /// SAME-RUNTIME write→take path. Two real DataWriters (no channel
+    /// injection) on the same instance — a weak one (strength 1) and a strong
+    /// one (strength 10) — publish via `zerodds_dw_write`; intra-runtime
+    /// dispatch threads each writer's `ownership_strength` into the delivered
+    /// sample (dcps `intra_runtime_dispatch_alive`), and the EXCLUSIVE reader's
+    /// take path arbitrates through the validated
+    /// `InstanceTracker::should_accept_sample_under_exclusive_ownership`
+    /// (DDS 1.4 §2.2.3.23). The strong writer publishes first and owns the
+    /// instance; the weak writer's samples on that instance are suppressed, so
+    /// the reader sees ONLY the strength-10 writer. This closes the cpp/python/
+    /// c# gap (their FFI take path now arbitrates same-runtime samples).
+    #[test]
+    fn exclusive_ownership_same_runtime_ffi_suppresses_weaker_writer() {
+        use crate::publisher_ffi::zerodds_dw_write;
+        use crate::qos_ffi::{ZeroDdsDataReaderQos, ZeroDdsDataWriterQos};
+        use crate::subscriber_ffi::{ZeroDdsSampleArray, zerodds_dr_return_loan, zerodds_dr_take};
+
+        let p = mk(80);
+        let n = c"OwnTopic";
+        let tn = c"RawBytes";
+        // SAFETY: p+topic live for the whole block; out-pointers stack-local.
+        unsafe {
+            let t = zerodds_dp_create_topic(p, n.as_ptr(), tn.as_ptr(), ptr::null());
+            let pubh = zerodds_dp_create_publisher(p, ptr::null());
+            let sub = zerodds_dp_create_subscriber(p, ptr::null());
+
+            // Strong writer: EXCLUSIVE, strength 10.
+            let mut wqos_strong: ZeroDdsDataWriterQos = core::mem::zeroed();
+            wqos_strong.ownership.kind = 1; // Exclusive
+            wqos_strong.ownership_strength.value = 10;
+            let dw_strong = zerodds_pub_create_datawriter(pubh, t, &wqos_strong);
+            assert!(!dw_strong.is_null());
+
+            // Weak writer: EXCLUSIVE, strength 1, same topic+instance.
+            let mut wqos_weak: ZeroDdsDataWriterQos = core::mem::zeroed();
+            wqos_weak.ownership.kind = 1; // Exclusive
+            wqos_weak.ownership_strength.value = 1;
+            let dw_weak = zerodds_pub_create_datawriter(pubh, t, &wqos_weak);
+            assert!(!dw_weak.is_null());
+
+            // EXCLUSIVE reader.
+            let mut rqos: ZeroDdsDataReaderQos = core::mem::zeroed();
+            rqos.ownership.kind = 1; // Exclusive
+            let dr = zerodds_sub_create_datareader(sub, t, &rqos);
+            assert!(!dr.is_null());
+
+            // Same instance payload (identical bytes → identical key hash).
+            let payload = [0xAAu8, 0xBB, 0xCC, 0xDD];
+            // Strong writer publishes first and becomes the instance owner.
+            for _ in 0..3 {
+                assert_eq!(
+                    zerodds_dw_write(dw_strong, payload.as_ptr(), payload.len(), 0),
+                    ZeroDdsStatus::Ok as c_int
+                );
+            }
+            // Weak writer publishes the same instance — must be suppressed.
+            for _ in 0..3 {
+                assert_eq!(
+                    zerodds_dw_write(dw_weak, payload.as_ptr(), payload.len(), 0),
+                    ZeroDdsStatus::Ok as c_int
+                );
+            }
+
+            // The strong writer's GUID-derived publication handle: the reader
+            // may only ever surface samples carrying THIS handle. The GUID is
+            // (runtime guid_prefix + writer eid), exactly as the intra-runtime
+            // dispatch stamps it (dcps `intra_runtime_dispatch_alive`).
+            let strong_guid = {
+                let dwr = &*dw_strong;
+                zerodds_rtps::wire_types::Guid::new(dwr.rt.guid_prefix, dwr.eid).to_bytes()
+            };
+            let strong_handle = crate::subscriber_ffi::u64_from_guid(strong_guid);
+
+            let mut total = 0usize;
+            let mut handles: Vec<u64> = Vec::new();
+            let deadline = std::time::Instant::now() + std::time::Duration::from_millis(500);
+            while std::time::Instant::now() < deadline {
+                let mut arr: ZeroDdsSampleArray = core::mem::zeroed();
+                let _ = zerodds_dr_take(dr, &mut arr, 10, 0, 0, 0);
+                for i in 0..arr.count {
+                    handles.push((*arr.infos.add(i)).publication_handle);
+                    total += 1;
+                }
+                zerodds_dr_return_loan(dr, &mut arr);
+                if total >= 3 {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            assert!(
+                total >= 1,
+                "strong writer's samples must reach the reader, got {total}"
+            );
+            assert!(
+                handles.iter().all(|&h| h == strong_handle),
+                "EXCLUSIVE reader must only see the strength-10 writer; \
+                 saw publication handles {handles:?}, expected only {strong_handle}"
+            );
+        }
+        cleanup(p);
+    }
+
+    /// QB-rest regression (#79, issue 2): PARTITION OUT-marshalling. A writer/
+    /// reader QoS with a non-empty partition list, set via `set_qos`, must be
+    /// reflected back out by `get_qos` (previously `dw_qos_to_c`/`dr_qos_to_c`
+    /// hardcoded `names_len = 0`). The names round-trip through the entity-owned
+    /// `PartitionOutCache` (DDS 1.4 §2.2.3.10).
+    #[test]
+    fn partition_round_trips_out_via_get_qos() {
+        use crate::qos_ffi::{ZeroDdsDataReaderQos, ZeroDdsDataWriterQos};
+        use std::ffi::{CStr, CString};
+
+        let p = mk(81);
+        let n = c"PartOutTopic";
+        let tn = c"RawBytes";
+        let part_x = CString::new("X").unwrap();
+        let part_y = CString::new("Y").unwrap();
+        let arr_in: [*const core::ffi::c_char; 2] = [part_x.as_ptr(), part_y.as_ptr()];
+
+        // SAFETY: p+topic+CStrings live for the whole block.
+        unsafe {
+            let t = zerodds_dp_create_topic(p, n.as_ptr(), tn.as_ptr(), ptr::null());
+            let pubh = zerodds_dp_create_publisher(p, ptr::null());
+            let sub = zerodds_dp_create_subscriber(p, ptr::null());
+
+            // ---- Writer ----
+            let mut wqos: ZeroDdsDataWriterQos = core::mem::zeroed();
+            wqos.partition.names = arr_in.as_ptr();
+            wqos.partition.names_len = 2;
+            let dw = zerodds_pub_create_datawriter(pubh, t, &wqos);
+            assert!(!dw.is_null());
+            assert_eq!(zerodds_dw_set_qos(dw, &wqos), ZeroDdsStatus::Ok as c_int);
+
+            let mut wqos_out: ZeroDdsDataWriterQos = core::mem::zeroed();
+            assert_eq!(
+                zerodds_dw_get_qos(dw, &mut wqos_out),
+                ZeroDdsStatus::Ok as c_int
+            );
+            assert_eq!(
+                wqos_out.partition.names_len, 2,
+                "writer partition must round-trip out"
+            );
+            let got: Vec<String> = (0..wqos_out.partition.names_len)
+                .map(|i| {
+                    let cp = *wqos_out.partition.names.add(i);
+                    CStr::from_ptr(cp).to_string_lossy().into_owned()
+                })
+                .collect();
+            assert_eq!(got, alloc::vec!["X".to_string(), "Y".to_string()]);
+
+            // ---- Reader ----
+            let mut rqos: ZeroDdsDataReaderQos = core::mem::zeroed();
+            rqos.partition.names = arr_in.as_ptr();
+            rqos.partition.names_len = 2;
+            let dr = zerodds_sub_create_datareader(sub, t, &rqos);
+            assert!(!dr.is_null());
+            assert_eq!(zerodds_dr_set_qos(dr, &rqos), ZeroDdsStatus::Ok as c_int);
+
+            let mut rqos_out: ZeroDdsDataReaderQos = core::mem::zeroed();
+            assert_eq!(
+                zerodds_dr_get_qos(dr, &mut rqos_out),
+                ZeroDdsStatus::Ok as c_int
+            );
+            assert_eq!(
+                rqos_out.partition.names_len, 2,
+                "reader partition must round-trip out"
+            );
+            let got_r: Vec<String> = (0..rqos_out.partition.names_len)
+                .map(|i| {
+                    let cp = *rqos_out.partition.names.add(i);
+                    CStr::from_ptr(cp).to_string_lossy().into_owned()
+                })
+                .collect();
+            assert_eq!(got_r, alloc::vec!["X".to_string(), "Y".to_string()]);
+
+            // Empty partition → names_len 0 (no stale pointers).
+            let mut wqos_empty: ZeroDdsDataWriterQos = core::mem::zeroed();
+            assert_eq!(
+                zerodds_dw_set_qos(dw, &wqos_empty),
+                ZeroDdsStatus::Ok as c_int
+            );
+            assert_eq!(
+                zerodds_dw_get_qos(dw, &mut wqos_empty),
+                ZeroDdsStatus::Ok as c_int
+            );
+            assert_eq!(wqos_empty.partition.names_len, 0);
         }
         cleanup(p);
     }

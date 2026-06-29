@@ -213,6 +213,7 @@ pub unsafe extern "C" fn zerodds_dp_create_publisher(
             default_dw_qos: Mutex::new(DataWriterQos::default()),
             datawriters: Mutex::new(Vec::new()),
             suspended: Mutex::new(false),
+            partition_out: Mutex::new(Default::default()),
         });
         let pp_ptr = Box::into_raw(pub_);
         if let Ok(mut list) = pp.publishers.lock() {
@@ -293,6 +294,7 @@ pub unsafe extern "C" fn zerodds_dp_create_subscriber(
             qos: Mutex::new(qos),
             default_dr_qos: Mutex::new(DataReaderQos::default()),
             datareaders: Mutex::new(Vec::new()),
+            partition_out: Mutex::new(Default::default()),
         });
         let sptr = Box::into_raw(sub_);
         if let Ok(mut list) = pp.subscribers.lock() {
@@ -388,9 +390,106 @@ pub unsafe extern "C" fn zerodds_dp_create_contentfilteredtopic(
             name: name_s,
             filter_expression: expr_s,
             parameters: Mutex::new(params),
+            schema: Mutex::new(Vec::new()),
+            extensibility: Mutex::new(crate::entities::CftExtensibility::default()),
         });
         Box::into_raw(cft)
     }
+}
+
+/// Sets the positional CDR field schema on a ContentFilteredTopic so the
+/// untyped C-FFI filter actually evaluates the payload (Spec §2.2.2.3.3).
+///
+/// `names[i]` is the field name referenced by the filter expression;
+/// `kinds[i]` is its CDR encoding (0=bool, 1=int32, 2=int64, 3=float32,
+/// 4=float64, 5=string). The fields MUST be listed in their on-wire
+/// declaration order, starting from the first member of the payload.
+///
+/// This variant assumes a `@final` payload (no leading DHEADER, offset 0). For
+/// an `@appendable`/`@mutable` payload use [`zerodds_cft_set_schema_ex`].
+///
+/// Note: filter literals are passed as-is — the SQL `WHERE` expression carries
+/// its own typed literals (e.g. `seq > 4`, `name = 'foo'`); the schema only
+/// declares how to decode the payload columns, it does not coerce the literals.
+///
+/// # Safety
+/// `cft` valid; `names[0..count]` valid NUL-terminated C strings;
+/// `kinds[0..count]` readable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zerodds_cft_set_schema(
+    cft: *mut ZeroDdsContentFilteredTopic,
+    names: *const *const c_char,
+    kinds: *const u32,
+    count: usize,
+) -> c_int {
+    // SAFETY: forwards the same pledges to the `_ex` variant; `extensibility=0`
+    // (Final) preserves the historical offset-0 behaviour.
+    unsafe { zerodds_cft_set_schema_ex(cft, names, kinds, count, 0) }
+}
+
+/// Like [`zerodds_cft_set_schema`] but additionally declares the payload's type
+/// `extensibility` (XTypes 1.3 §7.3.1.2.1): `0 = @final`, `1 = @appendable`,
+/// `2 = @mutable`. For `@appendable`/`@mutable` the XCDR2 stream is prefixed
+/// with a 4-byte DHEADER (§7.4.3.4.2) before the first member, so the
+/// positional decoder skips 4 bytes; for `@final` the first member is at
+/// offset 0. Any other value is rejected.
+///
+/// Filter literals are passed as-is (see [`zerodds_cft_set_schema`]).
+///
+/// # Safety
+/// `cft` valid; `names[0..count]` valid NUL-terminated C strings;
+/// `kinds[0..count]` readable.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zerodds_cft_set_schema_ex(
+    cft: *mut ZeroDdsContentFilteredTopic,
+    names: *const *const c_char,
+    kinds: *const u32,
+    count: usize,
+    extensibility: u32,
+) -> c_int {
+    use crate::entities::{CftExtensibility, CftField, CftFieldKind};
+    if cft.is_null() || (count > 0 && (names.is_null() || kinds.is_null())) {
+        return ZeroDdsStatus::BadParameter as c_int;
+    }
+    let ext = match extensibility {
+        0 => CftExtensibility::Final,
+        // @mutable also carries a leading DHEADER in XCDR2 (§7.4.3.4.2); for
+        // the positional decoder it behaves like @appendable.
+        1 | 2 => CftExtensibility::Appendable,
+        _ => return ZeroDdsStatus::BadParameter as c_int,
+    };
+    // SAFETY: see fn # Safety doc — cft+names+kinds NULL-checked above;
+    // names[0..count]/kinds[0..count] readable per caller pledge.
+    unsafe {
+        let mut fields: Vec<CftField> = Vec::with_capacity(count);
+        if count > 0 {
+            let names_slc = slice::from_raw_parts(names, count);
+            let kinds_slc = slice::from_raw_parts(kinds, count);
+            for (cp, &k) in names_slc.iter().zip(kinds_slc.iter()) {
+                let name = match cstr_to_str(*cp) {
+                    Ok(s) if !s.is_empty() => s.to_string(),
+                    _ => return ZeroDdsStatus::BadParameter as c_int,
+                };
+                let kind = match k {
+                    0 => CftFieldKind::Bool,
+                    1 => CftFieldKind::Int32,
+                    2 => CftFieldKind::Int64,
+                    3 => CftFieldKind::Float32,
+                    4 => CftFieldKind::Float64,
+                    5 => CftFieldKind::StringField,
+                    _ => return ZeroDdsStatus::BadParameter as c_int,
+                };
+                fields.push(CftField { name, kind });
+            }
+        }
+        if let Ok(mut g) = (*cft).schema.lock() {
+            *g = fields;
+        }
+        if let Ok(mut g) = (*cft).extensibility.lock() {
+            *g = ext;
+        }
+    }
+    ZeroDdsStatus::Ok as c_int
 }
 
 /// Deletes a ContentFilteredTopic.

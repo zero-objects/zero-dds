@@ -34,8 +34,8 @@ live = ["std", "dep:libc", "zerodds-transport/std", "zerodds-rtps/std"]
 roxmltree = { workspace = true }
 # Only for feature `live` (AF_PACKET raw-socket syscalls).
 libc = { workspace = true, features = ["std"], optional = true }
-zerodds-transport = { version = "1.0.0-rc.3.1", path = "../transport", optional = true }
-zerodds-rtps = { version = "1.0.0-rc.3.1", path = "../rtps", optional = true }
+zerodds-transport = { version = "1.0.0-rc.4", path = "../transport", optional = true }
+zerodds-rtps = { version = "1.0.0-rc.4", path = "../rtps", optional = true }
 
 # AF_PACKET-Roundtrip-Latenz-Bench (TSN vs UDP-Baseline) — nur Linux+live.
 [[example]]

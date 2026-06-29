@@ -39,10 +39,38 @@ public interface IDdsTopicType<T> where T : notnull
     byte[] Encode(T sample, EndianMode endian);
 
     /// <summary>
+    /// Encodes `sample` in the given byte order and XCDR representation
+    /// (<paramref name="representation"/>: 1 = XCDR2, 0 = XCDR1 / classic CDR).
+    /// The default ignores the representation; generated TypeSupports honor it.
+    /// </summary>
+    byte[] Encode(T sample, EndianMode endian, int representation) => Encode(sample, endian);
+
+    /// <summary>
     /// Decodes `bytes` and returns a newly constructed sample.
     /// </summary>
     /// <exception cref="XcdrException">On wire-format errors.</exception>
     T Decode(ReadOnlySpan<byte> bytes);
+
+    /// <summary>
+    /// Decodes `bytes` interpreted in the given byte order (symmetric with
+    /// <see cref="Encode(T, EndianMode)"/>). The DCPS layer derives the order
+    /// from the encapsulation header; the parameterless overload assumes
+    /// little-endian (the canonical XCDR2 wire). The default delegates to the
+    /// little-endian <see cref="Decode(ReadOnlySpan{byte})"/> — generated
+    /// TypeSupports override it to honor the byte order.
+    /// </summary>
+    /// <exception cref="XcdrException">On wire-format errors.</exception>
+    T Decode(ReadOnlySpan<byte> bytes, EndianMode endian) => Decode(bytes);
+
+    /// <summary>
+    /// Decodes `bytes` in the given byte order and XCDR representation
+    /// (<paramref name="representation"/>: 1 = XCDR2, 0 = XCDR1 / classic CDR).
+    /// The DCPS layer derives both from the encapsulation header. The default
+    /// ignores the representation (assumes XCDR2) — generated TypeSupports
+    /// override it to read the classic-CDR / PL_CDR1 wire.
+    /// </summary>
+    /// <exception cref="XcdrException">On wire-format errors.</exception>
+    T Decode(ReadOnlySpan<byte> bytes, EndianMode endian, int representation) => Decode(bytes, endian);
 
     /// <summary>
     /// Computes the 16-byte key hash per XTypes §7.6.8 (MD5 over the

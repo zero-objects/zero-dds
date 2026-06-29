@@ -2,10 +2,15 @@
 
 Subscribe to a **DDS topic** and dump samples — like `tcpdump` for DDS.
 
-The tool starts a `DcpsRuntime`, registers an untyped reader on the
-named topic, and prints metadata + an optional hex snippet of every
-incoming sample until you Ctrl-C, hit a sample-count limit, or a
-duration elapses.
+The tool starts a `DcpsRuntime` and **type-follows** the topic: it discovers
+each writer's real IDL type via SEDP and attaches one opaque reader per type
+(so it sees typed topics like `cuas::Track`, not just `zerodds::RawBytes`).
+It prints metadata + an optional hex snippet of every incoming sample until you
+Ctrl-C, hit a sample-count limit, or a duration elapses. Late-joining writers
+(and additional types on the same topic) are picked up automatically.
+
+Pass `--type <NAME>` to announce a type directly and skip discovery — useful for
+a writer that is silent or joins after the spy.
 
 ## Usage
 
@@ -30,6 +35,20 @@ zerodds-spy -d 5 -t Sensor/Stream/A
 | `-n, --count`       | Stop after N samples                               | unlimited              |
 | `--duration`        | Stop after duration (`5`, `30s`, `2m`, `1h`)       | until SIGINT           |
 | `-x, --hex`         | First BYTES of payload as hex (0 = no hex)         | 32                     |
+| `--decode`          | Decode samples to typed JSON (needs `--type-file`) | off                    |
+| `--type-file`       | Out-of-band IDL providing the types to decode      | —                      |
+
+## Decoded output (`--decode`)
+
+With `--decode --type-file <IDL>`, each sample is decoded against its writer's
+IDL type and printed as compact JSON instead of hex. Types resolve lazily per
+discovered writer type and are cached; a sample whose type isn't in the IDL (or
+that doesn't decode) falls back to the hex line.
+
+```bash
+zerodds-spy -t TrackTopic --decode --type-file tracks.idl
+# [     1] writer=000003c2 type=cuas::Track {"id":42,"name":"bandit","xs":[7,-3,1000]}
+```
 
 ## Output
 

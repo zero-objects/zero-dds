@@ -139,9 +139,30 @@ fn install_inner(_stop: Arc<AtomicBool>) {}
 /// Default `UserReaderConfig` für untyped/`zerodds::RawBytes`-Topics.
 #[must_use]
 pub fn raw_reader_config(topic: &str) -> UserReaderConfig {
+    raw_reader_config_typed(topic, RAW_BYTES_TYPE_NAME)
+}
+
+/// The opaque "raw bytes" type name a monitoring reader announces when it has
+/// no concrete type to follow.
+pub const RAW_BYTES_TYPE_NAME: &str = "zerodds::RawBytes";
+
+/// Like [`raw_reader_config`] but announces a caller-supplied `type_name`.
+///
+/// This is the building block for **type-following** monitoring tools
+/// (`zerodds-spy`, `zerodds-record`): DDS matches reader↔writer by type-name
+/// equality on BOTH ends, so a generic monitor that wants to see a typed topic
+/// (e.g. `cuas::Track`) must announce that writer's *actual* `type_name`, not a
+/// generic `RawBytes`. The payload is still consumed opaquely (the reader never
+/// decodes it), so one config shape works for every followed type.
+///
+/// `type_identifier` stays `None` → the match falls back to pure `type_name`
+/// comparison (DDS 1.4 §2.2.3 default path), which is exactly what we want: no
+/// TypeObject is required to attach.
+#[must_use]
+pub fn raw_reader_config_typed(topic: &str, type_name: &str) -> UserReaderConfig {
     UserReaderConfig {
         topic_name: topic.to_string(),
-        type_name: "zerodds::RawBytes".to_string(),
+        type_name: type_name.to_string(),
         reliable: true,
         durability: DurabilityKind::Volatile,
         deadline: DeadlineQosPolicy::default(),
@@ -157,10 +178,132 @@ pub fn raw_reader_config(topic: &str) -> UserReaderConfig {
     }
 }
 
+/// Tracks which `(topic, type_name)` publications a monitoring tool has already
+/// attached to, so it can attach a type-following raw reader to each *newly*
+/// discovered writer type (including late joiners) exactly once.
+///
+/// The dedup core ([`TypeFollower::newly_seen`]) is pure — feed it the
+/// discovered pairs and it returns only the ones not seen before — so it is
+/// unit-testable without a live runtime. [`TypeFollower::poll`] is the
+/// convenience that reads `DcpsRuntime::discovered_publication_topics()`.
+#[derive(Debug, Default)]
+pub struct TypeFollower {
+    /// Topic allow-list; empty ⇒ follow every topic.
+    topics: std::collections::HashSet<String>,
+    /// `(topic, type_name)` pairs already reported, so each attaches once.
+    seen: std::collections::HashSet<(String, String)>,
+}
+
+impl TypeFollower {
+    /// Follow only the given topics. An empty iterator follows *all* topics.
+    #[must_use]
+    pub fn new<I, S>(topics: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        Self {
+            topics: topics.into_iter().map(Into::into).collect(),
+            seen: std::collections::HashSet::new(),
+        }
+    }
+
+    /// True if this follower accepts samples for `topic`.
+    #[must_use]
+    pub fn wants_topic(&self, topic: &str) -> bool {
+        self.topics.is_empty() || self.topics.contains(topic)
+    }
+
+    /// Pure dedup core: given the currently discovered `(topic, type_name)`
+    /// pairs, return those matching the topic filter that have not been seen
+    /// before, marking them seen. Order-preserving; duplicates within the input
+    /// collapse to one.
+    pub fn newly_seen<I, A, B>(&mut self, discovered: I) -> Vec<(String, String)>
+    where
+        I: IntoIterator<Item = (A, B)>,
+        A: Into<String>,
+        B: Into<String>,
+    {
+        let mut fresh = Vec::new();
+        for (t, ty) in discovered {
+            let pair = (t.into(), ty.into());
+            if !self.wants_topic(&pair.0) {
+                continue;
+            }
+            if self.seen.insert(pair.clone()) {
+                fresh.push(pair);
+            }
+        }
+        fresh
+    }
+
+    /// Poll a runtime's discovered publications and return the newly-appeared
+    /// `(topic, type_name)` pairs to attach a follower reader to.
+    pub fn poll(&mut self, runtime: &zerodds_dcps::runtime::DcpsRuntime) -> Vec<(String, String)> {
+        self.newly_seen(runtime.discovered_publication_topics())
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn raw_reader_config_defaults_to_rawbytes_type() {
+        let c = raw_reader_config("Track");
+        assert_eq!(c.topic_name, "Track");
+        assert_eq!(c.type_name, RAW_BYTES_TYPE_NAME);
+    }
+
+    #[test]
+    fn raw_reader_config_typed_carries_the_supplied_type_name() {
+        let c = raw_reader_config_typed("Track", "cuas::Track");
+        assert_eq!(c.topic_name, "Track");
+        assert_eq!(c.type_name, "cuas::Track");
+        // Same opaque shape as the RawBytes config (reliable, volatile, no TID).
+        assert!(c.reliable);
+        assert!(matches!(
+            c.type_identifier,
+            zerodds_types::TypeIdentifier::None
+        ));
+    }
+
+    #[test]
+    fn type_follower_reports_each_pair_once() {
+        let mut tf = TypeFollower::new(Vec::<String>::new()); // all topics
+        let fresh = tf.newly_seen([("Track", "cuas::Track"), ("Track", "cuas::Track")]);
+        assert_eq!(
+            fresh,
+            vec![("Track".to_string(), "cuas::Track".to_string())]
+        );
+        // Re-polling the same discovery yields nothing new.
+        assert!(tf.newly_seen([("Track", "cuas::Track")]).is_empty());
+    }
+
+    #[test]
+    fn type_follower_picks_up_late_joiner_types() {
+        let mut tf = TypeFollower::new(Vec::<String>::new());
+        assert_eq!(tf.newly_seen([("Track", "cuas::Track")]).len(), 1);
+        // A second writer with a DIFFERENT type on the same topic is new.
+        let fresh = tf.newly_seen([("Track", "cuas::Track"), ("Track", "cuas::TrackV2")]);
+        assert_eq!(
+            fresh,
+            vec![("Track".to_string(), "cuas::TrackV2".to_string())]
+        );
+    }
+
+    #[test]
+    fn type_follower_filters_by_topic_allowlist() {
+        let mut tf = TypeFollower::new(["Track"]);
+        assert!(tf.wants_topic("Track"));
+        assert!(!tf.wants_topic("Other"));
+        let fresh = tf.newly_seen([("Track", "cuas::Track"), ("Other", "x::Y")]);
+        assert_eq!(
+            fresh,
+            vec![("Track".to_string(), "cuas::Track".to_string())]
+        );
+    }
 
     #[test]
     fn parse_duration_seconds() {

@@ -1043,7 +1043,10 @@ pub const PROD_POSITIVE_INT_CONST: Production = Production {
     id: ID_POSITIVE_INT_CONST,
     name: "positive_int_const",
     spec_ref: spec("7.4.1.4.4.5"),
-    alternatives: &[alt(&[Symbol::Nonterminal(ID_INTEGER_LITERAL)])],
+    // §7.4.1.4.4.5: <positive_int_const> ::= <const_expr>. A bound may therefore
+    // be a named constant (`long v[N]`), a scoped const, or an arithmetic
+    // expression — not only a bare integer literal. The value is resolved later.
+    alternatives: &[alt(&[Symbol::Nonterminal(ID_CONST_EXPR)])],
     ast_hint: None,
 };
 
@@ -4815,8 +4818,22 @@ mod tests {
 
     #[test]
     fn rejects_string_with_invalid_bound() {
-        // A string needs a positive int, not a string literal.
-        assert!(try_parse(r#"typedef string<"big"> Bad;"#).is_err());
+        // A bound is grammatically a `const_expr` (§7.4.1.4.4.5), so a string
+        // literal parses — but it must denote a positive integer, a *semantic*
+        // constraint enforced at AST-build time. Verify via the full build path.
+        use crate::config::ParserConfig;
+        assert!(
+            crate::parser::parse(r#"typedef string<"big"> Bad;"#, &ParserConfig::default())
+                .is_err()
+        );
+        // A named/scoped const bound, by contrast, builds fine.
+        assert!(
+            crate::parser::parse(
+                "const long N = 8; typedef string<N> Ok;",
+                &ParserConfig::default()
+            )
+            .is_ok()
+        );
     }
 
     // -----------------------------------------------------------------

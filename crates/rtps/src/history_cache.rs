@@ -101,6 +101,13 @@ pub struct CacheChange {
     /// by the reader path. Writer side: set by the writer when the path
     /// propagates the hash along the sample pipeline.
     pub key_hash: Option<[u8; 16]>,
+    /// Source timestamp of the write (DDSI-RTPS §8.3.7.9 / §8.7.3). When set,
+    /// the writer prepends an INFO_TS submessage before the DATA so a remote
+    /// reader can populate `SampleInfo.source_timestamp` and apply
+    /// `DESTINATION_ORDER = BY_SOURCE_TIMESTAMP`. `None` ⇒ no INFO_TS (the
+    /// reader falls back to reception order). Held on the change so retransmits
+    /// carry the *original* timestamp, not the resend wall-clock.
+    pub source_timestamp: Option<crate::header_extension::HeTimestamp>,
 }
 
 impl CacheChange {
@@ -127,7 +134,19 @@ impl CacheChange {
             payload,
             kind: ChangeKind::Alive,
             key_hash: None,
+            source_timestamp: None,
         }
+    }
+
+    /// Attaches a source timestamp (builder style). The writer emits an INFO_TS
+    /// submessage before the DATA for any change that carries one.
+    #[must_use]
+    pub fn with_source_timestamp(
+        mut self,
+        ts: Option<crate::header_extension::HeTimestamp>,
+    ) -> Self {
+        self.source_timestamp = ts;
+        self
     }
 
     /// Creates a lifecycle marker (Spec §8.2.1.2). `payload` is the
@@ -140,6 +159,7 @@ impl CacheChange {
             payload: Arc::from(payload),
             kind,
             key_hash: None,
+            source_timestamp: None,
         }
     }
 }

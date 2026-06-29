@@ -120,7 +120,10 @@ pub enum RosBuiltinType {
     Bool,
     /// `byte` ↔ IDL `octet`.
     Byte,
-    /// `char` ↔ IDL `wchar`.
+    /// `char` ↔ IDL `uint8` (REP-2008 §4.4: ROS `char` is a deprecated
+    /// alias for an unsigned 8-bit integer, 1 byte — NOT a 2-byte wide
+    /// char; verified against native rclpy/Cyclone+FastDDS: `char{65}`
+    /// serializes to a single byte `0x41`).
     Char,
     /// `float32` ↔ IDL `float`.
     Float32,
@@ -155,7 +158,7 @@ impl RosBuiltinType {
         match self {
             Self::Bool => "boolean",
             Self::Byte => "octet",
-            Self::Char => "wchar",
+            Self::Char => "uint8",
             Self::Float32 => "float",
             Self::Float64 => "double",
             Self::Int8 => "int8",
@@ -175,8 +178,8 @@ impl RosBuiltinType {
     #[must_use]
     pub const fn cdr_size(self) -> Option<usize> {
         match self {
-            Self::Bool | Self::Byte | Self::Int8 | Self::Uint8 => Some(1),
-            Self::Char | Self::Int16 | Self::Uint16 => Some(2),
+            Self::Bool | Self::Byte | Self::Int8 | Self::Uint8 | Self::Char => Some(1),
+            Self::Int16 | Self::Uint16 => Some(2),
             Self::Float32 | Self::Int32 | Self::Uint32 => Some(4),
             Self::Float64 | Self::Int64 | Self::Uint64 => Some(8),
             Self::String | Self::WString => None, // variable
@@ -265,6 +268,9 @@ mod tests {
         assert_eq!(RosBuiltinType::Byte.idl_name(), "octet");
         assert_eq!(RosBuiltinType::Float32.idl_name(), "float");
         assert_eq!(RosBuiltinType::Int64.idl_name(), "int64");
+        // REP-2008 §4.4: ROS `char` is a 1-byte unsigned int (uint8), NOT a
+        // 2-byte wchar — verified byte-exact against native rclpy.
+        assert_eq!(RosBuiltinType::Char.idl_name(), "uint8");
     }
 
     #[test]

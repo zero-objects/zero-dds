@@ -76,6 +76,10 @@ pub struct UnionTypeFlag(pub u16);
 pub struct UnionMemberFlag(pub u16);
 
 impl UnionMemberFlag {
+    /// TryConstruct = DISCARD (the default TryConstructKind for a member,
+    /// §7.3.4.5). Set on every union member by the vendors (byte-verified
+    /// against Cyclone + FastDDS).
+    pub const TRY_CONSTRUCT1: u16 = 1 << 0;
     /// Default case of the union.
     pub const IS_DEFAULT: u16 = 1 << 6;
     /// Empty.
@@ -88,6 +92,20 @@ impl UnionMemberFlag {
 /// Flags for a union discriminator.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct UnionDiscriminatorFlag(pub u16);
+
+impl UnionDiscriminatorFlag {
+    /// TryConstruct = DISCARD (default TryConstructKind, §7.3.4.5).
+    pub const TRY_CONSTRUCT1: u16 = 1 << 0;
+    /// The discriminator is always must-understand (§7.3.4.4.2): a reader
+    /// that does not understand the discriminator cannot interpret the union.
+    pub const IS_MUST_UNDERSTAND: u16 = 1 << 4;
+    /// The default discriminator flags as emitted by Cyclone + FastDDS:
+    /// `IS_MUST_UNDERSTAND | TRY_CONSTRUCT1` = 0x11 (byte-verified).
+    #[must_use]
+    pub const fn discriminator_default() -> Self {
+        Self(Self::IS_MUST_UNDERSTAND | Self::TRY_CONSTRUCT1)
+    }
+}
 
 /// Flags for an enum type.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

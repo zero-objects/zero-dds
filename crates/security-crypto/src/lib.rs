@@ -45,6 +45,28 @@
 
 extern crate alloc;
 
+// --- Crypto primitive backend selection (DDS-Security §8.5 §9.5) ---
+// The AEAD/HMAC/HKDF/digest/rand primitives come from one ring-API-compatible
+// crate, chosen at compile time: `ring` (default, no_std-capable) or `aws-lc-rs`
+// (AWS-LC, FIPS-140-3-validatable). The plugin logic below uses `backend::*`
+// throughout, so swapping the backend is a one-line re-export, not a rewrite.
+// The DDS-Security *plugin* trait (`CryptographicPlugin`) is the higher seam;
+// this is the *primitive* seam the FIPS/HSM story needs.
+#[cfg(feature = "aws-lc")]
+pub(crate) use aws_lc_rs as backend;
+#[cfg(all(
+    feature = "ring-backend",
+    not(any(feature = "aws-lc", feature = "wolfcrypt"))
+))]
+pub(crate) use ring as backend;
+#[cfg(all(feature = "wolfcrypt", not(feature = "aws-lc")))]
+pub(crate) use wolfcrypt_compat as backend;
+
+#[cfg(not(any(feature = "ring-backend", feature = "aws-lc", feature = "wolfcrypt")))]
+compile_error!(
+    "enable exactly one crypto backend: `ring-backend` (default), `aws-lc`, or `wolfcrypt`"
+);
+
 pub mod aes_gcm_hw;
 pub mod crypto_transform;
 #[cfg(feature = "metrics")]

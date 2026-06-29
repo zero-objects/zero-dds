@@ -744,6 +744,107 @@ mod tests {
         }
     }
 
+    /// open62541 cross-impl oracle: dump the exact UADP bytes for a fixed
+    /// config (PublisherId=UInt16(42), WriterGroup id=7 seq=99, one KeyFrame
+    /// with two UInt32 Variant fields) so an open62541 encoder of the same
+    /// logical message can be byte-compared. Run with `--nocapture`.
+    /// Cross-impl conformance gate: the UADP `NetworkMessage` wire must be
+    /// byte-identical to the OPC Foundation reference implementation open62541
+    /// (1.4, PubSub enabled). The golden hex strings below were produced by an
+    /// open62541 `UA_NetworkMessage_encodeBinary` oracle building the *same
+    /// logical message* (see `zerodds-examples/.../proofs/opcua-uadp/`); all
+    /// five vectors matched on the first run — UADP is not merely internally
+    /// self-consistent, it conforms to the reference encoder.
+    #[test]
+    fn uadp_byte_identical_to_open62541() {
+        fn grp() -> GroupHeader {
+            GroupHeader {
+                writer_group_id: Some(7),
+                group_version: None,
+                network_message_number: None,
+                sequence_number: Some(99),
+            }
+        }
+        fn check(label: &str, nm: &NetworkMessage, golden: &str) {
+            let bytes = to_binary(nm).expect("encode");
+            let hex: alloc::string::String =
+                bytes.iter().map(|b| alloc::format!("{b:02x}")).collect();
+            assert_eq!(hex, golden, "UADP {label} diverges from open62541");
+        }
+        // Backwards-compatible alias so the rest of the body reads as before.
+        let dump = |label: &str, nm: &NetworkMessage| {
+            let golden = match label {
+                "V1" => "f1012a00090700630001010001020007443322110788776655",
+                "V2" => "7109090700630001010001030001010b000000000000f83f04f9ff",
+                "V3" => "f1012a0009070063000101000101000c020000006869",
+                "V4" => "f1012a000907006300020100020008000800010100074433221101010006fbffffff",
+                "V5" => "f1012a000907006300010100090500010007efbeadde",
+                _ => unreachable!(),
+            };
+            check(label, nm, golden);
+        };
+
+        // V1: UInt16 pubid, KeyFrame, two UInt32 Variants.
+        let mut v1 = NetworkMessage::with_messages(alloc::vec![DataSetMessage::key_frame_variant(
+            1,
+            alloc::vec![
+                Variant::scalar(VariantValue::UInt32(0x1122_3344)),
+                Variant::scalar(VariantValue::UInt32(0x5566_7788)),
+            ],
+        )]);
+        v1.publisher_id = Some(PublisherId::UInt16(42));
+        v1.group_header = Some(grp());
+        dump("V1", &v1);
+
+        // V2: Byte pubid, mixed Variant field types (Boolean, Double, Int16).
+        let mut v2 = NetworkMessage::with_messages(alloc::vec![DataSetMessage::key_frame_variant(
+            1,
+            alloc::vec![
+                Variant::scalar(VariantValue::Boolean(true)),
+                Variant::scalar(VariantValue::Double(1.5)),
+                Variant::scalar(VariantValue::Int16(-7)),
+            ],
+        )]);
+        v2.publisher_id = Some(PublisherId::Byte(9));
+        v2.group_header = Some(grp());
+        dump("V2", &v2);
+
+        // V3: String Variant field.
+        let mut v3 = NetworkMessage::with_messages(alloc::vec![DataSetMessage::key_frame_variant(
+            1,
+            alloc::vec![Variant::scalar(VariantValue::String("hi".into()))],
+        )]);
+        v3.publisher_id = Some(PublisherId::UInt16(42));
+        v3.group_header = Some(grp());
+        dump("V3", &v3);
+
+        // V4: two DataSetMessages (PayloadHeader writer-id list + size array).
+        let mut v4 = NetworkMessage::with_messages(alloc::vec![
+            DataSetMessage::key_frame_variant(
+                1,
+                alloc::vec![Variant::scalar(VariantValue::UInt32(0x1122_3344))],
+            ),
+            DataSetMessage::key_frame_variant(
+                2,
+                alloc::vec![Variant::scalar(VariantValue::Int32(-5))],
+            ),
+        ]);
+        v4.publisher_id = Some(PublisherId::UInt16(42));
+        v4.group_header = Some(grp());
+        dump("V4", &v4);
+
+        // V5: DataSetMessage with its own sequence number (DataSetFlags2 path).
+        let mut dsm = DataSetMessage::key_frame_variant(
+            1,
+            alloc::vec![Variant::scalar(VariantValue::UInt32(0xDEAD_BEEF))],
+        );
+        dsm.sequence_number = Some(5);
+        let mut v5 = NetworkMessage::with_messages(alloc::vec![dsm]);
+        v5.publisher_id = Some(PublisherId::UInt16(42));
+        v5.group_header = Some(grp());
+        dump("V5", &v5);
+    }
+
     #[test]
     fn byte_publisher_id_needs_no_extended_flags() {
         let mut nm = NetworkMessage::with_messages(alloc::vec![key_frame(1, 0)]);

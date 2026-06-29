@@ -229,7 +229,7 @@ nicht, commit liefert).
 11 done / 0 partial / 0 open / 0 n/a (informative) / 0 n/a (rejected).
 
 Test-Lauf: `cargo test -p zerodds-amqp-0-9-1 --lib` — 25 Tests grün, 0 failed.
-RabbitMQ-Interop zusätzlich live (codepit, `AMQP_RABBITMQ=1`):
+RabbitMQ-Interop zusätzlich live (Linux bench host, `AMQP_RABBITMQ=1`):
 `cargo test -p zerodds-amqp-0-9-1 --test rabbitmq_amqp091_e2e -- --ignored` —
 10 Tests grün; Cross-Stack `cargo test -p zerodds-amqp-endpoint --test
 rabbitmq_cross_stack_e2e -- --ignored` — 2 Tests grün.

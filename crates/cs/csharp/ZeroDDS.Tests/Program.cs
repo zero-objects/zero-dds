@@ -273,6 +273,105 @@ void Expect(bool cond, string msg)
     Expect(threw, "WaitForDataAsync honours cancellation");
 }
 
+// ---- Partition QoS plumbed end-to-end (QB-cluster) ----
+{
+    // Mismatched partitions must NOT communicate; matching ones must.
+    using var participant = ZeroDDS.DomainParticipantFactory.Instance.CreateParticipant(40);
+    using var topicMis = participant.CreateTypedTopic<DemoTemp>("PTopicMis");
+    using var pubA = new Publisher(participant,
+        new ZeroDDS.Qos.PublisherQos { Partition = new ZeroDDS.Qos.PartitionPolicy { Names = { "A" } } });
+    using var subB = new Subscriber(participant,
+        new ZeroDDS.Qos.SubscriberQos { Partition = new ZeroDDS.Qos.PartitionPolicy { Names = { "B" } } });
+    using var wMis = new DataWriter<DemoTemp>(pubA, topicMis);
+    using var rMis = new DataReader<DemoTemp>(subB, topicMis);
+    bool matchedMismatch;
+    try { wMis.WaitForMatched(1, Duration.FromMillis(800)); matchedMismatch = true; }
+    catch (ZeroDDS.Core.TimeoutException) { matchedMismatch = false; }
+    Expect(!matchedMismatch, "partition: mismatched A/B do NOT match");
+
+    using var topicMatch = participant.CreateTypedTopic<DemoTemp>("PTopicMatch");
+    using var pubX = new Publisher(participant,
+        new ZeroDDS.Qos.PublisherQos { Partition = new ZeroDDS.Qos.PartitionPolicy { Names = { "X" } } });
+    using var subX = new Subscriber(participant,
+        new ZeroDDS.Qos.SubscriberQos { Partition = new ZeroDDS.Qos.PartitionPolicy { Names = { "X" } } });
+    using var wM = new DataWriter<DemoTemp>(pubX, topicMatch);
+    using var rM = new DataReader<DemoTemp>(subX, topicMatch);
+    bool matchedSame;
+    try { wM.WaitForMatched(1, Duration.FromSeconds(3)); matchedSame = true; }
+    catch (ZeroDDS.Core.TimeoutException) { matchedSame = false; }
+    Expect(matchedSame, "partition: matching X/X DO match");
+}
+
+// ---- Keyed-instance lifecycle surface (QB-cluster) ----
+{
+    using var participant = ZeroDDS.DomainParticipantFactory.Instance.CreateParticipant(41);
+    using var topic = participant.CreateTypedTopic<KeyedRec>("LifecycleT");
+    using var pub = new Publisher(participant);
+    using var sub = new Subscriber(participant);
+    using var w = new DataWriter<KeyedRec>(pub, topic);
+    using var r = new DataReader<KeyedRec>(sub, topic);
+    w.WaitForMatched(1, Duration.FromSeconds(5));
+    r.WaitForMatched(1, Duration.FromSeconds(5));
+
+    var sample = new KeyedRec { Key = 42, Payload = 1 };
+    // register + lookup return a consistent, non-nil handle.
+    var reg = w.RegisterInstance(sample);
+    var look = w.LookupInstance(sample);
+    Expect(!reg.IsNil && reg == look, "lifecycle: register/lookup_instance handle consistent");
+
+    // dispose delivers NOT_ALIVE_DISPOSED (instance_state == 2) to the reader.
+    w.Write(sample);
+    r.WaitForData(TimeSpan.FromMilliseconds(500));
+    r.Take();
+    w.DisposeInstance(sample);
+    bool sawDisposed = false;
+    var sw = System.Diagnostics.Stopwatch.StartNew();
+    while (!sawDisposed && sw.Elapsed < TimeSpan.FromSeconds(3))
+    {
+        if (!r.WaitForData(TimeSpan.FromMilliseconds(300))) continue;
+        foreach (var s in r.Take()) if (s.Info.InstanceState == 2) sawDisposed = true;
+    }
+    Expect(sawDisposed, "lifecycle: dispose -> NOT_ALIVE_DISPOSED observed");
+
+    // unregister round-trips without throwing.
+    bool unregOk = true;
+    try { w.UnregisterInstance(reg); } catch { unregOk = false; }
+    Expect(unregOk, "lifecycle: unregister_instance round-trips");
+}
+
+// ---- ContentFilteredTopic filters samples (QB-cluster) ----
+{
+    using var participant = ZeroDDS.DomainParticipantFactory.Instance.CreateParticipant(42);
+    using var topic = participant.CreateTypedTopic<KeyedRec>("CftT");
+    // KeyedRec is appendable: DHeader(int32) precedes Key(int32), Payload(int32).
+    var schema = new System.Collections.Generic.List<ZeroDDS.Sub.CftField>
+    {
+        new("__dheader", ZeroDDS.Sub.CftFieldKind.Int32),
+        new("Key", ZeroDDS.Sub.CftFieldKind.Int32),
+        new("Payload", ZeroDDS.Sub.CftFieldKind.Int32),
+    };
+    using var cft = new ZeroDDS.Sub.ContentFilteredTopic<KeyedRec>(
+        participant, "CftFilter", topic, "Payload > 4", null, schema);
+    using var pub = new Publisher(participant);
+    using var sub = new Subscriber(participant);
+    using var w = new DataWriter<KeyedRec>(pub, topic);
+    using var r = new DataReader<KeyedRec>(sub, cft);
+    w.WaitForMatched(1, Duration.FromSeconds(5));
+    r.WaitForMatched(1, Duration.FromSeconds(5));
+    for (int i = 0; i < 10; i++) w.Write(new KeyedRec { Key = 1, Payload = i });
+    var got = new System.Collections.Generic.List<int>();
+    var sw = System.Diagnostics.Stopwatch.StartNew();
+    while (sw.Elapsed < TimeSpan.FromSeconds(3))
+    {
+        if (!r.WaitForData(TimeSpan.FromMilliseconds(300))) { if (got.Count >= 5) break; continue; }
+        foreach (var s in r.Take()) if (s.Info.ValidData) got.Add(s.Data.Payload);
+    }
+    got = new System.Collections.Generic.List<int>(new System.Collections.Generic.HashSet<int>(got));
+    got.Sort();
+    Expect(got.Count == 5 && got.TrueForAll(p => p > 4),
+        $"cft: 'Payload > 4' delivered only matching [{string.Join(",", got)}]");
+}
+
 if (failures == 0)
 {
     Console.WriteLine("OK — all C# DDS-PSM-Cxx smoke tests passed.");
@@ -340,5 +439,57 @@ namespace demo
         }
 
         public byte[] KeyHash(DemoTemp sample) => new byte[16];
+    }
+
+    // Keyed record mirroring `struct KeyedRec { @key long key; long payload; }`
+    // (appendable, like the codegen output) for lifecycle + CFT tests.
+    public sealed class KeyedRec
+    {
+        public int Key { get; init; }
+        public int Payload { get; init; }
+    }
+
+    public sealed class KeyedRecTypeSupport : ZeroDDS.Cdr.IDdsTopicType<KeyedRec>
+    {
+        public static readonly KeyedRecTypeSupport Instance = new();
+
+        public string TypeName => "demo::KeyedRec";
+        public bool IsKeyed => true;
+        public ZeroDDS.Cdr.ExtensibilityKind Extensibility =>
+            ZeroDDS.Cdr.ExtensibilityKind.Appendable;
+
+        public byte[] Encode(KeyedRec sample) =>
+            Encode(sample, ZeroDDS.Cdr.EndianMode.LittleEndian);
+
+        public byte[] Encode(KeyedRec sample, ZeroDDS.Cdr.EndianMode endian)
+        {
+            var w = new ZeroDDS.Cdr.Xcdr2Writer(endian);
+            using (var __s = w.BeginAppendable())
+            {
+                w.WriteInt32(sample.Key);
+                w.WriteInt32(sample.Payload);
+            }
+            return w.ToArray();
+        }
+
+        public KeyedRec Decode(ReadOnlySpan<byte> bytes)
+        {
+            var r = new ZeroDDS.Cdr.Xcdr2Reader(bytes, ZeroDDS.Cdr.EndianMode.LittleEndian);
+            var __s = r.BeginDHeader();
+            int k = r.ReadInt32();
+            int p = r.ReadInt32();
+            r.EndDHeader(__s);
+            return new KeyedRec { Key = k, Payload = p };
+        }
+
+        public byte[] KeyHash(KeyedRec sample)
+        {
+            var kw = new ZeroDDS.Cdr.Xcdr2Writer(ZeroDDS.Cdr.EndianMode.BigEndian);
+            kw.WriteInt32(sample.Key);
+            var kb = kw.ToArray();
+            var h = new byte[16];
+            System.Array.Copy(kb, 0, h, 0, System.Math.Min(kb.Length, 16));
+            return h;
+        }
     }
 }

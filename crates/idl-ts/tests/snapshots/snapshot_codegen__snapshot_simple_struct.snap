@@ -71,8 +71,8 @@ export const PointTypeSupport: DdsTopicType<Point> = {
         w.writeInt32(s.y);
         w.endAppendable(_tok);
     },
-    encode(s: Point, endian: EndianMode = "le"): Uint8Array {
-        const w = new Xcdr2Writer(endian);
+    encode(s: Point, endian: EndianMode = "le", representation = 1): Uint8Array {
+        const w = new Xcdr2Writer(endian, representation === 0 ? 8 : 4);
         this.encodeInto(w, s);
         return w.toBytes();
     },
@@ -86,8 +86,8 @@ export const PointTypeSupport: DdsTopicType<Point> = {
             y: _f_y,
         };
     },
-    decode(bytes: Uint8Array, offset = 0, length: number = bytes.length - offset): Point {
-        const r = new Xcdr2Reader(bytes, offset, length, "le");
+    decode(bytes: Uint8Array, offset = 0, length: number = bytes.length - offset, endian: EndianMode = "le", representation = 1): Point {
+        const r = new Xcdr2Reader(bytes, offset, length, endian, representation === 0 ? 8 : 4);
         return this.decodeFrom(r);
     },
     keyHash(s: Point): Uint8Array {

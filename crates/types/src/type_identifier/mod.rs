@@ -63,6 +63,19 @@ impl EquivalenceHash {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct CollectionElementFlag(pub u16);
 
+impl CollectionElementFlag {
+    /// TryConstruct = DISCARD (the default TryConstructKind, §7.3.4.5), set on
+    /// the element of every plain collection by Cyclone + FastDDS
+    /// (byte-verified). Bit position is shared with the member-flag types.
+    pub const TRY_CONSTRUCT1: u16 = 1 << 0;
+
+    /// The element flags as emitted on the wire: a bare DISCARD.
+    #[must_use]
+    pub const fn discard() -> Self {
+        Self(Self::TRY_CONSTRUCT1)
+    }
+}
+
 /// Equivalence kind of the element of a PlainCollection (§7.3.4.7.1).
 ///
 /// EK_MINIMAL = the TI is strongly-hashed minimal, EK_COMPLETE =
@@ -111,6 +124,21 @@ pub struct PlainCollectionHeader {
     pub equiv_kind: u8,
     /// Try-construct flags.
     pub element_flags: CollectionElementFlag,
+}
+
+impl PlainCollectionHeader {
+    /// Builds the header the way the vendors do (byte-verified against
+    /// Cyclone + FastDDS): the given `equiv_kind` plus a bare DISCARD in the
+    /// element flags. `equiv_kind` is `EK_BOTH` (0xF3) for a fully-descriptive
+    /// element (primitive/string/nested-plain), or `EK_MINIMAL`/`EK_COMPLETE`
+    /// when the element is a strong hash.
+    #[must_use]
+    pub const fn for_element(equiv_kind: u8) -> Self {
+        Self {
+            equiv_kind,
+            element_flags: CollectionElementFlag::discard(),
+        }
+    }
 }
 
 /// Identifies a strongly-connected-component ID for recursive types.

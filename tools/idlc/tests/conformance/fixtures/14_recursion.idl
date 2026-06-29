@@ -1,0 +1,16 @@
+// Conformance feature: self-referential recursive types (XTypes §7.4.5).
+// Recursion goes through a sequence (heap indirection) — the only legal form
+// of direct self-reference (a bare `Node n;` member would be infinite-size).
+module conf {
+  // Self-referential through a sequence — a tree node.
+  struct TreeNode {
+    long               value;
+    sequence<TreeNode> children;
+  };
+  // Forward-declared then self-referential — a linked list / binary tree.
+  struct ListNode;
+  struct ListNode {
+    long              payload;
+    sequence<ListNode> next;
+  };
+};

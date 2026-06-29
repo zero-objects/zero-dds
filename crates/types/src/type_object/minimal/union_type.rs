@@ -7,7 +7,9 @@ use alloc::vec::Vec;
 use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
 
 use crate::type_identifier::TypeIdentifier;
-use crate::type_object::common::{CommonUnionMember, NameHash, decode_seq, encode_seq};
+use crate::type_object::common::{
+    CommonUnionMember, NameHash, decode_seq_appendable, encode_seq_appendable,
+};
 use crate::type_object::flags::{UnionDiscriminatorFlag, UnionTypeFlag};
 
 // MinimalUnionHeader is an empty type in the spec (§7.3.4.4.2). We
@@ -62,7 +64,8 @@ impl MinimalDiscriminatorMember {
     /// # Errors
     /// Buffer overflow.
     pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        self.common.encode_into(w)
+        // CommonDiscriminatorMember is @appendable → DHEADER + body.
+        zerodds_cdr::struct_enc::encode_appendable(w, |w| self.common.encode_into(w))
     }
 
     /// Decode.
@@ -70,9 +73,9 @@ impl MinimalDiscriminatorMember {
     /// # Errors
     /// Buffer underflow.
     pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
-        Ok(Self {
-            common: CommonDiscriminatorMember::decode_from(r)?,
-        })
+        let common =
+            zerodds_cdr::struct_enc::decode_appendable(r, CommonDiscriminatorMember::decode_from)?;
+        Ok(Self { common })
     }
 }
 
@@ -91,8 +94,12 @@ impl MinimalUnionMember {
     /// # Errors
     /// Buffer overflow.
     pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        self.common.encode_into(w)?;
-        self.detail.encode_into(w)
+        // MinimalUnionMember @appendable → per-member DHEADER. CommonUnionMember
+        // is @final (no nested DHEADER, unlike the enum literal) — byte-verified.
+        zerodds_cdr::struct_enc::encode_appendable(w, |w| {
+            self.common.encode_into(w)?;
+            self.detail.encode_into(w)
+        })
     }
 
     /// Decode.
@@ -100,9 +107,11 @@ impl MinimalUnionMember {
     /// # Errors
     /// Buffer underflow.
     pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
-        let common = CommonUnionMember::decode_from(r)?;
-        let detail = NameHash::decode_from(r)?;
-        Ok(Self { common, detail })
+        zerodds_cdr::struct_enc::decode_appendable(r, |r| {
+            let common = CommonUnionMember::decode_from(r)?;
+            let detail = NameHash::decode_from(r)?;
+            Ok(Self { common, detail })
+        })
     }
 }
 
@@ -124,8 +133,12 @@ impl MinimalUnionType {
     /// Buffer overflow.
     pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
         w.write_u16(self.union_flags.0)?;
+        // MinimalUnionHeader is @appendable with an empty body (its only field,
+        // MinimalTypeDetail, carries no bytes in Minimal) → a bare DHEADER of 0.
+        // Cyclone + FastDDS emit it; byte-verified.
+        zerodds_cdr::struct_enc::encode_appendable(w, |_w| Ok(()))?;
         self.discriminator.encode_into(w)?;
-        encode_seq(w, &self.member_seq, |w, m| m.encode_into(w))
+        encode_seq_appendable(w, &self.member_seq, |w, m| m.encode_into(w))
     }
 
     /// Decode.
@@ -134,8 +147,9 @@ impl MinimalUnionType {
     /// Buffer underflow.
     pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         let union_flags = UnionTypeFlag(r.read_u16()?);
+        zerodds_cdr::struct_enc::decode_appendable(r, |_r| Ok(()))?;
         let discriminator = MinimalDiscriminatorMember::decode_from(r)?;
-        let member_seq = decode_seq(r, MinimalUnionMember::decode_from)?;
+        let member_seq = decode_seq_appendable(r, MinimalUnionMember::decode_from)?;
         Ok(Self {
             union_flags,
             discriminator,

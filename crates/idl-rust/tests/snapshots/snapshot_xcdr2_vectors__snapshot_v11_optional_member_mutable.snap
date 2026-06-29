@@ -1,5 +1,6 @@
 ---
 source: crates/idl-rust/tests/snapshot_xcdr2_vectors.rs
+assertion_line: 95
 expression: "gen_default(\"@mutable struct O { @id(1) @optional long maybe; };\")"
 ---
 // SPDX-License-Identifier: Apache-2.0
@@ -7,6 +8,7 @@ expression: "gen_default(\"@mutable struct O { @id(1) @optional long maybe; };\"
 
 #![allow(clippy::too_many_lines)]
 #![allow(unused_imports)]
+#![allow(non_snake_case)]
 
 use zerodds_cdr::{BufferReader, BufferWriter, CdrDecode, CdrEncode, DecodeError, EncodeError, Endianness};
 
@@ -19,10 +21,22 @@ pub struct O {
 impl zerodds_dcps::DdsType for O {
     const TYPE_NAME: &'static str = "O";
     const EXTENSIBILITY: zerodds_dcps::Extensibility = zerodds_dcps::Extensibility::Mutable;
-    const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0x6b, 0x12, 0x3b, 0x9e, 0x8d, 0xbe, 0x8b, 0x25, 0xf5, 0x29, 0x13, 0x0c, 0x5a, 0x93]));
+    const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0xfb, 0xc2, 0x0b, 0xe2, 0xb9, 0xbe, 0x8b, 0xb3, 0x7b, 0xe4, 0x46, 0xf4, 0xba, 0x0f]));
 
     fn encode(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
         let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little).xcdr2();
+        zerodds_cdr::struct_enc::encode_appendable(&mut writer, |w| {
+            let mut enc = zerodds_cdr::struct_enc::MutableStructEncoder::new(w, ::std::vec![]);
+            enc.encode_member(1, false, |w| { <_ as zerodds_cdr::CdrEncode>::encode(&self.maybe, w)?; Ok(()) })?;
+            enc.finish()?;
+            Ok(())
+        })?;
+        out.extend_from_slice(&writer.into_bytes());
+        Ok(())
+    }
+
+    fn encode_be(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
+        let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Big).xcdr2();
         zerodds_cdr::struct_enc::encode_appendable(&mut writer, |w| {
             let mut enc = zerodds_cdr::struct_enc::MutableStructEncoder::new(w, ::std::vec![]);
             enc.encode_member(1, false, |w| { <_ as zerodds_cdr::CdrEncode>::encode(&self.maybe, w)?; Ok(()) })?;
@@ -41,7 +55,7 @@ impl zerodds_dcps::DdsType for O {
             loop {
                 match zerodds_cdr::struct_enc::read_mutable_member(r)? {
                     ::core::option::Option::Some(member) => {
-                        let mut body_reader = zerodds_cdr::BufferReader::new(member.body, zerodds_cdr::Endianness::Little).xcdr2();
+                        let mut body_reader = zerodds_cdr::BufferReader::new(member.body, zerodds_cdr::BufferReader::endianness(r)).xcdr2();
                         match member.member_id {
                             1 => {
                                 maybe = ::core::option::Option::Some(<::core::option::Option<i32> as zerodds_cdr::CdrDecode>::decode(&mut body_reader)?);
@@ -65,6 +79,50 @@ impl zerodds_dcps::DdsType for O {
         }).map_err(::core::convert::Into::into)
     }
 
+    fn decode_be(bytes: &[u8]) -> ::core::result::Result<Self, zerodds_dcps::DecodeError> {
+        let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Big).xcdr2();
+        zerodds_cdr::struct_enc::decode_appendable(&mut reader, |r| {
+            // member-id 1
+            let mut maybe: ::core::option::Option<::core::option::Option<i32>> = ::core::option::Option::None;
+            loop {
+                match zerodds_cdr::struct_enc::read_mutable_member(r)? {
+                    ::core::option::Option::Some(member) => {
+                        let mut body_reader = zerodds_cdr::BufferReader::new(member.body, zerodds_cdr::BufferReader::endianness(r)).xcdr2();
+                        match member.member_id {
+                            1 => {
+                                maybe = ::core::option::Option::Some(<::core::option::Option<i32> as zerodds_cdr::CdrDecode>::decode(&mut body_reader)?);
+                            }
+                            _ => {
+                                if member.must_understand {
+                                    return ::core::result::Result::Err(zerodds_cdr::DecodeError::UnknownMustUnderstandMember {
+                                        member_id: member.member_id,
+                                    });
+                                }
+                                // unknown optional member: skip body
+                            }
+                        }
+                    }
+                    ::core::option::Option::None => break,
+                }
+            }
+            ::core::result::Result::Ok(Self {
+                maybe: maybe.unwrap_or(::core::option::Option::None),
+            })
+        }).map_err(::core::convert::Into::into)
+    }
+
+    fn encode_xcdr1(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
+        let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little);
+        <Self as zerodds_cdr::CdrEncode>::encode(self, &mut writer)?;
+        out.extend_from_slice(&writer.into_bytes());
+        Ok(())
+    }
+
+    fn decode_xcdr1(bytes: &[u8]) -> ::core::result::Result<Self, zerodds_dcps::DecodeError> {
+        let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Little);
+        <Self as zerodds_cdr::CdrDecode>::decode(&mut reader).map_err(::core::convert::Into::into)
+    }
+
     fn field_value(&self, path: &str) -> ::core::option::Option<zerodds_sql_filter::Value> {
         match path {
             "maybe" => self.maybe.as_ref().map(|v| zerodds_sql_filter::Value::Int(*v as i64)),
@@ -75,16 +133,73 @@ impl zerodds_dcps::DdsType for O {
 
 impl zerodds_cdr::CdrEncode for O {
     fn encode(&self, writer: &mut zerodds_cdr::BufferWriter) -> ::core::result::Result<(), zerodds_cdr::EncodeError> {
-        <_ as zerodds_cdr::CdrEncode>::encode(&self.maybe, writer)?;
+        if writer.max_alignment() == 4 {
+            zerodds_cdr::struct_enc::encode_appendable(writer, |w| {
+                let mut enc = zerodds_cdr::struct_enc::MutableStructEncoder::new(w, ::std::vec![]);
+                enc.encode_member(1, false, |w| { <_ as zerodds_cdr::CdrEncode>::encode(&self.maybe, w)?; Ok(()) })?;
+                enc.finish()?;
+                Ok(())
+            })?;
+        } else {
+            zerodds_cdr::xcdr1::encode_pl_cdr1_member(writer, 1, |w| { <_ as zerodds_cdr::CdrEncode>::encode(&self.maybe, w)?; Ok(()) })?;
+            zerodds_cdr::xcdr1::write_pl_cdr1_sentinel(writer)?;
+        }
         ::core::result::Result::Ok(())
     }
 }
 
 impl zerodds_cdr::CdrDecode for O {
     fn decode(reader: &mut zerodds_cdr::BufferReader<'_>) -> ::core::result::Result<Self, zerodds_cdr::DecodeError> {
-        let maybe = <::core::option::Option<i32> as zerodds_cdr::CdrDecode>::decode(reader)?;
-        ::core::result::Result::Ok(Self {
-            maybe,
+        if reader.max_alignment() == 4 {
+        zerodds_cdr::struct_enc::decode_appendable(reader, |r| {
+            // member-id 1
+            let mut maybe: ::core::option::Option<::core::option::Option<i32>> = ::core::option::Option::None;
+            loop {
+                match zerodds_cdr::struct_enc::read_mutable_member(r)? {
+                    ::core::option::Option::Some(member) => {
+                        let mut body_reader = zerodds_cdr::BufferReader::new(member.body, zerodds_cdr::BufferReader::endianness(r)).xcdr2();
+                        match member.member_id {
+                            1 => {
+                                maybe = ::core::option::Option::Some(<::core::option::Option<i32> as zerodds_cdr::CdrDecode>::decode(&mut body_reader)?);
+                            }
+                            _ => {
+                                if member.must_understand {
+                                    return ::core::result::Result::Err(zerodds_cdr::DecodeError::UnknownMustUnderstandMember {
+                                        member_id: member.member_id,
+                                    });
+                                }
+                                // unknown optional member: skip body
+                            }
+                        }
+                    }
+                    ::core::option::Option::None => break,
+                }
+            }
+            ::core::result::Result::Ok(Self {
+                maybe: maybe.unwrap_or(::core::option::Option::None),
+            })
         })
+        } else {
+            // member-id 1
+            let mut maybe: ::core::option::Option<::core::option::Option<i32>> = ::core::option::Option::None;
+            let __endian = zerodds_cdr::BufferReader::endianness(reader);
+            loop {
+                match zerodds_cdr::xcdr1::read_pl_cdr1_member(reader)? {
+                    ::core::option::Option::Some(member) => {
+                        let mut body_reader = zerodds_cdr::BufferReader::new(&member.body, __endian);
+                        match member.member_id {
+                            1 => {
+                                maybe = ::core::option::Option::Some(<::core::option::Option<i32> as zerodds_cdr::CdrDecode>::decode(&mut body_reader)?);
+                            }
+                            _ => { /* unknown PL_CDR1 member: skip */ }
+                        }
+                    }
+                    ::core::option::Option::None => break,
+                }
+            }
+            ::core::result::Result::Ok(Self {
+                maybe: maybe.unwrap_or(::core::option::Option::None),
+            })
+        }
     }
 }

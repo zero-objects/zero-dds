@@ -46,7 +46,8 @@ pub fn struct_extensibility(annotations: &[Annotation]) -> StructExtensibility {
             _ => {}
         }
     }
-    StructExtensibility::Final
+    // SX2: spec default for an unannotated aggregate is APPENDABLE (§7.3.3.1).
+    StructExtensibility::Appendable
 }
 
 /// Reads `@id(N)` from a member annotation list. If not set,
@@ -90,6 +91,59 @@ pub fn member_unit(annotations: &[Annotation]) -> Option<String> {
         .iter()
         .find(|a| annotation_name(a) == "unit")
         .and_then(annotation_first_param_text)
+}
+
+/// Reads an explicit `@value(N)` on an enumerator (XTypes 1.3 §7.3.1.2.1.6).
+/// Returns `None` when the enumerator has no `@value`, in which case the
+/// caller assigns the sequential default (previous value + 1, starting 0).
+#[must_use]
+pub fn enumerator_value(annotations: &[Annotation]) -> Option<i128> {
+    annotations
+        .iter()
+        .find(|a| annotation_name(a) == "value")
+        .and_then(|a| single_param(&a.params))
+        .and_then(crate::type_map::const_expr_as_i128)
+}
+
+/// Effective `@bit_bound` of a bitmask — the wire holder width. XTypes 1.3
+/// §7.3.1.2.1.1: the DEFAULT bit_bound for a bitmask is **32** (→ UInt32
+/// holder), NOT the count of declared bits. So an unannotated bitmask is a
+/// uint32 on the wire even if it declares only 3 flags.
+#[must_use]
+pub fn bitmask_bit_bound(annotations: &[Annotation]) -> u32 {
+    annotations
+        .iter()
+        .find(|a| annotation_name(a) == "bit_bound")
+        .and_then(annotation_first_param_integer)
+        .and_then(|v| u32::try_from(v).ok())
+        .unwrap_or(32)
+}
+
+/// Effective `@bit_bound` of an enum — selects the signed-integer wire width
+/// (XTypes 1.3 §7.3.1.2.1.2 + §7.4.5.1): the DEFAULT enum bit_bound is **32**.
+/// `@bit_bound(N)` (1..=32) narrows the holder: N≤8 → 1 octet, N≤16 → 2 octets,
+/// else 4 octets. Cyclone honours this; matching it is spec-faithful.
+#[must_use]
+pub fn enum_bit_bound(annotations: &[Annotation]) -> u32 {
+    annotations
+        .iter()
+        .find(|a| annotation_name(a) == "bit_bound")
+        .and_then(annotation_first_param_integer)
+        .and_then(|v| u32::try_from(v).ok())
+        .filter(|&v| (1..=32).contains(&v))
+        .unwrap_or(32)
+}
+
+/// Wire width in octets (1/2/4) for an enum `@bit_bound`.
+#[must_use]
+pub fn enum_wire_octets(bit_bound: u32) -> u8 {
+    if bit_bound <= 8 {
+        1
+    } else if bit_bound <= 16 {
+        2
+    } else {
+        4
+    }
 }
 
 /// Reads `@nested` (default false). A nested-annotated struct is not

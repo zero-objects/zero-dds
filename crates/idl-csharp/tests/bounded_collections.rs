@@ -19,7 +19,7 @@ fn gen_cs(src: &str) -> String {
 fn bounded_sequence_throws_on_over_bound() {
     let cs = gen_cs("@final struct Cap { sequence<octet, 4> data; };");
     assert!(
-        cs.contains("__mat.Count > 4") && cs.contains("bounded sequence length"),
+        cs.contains("__mat0.Count > 4") && cs.contains("bounded sequence length"),
         "bounded sequence<octet, 4> must throw on over-bound encode:\n{cs}"
     );
 }

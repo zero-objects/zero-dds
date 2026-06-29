@@ -251,9 +251,12 @@ fn bitmask_emits_flags_enum() {
     let cs = gen_cs(r#"@bit_bound(8) bitmask Flags { READ, WRITE, EXEC };"#);
     assert!(cs.contains("[System.Flags]"), "[Flags] missing:\n{cs}");
     assert!(cs.contains("public enum Flags : byte"));
-    assert!(cs.contains("READ = 1UL << 0"));
-    assert!(cs.contains("WRITE = 1UL << 1"));
-    assert!(cs.contains("EXEC = 1UL << 2"));
+    // The bit value is cast to the enum's underlying type so the generated
+    // `enum Flags : byte` COMPILES (a bare `1UL << K` ulong does not convert to
+    // byte). For a ≤32-bit bound the literal is `(<underlying>)(1u << K)`.
+    assert!(cs.contains("READ = (byte)(1u << 0)"));
+    assert!(cs.contains("WRITE = (byte)(1u << 1)"));
+    assert!(cs.contains("EXEC = (byte)(1u << 2)"));
 }
 
 #[test]

@@ -24,20 +24,50 @@ public ref struct Xcdr2Reader
     private int _pos;
     private int _origin;
 
-    /// <summary>Constructor with default endianness (little-endian).</summary>
+    /// <summary>
+    /// XCDR2 maximum alignment (XTypes 1.3 §7.4.1.1.1): 8-byte primitives align
+    /// to 4, never 8. Mirrors the zerodds-cdr core
+    /// (`crates/cdr/src/buffer.rs`: `alignment.min(self.max_alignment)`).
+    /// </summary>
+    private const int Xcdr2MaxAlignment = 4;
+    private const int Xcdr1MaxAlignment = 8;
+
+    /// <summary>
+    /// Effective alignment cap: 4 for XCDR2 (8-byte primitives align to 4), 8 for
+    /// XCDR1 / classic CDR. Set from the representation at construction.
+    /// </summary>
+    private readonly int _maxAlignment;
+
+    /// <summary>Constructor with default endianness (little-endian), XCDR2.</summary>
     public Xcdr2Reader(ReadOnlySpan<byte> bytes) : this(bytes, EndianMode.LittleEndian) { }
 
-    /// <summary>Constructor with explicit endianness.</summary>
+    /// <summary>Constructor with explicit endianness, XCDR2 representation.</summary>
     public Xcdr2Reader(ReadOnlySpan<byte> bytes, EndianMode endian)
+        : this(bytes, endian, Xcdr2MaxAlignment) { }
+
+    /// <summary>
+    /// Constructor with explicit endianness and alignment cap. Pass
+    /// <see cref="Xcdr1MaxAlignmentValue"/> (8) to read the XCDR1 / classic CDR
+    /// wire (no DHEADER, PL_CDR1 for @mutable); the default 4 reads XCDR2.
+    /// </summary>
+    public Xcdr2Reader(ReadOnlySpan<byte> bytes, EndianMode endian, int maxAlignment)
     {
         _buf = bytes;
         _endian = endian;
         _pos = 0;
         _origin = 0;
+        _maxAlignment = maxAlignment == Xcdr1MaxAlignment ? Xcdr1MaxAlignment : Xcdr2MaxAlignment;
     }
+
+    /// <summary>XCDR1 alignment-cap value (8) for the 3-arg constructor.</summary>
+    public const int Xcdr1MaxAlignmentValue = Xcdr1MaxAlignment;
 
     /// <summary>Active endianness.</summary>
     public EndianMode Endian => _endian;
+
+    /// <summary>`true` when reading the XCDR1 / classic CDR wire (alignment cap 8,
+    /// no DHEADER, PL_CDR1 for @mutable). Generated decoders branch on it.</summary>
+    public bool IsXcdr1 => _maxAlignment == Xcdr1MaxAlignment;
 
     /// <summary>Current read byte position.</summary>
     public int Position => _pos;
@@ -57,8 +87,10 @@ public ref struct Xcdr2Reader
             throw new ArgumentOutOfRangeException(nameof(alignment),
                 "alignment must be one of {1,2,4,8}");
         }
+        // XCDR2 caps the effective alignment at 4 (§7.4.1.1.1); XCDR1 at 8.
+        int effective = alignment < _maxAlignment ? alignment : _maxAlignment;
         int offset = _pos - _origin;
-        int pad = (alignment - (offset % alignment)) % alignment;
+        int pad = (effective - (offset % effective)) % effective;
         if (_pos + pad > _buf.Length)
         {
             throw new XcdrException(
@@ -79,6 +111,43 @@ public ref struct Xcdr2Reader
         var slice = _buf.Slice(_pos, count);
         _pos += count;
         return slice;
+    }
+
+    /// <summary>
+    /// Reads an IDL <c>fixed&lt;P,S&gt;</c>: (P+2)/2 packed-BCD octets back into a
+    /// <see cref="decimal"/>. Inverse of <c>Xcdr2Writer.WriteFixedBcd</c>.
+    /// </summary>
+    public decimal ReadFixedBcd(int p, int s)
+    {
+        int n = (p + 2) / 2;
+        var raw = ReadBytes(n);
+        var chars = new System.Collections.Generic.List<char>();
+        char sign = '+';
+        for (int i = 0; i < n; i++)
+        {
+            int hi = (raw[i] >> 4) & 0x0F;
+            int lo = raw[i] & 0x0F;
+            chars.Add((char)('0' + (hi % 10)));
+            if (i == n - 1) sign = lo == 0x0D ? '-' : '+';
+            else chars.Add((char)('0' + (lo % 10)));
+        }
+        while (chars.Count > s + 1 && chars[0] == '0') chars.RemoveAt(0);
+        var sb = new System.Text.StringBuilder();
+        if (sign == '-') sb.Append('-');
+        if (s > 0)
+        {
+            int dot = Math.Max(chars.Count - s, 0);
+            for (int i = 0; i < chars.Count; i++)
+            {
+                if (i == dot) sb.Append('.');
+                sb.Append(chars[i]);
+            }
+        }
+        else
+        {
+            sb.Append(chars.ToArray());
+        }
+        return decimal.Parse(sb.ToString(), System.Globalization.CultureInfo.InvariantCulture);
     }
 
     // ---------------------------------------------------------------------
@@ -252,6 +321,13 @@ public ref struct Xcdr2Reader
     /// </summary>
     public DHeaderReadScope BeginDHeader()
     {
+        // XCDR1 / classic CDR has no DHEADER — an @appendable/@final aggregate
+        // continues in the same stream. Return a frame-less scope so the matching
+        // EndDHeader is a no-op and member reads run over the current stream.
+        if (_maxAlignment != Xcdr2MaxAlignment)
+        {
+            return new DHeaderReadScope(_pos, _buf.Length, _origin, hasFrame: false);
+        }
         Align(4);
         uint size = ReadUInt32();
         int previousOrigin = _origin;
@@ -270,6 +346,10 @@ public ref struct Xcdr2Reader
     /// </summary>
     public void EndDHeader(DHeaderReadScope scope)
     {
+        if (!scope.HasFrame)
+        {
+            return; // XCDR1: no frame to close.
+        }
         if (_pos > scope.BodyEnd)
         {
             throw new XcdrException(
@@ -277,6 +357,70 @@ public ref struct Xcdr2Reader
         }
         _pos = scope.BodyEnd;
         _origin = scope.PreviousOrigin;
+    }
+
+    /// <summary>
+    /// Begins one PL_CDR1 (@mutable XCDR1) member: a 4-byte aligned header
+    /// [u16 PID][u16 length], then shifts the alignment origin to the body start
+    /// (PL_CDR1 bodies align member-relative, like the cdr-core fresh-reader
+    /// path) so the member's own decoder reads inline from this reader. Returns
+    /// <c>false</c> at the PID_LIST_END sentinel. PID_EXTENDED (length 8) carries
+    /// a 32-bit member id + 32-bit body length. Pair with
+    /// <see cref="EndPlCdr1Member"/>. Mirrors cdr-core `xcdr1::read_pl_cdr1_member`.
+    /// </summary>
+    public bool BeginPlCdr1Member(out uint memberId, out DHeaderReadScope scope)
+    {
+        const ushort PidListEnd = 0x3F02;
+        const ushort PidExtended = 0x3F01;
+        Align(4);
+        if (_pos + 4 > _buf.Length)
+        {
+            memberId = 0;
+            scope = default;
+            return false;
+        }
+        ushort pid = ReadUInt16();
+        ushort lenU16 = ReadUInt16();
+        if (pid == PidListEnd)
+        {
+            memberId = 0;
+            scope = default;
+            return false;
+        }
+        int bodyLen;
+        if (pid == PidExtended)
+        {
+            memberId = ReadUInt32();
+            bodyLen = (int)ReadUInt32();
+        }
+        else
+        {
+            memberId = pid;
+            bodyLen = lenU16;
+        }
+        if (_pos + bodyLen > _buf.Length)
+        {
+            throw new XcdrException(
+                $"PL_CDR1 member body {bodyLen} exceeds buffer (pos={_pos}, len={_buf.Length})");
+        }
+        int prevOrigin = _origin;
+        _origin = _pos; // member-relative alignment
+        scope = new DHeaderReadScope(_pos, _pos + bodyLen, prevOrigin);
+        return true;
+    }
+
+    /// <summary>Closes a <see cref="BeginPlCdr1Member"/> scope: positions at the
+    /// body end, skips the trailing 4-byte pad, and restores the origin.</summary>
+    public void EndPlCdr1Member(DHeaderReadScope scope)
+    {
+        _pos = scope.BodyEnd;
+        _origin = scope.PreviousOrigin;
+        int bodyLen = scope.BodyEnd - scope.BodyStart;
+        int pad = (4 - (bodyLen % 4)) % 4;
+        for (int i = 0; i < pad && _pos < _buf.Length; i++)
+        {
+            _pos++;
+        }
     }
 
     /// <summary>`true` when the current position has reached the body-end of the DHEADER scope.</summary>
@@ -311,10 +455,15 @@ public readonly struct DHeaderReadScope
     /// <summary>Origin before the `BeginDHeader` call, for restore in `EndDHeader`.</summary>
     public int PreviousOrigin { get; }
 
-    internal DHeaderReadScope(int bodyStart, int bodyEnd, int previousOrigin)
+    /// <summary>`false` for an XCDR1 reader, where aggregates carry no DHEADER —
+    /// `BeginDHeader`/`EndDHeader` are then no-ops over the same stream.</summary>
+    public bool HasFrame { get; }
+
+    internal DHeaderReadScope(int bodyStart, int bodyEnd, int previousOrigin, bool hasFrame = true)
     {
         BodyStart = bodyStart;
         BodyEnd = bodyEnd;
         PreviousOrigin = previousOrigin;
+        HasFrame = hasFrame;
     }
 }

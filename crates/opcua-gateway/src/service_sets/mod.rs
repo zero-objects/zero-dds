@@ -24,7 +24,7 @@
 //! `crates/rpc/`. This module provides the schema information that an
 //! IDL codegen consumer needs to emit wire bindings from these types.
 //!
-//! Cross-ref: `docs/standards/cache/omg/dds-opcua-1.0.pdf` §8.3,
+//! Cross-ref: `internal/standards/cache/omg/dds-opcua-1.0.pdf` §8.3,
 //! tables 8.3 (standard DataTypes/NodeClasses), 8.4 (View), 8.5
 //! (Query), 8.6 (Attribute), 8.7 (Method).
 

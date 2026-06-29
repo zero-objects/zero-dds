@@ -7,6 +7,6 @@ cd crates/idl
 cargo +nightly fuzz run parse
 ```
 
-Bekannte Findings (siehe `docs/test-harness/plan.md`):
+Bekannte Findings (siehe `internal/test-harness/plan.md`):
 * Finding 1: stack overflow on deep module nesting (~128).
 * Finding 2: quadratic behavior with many annotations.

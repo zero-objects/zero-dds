@@ -571,4 +571,4 @@ of which 82 OASIS-AMQP-1.0-relevant
 (`extended_types`/`frame`/`performatives`/`sections`/`types`, including the
 SASL-performative + attach/transfer codec tests). RabbitMQ interop additionally
 live: `cargo test -p zerodds-amqp-endpoint --test rabbitmq_amqp10_e2e --
---ignored` (codepit, `AMQP_RABBITMQ=1`).
+--ignored` (Linux bench host, `AMQP_RABBITMQ=1`).

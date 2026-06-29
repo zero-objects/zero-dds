@@ -21,16 +21,22 @@ workspace = true
 path = "src/lib.rs"
 
 [features]
-default = ["std"]
+default = ["std", "ring-backend"]
 std = []
+# Crypto primitive backend (pick one) — see lib.rs. Swaps both the JWT-RS256
+# verify primitives AND the rustls TLS provider. `ring-backend` (default) or
+# `aws-lc` (aws-lc-rs / AWS-LC, FIPS-140-3-validatable; implies std).
+ring-backend = ["dep:ring", "rustls/ring"]
+aws-lc = ["dep:aws-lc-rs", "rustls/aws_lc_rs", "std"]
 
 [dependencies]
-# §7.1 TLS — rustls 0.23 with ring backend (no aws-lc-rs dep), pure Rust.
+# §7.1 TLS — rustls 0.23. Provider follows the backend feature (ring | aws-lc-rs).
 rustls = { workspace = true }
 rustls-pemfile = { workspace = true }
 rustls-pki-types = { workspace = true }
-# §7.2 JWT — RS256 validation via `ring` (same dep as security-pki).
-ring = { workspace = true }
+# §7.2 JWT — RS256 validation. Swappable: `ring` (default) or `aws-lc-rs` (FIPS).
+ring = { workspace = true, optional = true }
+aws-lc-rs = { version = "1", optional = true }
 # Base64 for JWT header/payload/signature.
 base64 = { version = "0.22", default-features = false, features = ["std"] }
 

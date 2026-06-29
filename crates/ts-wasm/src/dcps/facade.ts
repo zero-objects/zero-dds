@@ -178,7 +178,7 @@ export class DataReader {
 
   /// Takes all currently-buffered samples (iterable of XCDR2 byte payloads).
   take(): Uint8Array[] {
-    return this.transport.drain(this.topic.name, 0);
+    return this.transport.drain(this.topic.name, 0).map((s) => s.bytes);
   }
 
   /// Annex C.2.3 `takeSamples`: returns up to `max` full Samples (bytes+info).

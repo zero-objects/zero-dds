@@ -82,9 +82,11 @@ final class Xcdr2WireVectorsTest {
     @Test
     @DisplayName("V-3 All mixed-primitives byte-exact + roundtrip (corrected spec)")
     void v3MixedPrimitives() {
-        // Corrected spec §6 V-3 (2026-05-07): 48 bytes with natural
-        // alignment per XTypes 1.3 §7.4.1.5 (b@0 o@1 s@2 us@4 pad@6
-        // l@8 ul@12 ll@16 ull@24 f@32 pad@36 d@40).
+        // XCDR2 caps MAXALIGN at 4 (XTypes 1.3 §7.4.1.1.1): 8-byte primitives
+        // align to min(sizeof, 4) = 4, NOT 8. Layout: b@0 o@1 s@2 us@4 pad@6
+        // l@8 ul@12 ll@16 ull@24 f@32 d@36 -> 44 bytes. The earlier 48-byte
+        // vector (ull@24 ... pad@36 d@40, with 8-aligned doubles) encoded the
+        // over-alignment Bug XW.
         Xcdr2Writer w = new Xcdr2Writer();
         w.writeBoolean(true);
         w.writeOctet((byte) 0xAB);
@@ -103,9 +105,9 @@ final class Xcdr2WireVectorsTest {
                         + "79 29 ED FF CE CA 23 00 "
                         + "4F 97 21 C5 FF FF FF FF "
                         + "15 CD 5B 07 00 00 00 00 "
-                        + "00 00 20 40 00 00 00 00 "
-                        + "6E 86 1B F0 F9 21 09 40");
-        assertEquals(48, expected.length);
+                        + "00 00 20 40 6E 86 1B F0 "
+                        + "F9 21 09 40");
+        assertEquals(44, expected.length);
         assertArrayEquals(expected, actual);
 
         Xcdr2Reader r = new Xcdr2Reader(actual);
@@ -221,8 +223,11 @@ final class Xcdr2WireVectorsTest {
         w.writeInt32(42);
         w.writeFloat64(3.14);
         byte[] actual = w.toByteArray();
+        // XCDR2 caps MAXALIGN at 4 (XTypes 1.3 §7.4.1.1.1): the double aligns to
+        // 4 (off 4), NOT 8 — no 4-byte pad after the int32. The old 16-byte
+        // vector encoded the over-alignment Bug XW; spec-correct is 12 bytes.
         byte[] expected = hex(
-                "2A 00 00 00 00 00 00 00 1F 85 EB 51 B8 1E 09 40");
+                "2A 00 00 00 1F 85 EB 51 B8 1E 09 40");
         assertArrayEquals(expected, actual);
 
         Xcdr2Reader r = new Xcdr2Reader(actual);
@@ -436,5 +441,24 @@ final class Xcdr2WireVectorsTest {
         w.writeInt32(0x01020304);
         byte[] actual = w.toByteArray();
         assertArrayEquals(hex("01 02 03 04"), actual);
+    }
+
+    @Test
+    @DisplayName("fixed<P,S> packed BCD — oracle vectors (JacORB/omniORB) + roundtrip")
+    void fixedBcdOracleVectors() {
+        String[][] cases = {
+            {"123.45", "5", "2", "12 34 5c"},
+            {"1234", "4", "0", "01 23 4c"},
+            {"-1.50", "6", "2", "00 00 15 0d"},
+        };
+        for (String[] c : cases) {
+            int p = Integer.parseInt(c[1]);
+            int s = Integer.parseInt(c[2]);
+            Xcdr2Writer w = new Xcdr2Writer();
+            w.writeFixedBcd(new java.math.BigDecimal(c[0]), p, s);
+            assertArrayEquals(hex(c[3]), w.toByteArray(), c[0]);
+            Xcdr2Reader r = new Xcdr2Reader(w.toByteArray());
+            assertEquals(0, r.readFixedBcd(p, s).compareTo(new java.math.BigDecimal(c[0])));
+        }
     }
 }

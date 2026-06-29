@@ -103,7 +103,7 @@ const FIXTURES: &[(&str, &str, &[&str])] = &[
     (
         "inherited_struct",
         include_str!("fixtures/inherited_struct.idl"),
-        &["class Parent", "class Child : public Parent"],
+        &["class Parent", "class Child : public ::Parent"],
     ),
     (
         "typedef_alias",

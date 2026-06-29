@@ -24,6 +24,7 @@ use crate::type_code::TypeCode;
 
 use crate::buffer::{BufferReader, BufferWriter, XCDR2_MAX_ALIGNMENT};
 use crate::encode::{CdrDecode, CdrEncode};
+use crate::endianness::Endianness;
 use crate::error::{DecodeError, EncodeError};
 
 // ============================================================================
@@ -144,6 +145,46 @@ impl WString {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Encodes the GIOP 1.2 wstring with an **explicit** BOM choice,
+    /// bypassing the global [`corba_wstring_bom`] policy. `with_bom = true`
+    /// = omniORB/TAO form (a `0xFEFF` byte-order mark prepended, counted in
+    /// the octet length); `false` = JacORB form (no BOM, units in message
+    /// byte order). An empty wstring is length 0 either way.
+    ///
+    /// # Errors
+    /// `ValueOutOfRange` if the octet length exceeds `u32::MAX`.
+    pub fn encode_with_bom(
+        &self,
+        writer: &mut BufferWriter,
+        with_bom: bool,
+    ) -> Result<(), EncodeError> {
+        let units = self.0.encode_utf16().count();
+        if units == 0 {
+            writer.write_u32(0)?;
+            return Ok(());
+        }
+        let total_units = if with_bom {
+            units.saturating_add(1)
+        } else {
+            units
+        };
+        let octets = u32::try_from(total_units.saturating_mul(2)).map_err(|_| {
+            EncodeError::ValueOutOfRange {
+                message: "CDR wstring length exceeds u32::MAX",
+            }
+        })?;
+        writer.write_u32(octets)?;
+        // write_u16 respects endianness; align(2) is a no-op here, since the
+        // position after the uint32 is 4-aligned (and thus 2-aligned).
+        if with_bom {
+            writer.write_u16(UTF16_BOM)?;
+        }
+        for unit in self.0.encode_utf16() {
+            writer.write_u16(unit)?;
+        }
+        Ok(())
+    }
 }
 
 impl From<&str> for WString {
@@ -162,34 +203,41 @@ impl From<String> for WString {
 /// reverse byte order sees the mirrored `0xFFFE` and swaps.
 const UTF16_BOM: u16 = 0xFEFF;
 
+/// Process-global policy: does the GIOP `wstring` encoder prepend a UTF-16
+/// byte-order mark? `true` (default) = omniORB/TAO form (BOM, counted in the
+/// octet length); `false` = JacORB form (no BOM, units in message byte
+/// order). Underspecified by §15.3.1.6 (the BOM is optional) and real ORBs
+/// disagree, so this is a configuration switch rather than a fixed choice.
+///
+/// `AtomicBool` (not a thread-local) because `zerodds-cdr` is `no_std`; the
+/// wstring wire form is a deployment-wide interop setting, so a single
+/// process-global is the right granularity. The **decoder** always accepts
+/// both forms (see [`WString::decode`]), so this only affects what ZeroDDS
+/// *emits* — set it to match the peer ORB.
+static CORBA_WSTRING_BOM: core::sync::atomic::AtomicBool =
+    core::sync::atomic::AtomicBool::new(true);
+
+/// Sets the GIOP `wstring` BOM policy (see [`CORBA_WSTRING_BOM`]). Call once
+/// at startup to match the peer ORB: leave the default (`true`) for
+/// omniORB/TAO, pass `false` for JacORB-style (no BOM).
+pub fn set_corba_wstring_bom(with_bom: bool) {
+    CORBA_WSTRING_BOM.store(with_bom, core::sync::atomic::Ordering::Relaxed);
+}
+
+/// Current GIOP `wstring` BOM policy (default `true`).
+#[must_use]
+pub fn corba_wstring_bom() -> bool {
+    CORBA_WSTRING_BOM.load(core::sync::atomic::Ordering::Relaxed)
+}
+
 impl CdrEncode for WString {
     fn encode(&self, writer: &mut BufferWriter) -> Result<(), EncodeError> {
         // GIOP 1.2 wstring (§15.3.2.7): uint32 length **in octets**, then the
         // UTF-16 code units, no null terminator. Per §15.3.1.6 a byte-order
-        // mark (0xFEFF) in message byte order is prepended — exactly as
-        // omniORB/TAO send; the BOM makes the units endianness-unambiguous
-        // (a reader of the other order detects 0xFFFE and swaps). The length
-        // octets include the BOM. An empty wstring = length 0 (no BOM),
-        // as conventioned by all ORBs.
-        let units = self.0.encode_utf16().count();
-        if units == 0 {
-            writer.write_u32(0)?;
-            return Ok(());
-        }
-        let total_units = units.saturating_add(1); // + BOM
-        let octets = u32::try_from(total_units.saturating_mul(2)).map_err(|_| {
-            EncodeError::ValueOutOfRange {
-                message: "CDR wstring length exceeds u32::MAX",
-            }
-        })?;
-        writer.write_u32(octets)?;
-        // write_u16 respects endianness; align(2) is a no-op here, since the
-        // position after the uint32 is 4-aligned (and thus 2-aligned).
-        writer.write_u16(UTF16_BOM)?;
-        for unit in self.0.encode_utf16() {
-            writer.write_u16(unit)?;
-        }
-        Ok(())
+        // mark (0xFEFF) MAY be prepended; whether it is is governed by the
+        // process-global [`corba_wstring_bom`] policy (default `true` =
+        // omniORB/TAO; set `false` for JacORB).
+        self.encode_with_bom(writer, corba_wstring_bom())
     }
 }
 
@@ -207,15 +255,17 @@ impl CdrDecode for WString {
             return Ok(Self(String::new()));
         }
         let offset = reader.position();
-        // Read the raw octets and interpret per §15.3.1.6: a leading BOM
-        // determines the byte order of the units; if absent (e.g. JacORB),
-        // big-endian applies. This way ZeroDDS reads both omniORB/TAO (BOM)
-        // and JacORB (BE without BOM), independent of the message byte order.
+        // §15.3.1.6: a leading BOM, if present, fixes the units' byte order;
+        // if absent, the message byte order applies (so a no-BOM wstring in a
+        // LE message reads LE, and JacORB's no-BOM units in a BE message read
+        // BE). This reads both omniORB/TAO (BOM) and JacORB (no BOM) and is
+        // self-consistent with the no-BOM form `encode_with_bom` emits.
+        let msg_big_endian = matches!(reader.endianness(), Endianness::Big);
         let bytes = reader.read_bytes(octets)?;
         let (start, big_endian) = match (bytes[0], bytes[1]) {
             (0xFE, 0xFF) => (2, true),  // BOM big-endian
             (0xFF, 0xFE) => (2, false), // BOM little-endian
-            _ => (0, true),             // no BOM -> big-endian default
+            _ => (0, msg_big_endian),   // no BOM -> message byte order
         };
         let mut units = Vec::with_capacity((octets - start) / 2);
         let mut idx = start;
@@ -230,6 +280,97 @@ impl CdrDecode for WString {
         }
         let s = String::from_utf16(&units).map_err(|_| DecodeError::InvalidUtf8 { offset })?;
         Ok(Self(s))
+    }
+}
+
+// ============================================================================
+// WChar — IDL `wchar` (CORBA-GIOP-1.2-Wire, §15.3.1.6)
+// ============================================================================
+
+/// IDL `wchar` wrapper for the **CORBA/GIOP 1.2** wire form. Holds a single
+/// Unicode scalar (`char`), but unlike the DDS XCDR2 `wchar` (a bare 2-byte
+/// UTF-16 code unit, no prefix) the GIOP 1.2 form is a **1-octet length**
+/// (the octet count of the wchar in the transmission code set — 2 for a BMP
+/// character in UTF-16) followed by the UTF-16 code unit(s).
+///
+/// **Byte order:** the code units are emitted **big-endian** regardless of the
+/// message byte order. This is the consensus oracle-confirmed behaviour of
+/// both omniORB 4.3 (writes `02 00 41` for `'A'` even inside a little-endian
+/// encapsulation) and JacORB 3.9 (`02 00 41`, big-endian message). The default
+/// UTF-16 transmission wide code set has no per-`wchar` BOM, so network
+/// (big-endian) order is used. `wchar 'A'` (U+0041) = `02 0041`.
+///
+/// A CORBA `wchar` is a single transmission unit: real ORBs (omniORB
+/// `CORBA::WChar`, Java `char`) are 16-bit, so only BMP characters occur
+/// (length 2, one unit). A non-BMP scalar would need a UTF-16 surrogate pair
+/// (length 4, two units); the encoder handles that defensively even though the
+/// ORBs cannot produce it through `write_wchar`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, PartialOrd, Ord, Hash)]
+pub struct WChar(pub char);
+
+impl WChar {
+    /// The inner Unicode scalar.
+    #[must_use]
+    pub fn as_char(&self) -> char {
+        self.0
+    }
+}
+
+impl From<char> for WChar {
+    fn from(c: char) -> Self {
+        Self(c)
+    }
+}
+
+impl CdrEncode for WChar {
+    fn encode(&self, writer: &mut BufferWriter) -> Result<(), EncodeError> {
+        // GIOP 1.2 wchar (§15.3.1.6): a 1-octet length (octet count in the
+        // transmission code set) followed by the UTF-16 code unit(s) in
+        // BIG-ENDIAN (network) order — independent of the message byte order
+        // (oracle-confirmed against omniORB 4.3 + JacORB 3.9).
+        let mut buf = [0u16; 2];
+        let units = self.0.encode_utf16(&mut buf);
+        let octets = units.len().saturating_mul(2);
+        let octets = u8::try_from(octets).map_err(|_| EncodeError::ValueOutOfRange {
+            message: "CDR wchar octet length exceeds u8::MAX",
+        })?;
+        writer.write_u8(octets)?;
+        for unit in units {
+            writer.write_bytes(&unit.to_be_bytes())?;
+        }
+        Ok(())
+    }
+}
+
+impl CdrDecode for WChar {
+    fn decode(reader: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
+        let offset = reader.position();
+        let octets = reader.read_u8()? as usize;
+        if octets == 0 || octets % 2 != 0 || octets > 4 || octets > reader.remaining() {
+            return Err(DecodeError::LengthExceeded {
+                announced: octets,
+                remaining: reader.remaining(),
+                offset,
+            });
+        }
+        let bytes = reader.read_bytes(octets)?;
+        let mut units = [0u16; 2];
+        let mut count = 0usize;
+        let mut idx = 0usize;
+        while idx + 1 < octets {
+            units[count] = u16::from_be_bytes([bytes[idx], bytes[idx + 1]]);
+            count += 1;
+            idx += 2;
+        }
+        // One scalar from the (1 or 2) UTF-16 units; a lone surrogate or an
+        // invalid pair is rejected.
+        let mut iter = char::decode_utf16(units[..count].iter().copied());
+        let c = iter
+            .next()
+            .and_then(Result::ok)
+            .filter(|_| iter.next().is_none())
+            .ok_or(DecodeError::InvalidUtf8 { offset })?;
+        Ok(Self(c))
     }
 }
 
@@ -547,6 +688,13 @@ impl<T: CdrDecode> CdrDecode for Vec<T> {
 // ============================================================================
 
 impl<T: CdrEncode, const N: usize> CdrEncode for [T; N] {
+    // XTypes 1.3 §7.4.3.5 rule (8) PARRAY_TYPE: an array of PRIMITIVE elements
+    // carries NO collection DHEADER, regardless of dimensionality. Propagating
+    // `T::IS_PRIMITIVE` makes a multi-dim primitive array (`[[i32; 3]; 2]`,
+    // T = `[i32; 3]`) report primitive → no DHEADER, while an array of structs
+    // (`[Pt; 2]`) stays non-primitive → DHEADER (rule (9) ARRAY_TYPE).
+    const IS_PRIMITIVE: bool = T::IS_PRIMITIVE;
+
     fn encode(&self, writer: &mut BufferWriter) -> Result<(), EncodeError> {
         if needs_collection_dheader(writer.max_alignment(), T::IS_PRIMITIVE) {
             // XCDR2 §7.4.3.5: array without count, DHEADER covers only elements.
@@ -566,6 +714,15 @@ impl<T: CdrEncode, const N: usize> CdrEncode for [T; N] {
 }
 
 impl<T: CdrDecode + Default + Copy, const N: usize> CdrDecode for [T; N] {
+    // FINDING (4th, decode/encode asymmetry): must mirror `CdrEncode for
+    // [T; N]`'s `IS_PRIMITIVE = T::IS_PRIMITIVE` (line ~692). Without it a
+    // multi-dim PRIMITIVE array (`[[i32; 3]; 2]`, T = `[i32; 3]`) decoded as a
+    // `[T; N]` element of an OUTER array reported the trait-default `false`,
+    // so the outer decode read a phantom collection DHEADER that the encoder
+    // never wrote (it correctly saw the inner array as primitive) → desync /
+    // `UnexpectedEof`. Propagating it keeps the DHEADER decision symmetric.
+    const IS_PRIMITIVE: bool = T::IS_PRIMITIVE;
+
     fn decode(reader: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         if needs_collection_dheader(reader.max_alignment(), T::IS_PRIMITIVE) {
             // XCDR2 §7.4.3.5: DHEADER (uint32) before the array elements.
@@ -631,9 +788,13 @@ where
         let len = u32::try_from(self.len()).map_err(|_| EncodeError::ValueOutOfRange {
             message: "map: entry-count > u32::MAX",
         })?;
-        // A map is a non-primitive collection -> DHEADER under XCDR2
-        // (§7.4.3.5/§7.4.4.6). Rule-derived (not Cyclone-captured).
-        if w.max_alignment() == XCDR2_MAX_ALIGNMENT {
+        // XCDR2 §7.4.3.5: a map carries a collection DHEADER only when its
+        // key/value *pair* is non-primitive (a struct/string value), exactly
+        // like a sequence keys on its element type. A `map<primitive,primitive>`
+        // is fully descriptive and gets NO DHEADER. Verified byte-identical to
+        // Fast DDS + OpenDDS (which both omit it for primitive maps and emit it
+        // for map-of-struct). The pair is primitive iff both K and V are.
+        if needs_collection_dheader(w.max_alignment(), K::IS_PRIMITIVE && V::IS_PRIMITIVE) {
             write_with_dheader(w, |sub| {
                 sub.write_u32(len)?;
                 for (k, v) in self {
@@ -659,7 +820,8 @@ where
     V: CdrDecode,
 {
     fn decode(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
-        if r.max_alignment() == XCDR2_MAX_ALIGNMENT {
+        // Symmetric to encode: only a non-primitive-pair map carries a DHEADER.
+        if needs_collection_dheader(r.max_alignment(), K::IS_PRIMITIVE && V::IS_PRIMITIVE) {
             let _dheader = r.read_u32()?;
         }
         let len = r.read_u32()? as usize;
@@ -680,6 +842,51 @@ mod tests {
     use crate::Endianness;
     use alloc::string::ToString;
     use alloc::vec;
+
+    #[test]
+    fn map_primitive_pair_omits_dheader_xcdr2() {
+        // map<i32,i32> = {7:42}: key+value both primitive -> the map is fully
+        // descriptive, so NO collection DHEADER under XCDR2. Byte-identical to
+        // Fast DDS + OpenDDS (both omit it). Regression for the over-emitted
+        // DHEADER that the map-of-struct golden (which keeps a DHEADER) hid.
+        let mut m = BTreeMap::new();
+        m.insert(7i32, 42i32);
+        let mut w = BufferWriter::new(Endianness::Little).with_max_alignment(XCDR2_MAX_ALIGNMENT);
+        m.encode(&mut w).unwrap();
+        assert_eq!(
+            w.into_bytes(),
+            vec![1, 0, 0, 0, 7, 0, 0, 0, 42, 0, 0, 0],
+            "primitive map must be count+key+value with NO leading DHEADER"
+        );
+        // and it round-trips
+        let bytes = vec![1u8, 0, 0, 0, 7, 0, 0, 0, 42, 0, 0, 0];
+        let mut r =
+            BufferReader::new(&bytes, Endianness::Little).with_max_alignment(XCDR2_MAX_ALIGNMENT);
+        let back: BTreeMap<i32, i32> = BTreeMap::decode(&mut r).unwrap();
+        assert_eq!(back.get(&7), Some(&42));
+    }
+
+    #[test]
+    fn map_non_primitive_value_keeps_dheader_xcdr2() {
+        // map<i32,String>: value is non-primitive -> the map DOES carry a
+        // DHEADER (same rule as a sequence-of-non-primitive, and as the
+        // byte-anchored map-of-struct in the corpus). The first word is the
+        // DHEADER (byte length), not the entry count.
+        let mut m = BTreeMap::new();
+        m.insert(1i32, "x".to_string());
+        let mut w = BufferWriter::new(Endianness::Little).with_max_alignment(XCDR2_MAX_ALIGNMENT);
+        m.encode(&mut w).unwrap();
+        let b = w.into_bytes();
+        assert_ne!(
+            &b[0..4],
+            &[1, 0, 0, 0],
+            "non-primitive map must lead with a DHEADER"
+        );
+        let mut r =
+            BufferReader::new(&b, Endianness::Little).with_max_alignment(XCDR2_MAX_ALIGNMENT);
+        let back: BTreeMap<i32, alloc::string::String> = BTreeMap::decode(&mut r).unwrap();
+        assert_eq!(back.get(&1).map(|s| s.as_str()), Some("x"));
+    }
 
     #[test]
     fn wstring_giop12_wire_format_and_roundtrip() {
@@ -855,6 +1062,89 @@ mod tests {
     }
 
     #[test]
+    fn wchar_giop12_wire_format_pinned_bytes() {
+        // wchar 'A' (U+0041) = 1-octet length (2) + UTF-16 unit big-endian.
+        // Pinned native bytes per omniORB 4.3 + JacORB 3.9: 02 0041.
+        let wc = WChar('A');
+        let mut w = BufferWriter::new(Endianness::Big);
+        wc.encode(&mut w).unwrap();
+        assert_eq!(w.into_bytes(), vec![0x02, 0x00, 0x41]);
+    }
+
+    #[test]
+    fn wchar_units_are_big_endian_even_in_le_message() {
+        // The UTF-16 unit is ALWAYS big-endian, independent of message order
+        // (omniORB emits 02 00 41 inside a little-endian encapsulation).
+        let wc = WChar('A');
+        let mut w = BufferWriter::new(Endianness::Little);
+        wc.encode(&mut w).unwrap();
+        assert_eq!(w.into_bytes(), vec![0x02, 0x00, 0x41]);
+    }
+
+    #[test]
+    fn wchar_non_ascii_bmp() {
+        // 'ü' U+00FC -> 02 00fc ; '€' U+20AC -> 02 20ac (oracle-confirmed).
+        for (c, want) in [('ü', vec![0x02, 0x00, 0xFC]), ('€', vec![0x02, 0x20, 0xAC])] {
+            let mut w = BufferWriter::new(Endianness::Big);
+            WChar(c).encode(&mut w).unwrap();
+            assert_eq!(w.into_bytes(), want, "wchar {c:?}");
+        }
+    }
+
+    #[test]
+    fn wchar_roundtrip_both_orders() {
+        for c in ['A', 'ü', '€', '\u{4E2D}'] {
+            for e in [Endianness::Big, Endianness::Little] {
+                let wc = WChar(c);
+                let mut w = BufferWriter::new(e);
+                wc.encode(&mut w).unwrap();
+                let bytes = w.into_bytes();
+                let mut r = BufferReader::new(&bytes, e);
+                assert_eq!(WChar::decode(&mut r).unwrap(), wc, "{c:?}/{e:?}");
+                assert_eq!(r.remaining(), 0);
+            }
+        }
+    }
+
+    #[test]
+    fn wchar_astral_surrogate_pair_length_4() {
+        // A non-BMP scalar (U+1F310 🌐) needs a UTF-16 surrogate pair: the
+        // length octet is 4 and two big-endian units follow. Real ORBs cannot
+        // produce this via write_wchar (16-bit WChar), but the codec handles
+        // it self-consistently.
+        let wc = WChar('\u{1F310}');
+        let mut w = BufferWriter::new(Endianness::Big);
+        wc.encode(&mut w).unwrap();
+        let bytes = w.into_bytes();
+        assert_eq!(bytes[0], 0x04, "length octet = 4 (two units)");
+        assert_eq!(&bytes[1..], &[0xD8, 0x3C, 0xDF, 0x10]); // UTF-16BE surrogate pair
+        let mut r = BufferReader::new(&bytes, Endianness::Big);
+        assert_eq!(WChar::decode(&mut r).unwrap(), wc);
+    }
+
+    #[test]
+    fn wchar_decode_rejects_odd_or_oversized_length() {
+        // odd length
+        let mut r = BufferReader::new(&[0x01, 0x00], Endianness::Big);
+        assert!(matches!(
+            WChar::decode(&mut r),
+            Err(DecodeError::LengthExceeded { .. })
+        ));
+        // zero length
+        let mut r = BufferReader::new(&[0x00], Endianness::Big);
+        assert!(matches!(
+            WChar::decode(&mut r),
+            Err(DecodeError::LengthExceeded { .. })
+        ));
+        // lone high surrogate -> invalid scalar
+        let mut r = BufferReader::new(&[0x02, 0xD8, 0x3C], Endianness::Big);
+        assert!(matches!(
+            WChar::decode(&mut r),
+            Err(DecodeError::InvalidUtf8 { .. })
+        ));
+    }
+
+    #[test]
     fn wstring_empty() {
         let ws = WString::from("");
         let mut w = BufferWriter::new(Endianness::Big);
@@ -867,6 +1157,54 @@ mod tests {
         );
         let mut r = BufferReader::new(&bytes, Endianness::Big);
         assert_eq!(WString::decode(&mut r).unwrap(), ws);
+    }
+
+    #[test]
+    fn wstring_bom_policy_default_is_omniorb_form() {
+        // Default policy = BOM present (omniORB/TAO). Read-only check — does
+        // NOT flip the global, so it cannot race the byte-asserting tests.
+        assert!(corba_wstring_bom(), "default GIOP wstring policy is BOM-on");
+    }
+
+    #[test]
+    fn wstring_encode_with_bom_omniorb_form() {
+        // BOM form: octet length counts the BOM (units+1)*2; the 2 bytes
+        // after the uint32 length are the 0xFEFF mark in message byte order.
+        let ws = WString::from("AB");
+        let mut w = BufferWriter::new(Endianness::Little);
+        ws.encode_with_bom(&mut w, true).unwrap();
+        let bytes = w.into_bytes();
+        // octets = (2 units + BOM) * 2 = 6; LE length word then BOM 0xFEFF.
+        assert_eq!(&bytes[0..4], &[6, 0, 0, 0]);
+        assert_eq!(&bytes[4..6], &[0xFF, 0xFE]); // 0xFEFF little-endian
+        assert_eq!(bytes.len(), 4 + 6);
+        // Decoder (BOM-tolerant) round-trips it.
+        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        assert_eq!(WString::decode(&mut r).unwrap(), ws);
+    }
+
+    #[test]
+    fn wstring_encode_with_bom_jacorb_form() {
+        // No-BOM form (JacORB): octet length = units*2, no 0xFEFF prefix.
+        let ws = WString::from("AB");
+        let mut w = BufferWriter::new(Endianness::Little);
+        ws.encode_with_bom(&mut w, false).unwrap();
+        let bytes = w.into_bytes();
+        assert_eq!(&bytes[0..4], &[4, 0, 0, 0]); // octets = 2*2 = 4
+        assert_eq!(&bytes[4..8], &[0x41, 0x00, 0x42, 0x00]); // 'A','B' LE, no BOM
+        assert_eq!(bytes.len(), 4 + 4);
+        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        assert_eq!(WString::decode(&mut r).unwrap(), ws);
+    }
+
+    #[test]
+    fn wstring_empty_both_bom_policies_are_length_zero() {
+        let ws = WString::from("");
+        for with_bom in [true, false] {
+            let mut w = BufferWriter::new(Endianness::Little);
+            ws.encode_with_bom(&mut w, with_bom).unwrap();
+            assert_eq!(w.into_bytes(), vec![0, 0, 0, 0]);
+        }
     }
 
     fn rt_le<T>(value: T)

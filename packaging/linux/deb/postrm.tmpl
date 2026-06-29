@@ -9,7 +9,7 @@ SERVICE="zerodds-${DAEMON}.service"
 case "$1" in
     purge)
         # Configs entfernen, falls vom Admin nicht modifiziert.
-        rm -f "/etc/zerodds/${DAEMON}.yaml"
+        rm -f "/etc/zerodds/@CONF@"
         # State der Services aufraeumen, aber System-User behalten —
         # andere zerodds-* Pakete nutzen ihn ggf. weiter.
         if [ -d /run/systemd/system ]; then

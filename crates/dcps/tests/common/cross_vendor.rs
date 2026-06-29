@@ -33,12 +33,15 @@
 use core::time::Duration;
 use std::process::{Child, Command, Stdio};
 
-/// SSH user for the lab host (see memory `reference_bench_hosts`).
-pub const SSH_USER: &str = "llvm";
+/// SSH user for the vendor lab host (see memory `reference_bench_hosts`).
+/// `llvm` was decommissioned (~2026-06); `codepit` is its replacement and
+/// hosts the vendor binaries (`/opt/cyclone/bin/ddsperf`, the FastDDS/OpenDDS
+/// shapes apps under `/root/xv-demos/`). Auth is key-based — NO password.
+pub const SSH_USER: &str = "root";
 /// SSH password for the lab host. Lab-only — production needs key auth.
-pub const SSH_PASS: &str = "llvm";
+pub const SSH_PASS: &str = "";
 /// SSH hostname; resolved via `~/.ssh/config`.
-pub const SSH_HOST: &str = "llvm";
+pub const SSH_HOST: &str = "codepit";
 /// Default timeout for live-subprocess bring-up.
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 
@@ -86,21 +89,44 @@ impl FastQos {
     }
 }
 
-/// Checks whether the live host is reachable. Tests without a lab can
-/// skip early, before SSH timeouts drain the test.
+/// Whether to attempt live cross-vendor interop. This is **explicit opt-in
+/// only** (`INTEROP_HOST_AVAILABLE=1`, or the legacy `LLVM_HOST_AVAILABLE`).
+///
+/// HISTORY / why opt-in: the old fallback returned `true` whenever `sshpass`
+/// happened to be installed locally, then SSHed to the now-dead `llvm` host —
+/// so on CI the spawns failed, the tests hit their early `return`, and counted
+/// as **passing in 0.02 s without exercising a single vendor sample** (silent
+/// false-green that masked XCDR2-default cross-vendor being unverified). Now
+/// nothing runs unless someone explicitly opts in on a host that can reach the
+/// vendor lab (`codepit`). See [`require_or_skip`] for the loud-skip / enforce
+/// behaviour.
 pub fn live_host_available() -> bool {
-    if std::env::var("LLVM_HOST_AVAILABLE").is_ok() {
+    std::env::var("INTEROP_HOST_AVAILABLE").is_ok() || std::env::var("LLVM_HOST_AVAILABLE").is_ok()
+}
+
+/// Gate for a live cross-vendor test. Returns `true` if the test should run.
+///
+/// When the lab host is not opted-in:
+/// - `INTEROP_REQUIRE=1` set → **panics** (hard fail). Use this on a release
+///   gate so a missing vendor host can never silently pass.
+/// - otherwise → prints a single, greppable `INTEROP-SKIP[...]` line and
+///   returns `false` (the caller returns early). The skip is now **loud and
+///   visible** instead of an invisible `return`.
+#[must_use]
+pub fn require_or_skip(label: &str) -> bool {
+    if live_host_available() {
         return true;
     }
-    // Fallback: is `sshpass` available locally? Without `sshpass`, all
-    // subprocess spawns would fail immediately.
-    Command::new("sshpass")
-        .arg("-V")
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
+    let msg = format!(
+        "INTEROP-SKIP[{label}]: vendor lab host {SSH_USER}@{SSH_HOST} not opted-in \
+         (set INTEROP_HOST_AVAILABLE=1 on a host that can reach it)"
+    );
+    assert!(
+        std::env::var("INTEROP_REQUIRE").is_err(),
+        "{msg} — INTEROP_REQUIRE=1 set: refusing to pass a cross-vendor test that did not run"
+    );
+    eprintln!("⚠️  {msg} — skipping (set INTEROP_REQUIRE=1 to make this a failure)");
+    false
 }
 
 /// Generic SSH subprocess wrapper. `pkill_pattern` is the

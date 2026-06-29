@@ -1,0 +1,20 @@
+# Standalone proof crate (own [workspace] so the parent workspace does not pull
+# the Linux/iceoryx-only cyclone-iox feature on other platforms). Build it on a
+# Linux host with the iceoryx POSH stack: `cargo build` then proofs/run.sh.
+[package]
+name = "proof-cyclone-dcps"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[[bin]]
+name = "proof-cyclone-dcps"
+path = "src/main.rs"
+
+[dependencies]
+zerodds-dcps = { path = "../../../dcps", features = ["cyclone-iox", "std"] }
+zerodds-cdr = { path = "../../../cdr" }
+zerodds-sql-filter = { path = "../../../sql-filter" }
+zerodds-types = { path = "../../../types" }

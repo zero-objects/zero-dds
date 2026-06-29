@@ -201,7 +201,7 @@ pub fn build_client_tls_connector(
                 .map_err(|e| TlsConfigError::Rustls(format!("ca add: {e}")))?;
         }
     }
-    let provider = rustls::crypto::ring::default_provider();
+    let provider = crate::tls_provider();
     let builder = ClientConfig::builder_with_provider(Arc::new(provider))
         .with_safe_default_protocol_versions()
         .map_err(|e| TlsConfigError::Rustls(format!("{e}")))?

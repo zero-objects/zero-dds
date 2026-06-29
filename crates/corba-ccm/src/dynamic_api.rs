@@ -195,7 +195,7 @@ impl Request {
     ///
     /// Out/inout args with their own reply position require a
     /// TypeCode-driven split of the reply body (DynAny walk) — see
-    /// `docs/corba-extra-mile-plan-2026-06-07.md` (DII refinement); the
+    /// `internal/corba-extra-mile-plan-2026-06-07.md` (DII refinement); the
     /// canonical §7 case (in-args + return value) is fully wire-capable here.
     ///
     /// # Errors

@@ -356,9 +356,12 @@ fn finish_secure_runtime(domain_id: u32, profile: SecurityProfile) -> *mut ZeroD
         return ptr::null_mut();
     }
 
+    // A5: this is the secured `rmw_zerodds` entry point (SROS2 enclave), so it
+    // gets the same ROS-2 out-of-the-box profile as the plain path — the reader
+    // offers XCDR1+XCDR2 to match rmw_cyclonedds/rmw_fastrtps writers config-free.
     let rt_cfg = RuntimeConfig {
         security: Some(Arc::clone(&profile.gate)),
-        ..RuntimeConfig::default()
+        ..RuntimeConfig::ros_defaults()
     };
 
     // DDS-Security §9.3.3: the runtime MUST run with the identity-adjusted

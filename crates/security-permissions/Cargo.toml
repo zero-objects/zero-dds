@@ -21,17 +21,36 @@ workspace = true
 path = "src/lib.rs"
 
 [features]
-safety = []  # empty marker for safe-profile lints (docs/safety-flag-drift.md)
-default = ["std"]
+safety = []  # empty marker for safe-profile lints (internal/safety-flag-drift.md)
+default = ["std", "ring-backend"]
 std = []
+# Crypto primitive backend (pick one) — see lib.rs. Production CMS signature
+# *verify* is identical across backends; `ring-backend` (default) or `aws-lc`
+# (aws-lc-rs / AWS-LC, FIPS-140-3-validatable; implies std).
+# Intra-stack deps are `default-features = false` so the backend is selected
+# here, letting the `aws-lc` (FIPS) build drop ring entirely.
+ring-backend = [
+    "dep:ring",
+    "rustls-webpki/ring",
+    "zerodds-security-pki/ring-backend",
+    "zerodds-security-pki/std",
+    "zerodds-security-crypto/ring-backend",
+    "zerodds-security-crypto/std",
+    "zerodds-security-crypto/metrics",
+]
+aws-lc = ["dep:aws-lc-rs", "rustls-webpki/aws-lc-rs", "zerodds-security-pki/aws-lc", "zerodds-security-crypto/aws-lc", "std"]
+# Third backend: wolfSSL/wolfCrypt. CMS verify + the PSK profile route through
+# the wolfcrypt-ring-compat shim; chain validation keeps the webpki `ring`
+# provider (no wolfCrypt provider upstream). Fans wolfcrypt to pki + crypto.
+wolfcrypt = ["dep:wolfcrypt-compat", "rustls-webpki/ring", "zerodds-security-pki/wolfcrypt", "zerodds-security-crypto/wolfcrypt", "std"]
 
 [dependencies]
-zerodds-security = { version = "1.0.0-rc.3.1", path = "../security" }
-# DelegationLink + Sign/Verify + Chain.
-zerodds-security-pki = { version = "1.0.0-rc.3.1", path = "../security-pki" }
+zerodds-security = { version = "1.0.0-rc.4", path = "../security" }
+# DelegationLink + Sign/Verify + Chain. Backend selected by our features above.
+zerodds-security-pki = { version = "1.0.0-rc.4", path = "../security-pki", default-features = false }
 # The PSK profile bundle allows creating PSK-Crypto + PSK-Auth + PSK-Access
-# together from one caller path.
-zerodds-security-crypto = { version = "1.0.0-rc.3.1", path = "../security-crypto" }
+# together from one caller path. Backend selected by our features above.
+zerodds-security-crypto = { version = "1.0.0-rc.4", path = "../security-crypto", default-features = false }
 # Read-only XML parser. Apache-2.0 / MIT. Pure Rust, lightweight.
 roxmltree = { workspace = true }
 # PKCS#7/CMS SignedData parser (RFC 5652). Apache-2.0 / MIT.
@@ -44,8 +63,12 @@ der = { version = "0.7", default-features = false, features = ["alloc", "oid", "
 const-oid = { version = "0.9", default-features = false }
 # SHA-256 for the message digest in CMS signed-attrs.
 sha2 = { workspace = true }
-# Signature verify (ECDSA/RSA-PKCS1) — same backend as webpki.
-ring = { workspace = true }
+# Signature verify (ECDSA/RSA-PKCS1) — same backend as webpki. Swappable:
+# `ring` (default) or `aws-lc-rs` (FIPS) via the backend features above.
+ring = { workspace = true, optional = true }
+aws-lc-rs = { version = "1", optional = true }
+# wolfCrypt backend — `[lib] name` is `ring`, renamed to avoid the collision.
+wolfcrypt-compat = { package = "wolfcrypt-ring-compat", version = "1", optional = true }
 # Trust-anchor DER + PEM parser.
 rustls-pki-types = { workspace = true }
 # Chain validation against the permissions CA.

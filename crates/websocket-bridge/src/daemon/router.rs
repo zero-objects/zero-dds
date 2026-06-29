@@ -25,6 +25,12 @@ pub enum RouterMsg {
         topic: String,
         /// CDR payload (without the encap header) or JSON representation.
         payload: Vec<u8>,
+        /// Wire byte order of `payload` from the encapsulation header
+        /// (RTPS 2.5 §10.5): `false` = little-endian, `true` = big-endian.
+        /// The browser needs it because the forwarded bytes carry no encap
+        /// header to recover the order from. Surfaced to the client as
+        /// `"be":true` on the notify frame (omitted for the LE default).
+        big_endian: bool,
     },
     /// Daemon shutdown — close the connection with code 1001.
     Shutdown,
@@ -77,7 +83,7 @@ impl Router {
     /// Pushes a sample to all subscribers.
     /// Connections whose channel is `disconnected` are automatically
     /// removed (lazy cleanup).
-    pub fn dispatch(&mut self, topic: &str, payload: Vec<u8>) -> usize {
+    pub fn dispatch(&mut self, topic: &str, payload: Vec<u8>, big_endian: bool) -> usize {
         let Some(subs) = self.subs.get(topic).cloned() else {
             return 0;
         };
@@ -87,6 +93,7 @@ impl Router {
                 let msg = RouterMsg::Sample {
                     topic: topic.to_string(),
                     payload: payload.clone(),
+                    big_endian,
                 };
                 if sender.send(msg).is_ok() {
                     delivered += 1;
@@ -125,12 +132,17 @@ mod tests {
         let (tx, rx) = channel();
         router.register_connection(1, tx);
         router.subscribe(1, "Trade".to_string());
-        let n = router.dispatch("Trade", b"PAYLOAD".to_vec());
+        let n = router.dispatch("Trade", b"PAYLOAD".to_vec(), false);
         assert_eq!(n, 1);
         match rx.recv().unwrap() {
-            RouterMsg::Sample { topic, payload } => {
+            RouterMsg::Sample {
+                topic,
+                payload,
+                big_endian,
+            } => {
                 assert_eq!(topic, "Trade");
                 assert_eq!(payload, b"PAYLOAD");
+                assert!(!big_endian);
             }
             other => panic!("unexpected msg {other:?}"),
         }
@@ -139,7 +151,7 @@ mod tests {
     #[test]
     fn dispatch_to_no_subscribers_is_zero() {
         let mut router = Router::new();
-        let n = router.dispatch("Empty", b"x".to_vec());
+        let n = router.dispatch("Empty", b"x".to_vec(), false);
         assert_eq!(n, 0);
     }
 
@@ -150,7 +162,7 @@ mod tests {
         router.register_connection(2, tx);
         router.subscribe(2, "T".to_string());
         router.unsubscribe(2, "T");
-        let n = router.dispatch("T", b"x".to_vec());
+        let n = router.dispatch("T", b"x".to_vec(), false);
         assert_eq!(n, 0);
         assert!(rx.try_recv().is_err());
     }

@@ -63,11 +63,11 @@ jobs:
             os: ubuntu-22.04
           - target: aarch64-unknown-linux-musl
             os: ubuntu-22.04
-          # macos-13 ist auf den public GH-Action-Runners faktisch
-          # nicht mehr verfuegbar (>1h queue-times). Wir bauen
-          # x86_64-apple-darwin per cross-compile auf einem macos-14
-          # (Apple Silicon) Runner — `cargo --target x86_64-apple-darwin`
-          # ist von Apple-Tooling nativ unterstuetzt.
+          # macos-13 is effectively no longer available on the public
+          # GH Action runners (>1h queue times). We build
+          # x86_64-apple-darwin via cross-compile on a macos-14
+          # (Apple Silicon) runner — `cargo --target x86_64-apple-darwin`
+          # is natively supported by Apple tooling.
           - target: x86_64-apple-darwin
             os: macos-14
           - target: aarch64-apple-darwin
@@ -89,17 +89,17 @@ jobs:
           sudo apt-get install -y --no-install-recommends pkg-config libssl-dev musl-tools
           case "${{ matrix.target }}" in
             aarch64-unknown-linux-gnu)
-              # aarch64 cross-compile: braucht den compiler PLUS multi-arch
-              # libc-headers (sonst "bits/libc-header-start.h not found"
-              # in ring's C-builds via cc-rs).
+              # aarch64 cross-compile: needs the compiler PLUS multi-arch
+              # libc headers (otherwise "bits/libc-header-start.h not found"
+              # in ring's C builds via cc-rs).
               sudo apt-get install -y --no-install-recommends \
                   gcc-aarch64-linux-gnu libc6-dev-arm64-cross
               ;;
             aarch64-unknown-linux-musl)
-              # musl-cross: gcc-aarch64-linux-musl ist nicht im Default-
-              # archive; nutze gcc-aarch64-linux-gnu mit musl-libc weil
-              # musl static-linkt und cc-rs den compiler nur fuer
-              # syscall-headers braucht.
+              # musl-cross: gcc-aarch64-linux-musl is not in the default
+              # archive; use gcc-aarch64-linux-gnu with musl-libc because
+              # musl links statically and cc-rs only needs the compiler for
+              # syscall headers.
               sudo apt-get install -y --no-install-recommends \
                   gcc-aarch64-linux-gnu libc6-dev-arm64-cross
               ;;
@@ -120,10 +120,10 @@ jobs:
             echo "CC_aarch64_unknown_linux_musl=aarch64-linux-gnu-gcc"
             echo "AR_aarch64_unknown_linux_musl=aarch64-linux-gnu-ar"
           } >> $GITHUB_ENV
-      # macOS-Codesigning: importiere Developer ID Application + Installer
-      # Certs in einen ad-hoc Keychain. apple-actions/import-codesign-certs
-      # mag keine zwei Imports in dieselbe Keychain (set-key-partition-list
-      # collidiert), daher direkt via /usr/bin/security.
+      # macOS code-signing: import the Developer ID Application + Installer
+      # certs into an ad-hoc keychain. apple-actions/import-codesign-certs
+      # dislikes two imports into the same keychain (set-key-partition-list
+      # collides), so do it directly via /usr/bin/security.
       - name: Import Apple codesigning certs (macOS)
         if: runner.os == 'macOS'
         env:
@@ -135,22 +135,22 @@ jobs:
           set -e
           KC="zerodds-signing.keychain"
           KC_PWD=$(uuidgen)
-          # 1) Keychain erstellen + entsperren + Suchpfad voranstellen.
+          # 1) Create + unlock keychain + prepend to the search path.
           security create-keychain -p "$KC_PWD" "$KC"
           security set-keychain-settings -lut 21600 "$KC"
           security unlock-keychain -p "$KC_PWD" "$KC"
           security list-keychains -d user -s "$KC" $(security list-keychains -d user | tr -d '"')
-          # 2) Beide P12s nacheinander importieren (-A erlaubt allen Tools Zugriff).
+          # 2) Import both P12s one after another (-A grants all tools access).
           echo "$APP_P12"  | base64 -D > /tmp/cert-app.p12
           echo "$INST_P12" | base64 -D > /tmp/cert-installer.p12
           security import /tmp/cert-app.p12       -k "$KC" -P "$APP_PWD"  -A -T /usr/bin/codesign -T /usr/bin/productsign -T /usr/bin/security
           security import /tmp/cert-installer.p12 -k "$KC" -P "$INST_PWD" -A -T /usr/bin/codesign -T /usr/bin/productsign -T /usr/bin/security
-          # 3) Partition-list einmal für beide setzen (Apple-tool-Zugriff
-          #    ohne Passwort-Prompt zur Laufzeit).
+          # 3) Set the partition list once for both (Apple-tool access
+          #    without a password prompt at runtime).
           security set-key-partition-list -S apple-tool:,apple: -s -k "$KC_PWD" "$KC"
-          # 4) Cleanup p12 files.
+          # 4) Clean up p12 files.
           rm -f /tmp/cert-app.p12 /tmp/cert-installer.p12
-          # 5) Verifikation.
+          # 5) Verification.
           security find-identity -v -p codesigning "$KC"
       - name: Install cargo-dist
         run: cargo install cargo-dist --version 0.22.1 --locked
@@ -168,8 +168,8 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_NOTARY_PASSWORD: ${{ secrets.APPLE_NOTARY_PASSWORD }}
-          # Apple-cert-Naming-Konvention (geprueft via security find-identity):
-          # "Developer ID Application: <Common-Name> (<TEAMID>)" — externe distribution + notarization
+          # Apple cert naming convention (checked via security find-identity):
+          # "Developer ID Application: <Common-Name> (<TEAMID>)" — external distribution + notarization
           # "Developer ID Installer:   <Common-Name> (<TEAMID>)" — .pkg-installer signing
           DEV_ID_APPLICATION: "Developer ID Application: Sandra Theresa Keler (YU6XNW6DG7)"
           DEV_ID_INSTALLER:   "Developer ID Installer: Sandra Theresa Keler (YU6XNW6DG7)"
@@ -203,11 +203,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Daemons sind Service-Images (ENTRYPOINT-driven), Runtimes sind
-        # Sandbox-Environments fuer Lerner-/Demo-Workflows (Python/C/C++/
-        # TS-Toolchain plus libzerodds.so + zerodds-idlc). Beide werden
-        # mit demselben Tag-Schema published — Konsumenten unterscheiden
-        # ueber den Image-Namen (zerodds-cli vs. zerodds-py-runtime).
+        # Daemons are service images (ENTRYPOINT-driven), runtimes are
+        # sandbox environments for learner/demo workflows (Python/C/C++/
+        # TS toolchain plus libzerodds.so + zerodds-idlc). Both are
+        # published with the same tag scheme — consumers distinguish
+        # via the image name (zerodds-cli vs. zerodds-py-runtime).
         image:
           - ws-bridged
           - mqtt-bridged
@@ -264,12 +264,12 @@ jobs:
       - name: Reshape payload to flat bin/ dir
         shell: pwsh
         run: |
-          # cargo-dist payload-Layout (verifiziert auf glr2 mit echtem
-          # download des artifact-x86_64-pc-windows-msvc): die .exes
-          # liegen in payload\<binname>-x86_64-pc-windows-msvc\<binname>.exe.
-          # WICHTIG: separater payload-flat\ tree damit Get-ChildItem
-          # -Recurse die just-kopierten files nicht doppelt sieht (race
-          # mit lazy-iteration). Plus eager-eval via @() vor copy.
+          # cargo-dist payload layout (verified on the CI runner with a
+          # real download of artifact-x86_64-pc-windows-msvc): the .exes
+          # live in payload\<binname>-x86_64-pc-windows-msvc\<binname>.exe.
+          # IMPORTANT: separate payload-flat\ tree so Get-ChildItem
+          # -Recurse does not see the just-copied files twice (race
+          # with lazy iteration). Plus eager eval via @() before copy.
           New-Item -ItemType Directory -Force -Path payload-flat\bin | Out-Null
           $exes = @(Get-ChildItem -Path payload -Filter *.exe -Recurse -File)
           Write-Host "found $($exes.Count) .exe files in payload/"
@@ -278,21 +278,21 @@ jobs:
           Get-ChildItem payload-flat\bin | ForEach-Object { Write-Host "  $($_.Name) ($($_.Length) bytes)" }
       - name: Install WiX 4 + extensions
         run: |
-          # Verifiziert auf glr2 (gitlab branch wix-debug, pipeline 1001 = MSI built 749 KiB):
-          # WiX 4 hat klassische in-process extensions (Util, UI, Bal, ...) in
-          # separate NuGet-Packages aufgesplittet. Wir brauchen Util + UI:
-          #   - WixToolset.Util.wixext  fuer <util:ServiceConfig>
-          #   - WixToolset.UI.wixext    fuer <ui:WixUI Id="WixUI_Mondo">
+          # Verified on the CI runner (gitlab branch wix-debug, pipeline 1001 = MSI built 749 KiB):
+          # WiX 4 split the classic in-process extensions (Util, UI, Bal, ...)
+          # into separate NuGet packages. We need Util + UI:
+          #   - WixToolset.Util.wixext  for <util:ServiceConfig>
+          #   - WixToolset.UI.wixext    for <ui:WixUI Id="WixUI_Mondo">
           dotnet tool install --global wix --version 4.0.5
           wix extension add WixToolset.Util.wixext/4.0.5
           wix extension add WixToolset.UI.wixext/4.0.5
       - name: Prepare LICENSE.rtf
         shell: pwsh
         run: |
-          # WixUI_Mondo dialog-set zeigt eine Lizenz-Akzeptanz-Seite; das
-          # Apache-2.0-LICENSE existiert nur als plain-text. Konvertiere
-          # zu minimal-RTF damit WixUILicenseRtf-Variable einen gueltigen
-          # file-path hat.
+          # The WixUI_Mondo dialog set shows a license-acceptance page; the
+          # Apache-2.0 LICENSE only exists as plain text. Convert it to
+          # minimal RTF so the WixUILicenseRtf variable has a valid
+          # file path.
           $rtfHeader = '{\rtf1\ansi\ansicpg1252\deff0\nouicompat\deflang1031{\fonttbl{\f0\fnil\fcharset0 Calibri;}}'
           $rtfStart = '{\*\generator ZeroDDS-CI;}\viewkind4\uc1\pard\sa200\sl276\slmult1\f0\fs20\lang7'
           $body = (Get-Content -Path LICENSE -Raw) -replace '\\','\\' -replace '\{','\{' -replace '\}','\}' -replace "`r?`n",'\par '
@@ -353,9 +353,9 @@ jobs:
   publish-aur:
     name: Update AUR (zerodds + zerodds-bin)
     needs: [plan, github-release]
-    # Laufe auch wenn github-release "failed" ist — der ensure-published
-    # step korrigiert die draft-state-pseudo-failures von softprops.
-    # Wir prüfen ZUR LAUFZEIT ob der release tatsächlich published ist.
+    # Run even if github-release "failed" — the ensure-published
+    # step corrects softprops' draft-state pseudo-failures.
+    # We check AT RUNTIME whether the release is actually published.
     if: always() && needs.plan.outputs.tag != ''
     runs-on: ubuntu-22.04
     steps:
@@ -420,11 +420,11 @@ jobs:
 
   github-release:
     name: Publish GitHub release
-    # `package-msi` ist `continue-on-error: true` — der overall release
-    # darf NICHT skippen wenn nur das Win-MSI failed. Der Rest
-    # (deb/rpm/docker/macos/linux/windows-zip) reicht voellig fuer
-    # einen technisch funktionalen Release. `if: always()` + explizite
-    # success-checks fuer die hard-required artifacts.
+    # `package-msi` is `continue-on-error: true` — the overall release
+    # must NOT be skipped if only the Win MSI fails. The rest
+    # (deb/rpm/docker/macos/linux/windows-zip) is fully sufficient for
+    # a technically functional release. `if: always()` + explicit
+    # success checks for the hard-required artifacts.
     needs: [plan, build, package-deb, package-rpm, package-docker, package-msi]
     if: |
       always()
@@ -450,23 +450,23 @@ jobs:
             ## Installation
 
             ### macOS
-            **Empfohlen:** `zerodds-bundle-*.pkg` (signed + notarized + stapled — Gatekeeper akzeptiert ohne Workaround).
+            **Recommended:** `zerodds-bundle-*.pkg` (signed + notarized + stapled — Gatekeeper accepts it without a workaround).
 
-            **Tarball-Variante** (`*.tar.xz`): Apple notarytool akzeptiert kein .tar.xz, daher trägt das tarball-binary keinen notarization-ticket. Nach dem Auspacken:
+            **Tarball variant** (`*.tar.xz`): Apple notarytool does not accept .tar.xz, so the tarball binary carries no notarization ticket. After unpacking:
             ```bash
             xattr -d com.apple.quarantine zerodds-* 2>/dev/null
             chmod +x zerodds-*
             ```
 
             ### Linux
-            - **Arch**: `paru -S zerodds-bin` (precompiled) oder `paru -S zerodds` (build from source)
-            - **Debian/Ubuntu**: `*.deb` herunterladen + `sudo dpkg -i`
-            - **Fedora/RHEL**: `*.rpm` herunterladen + `sudo dnf install`
-            - **Generic**: `*.tar.xz` für jede gewünschte Komponente
+            - **Arch**: `paru -S zerodds-bin` (precompiled) or `paru -S zerodds` (build from source)
+            - **Debian/Ubuntu**: download `*.deb` + `sudo dpkg -i`
+            - **Fedora/RHEL**: download `*.rpm` + `sudo dnf install`
+            - **Generic**: `*.tar.xz` for whichever component you want
 
             ### Windows
-            - **MSI installer**: `zerodds-1.0.0-x64.msi` (signed wenn WIN_CERT_PFX gesetzt)
-            - **Portable**: `*.zip` herunterladen + entpacken
+            - **MSI installer**: `zerodds-1.0.0-x64.msi` (signed if WIN_CERT_PFX is set)
+            - **Portable**: download `*.zip` + extract
 
             ### Docker
             Multi-arch (amd64/arm64) auf ghcr.io + Docker Hub:
@@ -494,10 +494,10 @@ jobs:
             dist/**/*.pkg.sha512
             dist/**/*.AppImage
             dist/**/SHA512SUMS*
-      # Workaround: softprops/action-gh-release@v2 setzt manchmal
-      # draft=true bei secondary-rate-limit-errors waehrend asset-upload
-      # (z.B. metadata-update 7x retry für source.tar.gz triggert das).
-      # Wir publishen explizit + warten kurz für rate-limit-cooldown.
+      # Workaround: softprops/action-gh-release@v2 sometimes sets
+      # draft=true on secondary-rate-limit errors during asset upload
+      # (e.g. a 7x metadata-update retry for source.tar.gz triggers it).
+      # We publish explicitly + wait briefly for the rate-limit cooldown.
       - name: Ensure release is published (draft → published)
         if: always() && needs.plan.outputs.tag != ''
         env:
@@ -505,7 +505,7 @@ jobs:
         run: |
           set -e
           sleep 60
-          # Idempotent: setzt draft=false und prerelease passend zum tag.
+          # Idempotent: sets draft=false and prerelease according to the tag.
           PRERELEASE_FLAG=""
           case "${{ needs.plan.outputs.tag }}" in
             *-*) PRERELEASE_FLAG="--prerelease" ;;

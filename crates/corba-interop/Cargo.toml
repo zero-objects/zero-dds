@@ -13,19 +13,19 @@ description = "CORBA speed + cross-ORB interop harness for ZeroDDS (hand-marshal
 workspace = true
 
 [dependencies]
-zerodds-cdr = { version = "1.0.0-rc.3.1", path = "../cdr" }
-zerodds-corba-giop = { version = "1.0.0-rc.3.1", path = "../corba-giop" }
-zerodds-corba-iiop = { version = "1.0.0-rc.3.1", path = "../corba-iiop", features = ["tls"] }
-zerodds-corba-ior = { version = "1.0.0-rc.3.1", path = "../corba-ior" }
-zerodds-corba-cosnaming = { version = "1.0.0-rc.3.1", path = "../corba-cosnaming" }
-zerodds-corba-cos-event = { version = "1.0.0-rc.3.1", path = "../corba-cos-event" }
-zerodds-corba-cos-notify = { version = "1.0.0-rc.3.1", path = "../corba-cos-notify" }
-zerodds-corba-ir = { version = "1.0.0-rc.3.1", path = "../corba-ir" }
-zerodds-corba-ccm = { version = "1.0.0-rc.3.1", path = "../corba-ccm" }
+zerodds-cdr = { version = "1.0.0-rc.4", path = "../cdr" }
+zerodds-corba-giop = { version = "1.0.0-rc.4", path = "../corba-giop" }
+zerodds-corba-iiop = { version = "1.0.0-rc.4", path = "../corba-iiop", features = ["tls"] }
+zerodds-corba-ior = { version = "1.0.0-rc.4", path = "../corba-ior" }
+zerodds-corba-cosnaming = { version = "1.0.0-rc.4", path = "../corba-cosnaming" }
+zerodds-corba-cos-event = { version = "1.0.0-rc.4", path = "../corba-cos-event" }
+zerodds-corba-cos-notify = { version = "1.0.0-rc.4", path = "../corba-cos-notify" }
+zerodds-corba-ir = { version = "1.0.0-rc.4", path = "../corba-ir" }
+zerodds-corba-ccm = { version = "1.0.0-rc.4", path = "../corba-ccm" }
 # CSIv2 (Wave 2 #2): GSSUP token + SASContextBody wire for security-context inject/eval.
-zerodds-corba-csiv2 = { version = "1.0.0-rc.3.1", path = "../corba-csiv2" }
-zerodds-corba-poa = { version = "1.0.0-rc.3.1", path = "../corba-poa" }
-zerodds-corba-rust = { version = "1.0.0-rc.3.1", path = "../corba-rust" }
+zerodds-corba-csiv2 = { version = "1.0.0-rc.4", path = "../corba-csiv2" }
+zerodds-corba-poa = { version = "1.0.0-rc.4", path = "../corba-poa" }
+zerodds-corba-rust = { version = "1.0.0-rc.4", path = "../corba-rust" }
 
 # SSLIOP interop (ssliop_server/ssliop_client): rustls config types for the
 # SSL-aware client/server runtime (the corba-iiop `tls` feature provides the
@@ -35,11 +35,11 @@ rustls = { workspace = true }
 # Live cross-ORB OTS handshake test (jacorb_live_ots_handshake): decode the
 # PropagationContext that JacORB's interceptor puts in service context id=0.
 [dev-dependencies]
-zerodds-corba-cos-transactions = { version = "1.0.0-rc.3.1", path = "../corba-cos-transactions" }
+zerodds-corba-cos-transactions = { version = "1.0.0-rc.4", path = "../corba-cos-transactions" }
 
 # build.rs generates Echo + feature-matrix IDL → Rust (OUT_DIR):
 # data types via idl-rust (cdr_only), interfaces via corba-rust.
 [build-dependencies]
-zerodds-idl = { version = "1.0.0-rc.3.1", path = "../idl" }
-zerodds-idl-rust = { version = "1.0.0-rc.3.1", path = "../idl-rust" }
-zerodds-corba-rust = { version = "1.0.0-rc.3.1", path = "../corba-rust" }
+zerodds-idl = { version = "1.0.0-rc.4", path = "../idl" }
+zerodds-idl-rust = { version = "1.0.0-rc.4", path = "../idl-rust" }
+zerodds-corba-rust = { version = "1.0.0-rc.4", path = "../corba-rust" }

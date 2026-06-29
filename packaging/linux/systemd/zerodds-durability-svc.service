@@ -1,6 +1,6 @@
 # /usr/lib/systemd/system/zerodds-durability-svc.service
 # ZeroDDS Durability-Service daemon (ADR 0009). One instance per DDS domain;
-# use a templated drop-in or copy per domain. Spec: docs/deployment/durability-service.md
+# use a templated drop-in or copy per domain. Spec: internal/deployment/durability-service.md
 [Unit]
 Description=ZeroDDS Durability-Service (TRANSIENT/PERSISTENT)
 Documentation=file:///usr/share/doc/zerodds/durability-service.md

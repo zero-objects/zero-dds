@@ -10,7 +10,7 @@ use crate::error::TypeCodecError;
 use crate::type_identifier::TypeIdentifier;
 use crate::type_object::common::{
     AppliedBuiltinTypeAnnotations, CommonUnionMember, CompleteMemberDetail, CompleteTypeDetail,
-    OptionalAppliedAnnotationSeq, decode_seq, encode_seq,
+    OptionalAppliedAnnotationSeq, decode_seq_appendable, encode_seq_appendable,
 };
 use crate::type_object::flags::{UnionDiscriminatorFlag, UnionTypeFlag};
 use crate::type_object::minimal::CommonDiscriminatorMember;
@@ -58,28 +58,48 @@ pub struct CompleteUnionType {
 impl CompleteUnionType {
     pub(super) fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
         w.write_u16(self.union_flags.0)?;
-        self.header.detail.encode_into(w)?;
-        w.write_u16(self.discriminator.common.member_flags.0)?;
-        self.discriminator.common.type_id.encode_into(w)?;
-        self.discriminator.ann_builtin.encode_into(w)?;
-        self.discriminator.ann_custom.encode_into(w)?;
-        encode_seq(w, &self.member_seq, |w, m| {
-            m.common.encode_into(w)?;
-            m.detail.encode_into(w)
+        // CompleteUnionHeader is @appendable → DHEADER around the detail.
+        zerodds_cdr::struct_enc::encode_appendable(w, |w| self.header.detail.encode_into(w))?;
+        // CompleteDiscriminatorMember is @appendable → DHEADER around common +
+        // ann_builtin + ann_custom. Member seq + each member @appendable too —
+        // mirrors the MINIMAL framing (byte-verified vs Cyclone).
+        zerodds_cdr::struct_enc::encode_appendable(w, |w| {
+            w.write_u16(self.discriminator.common.member_flags.0)?;
+            self.discriminator.common.type_id.encode_into(w)?;
+            self.discriminator.ann_builtin.encode_into(w)?;
+            self.discriminator.ann_custom.encode_into(w)
+        })?;
+        encode_seq_appendable(w, &self.member_seq, |w, m| {
+            zerodds_cdr::struct_enc::encode_appendable(w, |w| {
+                m.common.encode_into(w)?;
+                m.detail.encode_into(w)
+            })
         })
     }
 
     pub(super) fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, TypeCodecError> {
         let union_flags = UnionTypeFlag(r.read_u16()?);
-        let detail = CompleteTypeDetail::decode_from(r)?;
-        let disc_flags = UnionDiscriminatorFlag(r.read_u16()?);
-        let disc_type = TypeIdentifier::decode_from(r)?;
-        let disc_ann_builtin = AppliedBuiltinTypeAnnotations::decode_from(r)?;
-        let disc_ann_custom = OptionalAppliedAnnotationSeq::decode_from(r)?;
-        let member_seq = decode_seq(r, |r| {
-            let common = CommonUnionMember::decode_from(r)?;
-            let detail = CompleteMemberDetail::decode_from(r)?;
-            Ok(CompleteUnionMember { common, detail })
+        let detail =
+            zerodds_cdr::struct_enc::decode_appendable(r, CompleteTypeDetail::decode_from)?;
+        let (disc_flags, disc_type, disc_ann_builtin, disc_ann_custom) =
+            zerodds_cdr::struct_enc::decode_appendable(r, |r| {
+                let disc_flags = UnionDiscriminatorFlag(r.read_u16()?);
+                let disc_type = TypeIdentifier::decode_from(r)?;
+                let disc_ann_builtin = AppliedBuiltinTypeAnnotations::decode_from(r)?;
+                let disc_ann_custom = OptionalAppliedAnnotationSeq::decode_from(r)?;
+                Ok::<_, zerodds_cdr::DecodeError>((
+                    disc_flags,
+                    disc_type,
+                    disc_ann_builtin,
+                    disc_ann_custom,
+                ))
+            })?;
+        let member_seq = decode_seq_appendable(r, |r| {
+            zerodds_cdr::struct_enc::decode_appendable(r, |r| {
+                let common = CommonUnionMember::decode_from(r)?;
+                let detail = CompleteMemberDetail::decode_from(r)?;
+                Ok(CompleteUnionMember { common, detail })
+            })
         })?;
         Ok(Self {
             union_flags,

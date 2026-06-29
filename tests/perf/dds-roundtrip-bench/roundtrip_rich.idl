@@ -1,0 +1,63 @@
+// SPDX-License-Identifier: Apache-2.0
+//
+// Cross-Vendor Roundtrip-Bench — RICH-TYPED XCDR2 variant.
+//
+// Komplementär zu `roundtrip.idl` (dort: 2 Skalare + sequence<octet>).
+// Dieser Typ maximiert die **CDR-Codec-Arbeit pro Sample**, um den
+// Encode/Decode-Anteil der DCPS-Pipeline gegen den reinen
+// Transport-/Wire-Anteil zu isolieren:
+//
+//   * `string<64> name`            -- length-prefixed string codec
+//   * `double transform[16]`       -- fixed-size PARRAY (XCDR2 §7.4.3.5)
+//   * sequence<Waypoint, 32>       -- sequence-of-nested-struct: pro
+//                                     Element zwei verschachtelte Vec3
+//                                     + string + scalars → member-by-
+//                                     member encode/decode
+//   * sequence<octet, 8192>        -- Payload-Sweep wie im Basis-Bench
+//
+// Cross-Vendor-Wire-Identität (der ganze Zweck des Benches):
+//   * Durchgehend `@final` -- keine Extensibility, kein DHEADER/EMHEADER,
+//     identisches Wire-Layout über idlc / fastddsgen / rtiddsgen /
+//     opendds_idl / idl-cpp (vgl. Entscheidung @final-default).
+//   * `@autoid(SEQUENTIAL)` + explizite `@id` -- byte-identische
+//     TypeObject-Member-IDs über alle Stacks (RTI Type-Consistency strikt).
+//   * Alle Sequences/Strings **bounded** -- gleiche Defaults erzwungen
+//     (RTI default 100, FastDDS unbounded → sonst Wire-Divergenz).
+
+module RoundtripBench {
+
+    @final
+    @autoid(SEQUENTIAL)
+    struct Vec3 {
+        @id(0) double x;
+        @id(1) double y;
+        @id(2) double z;
+    };
+
+    @final
+    @autoid(SEQUENTIAL)
+    struct Waypoint {
+        @id(0) unsigned long  id;
+        @id(1) Vec3           position;
+        @id(2) Vec3           velocity;
+        @id(3) string<32>     label;
+        @id(4) double         weight;
+    };
+
+    @topic
+    @final
+    @autoid(SEQUENTIAL)
+    struct RoundtripRich {
+        @id(0) unsigned long          sequence_id;
+        @id(1) unsigned long long     t_send_ns;
+        @id(2) string<64>             name;
+        @id(3) double                 transform[16];
+        // Fixe Waypoint-Anzahl pro Sample (App füllt N=8) erzeugt
+        // konstante Codec-Last; bound 32 lässt Spielraum.
+        @id(4) sequence<Waypoint, 32> waypoints;
+        // Payload-Sweep beibehalten: 0 … 8192 Byte, damit rich-vs-basis
+        // bei identischer Payload-Größe vergleichbar ist.
+        @id(5) sequence<octet, 8192>  payload;
+    };
+
+};

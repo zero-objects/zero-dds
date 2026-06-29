@@ -24,8 +24,8 @@ Vendor-Feature-Matrix weist „Transient/Persistent (Service)" entsprechend als
 Defizit aus (Cross-Vendor-Wire-Replay fehlt ganz).
 
 Zwei vorhandene Planungs-Docs widersprachen sich:
-`docs/plans/milestone-v1.2.md` WP 2.2c wollte einen frischen, sqlite-WAL-
-gestützten Daemon; `docs/roadmap/track-dds-persistence-service.md` (RC3-C)
+`internal/plans/milestone-v1.2.md` WP 2.2c wollte einen frischen, sqlite-WAL-
+gestützten Daemon; `internal/roadmap/track-dds-persistence-service.md` (RC3-C)
 wollte einen nicht existierenden „RC2-A-Datalake-Engine"-Stack spec-konform
 wrappen. Diese ADR löst den Widerspruch.
 
@@ -134,7 +134,7 @@ Packaging + Deployment-Doc + Matrix-Update.
 ## Referenzen
 
 - DDS 1.4 §2.2.3.4 (Durability), §2.2.3.5 (DurabilityService)
-- `docs/plans/milestone-v1.2.md` §WP 2.2c (durch diese ADR konkretisiert)
-- `docs/roadmap/track-dds-persistence-service.md` (durch diese ADR ersetzt)
+- `internal/plans/milestone-v1.2.md` §WP 2.2c (durch diese ADR konkretisiert)
+- `internal/roadmap/track-dds-persistence-service.md` (durch diese ADR ersetzt)
 - `crates/dcps/src/durability_service.rs` (writer-embedded Vorläufer)
 - `crates/qos/src/policies/durability_service.rs` (Contract-QoS)

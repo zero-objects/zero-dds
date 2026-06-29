@@ -35,6 +35,15 @@ pub struct SubscribeArgs {
     pub duration: Option<Duration>,
     /// Wieviele Bytes pro Sample als Hex drucken (0 = nur metadata).
     pub hex_bytes: usize,
+    /// Optionaler Typname-Override (`--type`). `None` = type-following:
+    /// der Spy entdeckt den echten `type_name` der Writer via Discovery
+    /// und hängt sich pro Typ an. Gesetzt = direkt diesen Typ abonnieren
+    /// (überspringt Discovery; nützlich für stille / late-joining Writer).
+    pub type_name: Option<String>,
+    /// Decode samples to typed JSON on stdout (needs `type_file`).
+    pub decode: bool,
+    /// Out-of-band IDL file providing the types to decode against (`--type-file`).
+    pub type_file: Option<String>,
 }
 
 impl Default for SubscribeArgs {
@@ -45,6 +54,9 @@ impl Default for SubscribeArgs {
             max_samples: None,
             duration: None,
             hex_bytes: DEFAULT_HEX_BYTES,
+            type_name: None,
+            decode: false,
+            type_file: None,
         }
     }
 }
@@ -123,6 +135,21 @@ fn parse_subscribe(rest: &[String]) -> Result<SubscribeArgs, ParseError> {
                 i += 1;
                 out.topic = rest.get(i).ok_or(ParseError::MissingArg("topic"))?.clone();
             }
+            "--type" => {
+                i += 1;
+                out.type_name = Some(rest.get(i).ok_or(ParseError::MissingArg("type"))?.clone());
+            }
+            "--decode" => {
+                out.decode = true;
+            }
+            "--type-file" => {
+                i += 1;
+                out.type_file = Some(
+                    rest.get(i)
+                        .ok_or(ParseError::MissingArg("type-file"))?
+                        .clone(),
+                );
+            }
             "--count" | "-n" => {
                 i += 1;
                 let v = rest.get(i).ok_or(ParseError::MissingArg("count"))?;
@@ -191,6 +218,21 @@ mod tests {
         let cmd = parse_args(&s(&["subscribe", "-t", "Foo"])).unwrap();
         let Command::Subscribe(a) = cmd;
         assert_eq!(a.topic, "Foo");
+    }
+
+    #[test]
+    fn parse_type_override() {
+        let cmd = parse_args(&s(&["-t", "Track", "--type", "cuas::Track"])).unwrap();
+        let Command::Subscribe(a) = cmd;
+        assert_eq!(a.topic, "Track");
+        assert_eq!(a.type_name.as_deref(), Some("cuas::Track"));
+    }
+
+    #[test]
+    fn parse_no_type_override_defaults_none() {
+        let cmd = parse_args(&s(&["-t", "Track"])).unwrap();
+        let Command::Subscribe(a) = cmd;
+        assert_eq!(a.type_name, None);
     }
 
     #[test]

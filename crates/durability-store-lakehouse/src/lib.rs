@@ -18,7 +18,18 @@
 //! Implements [`DurabilityStore`] for the DDS path (store/query/replay), with
 //! the same contract semantics as the sqlite adapter. The DuckDB storage file
 //! survives a full process/system restart (the `PERSISTENT` guarantee).
+//!
+//! # Optional backend
+//! The entire crate is gated behind the default-OFF `duckdb` feature, because
+//! it links the *system* `libduckdb`. With the feature off this crate is an
+//! empty placeholder and the workspace builds with no native DuckDB
+//! dependency. Enable `--features duckdb` (the daemon's `lakehouse` feature
+//! turns it on) to compile the real adapter; that build needs `libduckdb`.
 
+// Whole-crate gate: without the `duckdb` feature this compiles to an empty
+// library so a default `cargo build`/`cargo test` of the workspace needs no
+// system libduckdb. See the crate `[features]` table.
+#![cfg(feature = "duckdb")]
 #![forbid(unsafe_code)]
 
 use std::collections::BTreeMap;
@@ -42,6 +53,8 @@ CREATE TABLE IF NOT EXISTS samples (
     sequence      BIGINT  NOT NULL,
     created_nanos BIGINT  NOT NULL,
     payload       BLOB    NOT NULL,
+    representation TINYINT NOT NULL DEFAULT 1,
+    big_endian    TINYINT NOT NULL DEFAULT 0,
     PRIMARY KEY (topic, instance, sequence)
 );
 CREATE TABLE IF NOT EXISTS unregistered (
@@ -138,7 +151,7 @@ impl LakehouseStore {
         let path = out_path.display().to_string().replace('\'', "''");
         conn.execute(
             &format!(
-                "COPY (SELECT topic, instance, sequence, created_nanos, payload \
+                "COPY (SELECT topic, instance, sequence, created_nanos, payload, representation, big_endian \
                  FROM samples WHERE topic = ? ORDER BY instance, sequence) \
                  TO '{path}' (FORMAT PARQUET)"
             ),
@@ -217,14 +230,16 @@ impl DurabilityStore for LakehouseStore {
         }
 
         conn.execute(
-            "INSERT OR REPLACE INTO samples(topic, instance, sequence, created_nanos, payload) \
-             VALUES (?, ?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO samples(topic, instance, sequence, created_nanos, payload, representation, big_endian) \
+             VALUES (?, ?, ?, ?, ?, ?, ?)",
             params![
                 sample.topic,
                 inst,
                 sample.sequence as i64,
                 nanos_of(sample.created_at),
-                sample.payload
+                sample.payload,
+                i32::from(sample.representation),
+                i32::from(sample.big_endian)
             ],
         )
         .map_err(|e| backend("insert", e))?;
@@ -251,7 +266,8 @@ impl DurabilityStore for LakehouseStore {
         let conn = self.lock_conn()?;
         let limit = selector.limit.unwrap_or(DEFAULT_PAGE);
         let mut sql = String::from(
-            "SELECT instance, sequence, created_nanos, payload FROM samples WHERE topic = ?",
+            "SELECT instance, sequence, created_nanos, payload, representation, big_endian \
+             FROM samples WHERE topic = ?",
         );
         let mut binds: Vec<Box<dyn duckdb::ToSql>> = vec![Box::new(topic.to_string())];
         if let Some(k) = selector.instance_key {
@@ -298,6 +314,8 @@ impl DurabilityStore for LakehouseStore {
                     sequence: r.get::<_, i64>(1)? as u64,
                     created_at: time_of(r.get::<_, i64>(2)?),
                     payload: r.get(3)?,
+                    representation: r.get::<_, i32>(4)? as u8,
+                    big_endian: r.get::<_, i32>(5)? != 0,
                 })
             })
             .map_err(|e| backend("query_map", e))?;

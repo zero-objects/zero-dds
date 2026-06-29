@@ -13,7 +13,8 @@ use zerodds_types::type_object::minimal::MinimalStructType;
 use zerodds_types::{PrimitiveKind, TypeIdentifier};
 
 use crate::ast::{
-    FloatingType, IntegerType, PrimitiveType, SequenceType, StringType, StructDef, TypeSpec,
+    FloatingType, IntegerType, MapType, PrimitiveType, SequenceType, StringType, StructDef,
+    TypeSpec,
 };
 
 use super::annotations::{ExtensibilityKind, lower_annotations};
@@ -96,13 +97,17 @@ pub fn map_type_spec(spec: &TypeSpec) -> Result<TypeIdentifier, MapError> {
                 .unwrap_or(0);
             if bound_u32 <= 255 {
                 TypeIdentifier::PlainSequenceSmall {
-                    header: zerodds_types::PlainCollectionHeader::default(),
+                    header: zerodds_types::PlainCollectionHeader::for_element(
+                        collection_equiv_kind(&element),
+                    ),
                     bound: bound_u32 as u8,
                     element,
                 }
             } else {
                 TypeIdentifier::PlainSequenceLarge {
-                    header: zerodds_types::PlainCollectionHeader::default(),
+                    header: zerodds_types::PlainCollectionHeader::for_element(
+                        collection_equiv_kind(&element),
+                    ),
                     bound: bound_u32,
                     element,
                 }
@@ -117,10 +122,45 @@ pub fn map_type_spec(spec: &TypeSpec) -> Result<TypeIdentifier, MapError> {
                 .join("::");
             return Err(MapError::UnresolvedScoped(path));
         }
+        TypeSpec::Map(MapType {
+            key, value, bound, ..
+        }) => {
+            let key_ti = map_type_spec(key)?;
+            let value_ti = map_type_spec(value)?;
+            make_map_ti(key_ti, value_ti, literal_bound(bound))
+        }
         TypeSpec::Fixed(_) => return Err(MapError::UnsupportedTypeSpec("fixed")),
-        TypeSpec::Map(_) => return Err(MapError::UnsupportedTypeSpec("map (inline IDL map)")),
         TypeSpec::Any => return Err(MapError::UnsupportedTypeSpec("any")),
     })
+}
+
+/// Builds a `PlainMap` `TypeIdentifier` (XTypes 1.3 §7.3.4.6, TK_MAP) from
+/// the resolved key + value `TypeIdentifier`s and the declared bound
+/// (`0` = unbounded). The map's `PlainCollectionHeader.equiv_kind` follows
+/// the value element (`EK_MINIMAL` when the value is a named-type minimal
+/// hash, else plain), mirroring the sequence/array convention.
+fn make_map_ti(key: TypeIdentifier, value: TypeIdentifier, bound_u32: u32) -> TypeIdentifier {
+    let header = zerodds_types::PlainCollectionHeader::for_element(collection_equiv_kind(&value));
+    // `key_flags` is `type_identifier::CollectionElementFlag` (distinct from
+    // the `type_object::flags` flag type and not re-exported at the crate
+    // root); let the struct-literal infer it via `Default`.
+    if bound_u32 <= u32::from(u8::MAX) {
+        TypeIdentifier::PlainMapSmall {
+            header,
+            bound: bound_u32 as u8,
+            element: alloc::boxed::Box::new(value),
+            key_flags: Default::default(),
+            key: alloc::boxed::Box::new(key),
+        }
+    } else {
+        TypeIdentifier::PlainMapLarge {
+            header,
+            bound: bound_u32,
+            element: alloc::boxed::Box::new(value),
+            key_flags: Default::default(),
+            key: alloc::boxed::Box::new(key),
+        }
+    }
 }
 
 fn map_primitive(p: PrimitiveType) -> PrimitiveKind {
@@ -275,6 +315,11 @@ type EnumValues = BTreeMap<alloc::string::String, BTreeMap<alloc::string::String
 /// EK_MINIMAL — equivalence-kind discriminator for minimal hashes
 /// (XTypes 1.3 §7.3.4.5). Identical to `zerodds_types` `kinds::EK_MINIMAL`.
 const EK_MINIMAL: u8 = 0xF1;
+/// EK_COMPLETE — equivalence-kind discriminator for complete hashes.
+const EK_COMPLETE: u8 = 0xF2;
+/// EK_BOTH — the element's minimal and complete TypeIdentifiers are
+/// identical (true for primitives / strings / nested plain collections).
+const EK_BOTH: u8 = 0xF3;
 
 /// Fully-qualified name → `EquivalenceHashMinimal` identifier of a
 /// lowered named type.
@@ -672,10 +717,8 @@ fn map_type_spec_resolved(
         TypeSpec::Sequence(SequenceType { elem, bound, .. }) => {
             let element = map_type_spec_resolved(elem, scope, names)?;
             let bound_u32 = literal_bound(bound);
-            let header = zerodds_types::PlainCollectionHeader {
-                equiv_kind: collection_equiv_kind(&element),
-                ..zerodds_types::PlainCollectionHeader::default()
-            };
+            let header =
+                zerodds_types::PlainCollectionHeader::for_element(collection_equiv_kind(&element));
             Ok(if bound_u32 <= u32::from(u8::MAX) {
                 TypeIdentifier::PlainSequenceSmall {
                     header,
@@ -690,8 +733,18 @@ fn map_type_spec_resolved(
                 }
             })
         }
-        // Primitives + strings + Fixed/Map/Any: identical to the
-        // isolated mapper (no resolution needed, or unsupported).
+        TypeSpec::Map(MapType {
+            key, value, bound, ..
+        }) => {
+            // §7.3.4.6 TK_MAP — resolve key + value against the NameMap so a
+            // map<K,V> with named-type key/value emits a proper map
+            // TypeIdentifier instead of skipping the whole struct's TypeObject.
+            let key_ti = map_type_spec_resolved(key, scope, names)?;
+            let value_ti = map_type_spec_resolved(value, scope, names)?;
+            Ok(make_map_ti(key_ti, value_ti, literal_bound(bound)))
+        }
+        // Primitives + strings + Fixed/Any: identical to the isolated mapper
+        // (no resolution needed, or unsupported).
         other => map_type_spec(other),
     }
 }
@@ -715,7 +768,11 @@ fn literal_bound(bound: &Option<crate::ast::ConstExpr>) -> u32 {
 fn collection_equiv_kind(element: &TypeIdentifier) -> u8 {
     match element {
         TypeIdentifier::EquivalenceHashMinimal(_) => EK_MINIMAL,
-        _ => 0,
+        TypeIdentifier::EquivalenceHashComplete(_) => EK_COMPLETE,
+        // Fully-descriptive elements (primitives, strings, nested plain
+        // collections) are identical in the minimal and complete graphs →
+        // EK_BOTH (0xF3). Byte-verified against Cyclone + FastDDS.
+        _ => EK_BOTH,
     }
 }
 
@@ -1031,10 +1088,7 @@ fn make_array_ti(element: TypeIdentifier, sizes: &[ConstExpr]) -> Result<TypeIde
     for s in sizes {
         dims.push(eval_const_u32(s)?);
     }
-    let header = zerodds_types::PlainCollectionHeader {
-        equiv_kind: collection_equiv_kind(&element),
-        ..zerodds_types::PlainCollectionHeader::default()
-    };
+    let header = zerodds_types::PlainCollectionHeader::for_element(collection_equiv_kind(&element));
     Ok(if dims.iter().all(|&d| d <= u32::from(u8::MAX)) {
         TypeIdentifier::PlainArraySmall {
             header,
@@ -1402,21 +1456,153 @@ mod tests {
     }
 
     #[test]
-    fn map_map_is_unsupported() {
-        let err = map_type_spec(&TypeSpec::Map(MapType {
+    fn map_now_lowers_to_plain_map() {
+        // Bug TO (#71): inline map<K,V> previously returned
+        // UnsupportedTypeSpec("map (inline IDL map)"); it now lowers to a
+        // TK_MAP PlainMap TypeIdentifier (see map_of_primitives_lowers_to_plain_map).
+        let ti = map_type_spec(&TypeSpec::Map(MapType {
             key: alloc::boxed::Box::new(prim(PrimitiveType::Integer(IntegerType::Long))),
             value: alloc::boxed::Box::new(prim(PrimitiveType::Integer(IntegerType::Long))),
             bound: None,
             span: sp(),
         }))
-        .unwrap_err();
-        assert_eq!(err, MapError::UnsupportedTypeSpec("map (inline IDL map)"));
+        .unwrap();
+        assert!(matches!(ti, TypeIdentifier::PlainMapSmall { .. }));
     }
 
     #[test]
     fn map_any_is_unsupported() {
         let err = map_type_spec(&TypeSpec::Any).unwrap_err();
         assert_eq!(err, MapError::UnsupportedTypeSpec("any"));
+    }
+
+    // ---- Bug TO (#71): inline map<K,V> → TK_MAP TypeIdentifier -----------
+
+    #[test]
+    fn map_of_primitives_lowers_to_plain_map() {
+        // map<long,long> (unbounded) → PlainMapSmall(bound=0) with the key +
+        // value TypeIdentifiers populated. Previously this returned
+        // UnsupportedTypeSpec("map (inline IDL map)").
+        let ti = map_type_spec(&TypeSpec::Map(MapType {
+            key: alloc::boxed::Box::new(prim(PrimitiveType::Integer(IntegerType::Long))),
+            value: alloc::boxed::Box::new(prim(PrimitiveType::Integer(IntegerType::Long))),
+            bound: None,
+            span: sp(),
+        }))
+        .unwrap();
+        match ti {
+            TypeIdentifier::PlainMapSmall {
+                bound,
+                element,
+                key,
+                ..
+            } => {
+                assert_eq!(bound, 0);
+                assert_eq!(*key, TypeIdentifier::Primitive(PrimitiveKind::Int32));
+                assert_eq!(*element, TypeIdentifier::Primitive(PrimitiveKind::Int32));
+            }
+            other => panic!("expected PlainMapSmall, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn map_string_key_long_value_lowers() {
+        // map<string,long> — the exact shape of 13_maps / 20_mixed_combo.
+        let ti = map_type_spec(&TypeSpec::Map(MapType {
+            key: alloc::boxed::Box::new(TypeSpec::String(StringType {
+                wide: false,
+                bound: None,
+                span: sp(),
+            })),
+            value: alloc::boxed::Box::new(prim(PrimitiveType::Integer(IntegerType::Long))),
+            bound: None,
+            span: sp(),
+        }))
+        .unwrap();
+        match ti {
+            TypeIdentifier::PlainMapSmall { key, element, .. } => {
+                assert!(matches!(*key, TypeIdentifier::String8Small { .. }));
+                assert_eq!(*element, TypeIdentifier::Primitive(PrimitiveKind::Int32));
+            }
+            other => panic!("expected PlainMapSmall, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn map_large_bound_uses_plain_map_large() {
+        let ti = map_type_spec(&TypeSpec::Map(MapType {
+            key: alloc::boxed::Box::new(prim(PrimitiveType::Integer(IntegerType::Long))),
+            value: alloc::boxed::Box::new(prim(PrimitiveType::Integer(IntegerType::Long))),
+            bound: Some(int_lit("1000")),
+            span: sp(),
+        }))
+        .unwrap();
+        assert!(matches!(
+            ti,
+            TypeIdentifier::PlainMapLarge { bound: 1000, .. }
+        ));
+    }
+
+    #[test]
+    fn registry_struct_with_map_member_emits_typeobject() {
+        // The whole-struct TypeObject must NOT be skipped just because a
+        // member is a map. Mirrors 13_maps.idl: a keyed struct with a
+        // map<string,long> member must lower to a real TypeObject.
+        let lowered =
+            registry("@appendable struct Maps { @key long id; map<string,long> counters; };");
+        assert!(lowered.names.contains_key("Maps"));
+        // And it serialises cleanly (this is what idlc's blob emission does).
+        let (_, obj) = lowered.iter().find(|(n, _)| *n == "Maps").unwrap();
+        let bytes = obj.to_bytes_le().expect("serialise map-bearing TypeObject");
+        assert!(!bytes.is_empty());
+    }
+
+    #[test]
+    fn registry_map_member_carries_map_type_id() {
+        // The map member's TypeIdentifier inside the struct TypeObject is a
+        // PlainMap (TK_MAP), not a placeholder/skip.
+        let lowered = registry("struct M { map<long,long> table; };");
+        let (_, obj) = lowered.iter().find(|(n, _)| *n == "M").unwrap();
+        let MinimalTypeObject::Struct(st) = obj else {
+            panic!("expected struct TypeObject");
+        };
+        assert_eq!(st.member_seq.len(), 1);
+        assert!(
+            matches!(
+                st.member_seq[0].common.member_type_id,
+                TypeIdentifier::PlainMapSmall { .. } | TypeIdentifier::PlainMapLarge { .. }
+            ),
+            "map member must carry a TK_MAP TypeIdentifier, got {:?}",
+            st.member_seq[0].common.member_type_id
+        );
+    }
+
+    #[test]
+    fn registry_map_of_named_value_resolves_and_sets_equiv_kind() {
+        // map<long, Point> — the value is a named struct, so the map's
+        // value element must resolve to a minimal hash and the collection
+        // header's equiv_kind flips to EK_MINIMAL.
+        let lowered =
+            registry("struct Point { long x; long y; }; struct Grid { map<long,Point> cells; };");
+        let (_, obj) = lowered.iter().find(|(n, _)| *n == "Grid").unwrap();
+        let MinimalTypeObject::Struct(st) = obj else {
+            panic!("expected struct TypeObject");
+        };
+        match &st.member_seq[0].common.member_type_id {
+            TypeIdentifier::PlainMapSmall {
+                header, element, ..
+            }
+            | TypeIdentifier::PlainMapLarge {
+                header, element, ..
+            } => {
+                assert!(matches!(
+                    **element,
+                    TypeIdentifier::EquivalenceHashMinimal(_)
+                ));
+                assert_eq!(header.equiv_kind, EK_MINIMAL);
+            }
+            other => panic!("expected PlainMap, got {other:?}"),
+        }
     }
 
     // ---- lower_struct_to_minimal struct-level annotations ----------------

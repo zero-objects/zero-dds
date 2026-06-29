@@ -29,7 +29,7 @@ pub fn adjust_participant_guid_prefix(
     candidate_guid: &[u8; 16],
     cert_der: &[u8],
 ) -> Result<[u8; 12], PkiError> {
-    use ring::digest::{SHA256, digest};
+    use crate::backend::digest::{SHA256, digest};
     use x509_cert::Certificate;
     use x509_cert::der::{Decode, Encode};
 

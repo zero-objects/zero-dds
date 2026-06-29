@@ -41,7 +41,6 @@ use zerodds_idl::ast::{
 
 use crate::error::CppGenError;
 
-const DEFAULT_BIT_BOUND: u32 = 32;
 const MAX_BIT_BOUND: u32 = 64;
 
 fn fmt_err(_e: std::fmt::Error) -> CppGenError {
@@ -67,8 +66,11 @@ pub(crate) fn emit_bitmask(
     b: &BitmaskDecl,
 ) -> Result<(), CppGenError> {
     let name = &b.name.text;
-    let bit_bound =
-        extract_int_annotation(&b.annotations, "bit_bound").unwrap_or(DEFAULT_BIT_BOUND);
+    // Holder width: an explicit `@bit_bound(N)` is authoritative; otherwise the
+    // spec DEFAULT is @bit_bound=32 (Bug XV-bits, XTypes 1.3 §7.3.1.2.1.6) → a
+    // UInt32 holder, NOT a width sized to the value count. This makes the C++
+    // wire byte-identical to the corrected rust golden (Perm => uint32_t).
+    let bit_bound = extract_int_annotation(&b.annotations, "bit_bound").unwrap_or(32);
     if bit_bound > MAX_BIT_BOUND {
         return Err(CppGenError::UnsupportedConstruct {
             construct: format!("bitmask bit_bound {bit_bound} > 64"),

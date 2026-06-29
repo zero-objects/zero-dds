@@ -197,8 +197,8 @@ fn nested_struct_uses_nested_codec_not_empty_bytes() {
         "nested struct must encode via the nested codec:\n{cs}"
     );
     assert!(
-        cs.contains("InnerTypeSupport.Instance.DecodeFrom(r)"),
-        "nested struct must decode via the nested codec:\n{cs}"
+        cs.contains("InnerTypeSupport.Instance.DecodeFrom(ref r)"),
+        "nested struct must decode via the nested codec (by ref — CS-cluster #1):\n{cs}"
     );
     assert!(
         !cs.contains("as object) is byte[]"),
@@ -224,28 +224,107 @@ fn nested_enum_uses_int32_cast() {
 }
 
 #[test]
-fn map_fixed_any_member_gates_typesupport_no_runtime_throw() {
-    // map/fixed/any have no XCDR2 codec yet — a struct with such a member must
-    // get its data type but be gated (no TypeSupport), NOT a codec that throws
-    // `XcdrException` at runtime.
-    for (src, ty) in [
-        ("struct S { map<long, string> kv; long n; };", "IDictionary"),
-        ("struct F { fixed<10,2> amount; long n; };", "decimal"),
-        ("struct A { any value; long n; };", "Omg.Types.Any"),
-    ] {
-        let cs = generate_csharp(&parse(src), &CsGenOptions::default()).expect("ok");
-        assert!(cs.contains(ty), "data type missing for `{src}`:\n{cs}");
-        assert!(
-            !cs.contains("XcdrException(\"unsupported"),
-            "must not emit a runtime-throwing codec for `{src}`:\n{cs}"
-        );
-        assert!(
-            !cs.contains("class STypeSupport")
-                && !cs.contains("class FTypeSupport")
-                && !cs.contains("class ATypeSupport"),
-            "struct with map/fixed/any must be gated (no TypeSupport) for `{src}`:\n{cs}"
-        );
-    }
+fn fixed_member_codecable_any_member_gated() {
+    // `fixed<P,S>` now has a real BCD XCDR codec (CORBA-oracle byte-identical
+    // across all 7 PSMs) → it DOES get a TypeSupport, mapped to `decimal`.
+    // `any` still has no XCDR2 codec → gated: data type only, NO TypeSupport,
+    // and NOT a codec that throws `XcdrException` at runtime. (`map` is also
+    // codecable — see `map_member_*`.)
+
+    // fixed → fully supported
+    let cs = generate_csharp(
+        &parse("struct F { fixed<10,2> amount; long n; };"),
+        &CsGenOptions::default(),
+    )
+    .expect("ok");
+    assert!(cs.contains("decimal"), "fixed must map to decimal:\n{cs}");
+    assert!(
+        cs.contains("class FTypeSupport"),
+        "fixed is codecable now → must have a TypeSupport:\n{cs}"
+    );
+    assert!(
+        !cs.contains("XcdrException(\"unsupported"),
+        "fixed codec must not throw at runtime:\n{cs}"
+    );
+
+    // any → still gated
+    let cs = generate_csharp(
+        &parse("struct A { any value; long n; };"),
+        &CsGenOptions::default(),
+    )
+    .expect("ok");
+    assert!(cs.contains("Omg.Types.Any"), "any data type missing:\n{cs}");
+    assert!(
+        !cs.contains("XcdrException(\"unsupported"),
+        "any must not emit a runtime-throwing codec:\n{cs}"
+    );
+    assert!(
+        !cs.contains("class ATypeSupport"),
+        "any has no codec → must be gated (no TypeSupport):\n{cs}"
+    );
+}
+
+#[test]
+fn optional_aggregate_member_does_not_emit_dotvalue() {
+    // EDGE (@optional aggregate): an `@optional` of a REFERENCE type (string,
+    // sequence, map, nested struct) must NOT encode via `sample.Prop.Value` —
+    // reference types have no `.Value`, so that did not compile and every
+    // optional-of-aggregate struct failed to build. Value-type optionals
+    // (primitive/enum) keep `.Value`.
+    let cs = generate_csharp(
+        &parse(
+            "struct Inner { long a; }; \
+             @final struct Opt { \
+                @optional string note; \
+                @optional sequence<long> tags; \
+                @optional Inner nested; \
+                @optional map<long, string> kv; \
+                @optional long count; \
+             };",
+        ),
+        &CsGenOptions::default(),
+    )
+    .expect("gen");
+    // Reference-type optionals dereference the property directly.
+    assert!(
+        cs.contains("w.WriteString(sample.Note);"),
+        "optional string must encode `sample.Note`, not `.Value`:\n{cs}"
+    );
+    assert!(
+        !cs.contains("sample.Note.Value"),
+        "optional string must NOT use `.Value` (reference type):\n{cs}"
+    );
+    assert!(
+        !cs.contains("sample.Tags.Value")
+            && !cs.contains("sample.Nested.Value")
+            && !cs.contains("sample.Kv.Value"),
+        "optional aggregate members must NOT use `.Value`:\n{cs}"
+    );
+    // The value-type optional (long) STILL uses `.Value` (Nullable<int>).
+    assert!(
+        cs.contains("sample.Count.Value"),
+        "optional value-type member must still use `.Value`:\n{cs}"
+    );
+}
+
+#[test]
+fn map_member_emits_codec_typesupport() {
+    // CS-cluster #2: `map<K,V>` is now codecable — the struct gets a real
+    // TypeSupport with the map encode/decode, not the gating comment.
+    let cs = generate_csharp(
+        &parse("struct S { map<long, string> kv; long n; };"),
+        &CsGenOptions::default(),
+    )
+    .expect("ok");
+    assert!(cs.contains("IDictionary"), "map property type:\n{cs}");
+    assert!(
+        cs.contains("class STypeSupport"),
+        "map-containing struct must get a TypeSupport:\n{cs}"
+    );
+    assert!(
+        !cs.contains("no XCDR2 TypeSupport"),
+        "map-containing struct must not be gated out:\n{cs}"
+    );
 }
 
 #[test]

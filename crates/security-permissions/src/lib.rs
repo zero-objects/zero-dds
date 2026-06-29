@@ -27,6 +27,23 @@
 
 extern crate alloc;
 
+// Crypto primitive backend for production CMS signature *verify* (identical API
+// across ring / aws-lc-rs). `ring` (default) or `aws-lc-rs` (FIPS, via `aws-lc`).
+// Test-only key generation keeps the `ring` dev-dependency directly.
+#[cfg(feature = "aws-lc")]
+pub(crate) use aws_lc_rs as backend;
+#[cfg(all(
+    feature = "ring-backend",
+    not(any(feature = "aws-lc", feature = "wolfcrypt"))
+))]
+pub(crate) use ring as backend;
+#[cfg(all(feature = "wolfcrypt", not(feature = "aws-lc")))]
+pub(crate) use wolfcrypt_compat as backend;
+#[cfg(not(any(feature = "ring-backend", feature = "aws-lc", feature = "wolfcrypt")))]
+compile_error!(
+    "enable exactly one crypto backend: `ring-backend` (default), `aws-lc`, or `wolfcrypt`"
+);
+
 mod cms;
 pub mod delegation_check;
 mod governance;

@@ -115,23 +115,34 @@ fn dispatch_w2r(datagram: &[u8], r: &mut ReliableReader, now: Duration) -> Vec<D
     let mut delivered = Vec::new();
     let parsed = decode_datagram(datagram).expect("decode w->r datagram");
     let src = parsed.header.guid_prefix;
+    // Track the last-seen INFO_TS so a following DATA carries the source
+    // timestamp into the delivered sample (DDSI-RTPS §8.3.4 ReceiverState).
+    let mut cur_ts = None;
     for sub in parsed.submessages {
         match sub {
-            ParsedSubmessage::Data(d) => delivered.extend(r.handle_data(src, &d)),
+            ParsedSubmessage::InfoTimestamp(its) => {
+                cur_ts = if its.invalidate {
+                    None
+                } else {
+                    Some(its.timestamp)
+                };
+            }
+            ParsedSubmessage::Data(d) => delivered.extend(r.handle_data(src, &d, cur_ts)),
             ParsedSubmessage::Heartbeat(h) => {
                 // Flags (F/L) are taken from the submessage header via
                 // carried along with decode_datagram — no more hardcoding.
                 r.handle_heartbeat(src, &h, now);
             }
             ParsedSubmessage::Gap(g) => delivered.extend(r.handle_gap(src, &g)),
-            ParsedSubmessage::DataFrag(df) => delivered.extend(r.handle_data_frag(src, &df, now)),
+            ParsedSubmessage::DataFrag(df) => {
+                delivered.extend(r.handle_data_frag(src, &df, now, cur_ts))
+            }
             ParsedSubmessage::AckNack(_)
             | ParsedSubmessage::HeartbeatFrag(_)
             | ParsedSubmessage::NackFrag(_)
             | ParsedSubmessage::HeaderExtension(_)
             | ParsedSubmessage::InfoSource(_)
             | ParsedSubmessage::InfoReply(_)
-            | ParsedSubmessage::InfoTimestamp(_)
             | ParsedSubmessage::Unknown { .. } => {}
         }
     }
@@ -237,6 +248,40 @@ fn e2e_30_percent_loss_delivers_all_in_order() {
     for (i, s) in delivered.iter().enumerate() {
         assert_eq!(s.sequence_number, SequenceNumber(i as i64 + 1));
     }
+}
+
+/// RTPS-F1 E2E: a `write_stamped` sample carries its source timestamp across
+/// the wire (writer INFO_TS → reader) into `DeliveredSample.source_timestamp`.
+#[test]
+fn e2e_source_timestamp_round_trips() {
+    use zerodds_rtps::header_extension::HeTimestamp;
+    let mut w = make_writer();
+    let mut r = make_reader();
+    let ts = HeTimestamp {
+        seconds: 0x6543_2100,
+        fraction: 0x89ab_cdef,
+    };
+    let mut delivered = Vec::new();
+    for dg in w
+        .write_stamped(&[0xAB, 0xCD, 0xEF, 0x01], Some(ts))
+        .expect("write_stamped")
+    {
+        delivered.extend(dispatch_w2r(&dg.bytes, &mut r, Duration::from_millis(0)));
+    }
+    assert_eq!(delivered.len(), 1, "one sample delivered");
+    assert_eq!(
+        delivered[0].source_timestamp,
+        Some(ts),
+        "source timestamp must survive the writer→reader round-trip"
+    );
+
+    // An unstamped sample delivers with no source timestamp (reception order).
+    let mut delivered2 = Vec::new();
+    for dg in w.write(&[0x02]).expect("write") {
+        delivered2.extend(dispatch_w2r(&dg.bytes, &mut r, Duration::from_millis(0)));
+    }
+    assert_eq!(delivered2.len(), 1);
+    assert_eq!(delivered2[0].source_timestamp, None);
 }
 
 // ============================================================================

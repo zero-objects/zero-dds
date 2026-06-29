@@ -70,6 +70,75 @@ fn snapshot_enum() {
     insta::assert_snapshot!(run(idl));
 }
 
+/// Bug O (#58): explicit `@value(N)` must drive both the `#[repr(i32)]`
+/// discriminant and the `from_wire` reverse map (here 1/2/8, NOT 0/1/2).
+#[test]
+fn snapshot_enum_explicit_value() {
+    let idl = r#"
+        enum Sparse {
+            @value(1) ONE,
+            @value(2) TWO,
+            @value(8) EIGHT
+        };
+    "#;
+    insta::assert_snapshot!(run(idl));
+}
+
+/// T2 (typesystem oracle F2): `@bit_bound(N)` selects the signed-integer
+/// wire width of the enum holder (XTypes 1.3 §7.4.5.1 / §7.3.1.2.1.2) —
+/// N≤8 → `i8` (1 octet), N≤16 → `i16` (2 octets), else `i32`. Cyclone honours
+/// this; the prior fixed-`i32` path silently dropped `@bit_bound`. This is a
+/// direct assertion (not a snapshot) so it stays decoupled from the embedded
+/// TypeIdentifier-hash churn of the struct snapshots.
+#[test]
+fn bit_bound_enum_narrows_wire_width() {
+    let gen8 = run(r#"
+        @bit_bound(8)
+        enum Tiny { T_A, T_B, T_C };
+    "#);
+    assert!(
+        gen8.contains("<i8 as zerodds_cdr::CdrEncode>::encode(&(*self as i8), w)"),
+        "@bit_bound(8) enum must encode as i8:\n{gen8}"
+    );
+    assert!(
+        gen8.contains("i32::from(<i8 as zerodds_cdr::CdrDecode>::decode(r)?)"),
+        "@bit_bound(8) enum must decode from i8:\n{gen8}"
+    );
+
+    let gen16 = run(r#"
+        @bit_bound(16)
+        enum Mid { M_A, M_B, M_C, M_D };
+    "#);
+    assert!(
+        gen16.contains("<i16 as zerodds_cdr::CdrEncode>::encode(&(*self as i16), w)"),
+        "@bit_bound(16) enum must encode as i16:\n{gen16}"
+    );
+
+    // Default (no @bit_bound) stays a full 32-bit i32 holder (§7.4.5.1).
+    let gen_default = run(r#"
+        enum Wide { W_A, W_B };
+    "#);
+    assert!(
+        gen_default.contains("<i32 as zerodds_cdr::CdrEncode>::encode(&(*self as i32), w)"),
+        "default enum must stay i32:\n{gen_default}"
+    );
+    assert!(
+        !gen_default.contains("as i8"),
+        "default enum must not narrow:\n{gen_default}"
+    );
+}
+
+/// Bug R2 (#61): the decode of an array-of-struct member must name the
+/// declarator-wrapped array type `[Point; 2]`, not the bare element type.
+#[test]
+fn snapshot_struct_array_of_struct() {
+    let idl = r#"
+        @nested struct Point { long x; long y; };
+        struct Shapes { Point shape[2]; };
+    "#;
+    insta::assert_snapshot!(run(idl));
+}
+
 #[test]
 fn snapshot_typedef() {
     let idl = r#"

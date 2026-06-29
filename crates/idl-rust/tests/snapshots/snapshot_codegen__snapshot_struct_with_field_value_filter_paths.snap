@@ -1,5 +1,6 @@
 ---
 source: crates/idl-rust/tests/snapshot_codegen.rs
+assertion_line: 347
 expression: run(idl)
 ---
 // SPDX-License-Identifier: Apache-2.0
@@ -7,6 +8,7 @@ expression: run(idl)
 
 #![allow(clippy::too_many_lines)]
 #![allow(unused_imports)]
+#![allow(non_snake_case)]
 
 use zerodds_cdr::{BufferReader, BufferWriter, CdrDecode, CdrEncode, DecodeError, EncodeError, Endianness};
 
@@ -21,31 +23,77 @@ pub struct SensorReading {
 
 impl zerodds_dcps::DdsType for SensorReading {
     const TYPE_NAME: &'static str = "SensorReading";
-    const EXTENSIBILITY: zerodds_dcps::Extensibility = zerodds_dcps::Extensibility::Final;
-    const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0xdb, 0x30, 0xda, 0x19, 0xd9, 0x39, 0x96, 0xd3, 0x12, 0xfc, 0x4f, 0x24, 0xad, 0xa9]));
+    const EXTENSIBILITY: zerodds_dcps::Extensibility = zerodds_dcps::Extensibility::Appendable;
+    const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0x2b, 0xd8, 0x15, 0xd5, 0x02, 0xb2, 0x08, 0x5a, 0x7f, 0xed, 0x81, 0x68, 0xa2, 0xbe]));
 
     fn encode(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
         let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little).xcdr2();
-        <_ as zerodds_cdr::CdrEncode>::encode(&self.sensor_id, &mut writer)?;
-        <_ as zerodds_cdr::CdrEncode>::encode(&self.value, &mut writer)?;
-        <_ as zerodds_cdr::CdrEncode>::encode(&self.label, &mut writer)?;
-        <_ as zerodds_cdr::CdrEncode>::encode(&self.valid, &mut writer)?;
+        zerodds_cdr::struct_enc::encode_appendable(&mut writer, |w| {
+            <_ as zerodds_cdr::CdrEncode>::encode(&self.sensor_id, w)?;
+            <_ as zerodds_cdr::CdrEncode>::encode(&self.value, w)?;
+            <_ as zerodds_cdr::CdrEncode>::encode(&self.label, w)?;
+            <_ as zerodds_cdr::CdrEncode>::encode(&self.valid, w)?;
+            Ok(())
+        })?;
+        out.extend_from_slice(&writer.into_bytes());
+        Ok(())
+    }
+
+    fn encode_be(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
+        let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Big).xcdr2();
+        zerodds_cdr::struct_enc::encode_appendable(&mut writer, |w| {
+            <_ as zerodds_cdr::CdrEncode>::encode(&self.sensor_id, w)?;
+            <_ as zerodds_cdr::CdrEncode>::encode(&self.value, w)?;
+            <_ as zerodds_cdr::CdrEncode>::encode(&self.label, w)?;
+            <_ as zerodds_cdr::CdrEncode>::encode(&self.valid, w)?;
+            Ok(())
+        })?;
         out.extend_from_slice(&writer.into_bytes());
         Ok(())
     }
 
     fn decode(bytes: &[u8]) -> ::core::result::Result<Self, zerodds_dcps::DecodeError> {
         let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Little).xcdr2();
-        let sensor_id = <i32 as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
-        let value = <f64 as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
-        let label = <String as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
-        let valid = <bool as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
-        Ok(Self {
-            sensor_id,
-            value,
-            label,
-            valid,
-        })
+        zerodds_cdr::struct_enc::decode_appendable(&mut reader, |r| {
+            let sensor_id = <i32 as zerodds_cdr::CdrDecode>::decode(r)?;
+            let value = <f64 as zerodds_cdr::CdrDecode>::decode(r)?;
+            let label = <String as zerodds_cdr::CdrDecode>::decode(r)?;
+            let valid = <bool as zerodds_cdr::CdrDecode>::decode(r)?;
+            Ok(Self {
+                sensor_id,
+                value,
+                label,
+                valid,
+            })
+        }).map_err(::core::convert::Into::into)
+    }
+
+    fn decode_be(bytes: &[u8]) -> ::core::result::Result<Self, zerodds_dcps::DecodeError> {
+        let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Big).xcdr2();
+        zerodds_cdr::struct_enc::decode_appendable(&mut reader, |r| {
+            let sensor_id = <i32 as zerodds_cdr::CdrDecode>::decode(r)?;
+            let value = <f64 as zerodds_cdr::CdrDecode>::decode(r)?;
+            let label = <String as zerodds_cdr::CdrDecode>::decode(r)?;
+            let valid = <bool as zerodds_cdr::CdrDecode>::decode(r)?;
+            Ok(Self {
+                sensor_id,
+                value,
+                label,
+                valid,
+            })
+        }).map_err(::core::convert::Into::into)
+    }
+
+    fn encode_xcdr1(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
+        let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little);
+        <Self as zerodds_cdr::CdrEncode>::encode(self, &mut writer)?;
+        out.extend_from_slice(&writer.into_bytes());
+        Ok(())
+    }
+
+    fn decode_xcdr1(bytes: &[u8]) -> ::core::result::Result<Self, zerodds_dcps::DecodeError> {
+        let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Little);
+        <Self as zerodds_cdr::CdrDecode>::decode(&mut reader).map_err(::core::convert::Into::into)
     }
 
     fn field_value(&self, path: &str) -> ::core::option::Option<zerodds_sql_filter::Value> {
@@ -61,25 +109,50 @@ impl zerodds_dcps::DdsType for SensorReading {
 
 impl zerodds_cdr::CdrEncode for SensorReading {
     fn encode(&self, writer: &mut zerodds_cdr::BufferWriter) -> ::core::result::Result<(), zerodds_cdr::EncodeError> {
-        <_ as zerodds_cdr::CdrEncode>::encode(&self.sensor_id, writer)?;
-        <_ as zerodds_cdr::CdrEncode>::encode(&self.value, writer)?;
-        <_ as zerodds_cdr::CdrEncode>::encode(&self.label, writer)?;
-        <_ as zerodds_cdr::CdrEncode>::encode(&self.valid, writer)?;
+        if writer.max_alignment() == 4 {
+            zerodds_cdr::struct_enc::encode_appendable(writer, |w| {
+                <_ as zerodds_cdr::CdrEncode>::encode(&self.sensor_id, w)?;
+                <_ as zerodds_cdr::CdrEncode>::encode(&self.value, w)?;
+                <_ as zerodds_cdr::CdrEncode>::encode(&self.label, w)?;
+                <_ as zerodds_cdr::CdrEncode>::encode(&self.valid, w)?;
+                Ok(())
+            })?;
+        } else {
+            <_ as zerodds_cdr::CdrEncode>::encode(&self.sensor_id, writer)?;
+            <_ as zerodds_cdr::CdrEncode>::encode(&self.value, writer)?;
+            <_ as zerodds_cdr::CdrEncode>::encode(&self.label, writer)?;
+            <_ as zerodds_cdr::CdrEncode>::encode(&self.valid, writer)?;
+        }
         ::core::result::Result::Ok(())
     }
 }
 
 impl zerodds_cdr::CdrDecode for SensorReading {
     fn decode(reader: &mut zerodds_cdr::BufferReader<'_>) -> ::core::result::Result<Self, zerodds_cdr::DecodeError> {
-        let sensor_id = <i32 as zerodds_cdr::CdrDecode>::decode(reader)?;
-        let value = <f64 as zerodds_cdr::CdrDecode>::decode(reader)?;
-        let label = <String as zerodds_cdr::CdrDecode>::decode(reader)?;
-        let valid = <bool as zerodds_cdr::CdrDecode>::decode(reader)?;
-        ::core::result::Result::Ok(Self {
-            sensor_id,
-            value,
-            label,
-            valid,
-        })
+        if reader.max_alignment() == 4 {
+            zerodds_cdr::struct_enc::decode_appendable(reader, |r| {
+                let sensor_id = <i32 as zerodds_cdr::CdrDecode>::decode(r)?;
+                let value = <f64 as zerodds_cdr::CdrDecode>::decode(r)?;
+                let label = <String as zerodds_cdr::CdrDecode>::decode(r)?;
+                let valid = <bool as zerodds_cdr::CdrDecode>::decode(r)?;
+                ::core::result::Result::Ok(Self {
+                    sensor_id,
+                    value,
+                    label,
+                    valid,
+                })
+            })
+        } else {
+            let sensor_id = <i32 as zerodds_cdr::CdrDecode>::decode(reader)?;
+            let value = <f64 as zerodds_cdr::CdrDecode>::decode(reader)?;
+            let label = <String as zerodds_cdr::CdrDecode>::decode(reader)?;
+            let valid = <bool as zerodds_cdr::CdrDecode>::decode(reader)?;
+            ::core::result::Result::Ok(Self {
+                sensor_id,
+                value,
+                label,
+                valid,
+            })
+        }
     }
 }

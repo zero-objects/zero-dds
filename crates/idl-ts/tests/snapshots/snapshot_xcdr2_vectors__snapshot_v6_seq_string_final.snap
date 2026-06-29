@@ -55,15 +55,15 @@ export const TagsTypeSupport: DdsTopicType<Tags> = {
     isKeyed: false,
     extensibility: "final",
     encodeInto(w: Xcdr2Writer, s: Tags): void {
-        const _seqtok = w.beginAppendable();
+        const _seqtok0 = w.beginAppendable();
         w.writeUint32(s.tags.length);
-        for (const _e of s.tags) {
-            w.writeString(_e);
+        for (const _e0 of s.tags) {
+            w.writeString(_e0);
         }
-        w.endAppendable(_seqtok);
+        w.endAppendable(_seqtok0);
     },
-    encode(s: Tags, endian: EndianMode = "le"): Uint8Array {
-        const w = new Xcdr2Writer(endian);
+    encode(s: Tags, endian: EndianMode = "le", representation = 1): Uint8Array {
+        const w = new Xcdr2Writer(endian, representation === 0 ? 8 : 4);
         this.encodeInto(w, s);
         return w.toBytes();
     },
@@ -73,8 +73,8 @@ export const TagsTypeSupport: DdsTopicType<Tags> = {
             tags: _f_tags,
         };
     },
-    decode(bytes: Uint8Array, offset = 0, length: number = bytes.length - offset): Tags {
-        const r = new Xcdr2Reader(bytes, offset, length, "le");
+    decode(bytes: Uint8Array, offset = 0, length: number = bytes.length - offset, endian: EndianMode = "le", representation = 1): Tags {
+        const r = new Xcdr2Reader(bytes, offset, length, endian, representation === 0 ? 8 : 4);
         return this.decodeFrom(r);
     },
     keyHash(s: Tags): Uint8Array {

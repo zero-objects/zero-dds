@@ -50,3 +50,35 @@ fn bounded_string_byte_length_check() {
         "bounded string<16> must throw on byte-length over-bound:\n{cpp}"
     );
 }
+
+/// T2 (typesystem oracle F2): a `@bit_bound(N)` enum narrows its XCDR2 wire
+/// holder to a signed int8/int16 (N≤8 / N≤16); default stays int32_t
+/// (XTypes 1.3 §7.4.5.1). Cyclone honours this — the prior fixed-int32 path did
+/// not, breaking cross-vendor interop on `@bit_bound` enums.
+#[test]
+fn bit_bound_enum_narrows_cpp_wire_width() {
+    let cpp = gen_cpp(
+        "@bit_bound(8) enum Tiny { T_A, T_B };\n\
+         @bit_bound(16) enum Mid { M_A, M_B };\n\
+         enum Wide { W_A, W_B };\n\
+         @final struct H { Tiny t; Mid m; Wide w; };",
+    );
+    assert!(
+        cpp.contains("write_be<int8_t>(zd_out, static_cast<int8_t>")
+            || cpp.contains("write_le_origin<int8_t>"),
+        "@bit_bound(8) enum must encode as int8_t:\n{cpp}"
+    );
+    assert!(
+        cpp.contains("read_le_origin<int8_t>"),
+        "@bit_bound(8) enum must decode from int8_t:\n{cpp}"
+    );
+    assert!(
+        cpp.contains("write_le_origin<int16_t>") || cpp.contains("write_be<int16_t>"),
+        "@bit_bound(16) enum must encode as int16_t:\n{cpp}"
+    );
+    // The unannotated enum keeps the full 32-bit holder.
+    assert!(
+        cpp.contains("write_le_origin<int32_t>") || cpp.contains("write_be<int32_t>"),
+        "default enum must stay int32_t:\n{cpp}"
+    );
+}

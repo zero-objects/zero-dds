@@ -2,10 +2,10 @@
 
 **Sources:**
 
-* ROS Enhancement Proposals (REPs) — `docs/standards/cache/ros2/rep-{2003,2004,2005,2007,2008,2009}.html`.
+* ROS Enhancement Proposals (REPs) — `internal/standards/cache/ros2/rep-{2003,2004,2005,2007,2008,2009}.html`.
 * RMW C-API headers — `rmw/rmw.h` and `rmw/qos_profiles.h` from
   `rmw 4.x` (ROS 2 Iron/Jazzy distribution); they live in the upstream
-  `ros2/rmw` GitHub repository, **not** in `docs/standards/cache/`, as
+  `ros2/rmw` GitHub repository, **not** in `internal/standards/cache/`, as
   they are a standalone distribution. A de-facto specification without
   its own REP, normative via the header definitions.
 * ROS 2 IDL subset — the design article `design.ros2.org/articles/idl_interface_definition.html`

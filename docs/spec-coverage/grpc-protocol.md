@@ -1,7 +1,7 @@
 # gRPC over HTTP/2 + gRPC-Web — Spec-Coverage
 
-**Specs:** `docs/standards/cache/grpc/protocol-http2.md` +
-`docs/standards/cache/grpc/protocol-web.md`.
+**Specs:** `internal/standards/cache/grpc/protocol-http2.md` +
+`internal/standards/cache/grpc/protocol-web.md`.
 
 Folgt dem Format aus `docs/spec-coverage/PROCESS.md`.
 

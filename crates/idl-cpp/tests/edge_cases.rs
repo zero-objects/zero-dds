@@ -143,10 +143,18 @@ fn interface_emits_pure_virtual_class() {
 }
 
 #[test]
-fn any_type_emits_dds_core_any() {
+fn any_member_is_rejected_cleanly() {
+    // `any` is a CORBA type (TypeCode + dynamic value) with no DDS-XTypes wire
+    // form / TypeObject and no ZeroDDS XCDR codec yet. The old codegen emitted a
+    // `::dds::core::Any` field that neither compiled (no such runtime type) nor
+    // serialized — a silent wire-drop. It is now rejected at codegen, honestly,
+    // exactly like the C and Python backends. (Tracked: `any` wire-codec follow-up.)
     let ast = parse("struct S { any value; };");
-    let cpp = generate_cpp_header(&ast, &CppGenOptions::default()).expect("ok");
-    assert!(cpp.contains("dds::core::Any"));
+    let res = generate_cpp_header(&ast, &CppGenOptions::default());
+    assert!(
+        matches!(res, Err(CppGenError::UnsupportedConstruct { .. })),
+        "any member must be a clean codegen error, got: {res:?}"
+    );
 }
 
 #[test]

@@ -63,7 +63,7 @@ export interface DdsTopicType<T> {
 }
 export class XcdrError extends Error {}
 export class Xcdr2Writer {
-    constructor(endian?: EndianMode);
+    constructor(endian?: EndianMode, maxAlign?: number);
     readonly pos: number;
     readonly endian: EndianMode;
     toBytes(): Uint8Array;
@@ -87,6 +87,7 @@ export class Xcdr2Writer {
     writeString(s: string): void;
     writeWString(s: string): void;
     writeBytes(bytes: Uint8Array): void;
+    writeFixedBcd(decimal: string, p: number, s: number): void;
     patchUint32(pos: number, value: number): void;
     beginAppendable(): number;
     endAppendable(token: number): void;
@@ -95,7 +96,7 @@ export class Xcdr2Writer {
     writeEmHeader(memberId: number, lc: number, mustUnderstand?: boolean, nextInt?: number): void;
 }
 export class Xcdr2Reader {
-    constructor(bytes: Uint8Array, offset?: number, length?: number, endian?: EndianMode);
+    constructor(bytes: Uint8Array, offset?: number, length?: number, endian?: EndianMode, maxAlign?: number);
     readonly pos: number;
     readonly remaining: number;
     readonly endian: EndianMode;
@@ -119,6 +120,7 @@ export class Xcdr2Reader {
     readString(): string;
     readWString(): string;
     readBytes(n: number): Uint8Array;
+    readFixedBcd(p: number, s: number): string;
     beginAppendable(): { bodyEnd: number };
     endAppendable(token: { bodyEnd: number }): void;
     beginMutable(): { bodyEnd: number };
@@ -359,15 +361,33 @@ fn compiles_struct_with_union_member_gated() {
 }
 
 #[test]
-fn compiles_struct_with_fixed_member_gated() {
-    // `fixed` has no XCDR2 codec; the struct is gated — data type only, no
-    // runtime-throwing codec.
+fn compiles_struct_with_fixed_member() {
+    // `fixed<P,S>` now HAS an XCDR2 codec (CORBA-BCD via the runtime
+    // `writeFixedBcd`/`readFixedBcd` helpers); the struct emits a full
+    // TypeSupport, not a gated data-type-only stub. The `string` field round-
+    // trips the decimal. (Requires an in-sync `@zerodds/cdr` install.)
     check_compiles("struct Money { fixed<10,2> amount; long n; };")
-        .expect("struct with fixed member must compile (gated)");
+        .expect("struct with fixed member must compile");
 }
 
 #[test]
 fn compiles_struct_with_any_member_gated() {
     check_compiles("struct Bag { any value; long n; };")
         .expect("struct with any member must compile (gated)");
+}
+
+/// TS-cluster + Bug N — the committed conformance fixtures that previously
+/// failed (union member, fixed arrays, enum member, the mixed combo with all of
+/// them inside a module) must now generate TypeScript that type-checks.
+#[test]
+fn compiles_conformance_fixtures() {
+    for f in ["08_arrays", "03_enums", "09_unions", "20_mixed_combo"] {
+        let path = format!(
+            "{}/../../tools/idlc/tests/conformance/fixtures/{f}.idl",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let src =
+            std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read fixture {f}: {e}"));
+        check_compiles(&src).unwrap_or_else(|e| panic!("fixture {f} must compile: {e}"));
+    }
 }

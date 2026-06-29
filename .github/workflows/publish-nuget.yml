@@ -1,38 +1,38 @@
 # NuGet publish job for ZeroDDS (crates/cs/csharp/ZeroDDS).
-# Spec: docs/packaging/language-binding-publish-followup.md
+# Spec: internal/packaging/language-binding-publish-followup.md
 #
-# Setup once (User-Action, schnell):
-#  1. nuget.org Account anlegen (kostenlos):
+# Setup once (user action, quick):
+#  1. Create a nuget.org account (free):
 #     https://www.nuget.org/users/account/LogOn
-#     Microsoft- oder GitHub-Login akzeptiert.
-#  2. API-Key generieren (nuget.org → Account → API Keys):
+#     Microsoft or GitHub login accepted.
+#  2. Generate an API key (nuget.org → Account → API Keys):
 #     - Key Name: "zerodds-ci"
 #     - Push Scope: "Push new packages and package versions"
 #     - Glob Pattern: ZeroDDS*
-#     - Expiration: 365 days (oder weniger)
-#     Token sichern (wird nur einmal angezeigt).
-#  3. GitHub-Secret NUGET_API_KEY setzen
+#     - Expiration: 365 days (or less)
+#     Save the token (shown only once).
+#  3. Set the GitHub secret NUGET_API_KEY
 #     Repo → Settings → Secrets → Actions → New repository secret
 #
-# Anmerkung: das Hauptpaket `ZeroDDS` ist die C#-API + Source-Generators.
-# Die Native-Lib (libzerodds.so/dylib/dll) wird NICHT mitverpackt — der
-# User muss libzerodds via Paketmanager / GitHub-Releases installieren
-# (siehe /bindings/csharp/). Phase-2: native libs als runtime/<rid>/native/
-# files in einen separaten ZeroDDS.Native.Runtime nupkg packen.
+# Note: the main package `ZeroDDS` is the C# API + source generators.
+# The native lib (libzerodds.so/dylib/dll) is NOT bundled — the
+# user must install libzerodds via package manager / GitHub releases
+# (see /bindings/csharp/). Phase 2: pack native libs as runtime/<rid>/native/
+# files into a separate ZeroDDS.Native.Runtime nupkg.
 
 name: publish-nuget
 on:
   workflow_dispatch:
     inputs:
       target_index:
-        description: "Wohin uploaden (nuget = nuget.org)"
+        description: "Upload target (nuget = nuget.org)"
         required: true
         type: choice
         default: nuget
         options:
           - nuget
       dry_run:
-        description: "Nur pack, kein push"
+        description: "Pack only, no push"
         required: false
         type: boolean
         default: false
@@ -60,24 +60,24 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          # 9.0.x ist lokal-verifiziert. setup-dotnet zieht sonst die
-          # neuste preview (10.0.300 RC) die NU5128 als Error eskaliert.
+          # 9.0.x is locally verified. Otherwise setup-dotnet pulls the
+          # newest preview (10.0.300 RC), which escalates NU5128 to an error.
           dotnet-version: '9.0.x'
 
       - name: Sync version from Cargo.toml workspace
         id: version
         run: |
           WS_VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
-          # NuGet akzeptiert SemVer-Pre-Release direkt (1.0.0-rc.2).
+          # NuGet accepts SemVer pre-releases directly (1.0.0-rc.2).
           echo "Workspace version: $WS_VERSION"
           echo "version=$WS_VERSION" >> "$GITHUB_OUTPUT"
 
       - name: dotnet restore
         working-directory: crates/cs/csharp
         run: |
-          # Kein .sln vorhanden, also pro Project restoren.
-          # ZeroDDS.Cdr.SourceGenerators: NU5017-Build-Task-Error nach
-          # Pack (analyzer-only nupkg) — Phase-2-Item, siehe followup.
+          # No .sln present, so restore per project.
+          # ZeroDDS.Cdr.SourceGenerators: NU5017 build-task error after
+          # pack (analyzer-only nupkg) — Phase 2 item, see followup.
           for proj in ZeroDDS/ZeroDDS.csproj ZeroDDS.Cdr/ZeroDDS.Cdr.csproj; do
             dotnet restore "$proj"
           done
@@ -92,11 +92,11 @@ jobs:
       - name: dotnet pack
         working-directory: crates/cs/csharp
         run: |
-          # ZeroDDS + ZeroDDS.Cdr fuer diesen Push.
-          # SourceGenerators kommt in Phase 2 (RC3-Polish):
-          # NU5017 fired beim NuGet-Pack-Analyzer auch wenn das nupkg
-          # erfolgreich erstellt wird; NoWarn greift nicht. Workaround
-          # noch zu finden, evtl. mit explizitem nuspec statt
+          # ZeroDDS + ZeroDDS.Cdr for this push.
+          # SourceGenerators comes in Phase 2 (RC3 polish):
+          # NU5017 fires in the NuGet pack analyzer even when the nupkg
+          # is created successfully; NoWarn does not take effect. Workaround
+          # still to be found, possibly with an explicit nuspec instead of
           # csproj-driven pack.
           for proj in ZeroDDS/ZeroDDS.csproj ZeroDDS.Cdr/ZeroDDS.Cdr.csproj; do
             dotnet pack "$proj" -c Release --no-build \
@@ -119,7 +119,7 @@ jobs:
           NUGET_API_KEY: ${{ secrets.NUGET_API_KEY }}
         run: |
           if [ -z "$NUGET_API_KEY" ]; then
-            echo "::error::NUGET_API_KEY secret nicht gesetzt"
+            echo "::error::NUGET_API_KEY secret not set"
             exit 1
           fi
           dotnet nuget push 'dist/*.nupkg' \

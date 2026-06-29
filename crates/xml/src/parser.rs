@@ -32,7 +32,7 @@ pub const MAX_TOTAL_ELEMENTS: usize = 64 * 1024;
 ///
 /// Protects the recursive `build_element` call from stack overflow
 /// on adversarial deeply-nested XML inputs (TS-1 finding 3,
-/// `docs/test-harness/plan.md`). Realistic DDS-XML profiles go
+/// `internal/test-harness/plan.md`). Realistic DDS-XML profiles go
 /// 4-8 deep; even complex `<application>`/`<participant>`
 /// nestings stay below 32.
 pub const MAX_TREE_DEPTH: usize = 64;

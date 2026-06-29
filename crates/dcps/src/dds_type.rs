@@ -125,12 +125,66 @@ pub trait DdsType: Sized {
         self.encode(out)
     }
 
-    /// Deserializes an XCDR2 payload. The caller ensures that `bytes`
-    /// contains the full sample payload.
+    /// Deserializes a little-endian XCDR2 payload. The caller ensures that
+    /// `bytes` contains the full sample payload (encapsulation header already
+    /// stripped).
     ///
     /// # Errors
     /// CDR decoder error (truncation, unexpected bytes, etc.).
     fn decode(bytes: &[u8]) -> core::result::Result<Self, DecodeError>;
+
+    /// Big-endian variant of [`Self::decode`] — for a payload whose
+    /// encapsulation header declared a big-endian representation identifier
+    /// (`CDR_BE = 0x0000`, `PL_CDR_BE = 0x0002`, `CDR2_BE = 0x0006`,
+    /// `D_CDR2_BE = 0x0008`, `PL_CDR2_BE = 0x000a`). The default implementation
+    /// delegates to [`Self::decode`] (little-endian) so pre-`decode_be` codegen
+    /// keeps working on the canonical wire; idl-rust codegen overrides this to
+    /// build a big-endian reader. Symmetric to [`Self::encode_be`]. Spec:
+    /// zerodds-xcdr2-rust §2.4; RTPS 2.5 §10.5.
+    ///
+    /// # Errors
+    /// CDR decoder error.
+    fn decode_be(bytes: &[u8]) -> core::result::Result<Self, DecodeError> {
+        Self::decode(bytes)
+    }
+
+    /// Serializes as **classic CDR / XCDR1** little-endian (representation
+    /// `CDR_LE = 0x0001`, max-alignment 8, no DHEADER on @final/@appendable,
+    /// PL_CDR1 for @mutable). This is the encoding Cyclone DDS carries in an
+    /// iceoryx PSMX chunk for a serialized sample, so the iceoryx-cyclone
+    /// bridge uses it for cross-vendor same-host interop. The default delegates
+    /// to [`Self::encode`] (XCDR2) — correct only for types whose XCDR1 and
+    /// XCDR2 byte streams coincide (no 8-byte members, @final, no @mutable);
+    /// idl-rust codegen overrides it with a true XCDR1 writer.
+    ///
+    /// # Errors
+    /// CDR encoder error.
+    fn encode_xcdr1(&self, out: &mut Vec<u8>) -> core::result::Result<(), EncodeError> {
+        self.encode(out)
+    }
+
+    /// Deserializes a classic-CDR / XCDR1 little-endian payload. Symmetric to
+    /// [`Self::encode_xcdr1`]; the default delegates to [`Self::decode`] and
+    /// idl-rust codegen overrides it with an XCDR1 reader.
+    ///
+    /// # Errors
+    /// CDR decoder error.
+    fn decode_xcdr1(bytes: &[u8]) -> core::result::Result<Self, DecodeError> {
+        Self::decode(bytes)
+    }
+
+    /// Deserializes a classic-CDR / XCDR1 **big-endian** payload (encapsulation
+    /// `CDR_BE = 0x0000` / `PL_CDR_BE = 0x0002`). The default delegates to
+    /// [`Self::decode_xcdr1`] (little-endian) — correct for byte-order-agnostic
+    /// types and the common case (Cyclone/FastDDS/RTI emit XCDR1 little-endian);
+    /// idl-rust codegen overrides it with a true big-endian XCDR1 reader.
+    /// Symmetric to [`Self::decode_be`] for XCDR2.
+    ///
+    /// # Errors
+    /// CDR decoder error.
+    fn decode_xcdr1_be(bytes: &[u8]) -> core::result::Result<Self, DecodeError> {
+        Self::decode_xcdr1(bytes)
+    }
 
     /// Serializes the `@key` member values in **PLAIN_CDR2-BE** format
     /// into the given [`PlainCdr2BeKeyHolder`]. Order: ascending by

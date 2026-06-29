@@ -42,13 +42,45 @@
 
 namespace {
 
-constexpr uint32_t kDomain = 200;
+// Domain via ZERODDS_BENCH_DOMAIN env-var ueberschreibbar (Default 200).
+static uint32_t resolve_domain() {
+    const char* s = std::getenv("ZERODDS_BENCH_DOMAIN");
+    if (s) { try { return static_cast<uint32_t>(std::stoul(s)); } catch (...) {} }
+    return 200;
+}
 constexpr const char* kReqTopic  = "RoundtripBench_Request";
 constexpr const char* kEchoTopic = "RoundtripBench_Echo";
 
 uint64_t now_ns() {
     auto t = std::chrono::steady_clock::now().time_since_epoch();
     return std::chrono::duration_cast<std::chrono::nanoseconds>(t).count();
+}
+
+// Transport-Selection via env-var ZERODDS_BENCH_TRANSPORT
+// → CYCLONEDDS_URI inline-XML. Cyclone steuert transports nicht via
+// QoS-API sondern global pro Participant über die XML-config.
+//
+// CYCLONEDDS_URI muss BEVOR ein Participant created wird gesetzt sein.
+// Wir setzen es hier am App-Start (idempotent — wenn user explizit
+// gesetzt hat, ignorieren wir die transport-Wahl).
+void apply_transport_env() {
+    const char* user_set = std::getenv("CYCLONEDDS_URI");
+    if (user_set && *user_set) {
+        return; // user-override respektieren
+    }
+    const char* t = std::getenv("ZERODDS_BENCH_TRANSPORT");
+    if (!t) t = "UDPv4";
+    std::string xml;
+    if (std::string(t) == "SHM") {
+        xml = R"(<CycloneDDS><Domain><SharedMemory><Enable>true</Enable></SharedMemory></Domain></CycloneDDS>)";
+    } else if (std::string(t) == "UDPv6") {
+        xml = R"(<CycloneDDS><Domain><General><Transport>udp6</Transport></General></Domain></CycloneDDS>)";
+    } else if (std::string(t) == "TCPv4") {
+        xml = R"(<CycloneDDS><Domain><General><Transport>tcp</Transport></General></Domain></CycloneDDS>)";
+    } else {
+        xml = R"(<CycloneDDS><Domain><General><Transport>udp</Transport></General></Domain></CycloneDDS>)";
+    }
+    setenv("CYCLONEDDS_URI", xml.c_str(), 1);
 }
 
 // --- Pong: receive request, echo immediately ---
@@ -80,7 +112,7 @@ private:
 int run_pong(uint64_t max_runtime_s) {
     using namespace dds;
 
-    domain::DomainParticipant dp(kDomain);
+    domain::DomainParticipant dp(resolve_domain());
     topic::Topic<RoundtripBench::Roundtrip> t_req(dp, kReqTopic);
     topic::Topic<RoundtripBench::Roundtrip> t_echo(dp, kEchoTopic);
     pub::Publisher pub_(dp);
@@ -88,9 +120,28 @@ int run_pong(uint64_t max_runtime_s) {
     pub::qos::DataWriterQos dw_qos = pub_.default_datawriter_qos();
     dw_qos << core::policy::Reliability::Reliable();
     dw_qos << core::policy::History::KeepLast(64);
+    // XCDR2-only auf Writer-Seite: RTI ist strict-matching und lehnt
+    // Writer ab die "XCDR1, XCDR2" advertisen. Wir zwingen XCDR2-only
+    // damit cross-vendor RTI<->Cyclone matched (Cyclone-default ist
+    // "XCDR2" implizit, aber explicit-setzen ist robuster).
+    dw_qos << core::policy::DataRepresentation(
+        core::policy::DataRepresentationIdSeq{
+            core::policy::DataRepresentationId::XCDR2});
     sub::qos::DataReaderQos dr_qos = sub_.default_datareader_qos();
     dr_qos << core::policy::Reliability::Reliable();
     dr_qos << core::policy::History::KeepLast(64);
+    dr_qos << core::policy::DataRepresentation(
+        core::policy::DataRepresentationIdSeq{
+            core::policy::DataRepresentationId::XCDR2});
+    // ALLOW_TYPE_COERCION — cyclonedds-cxx defaultet den Reader auf
+    // DISALLOW, was vom Writer einen byte-identischen MINIMAL-TypeObject-
+    // Hash verlangt. RTIs rtiddsgen leitet aus derselben IDL einen
+    // abweichenden MINIMAL-TypeObject ab (der COMPLETE-TypeObject ist
+    // dagegen ueber alle fuenf Stacks byte-identisch). Mit ALLOW faellt
+    // der Match auf TypeLookup + Assignability gegen den COMPLETE-Type
+    // zurueck -> Cross-Vendor-Match mit RTI klappt (XTypes 1.3 §7.6.3).
+    dr_qos << core::policy::TypeConsistencyEnforcement(
+        core::policy::TypeConsistencyKind::ALLOW_TYPE_COERCION);
     pub::DataWriter<RoundtripBench::Roundtrip> dw(pub_, t_echo, dw_qos);
     sub::DataReader<RoundtripBench::Roundtrip> dr(sub_, t_req, dr_qos);
 
@@ -161,7 +212,7 @@ void print_quantiles(std::vector<uint64_t>& rtts, size_t payload_size) {
 int run_ping(size_t payload_size, uint64_t warmup, uint64_t samples) {
     using namespace dds;
 
-    domain::DomainParticipant dp(kDomain);
+    domain::DomainParticipant dp(resolve_domain());
     topic::Topic<RoundtripBench::Roundtrip> t_req(dp, kReqTopic);
     topic::Topic<RoundtripBench::Roundtrip> t_echo(dp, kEchoTopic);
     pub::Publisher pub_(dp);
@@ -169,14 +220,56 @@ int run_ping(size_t payload_size, uint64_t warmup, uint64_t samples) {
     pub::qos::DataWriterQos dw_qos = pub_.default_datawriter_qos();
     dw_qos << core::policy::Reliability::Reliable();
     dw_qos << core::policy::History::KeepLast(64);
+    dw_qos << core::policy::DataRepresentation(
+        core::policy::DataRepresentationIdSeq{
+            core::policy::DataRepresentationId::XCDR2});
     sub::qos::DataReaderQos dr_qos = sub_.default_datareader_qos();
     dr_qos << core::policy::Reliability::Reliable();
     dr_qos << core::policy::History::KeepLast(64);
+    dr_qos << core::policy::DataRepresentation(
+        core::policy::DataRepresentationIdSeq{
+            core::policy::DataRepresentationId::XCDR2});
+    // ALLOW_TYPE_COERCION — cyclonedds-cxx defaultet den Reader auf
+    // DISALLOW, was vom Writer einen byte-identischen MINIMAL-TypeObject-
+    // Hash verlangt. RTIs rtiddsgen leitet aus derselben IDL einen
+    // abweichenden MINIMAL-TypeObject ab (der COMPLETE-TypeObject ist
+    // dagegen ueber alle fuenf Stacks byte-identisch). Mit ALLOW faellt
+    // der Match auf TypeLookup + Assignability gegen den COMPLETE-Type
+    // zurueck -> Cross-Vendor-Match mit RTI klappt (XTypes 1.3 §7.6.3).
+    dr_qos << core::policy::TypeConsistencyEnforcement(
+        core::policy::TypeConsistencyKind::ALLOW_TYPE_COERCION);
     pub::DataWriter<RoundtripBench::Roundtrip> dw(pub_, t_req, dw_qos);
     sub::DataReader<RoundtripBench::Roundtrip> dr(sub_, t_echo, dr_qos);
 
-    // Brief stabilization for matching.
-    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+    // Auf echtes Endpoint-Matching warten, NICHT bloss sleep(500ms).
+    // Mit Volatile-Durability (Default) werden Samples die VOR dem
+    // Match geschrieben werden nie zugestellt — der Roundtrip-Partner
+    // (pong) sieht dann seq 0..N nicht (Startup-Window-Verlust).
+    // wait_for-Loop auf publication_matched + subscription_matched.
+    {
+        auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        bool pub_matched = false, sub_matched = false;
+        while (std::chrono::steady_clock::now() < deadline) {
+            if (!pub_matched &&
+                dw.publication_matched_status().current_count() >= 1) {
+                pub_matched = true;
+            }
+            if (!sub_matched &&
+                dr.subscription_matched_status().current_count() >= 1) {
+                sub_matched = true;
+            }
+            if (pub_matched && sub_matched) break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+        if (!pub_matched || !sub_matched) {
+            std::cerr << "ping: match timeout (pub=" << pub_matched
+                      << " sub=" << sub_matched << ")\n";
+        }
+        // Kurzer Puffer nach Match: der Reliable-Handshake (erster
+        // ACKNACK-Roundtrip) braucht noch ein paar ms bis die
+        // Writer-History garantiert delivered.
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
 
     PingState st;
     st.warmup = warmup;
@@ -214,6 +307,7 @@ int main(int argc, char** argv) {
             "  cyclone-app ping --payload N [--samples N] [--warmup N]\n";
         return 2;
     }
+    apply_transport_env();
     std::string mode = argv[1];
     if (mode == "pong") {
         uint64_t rt_s = (argc > 2) ? std::stoull(argv[2]) : 30;

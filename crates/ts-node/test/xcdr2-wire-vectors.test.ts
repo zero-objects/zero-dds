@@ -141,7 +141,7 @@ function decodeAll(bytes: Uint8Array): VAll {
     };
 }
 
-test("V-3 Mixed Primitives Final: 48 bytes, padding origin-relative", () => {
+test("V-3 Mixed Primitives Final: 44 bytes, MAXALIGN=4 (XTypes §7.4.1.1.1)", () => {
     const sample: VAll = {
         b: true,
         o: 0xab,
@@ -154,6 +154,8 @@ test("V-3 Mixed Primitives Final: 48 bytes, padding origin-relative", () => {
         f: 2.5,
         d: 3.14159,
     };
+    // XCDR2 caps alignment at 4 (§7.4.1.1.1): 64-bit primitives align to 4,
+    // never 8. Layout b@0 o@1 s@2 us@4 pad@6 l@8 ul@12 ll@16 ull@24 f@32 d@36.
     const expected = fromHex(
         "01 AB" +
             "C7 CF" +
@@ -164,10 +166,9 @@ test("V-3 Mixed Primitives Final: 48 bytes, padding origin-relative", () => {
             "4F 97 21 C5 FF FF FF FF" +
             "15 CD 5B 07 00 00 00 00" +
             "00 00 20 40" +
-            "00 00 00 00" +
             "6E 86 1B F0 F9 21 09 40",
     );
-    assert.equal(expected.length, 48, "V-3 expected length is 48 bytes");
+    assert.equal(expected.length, 44, "V-3 expected length is 44 bytes");
     const enc = encodeAll(sample);
     assertBytesEq(enc, expected, "V-3 encode");
     const dec = decodeAll(expected);
@@ -300,9 +301,9 @@ function keyHashSensor(s: VSensor): Uint8Array {
 
 test("V-8 Keyed Struct: payload + key-hash", () => {
     const sample: VSensor = { id: 42, value: 3.14 };
+    // XCDR2 caps alignment at 4 (§7.4.1.1.1): double @ offset 4, NO 8-byte pad.
     const expectedPayload = fromHex(
         "2A 00 00 00" +
-            "00 00 00 00" +
             "1F 85 EB 51 B8 1E 09 40",
     );
     const enc = encodeSensor(sample);
@@ -507,4 +508,31 @@ test("md5 RFC 1321 self-check: 'abc' → 0x900150983CD24FB0D6963F7D28E17F72", ()
 test("md5 RFC 1321 self-check: empty input → 0xD41D8CD98F00B204E9800998ECF8427E", () => {
     const expected = fromHex("D41D8CD98F00B204E9800998ECF8427E");
     assertBytesEq(md5(new Uint8Array(0)), expected, "md5(empty)");
+});
+
+// === fixed<P,S> packed BCD (CORBA/GIOP §9.3.2.7) ============================
+// Oracle vectors (JacORB 3.9 / omniORB 4.3, == crates/cdr/src/fixed.rs).
+
+test("fixed<5,2> 123.45 → 12 34 5c; roundtrip", () => {
+    const w = new Xcdr2Writer("le");
+    w.writeFixedBcd("123.45", 5, 2);
+    assertBytesEq(w.toBytes(), fromHex("12 34 5c"), "fixed<5,2>");
+    const r = new Xcdr2Reader(w.toBytes(), 0, 3, "le");
+    assert.equal(r.readFixedBcd(5, 2), "123.45");
+});
+
+test("fixed<4,0> 1234 → 01 23 4c (keeps MSD); roundtrip", () => {
+    const w = new Xcdr2Writer("le");
+    w.writeFixedBcd("1234", 4, 0);
+    assertBytesEq(w.toBytes(), fromHex("01 23 4c"), "fixed<4,0>");
+    const r = new Xcdr2Reader(w.toBytes(), 0, 3, "le");
+    assert.equal(r.readFixedBcd(4, 0), "1234");
+});
+
+test("fixed<6,2> -1.50 → 00 00 15 0d; roundtrip", () => {
+    const w = new Xcdr2Writer("le");
+    w.writeFixedBcd("-1.50", 6, 2);
+    assertBytesEq(w.toBytes(), fromHex("00 00 15 0d"), "fixed<6,2> neg");
+    const r = new Xcdr2Reader(w.toBytes(), 0, 4, "le");
+    assert.equal(r.readFixedBcd(6, 2), "-1.50");
 });

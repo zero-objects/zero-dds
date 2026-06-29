@@ -232,6 +232,33 @@ pub fn get_current_time() -> Time {
     Time::INVALID
 }
 
+/// Converts a DCPS [`Time`] (sec + nanosec) into the RTPS wire `Time_t`
+/// carried by an INFO_TS submessage (DDSI-RTPS §9.3.2.1): a 32-bit second
+/// count plus a 32-bit binary fraction in units of 2⁻³² s. Round-tripped by
+/// [`he_timestamp_to_time`]; both use the spec fraction so the value is
+/// interoperable with Cyclone / FastDDS / RTI.
+#[must_use]
+pub fn time_to_he_timestamp(t: Time) -> zerodds_rtps::header_extension::HeTimestamp {
+    // fraction = round(nanosec * 2^32 / 1e9)
+    let fraction = ((u64::from(t.nanosec) << 32) / 1_000_000_000) as u32;
+    zerodds_rtps::header_extension::HeTimestamp {
+        seconds: t.sec,
+        fraction,
+    }
+}
+
+/// Inverse of [`time_to_he_timestamp`]: an RTPS `Time_t` from a received
+/// INFO_TS back into a DCPS [`Time`] for `SampleInfo.source_timestamp`.
+#[must_use]
+pub fn he_timestamp_to_time(ts: zerodds_rtps::header_extension::HeTimestamp) -> Time {
+    // nanosec = round(fraction * 1e9 / 2^32)
+    let nanosec = ((u64::from(ts.fraction) * 1_000_000_000) >> 32) as u32;
+    Time {
+        sec: ts.seconds,
+        nanosec: nanosec.min(999_999_999),
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::expect_used)]
 mod tests {

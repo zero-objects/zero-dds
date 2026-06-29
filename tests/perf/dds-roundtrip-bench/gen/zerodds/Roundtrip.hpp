@@ -15,7 +15,7 @@ namespace RoundtripBench {
         ~Roundtrip() = default;
 
     private:
-        uint32_t sequence_id_; // @key
+        uint32_t sequence_id_;
         uint64_t t_send_ns_;
         std::vector<uint8_t> payload_;
 
@@ -40,19 +40,22 @@ namespace topic {
 template <>
 struct topic_type_support<::RoundtripBench::Roundtrip> {
     static const char* type_name() { return "RoundtripBench::Roundtrip"; }
-    static constexpr bool is_keyed() { return true; }
+    static constexpr bool is_keyed() { return false; }
     static constexpr ::dds::topic::core::policy::DataRepresentationKind extensibility() { return ::dds::topic::core::policy::DataRepresentationKind::FINAL; }
     static std::vector<uint8_t> encode(const ::RoundtripBench::Roundtrip& __v) {
+        return encode(__v, ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
+    }
+    static std::vector<uint8_t> encode(const ::RoundtripBench::Roundtrip& __v, ::dds::topic::xcdr2::XcdrVersion __repr) {
         std::vector<uint8_t> __out;
         (void)__v;
+        const size_t __max_align = ::dds::topic::xcdr2::xcdr_max_align(__repr);
+        (void)__max_align;
         const size_t __origin = 0;
         (void)__origin;
-        ::dds::topic::xcdr2::write_le_origin<uint32_t>(__out, __origin, __v.sequence_id());
-        ::dds::topic::xcdr2::write_le_origin<uint64_t>(__out, __origin, __v.t_send_ns());
-        ::dds::topic::xcdr2::write_le_origin<uint32_t>(__out, __origin, static_cast<uint32_t>(__v.payload().size()));
-        for (const auto& __e : __v.payload()) {
-            ::dds::topic::xcdr2::write_u8(__out, __e);
-        }
+        ::dds::topic::xcdr2::write_le_origin<uint32_t>(__out, __origin, __v.sequence_id(), __max_align);
+        ::dds::topic::xcdr2::write_le_origin<uint64_t>(__out, __origin, __v.t_send_ns(), __max_align);
+        ::dds::topic::xcdr2::write_le_origin<uint32_t>(__out, __origin, static_cast<uint32_t>(__v.payload().size()), __max_align);
+        __out.insert(__out.end(), __v.payload().begin(), __v.payload().end());
         return __out;
     }
     static std::vector<uint8_t> encode_be(const ::RoundtripBench::Roundtrip& __v) {
@@ -63,42 +66,30 @@ struct topic_type_support<::RoundtripBench::Roundtrip> {
         ::dds::topic::xcdr2::write_be_origin<uint32_t>(__out, __origin, __v.sequence_id());
         ::dds::topic::xcdr2::write_be_origin<uint64_t>(__out, __origin, __v.t_send_ns());
         ::dds::topic::xcdr2::write_be<uint32_t>(__out, static_cast<uint32_t>(__v.payload().size()));
-        for (const auto& __e : __v.payload()) {
-            ::dds::topic::xcdr2::write_u8(__out, __e);
-        }
+        __out.insert(__out.end(), __v.payload().begin(), __v.payload().end());
         return __out;
     }
-    static ::RoundtripBench::Roundtrip decode(const uint8_t* __buf, size_t __len) {
+    static ::RoundtripBench::Roundtrip decode(const uint8_t* __buf, size_t __len, ::dds::topic::xcdr2::XcdrVersion __repr) {
         size_t __pos = 0;
         ::RoundtripBench::Roundtrip __v;
-        (void)__buf; (void)__len; (void)__pos;
+        const size_t __max_align = ::dds::topic::xcdr2::xcdr_max_align(__repr);
+        (void)__buf; (void)__len; (void)__pos; (void)__max_align;
         const size_t __origin = 0;
         (void)__origin;
-        __v.sequence_id(::dds::topic::xcdr2::read_le_origin<uint32_t>(__buf, __pos, __len, __origin));
-        __v.t_send_ns(::dds::topic::xcdr2::read_le_origin<uint64_t>(__buf, __pos, __len, __origin));
+        __v.sequence_id(::dds::topic::xcdr2::read_le_origin<uint32_t>(__buf, __pos, __len, __origin, __max_align));
+        __v.t_send_ns(::dds::topic::xcdr2::read_le_origin<uint64_t>(__buf, __pos, __len, __origin, __max_align));
         {
-            auto __cnt = ::dds::topic::xcdr2::read_le_origin<uint32_t>(__buf, __pos, __len, __origin);
-            std::vector<uint8_t> __seq;
-            __seq.reserve(__cnt);
-            for (uint32_t __i = 0; __i < __cnt; ++__i) {
-                __seq.push_back(::dds::topic::xcdr2::read_u8(__buf, __pos, __len));
-            }
+            auto __cnt = ::dds::topic::xcdr2::read_le_origin<uint32_t>(__buf, __pos, __len, __origin, __max_align);
+            ::dds::topic::xcdr2::check_avail(__pos, __cnt, __len);
+            std::vector<uint8_t> __seq(__buf + __pos, __buf + __pos + __cnt);
+            __pos += __cnt;
             __v.payload(std::move(__seq));
         }
         return __v;
     }
     static std::array<uint8_t, 16> key_hash(const ::RoundtripBench::Roundtrip& __v) {
         (void)__v;
-        std::vector<uint8_t> __out;
-        const size_t __origin = 0;
-        (void)__origin;
-        ::dds::topic::xcdr2::write_be_origin<uint32_t>(__out, __origin, __v.sequence_id());
-        std::array<uint8_t, 16> __h{};
-        if (__out.size() <= 16) {
-            std::memcpy(__h.data(), __out.data(), __out.size());
-            return __h;
-        }
-        return ::dds::topic::xcdr2_md5::md5(__out);
+        return std::array<uint8_t, 16>{{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
     }
 };
 

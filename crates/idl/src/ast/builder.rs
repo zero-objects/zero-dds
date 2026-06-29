@@ -54,7 +54,7 @@ pub type BuildResult<T> = Result<T, BuilderError>;
 /// OMG IDL 4.2 imposes no hard upper bound, but all practically
 /// occurring IDL bodies stay well below it. The cap protects against
 /// stack overflow with adversarial inputs (TS-1 finding 1,
-/// `docs/test-harness/plan.md`).
+/// `internal/test-harness/plan.md`).
 ///
 /// 256 is well above realistic use cases (typical
 /// module hierarchies go 4-6 deep) and below the default
@@ -773,12 +773,34 @@ fn build_bitfield_spec(node: &CstNode<'_>) -> BuildResult<BitfieldSpec> {
     })
 }
 
-/// `<positive_int_const>` wraps `<integer_literal>`.
+/// `<positive_int_const>` ::= `<const_expr>` (§7.4.1.4.4.5) — a bound may be a
+/// named/scoped constant or an arithmetic expression, not only an integer
+/// literal. A bare integer literal is still accepted (it is the simplest
+/// `const_expr`). The value is resolved/validated later.
 fn build_positive_int_const(node: &CstNode<'_>) -> BuildResult<ConstExpr> {
-    let lit = first_internal_child(node, ID_INTEGER_LITERAL).ok_or_else(|| {
-        BuilderError::new("positive_int_const without integer_literal", node.span)
-    })?;
-    Ok(ConstExpr::Literal(build_literal(lit)?))
+    let expr = if let Some(expr) = first_internal_child(node, ID_CONST_EXPR) {
+        build_const_expr(expr)?
+    } else {
+        // Backwards-compatible fallback: a grammar that still wraps a bare
+        // integer_literal directly.
+        let lit = first_internal_child(node, ID_INTEGER_LITERAL)
+            .ok_or_else(|| BuilderError::new("positive_int_const without const_expr", node.span))?;
+        ConstExpr::Literal(build_literal(lit)?)
+    };
+    // Grammar accepts any `const_expr`, but a bound must denote a positive
+    // integer (§7.4.1.4.4.5). A *literal* that is not an integer (e.g.
+    // `string<"big">`, `string<3.14>`) is rejected here at AST-build time —
+    // the spec constraint is semantic, not grammatical. Named/scoped consts and
+    // arithmetic are resolved (and range-checked) later by each backend.
+    if let ConstExpr::Literal(lit) = &expr {
+        if lit.kind != LiteralKind::Integer {
+            return Err(BuilderError::new(
+                "bound must be a positive integer constant, not a non-integer literal",
+                node.span,
+            ));
+        }
+    }
+    Ok(expr)
 }
 
 fn build_bitmask_dcl(node: &CstNode<'_>) -> BuildResult<BitmaskDecl> {

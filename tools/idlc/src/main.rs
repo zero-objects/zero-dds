@@ -647,7 +647,10 @@ fn run(args: &[String]) -> Result<(), CliError> {
     // Default-Extensibility / Default-Nested: un-annotierte Typen vor
     // dem Codegen explizit annotieren, damit alle Backends denselben
     // Default sehen.
-    if let Some(ext) = opts.default_ext {
+    {
+        // CLI `--default-extensibility` wins; otherwise the compile-time
+        // `ext-default-*` Cargo feature (XTypes 1.3 §7.3.3.1, SX2 §7.3.3.1).
+        let ext = opts.default_ext.unwrap_or_else(DefaultExt::cfg_default);
         let n = default_ext::apply_default_extensibility(&mut ast, ext);
         if n > 0 {
             opts.report(1, &format!("default extensibility applied to {n} type(s)"));
@@ -1169,7 +1172,7 @@ mod tests {
         let generated =
             std::fs::read_to_string(out_dir.join("chat.py")).expect("read generated py");
         assert!(
-            generated.contains("@idl_struct(typename=\"Greeting\")"),
+            generated.contains("@idl_struct(typename=\"Greeting\""),
             "{generated}"
         );
         assert!(generated.contains("@dataclass"), "{generated}");

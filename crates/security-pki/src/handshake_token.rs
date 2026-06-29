@@ -22,7 +22,7 @@ use alloc::vec::Vec;
 
 use zerodds_security::error::{SecurityError, SecurityErrorKind, SecurityResult};
 // Re-export so callers can keep using `ht::DataHolder`.
-use ring::digest;
+use crate::backend::digest;
 pub use zerodds_security::token::DataHolder;
 
 // ----------------------------------------------------------------------

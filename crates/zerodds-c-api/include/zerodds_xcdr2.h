@@ -49,6 +49,16 @@ typedef int (*zerodds_key_hash_fn)(const void* sample, uint8_t out_hash[16]);
 
 typedef void (*zerodds_sample_free_fn)(void* sample);
 
+/* Bug R4b — representation-aware decoder. `representation`: 0=XCDR1
+ * (max_align 8), 1=XCDR2 (max_align 4). A type with a 64-bit member must
+ * provide this so the take path can decode with alignment matching the
+ * publisher's negotiated XCDR version (else a multi-member XCDR2 sample
+ * underruns). NULL = use the legacy version-fixed `decode`. */
+typedef int (*zerodds_decode_repr_fn)(const uint8_t* buf,
+                                      size_t len,
+                                      uint8_t representation,
+                                      void* out_sample);
+
 typedef struct zerodds_typesupport_s {
     uint8_t                 type_hash[16];
     const char*             type_name;
@@ -59,6 +69,10 @@ typedef struct zerodds_typesupport_s {
     zerodds_decode_fn       decode;
     zerodds_key_hash_fn     key_hash;
     zerodds_sample_free_fn  sample_free;
+    /* Additive tail field (minor-bump ABI). Omitting it from a designated
+     * initializer zero-fills it to NULL; the take path then falls back to
+     * the legacy `decode`. */
+    zerodds_decode_repr_fn  decode_repr;
 } zerodds_typesupport_t;
 
 /* ========================================================================
@@ -97,6 +111,15 @@ int zerodds_xcdr2_decode(const zerodds_typesupport_t* ts,
                          const uint8_t* buf,
                          size_t len,
                          void* out_sample);
+
+/* Bug R4b — representation-aware standalone decode. Prefers
+ * `ts->decode_repr` (passing `representation`) when set, else falls back
+ * to `ts->decode`. `representation`: 0=XCDR1, 1=XCDR2. */
+int zerodds_xcdr2_decode_repr(const zerodds_typesupport_t* ts,
+                              const uint8_t* buf,
+                              size_t len,
+                              uint8_t representation,
+                              void* out_sample);
 
 /* ========================================================================
  * Inline helpers for codegen encoders/decoders.
@@ -206,6 +229,67 @@ static inline void zerodds_xcdr2_c_put_u32_at(uint8_t* buf, size_t pos, uint32_t
     buf[pos + 3] = (uint8_t)((v >> 24) & 0xFFu);
 }
 
+/* ====================================================================== *
+ * PL_CDR1 — parameter list for @mutable structs under XCDR1 (classic CDR).
+ * OMG XTypes 1.3 §7.4.1.2 / §7.4.2. Counterpart to the XCDR2 EMHEADER path.
+ * Per member: a 16/32-bit PID + (UNPADDED) length header, body padded to 4;
+ * the list ends with the PID_LIST_END sentinel. The member body is encoded
+ * separately (param-relative, origin 0) and passed in here as `body`/`blen`
+ * — the C runtime aligns relative to the buffer start, so the generated code
+ * encodes each @mutable member body into a fresh temp buffer (save/swap of
+ * w_buf) and splices it through this helper. LE writer (c_mode is LE-only).
+ * ====================================================================== */
+
+#define ZERODDS_PL_CDR1_PID_EXTENDED  0x3F01u
+#define ZERODDS_PL_CDR1_PID_LIST_END  0x3F02u
+#define ZERODDS_PL_CDR1_EXTENDED_MIN  0x3F00u
+
+static inline int zerodds_xcdr2_c_write_u16le(uint8_t** buf, size_t* len, size_t* cap, uint16_t v) {
+    /* Raw 16-bit LE write WITHOUT alignment (PID/length words are written at
+     * the parameter boundary, which is already 4-aligned by the pad below). */
+    if (zerodds_xcdr2_c_grow(buf, cap, *len + 2) != 0) return -1;
+    (*buf)[(*len)++] = (uint8_t)(v & 0xFFu);
+    (*buf)[(*len)++] = (uint8_t)((v >> 8) & 0xFFu);
+    return 0;
+}
+
+static inline int zerodds_xcdr2_c_write_u32le(uint8_t** buf, size_t* len, size_t* cap, uint32_t v) {
+    if (zerodds_xcdr2_c_grow(buf, cap, *len + 4) != 0) return -1;
+    (*buf)[(*len)++] = (uint8_t)(v & 0xFFu);
+    (*buf)[(*len)++] = (uint8_t)((v >> 8) & 0xFFu);
+    (*buf)[(*len)++] = (uint8_t)((v >> 16) & 0xFFu);
+    (*buf)[(*len)++] = (uint8_t)((v >> 24) & 0xFFu);
+    return 0;
+}
+
+/* Writes one PL_CDR1 member: the PID header (standard when member_id < 0x3F00
+ * and blen <= 0xFFFF, else extended), then `blen` body bytes, then pad to 4. */
+static inline int zerodds_xcdr2_c_pl1_write_member(uint8_t** buf, size_t* len, size_t* cap,
+        uint32_t member_id, const uint8_t* body, size_t blen) {
+    int extended = (member_id >= ZERODDS_PL_CDR1_EXTENDED_MIN) || (blen > 0xFFFFu);
+    if (extended) {
+        if (zerodds_xcdr2_c_write_u16le(buf, len, cap, (uint16_t)ZERODDS_PL_CDR1_PID_EXTENDED) != 0) return -1;
+        if (zerodds_xcdr2_c_write_u16le(buf, len, cap, 8) != 0) return -1;
+        if (zerodds_xcdr2_c_write_u32le(buf, len, cap, member_id) != 0) return -1;
+        if (zerodds_xcdr2_c_write_u32le(buf, len, cap, (uint32_t)blen) != 0) return -1;
+    } else {
+        if (zerodds_xcdr2_c_write_u16le(buf, len, cap, (uint16_t)member_id) != 0) return -1;
+        if (zerodds_xcdr2_c_write_u16le(buf, len, cap, (uint16_t)blen) != 0) return -1;
+    }
+    if (blen > 0) {
+        if (zerodds_xcdr2_c_grow(buf, cap, *len + blen) != 0) return -1;
+        memcpy(*buf + *len, body, blen);
+        *len += blen;
+    }
+    /* pad the UNPADDED value to the next 4-byte boundary */
+    return zerodds_xcdr2_c_pad_to(buf, len, cap, 4);
+}
+
+static inline int zerodds_xcdr2_c_pl1_sentinel(uint8_t** buf, size_t* len, size_t* cap) {
+    if (zerodds_xcdr2_c_write_u16le(buf, len, cap, (uint16_t)ZERODDS_PL_CDR1_PID_LIST_END) != 0) return -1;
+    return zerodds_xcdr2_c_write_u16le(buf, len, cap, 0);
+}
+
 /* ---- Reader-Helpers ---- */
 
 static inline int zerodds_xcdr2_c_pad_read(const uint8_t* buf, size_t len, size_t* pos, size_t align) {
@@ -216,88 +300,102 @@ static inline int zerodds_xcdr2_c_pad_read(const uint8_t* buf, size_t len, size_
     return 0;
 }
 
-static inline int zerodds_xcdr2_c_read_u8(const uint8_t* buf, size_t len, size_t* pos, uint8_t* out) {
+static inline int zerodds_xcdr2_c_read_u8(const uint8_t* buf, size_t len, size_t* pos, uint8_t* out, int big_endian) {
+    (void)big_endian; /* 1-byte: byte order is irrelevant; param keeps a uniform reader signature */
     if (*pos + 1 > len) return -1;
     *out = buf[(*pos)++];
     return 0;
 }
 
-static inline int zerodds_xcdr2_c_read_i8(const uint8_t* buf, size_t len, size_t* pos, int8_t* out) {
-    uint8_t u; int rc = zerodds_xcdr2_c_read_u8(buf, len, pos, &u);
+static inline int zerodds_xcdr2_c_read_i8(const uint8_t* buf, size_t len, size_t* pos, int8_t* out, int big_endian) {
+    uint8_t u; int rc = zerodds_xcdr2_c_read_u8(buf, len, pos, &u, big_endian);
     if (rc != 0) return rc;
     *out = (int8_t)u;
     return 0;
 }
 
-static inline int zerodds_xcdr2_c_read_u16(const uint8_t* buf, size_t len, size_t* pos, uint16_t* out) {
+/* `big_endian` (0 = little-endian, the canonical XCDR2 wire) selects the byte
+   order in which the multi-byte primitive is assembled, so a big-endian payload
+   decodes correctly. C has no default arguments, so every reader and every
+   call site threads the flag explicitly. */
+static inline int zerodds_xcdr2_c_read_u16(const uint8_t* buf, size_t len, size_t* pos, uint16_t* out, int big_endian) {
     if (zerodds_xcdr2_c_pad_read(buf, len, pos, 2) != 0) return -1;
     if (*pos + 2 > len) return -1;
-    *out = (uint16_t)buf[*pos] | ((uint16_t)buf[*pos + 1] << 8);
+    *out = big_endian ? (uint16_t)(((uint16_t)buf[*pos] << 8) | (uint16_t)buf[*pos + 1])
+                      : (uint16_t)((uint16_t)buf[*pos] | ((uint16_t)buf[*pos + 1] << 8));
     *pos += 2;
     return 0;
 }
 
-static inline int zerodds_xcdr2_c_read_i16(const uint8_t* buf, size_t len, size_t* pos, int16_t* out) {
-    uint16_t u; int rc = zerodds_xcdr2_c_read_u16(buf, len, pos, &u);
+static inline int zerodds_xcdr2_c_read_i16(const uint8_t* buf, size_t len, size_t* pos, int16_t* out, int big_endian) {
+    uint16_t u; int rc = zerodds_xcdr2_c_read_u16(buf, len, pos, &u, big_endian);
     if (rc != 0) return rc;
     *out = (int16_t)u;
     return 0;
 }
 
-static inline int zerodds_xcdr2_c_read_u32(const uint8_t* buf, size_t len, size_t* pos, uint32_t* out) {
+static inline int zerodds_xcdr2_c_read_u32(const uint8_t* buf, size_t len, size_t* pos, uint32_t* out, int big_endian) {
     if (zerodds_xcdr2_c_pad_read(buf, len, pos, 4) != 0) return -1;
     if (*pos + 4 > len) return -1;
-    *out = (uint32_t)buf[*pos]
-         | ((uint32_t)buf[*pos + 1] << 8)
-         | ((uint32_t)buf[*pos + 2] << 16)
-         | ((uint32_t)buf[*pos + 3] << 24);
+    if (big_endian) {
+        *out = ((uint32_t)buf[*pos] << 24)
+             | ((uint32_t)buf[*pos + 1] << 16)
+             | ((uint32_t)buf[*pos + 2] << 8)
+             | (uint32_t)buf[*pos + 3];
+    } else {
+        *out = (uint32_t)buf[*pos]
+             | ((uint32_t)buf[*pos + 1] << 8)
+             | ((uint32_t)buf[*pos + 2] << 16)
+             | ((uint32_t)buf[*pos + 3] << 24);
+    }
     *pos += 4;
     return 0;
 }
 
-static inline int zerodds_xcdr2_c_read_i32(const uint8_t* buf, size_t len, size_t* pos, int32_t* out) {
-    uint32_t u; int rc = zerodds_xcdr2_c_read_u32(buf, len, pos, &u);
+static inline int zerodds_xcdr2_c_read_i32(const uint8_t* buf, size_t len, size_t* pos, int32_t* out, int big_endian) {
+    uint32_t u; int rc = zerodds_xcdr2_c_read_u32(buf, len, pos, &u, big_endian);
     if (rc != 0) return rc;
     *out = (int32_t)u;
     return 0;
 }
 
-static inline int zerodds_xcdr2_c_read_u64(const uint8_t* buf, size_t len, size_t* pos, uint64_t* out) {
+static inline int zerodds_xcdr2_c_read_u64(const uint8_t* buf, size_t len, size_t* pos, uint64_t* out, int big_endian) {
     if (zerodds_xcdr2_c_pad_read(buf, len, pos, 8) != 0) return -1;
     if (*pos + 8 > len) return -1;
     uint64_t v = 0;
     for (int i = 0; i < 8; ++i) {
-        v |= (uint64_t)buf[*pos + i] << (8 * i);
+        int sh = big_endian ? (8 * (7 - i)) : (8 * i);
+        v |= (uint64_t)buf[*pos + i] << sh;
     }
     *out = v;
     *pos += 8;
     return 0;
 }
 
-static inline int zerodds_xcdr2_c_read_i64(const uint8_t* buf, size_t len, size_t* pos, int64_t* out) {
-    uint64_t u; int rc = zerodds_xcdr2_c_read_u64(buf, len, pos, &u);
+static inline int zerodds_xcdr2_c_read_i64(const uint8_t* buf, size_t len, size_t* pos, int64_t* out, int big_endian) {
+    uint64_t u; int rc = zerodds_xcdr2_c_read_u64(buf, len, pos, &u, big_endian);
     if (rc != 0) return rc;
     *out = (int64_t)u;
     return 0;
 }
 
-static inline int zerodds_xcdr2_c_read_f32(const uint8_t* buf, size_t len, size_t* pos, float* out) {
-    uint32_t u; int rc = zerodds_xcdr2_c_read_u32(buf, len, pos, &u);
+static inline int zerodds_xcdr2_c_read_f32(const uint8_t* buf, size_t len, size_t* pos, float* out, int big_endian) {
+    uint32_t u; int rc = zerodds_xcdr2_c_read_u32(buf, len, pos, &u, big_endian);
     if (rc != 0) return rc;
     memcpy(out, &u, sizeof(*out));
     return 0;
 }
 
-static inline int zerodds_xcdr2_c_read_f64(const uint8_t* buf, size_t len, size_t* pos, double* out) {
-    uint64_t u; int rc = zerodds_xcdr2_c_read_u64(buf, len, pos, &u);
+static inline int zerodds_xcdr2_c_read_f64(const uint8_t* buf, size_t len, size_t* pos, double* out, int big_endian) {
+    uint64_t u; int rc = zerodds_xcdr2_c_read_u64(buf, len, pos, &u, big_endian);
     if (rc != 0) return rc;
     memcpy(out, &u, sizeof(*out));
     return 0;
 }
 
-static inline int zerodds_xcdr2_c_read_string(const uint8_t* buf, size_t len, size_t* pos, char** out) {
+static inline int zerodds_xcdr2_c_read_string(const uint8_t* buf, size_t len, size_t* pos, char** out, int big_endian) {
     uint32_t n;
-    if (zerodds_xcdr2_c_read_u32(buf, len, pos, &n) != 0) return -1;
+    if (zerodds_xcdr2_c_read_u32(buf, len, pos, &n, big_endian) != 0) return -1;
     if (n == 0 || *pos + n > len) return -1;
     char* s = (char*)malloc(n);
     if (s == NULL) return -1;
@@ -305,6 +403,45 @@ static inline int zerodds_xcdr2_c_read_string(const uint8_t* buf, size_t len, si
     s[n - 1] = 0; /* NUL guarantee */
     *pos += n;
     *out = s;
+    return 0;
+}
+
+/* Reads one PL_CDR1 member header at *pos (a 4-aligned parameter boundary).
+ * Sets *out_is_end=1 on the PID_LIST_END sentinel. Otherwise returns the
+ * member id and the (UNPADDED) body length. `big_endian` selects the stream
+ * byte order of the PID / length words. The caller reads `*out_blen` body
+ * bytes, then skips the pad to the next 4-byte boundary. */
+static inline int zerodds_xcdr2_c_pl1_read_header(const uint8_t* buf, size_t len, size_t* pos,
+        uint32_t* out_id, size_t* out_blen, int* out_is_end, int big_endian) {
+    *out_is_end = 0;
+    if (*pos + 4 > len) return -1;
+    uint16_t pid, l;
+    if (big_endian) {
+        pid = (uint16_t)(((uint16_t)buf[*pos] << 8) | buf[*pos + 1]);
+        l   = (uint16_t)(((uint16_t)buf[*pos + 2] << 8) | buf[*pos + 3]);
+    } else {
+        pid = (uint16_t)(buf[*pos] | ((uint16_t)buf[*pos + 1] << 8));
+        l   = (uint16_t)(buf[*pos + 2] | ((uint16_t)buf[*pos + 3] << 8));
+    }
+    *pos += 4;
+    if (pid == (uint16_t)ZERODDS_PL_CDR1_PID_LIST_END) { *out_is_end = 1; return 0; }
+    if (pid == (uint16_t)ZERODDS_PL_CDR1_PID_EXTENDED) {
+        if (*pos + 8 > len) return -1;
+        uint32_t id, bl;
+        if (big_endian) {
+            id = ((uint32_t)buf[*pos] << 24) | ((uint32_t)buf[*pos + 1] << 16) | ((uint32_t)buf[*pos + 2] << 8) | buf[*pos + 3];
+            bl = ((uint32_t)buf[*pos + 4] << 24) | ((uint32_t)buf[*pos + 5] << 16) | ((uint32_t)buf[*pos + 6] << 8) | buf[*pos + 7];
+        } else {
+            id = buf[*pos] | ((uint32_t)buf[*pos + 1] << 8) | ((uint32_t)buf[*pos + 2] << 16) | ((uint32_t)buf[*pos + 3] << 24);
+            bl = buf[*pos + 4] | ((uint32_t)buf[*pos + 5] << 8) | ((uint32_t)buf[*pos + 6] << 16) | ((uint32_t)buf[*pos + 7] << 24);
+        }
+        *pos += 8;
+        *out_id = id;
+        *out_blen = bl;
+    } else {
+        *out_id = pid;
+        *out_blen = l;
+    }
     return 0;
 }
 

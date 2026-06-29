@@ -1,0 +1,14 @@
+// Conformance feature: typedefs — to primitive, to sequence, to array,
+// to another typedef (alias chain), and NGVA units-style aliases.
+module conf {
+  typedef double  CurrentInAmpsType;
+  typedef CurrentInAmpsType  ChargeCurrentType;   // alias chain
+  typedef sequence<long>     LongSeq;
+  typedef long               Matrix3[3][3];
+  struct UsesTypedefs {
+    CurrentInAmpsType battery;
+    ChargeCurrentType charger;
+    LongSeq           samples;
+    Matrix3           transform;
+  };
+};

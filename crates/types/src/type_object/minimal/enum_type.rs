@@ -6,7 +6,7 @@ use alloc::vec::Vec;
 
 use zerodds_cdr::{BufferReader, BufferWriter, DecodeError, EncodeError};
 
-use crate::type_object::common::{NameHash, decode_seq, encode_seq};
+use crate::type_object::common::{NameHash, decode_seq_appendable, encode_seq_appendable};
 use crate::type_object::flags::{EnumLiteralFlag, EnumTypeFlag};
 
 /// Common header for enum.
@@ -43,18 +43,27 @@ pub struct MinimalEnumeratedLiteral {
 
 impl MinimalEnumeratedLiteral {
     fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
-        w.write_u32(self.common.value as u32)?;
-        w.write_u16(self.common.flags.0)?;
-        self.detail.encode_into(w)
+        // MinimalEnumeratedLiteral is @appendable → per-literal DHEADER; its
+        // CommonEnumeratedLiteral is ALSO @appendable → a nested DHEADER around
+        // value+flags (byte-verified against FastDDS), then the NameHash detail.
+        zerodds_cdr::struct_enc::encode_appendable(w, |w| {
+            zerodds_cdr::struct_enc::encode_appendable(w, |w| {
+                w.write_u32(self.common.value as u32)?;
+                w.write_u16(self.common.flags.0)
+            })?;
+            self.detail.encode_into(w)
+        })
     }
 
     fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
-        let value = r.read_u32()? as i32;
-        let flags = EnumLiteralFlag(r.read_u16()?);
-        let detail = NameHash::decode_from(r)?;
-        Ok(Self {
-            common: CommonEnumeratedLiteral { value, flags },
-            detail,
+        zerodds_cdr::struct_enc::decode_appendable(r, |r| {
+            let common = zerodds_cdr::struct_enc::decode_appendable(r, |r| {
+                let value = r.read_u32()? as i32;
+                let flags = EnumLiteralFlag(r.read_u16()?);
+                Ok(CommonEnumeratedLiteral { value, flags })
+            })?;
+            let detail = NameHash::decode_from(r)?;
+            Ok(Self { common, detail })
         })
     }
 }
@@ -77,8 +86,11 @@ impl MinimalEnumeratedType {
     /// Buffer-Overflow.
     pub fn encode_into(&self, w: &mut BufferWriter) -> Result<(), EncodeError> {
         w.write_u16(self.enum_flags.0)?;
-        w.write_u16(self.header.common.bit_bound)?;
-        encode_seq(w, &self.literal_seq, |w, l| l.encode_into(w))
+        // MinimalEnumeratedHeader is @appendable → DHEADER around bit_bound.
+        zerodds_cdr::struct_enc::encode_appendable(w, |w| {
+            w.write_u16(self.header.common.bit_bound)
+        })?;
+        encode_seq_appendable(w, &self.literal_seq, |w, l| l.encode_into(w))
     }
 
     /// Decode.
@@ -87,8 +99,8 @@ impl MinimalEnumeratedType {
     /// Buffer-Underflow.
     pub fn decode_from(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         let enum_flags = EnumTypeFlag(r.read_u16()?);
-        let bit_bound = r.read_u16()?;
-        let literal_seq = decode_seq(r, MinimalEnumeratedLiteral::decode_from)?;
+        let bit_bound = zerodds_cdr::struct_enc::decode_appendable(r, |r| r.read_u16())?;
+        let literal_seq = decode_seq_appendable(r, MinimalEnumeratedLiteral::decode_from)?;
         Ok(Self {
             enum_flags,
             header: MinimalEnumeratedHeader {

@@ -62,6 +62,16 @@ fn check_compiles(src: &str) -> Result<(), String> {
     // In the real code path this is the DDS-CSharp PSM runtime.
     let stub = "namespace Omg.Types { \
                 using System.Collections; using System.Collections.Generic; \
+                [System.AttributeUsage(System.AttributeTargets.All, AllowMultiple = true)] \
+                public sealed class ExtensibilityAttribute : System.Attribute { public ExtensibilityAttribute(ZeroDDS.Cdr.ExtensibilityKind k) {} } \
+                [System.AttributeUsage(System.AttributeTargets.All, AllowMultiple = true)] \
+                public sealed class IdAttribute : System.Attribute { public IdAttribute(uint id) {} } \
+                [System.AttributeUsage(System.AttributeTargets.All, AllowMultiple = true)] \
+                public sealed class KeyAttribute : System.Attribute { public KeyAttribute() {} } \
+                [System.AttributeUsage(System.AttributeTargets.All, AllowMultiple = true)] \
+                public sealed class OptionalAttribute : System.Attribute { public OptionalAttribute() {} } \
+                [System.AttributeUsage(System.AttributeTargets.All, AllowMultiple = true)] \
+                public sealed class MustUnderstandAttribute : System.Attribute { public MustUnderstandAttribute() {} } \
                 public interface ITopicType<T> {} \
                 public sealed class Any { public string TypeId; public object Value; } \
                 public interface ISequence<T> : System.Collections.Generic.IList<T> {} \
@@ -104,11 +114,14 @@ fn check_compiles(src: &str) -> Result<(), String> {
                 public readonly struct DHeaderScope : System.IDisposable { public void Dispose() {} } \
                 public readonly struct DHeaderReadScope { public int BodyStart {get;} public int BodyEnd {get;} public int PreviousOrigin {get;} } \
                 public sealed class Xcdr2Writer { \
+                    public const int Xcdr1MaxAlignmentValue = 8; \
                     public Xcdr2Writer() {} \
                     public Xcdr2Writer(EndianMode e) {} \
+                    public Xcdr2Writer(EndianMode e, int maxAlign) {} \
                     public void Align(int a) {} \
                     public void WriteByte(byte v) {} \
                     public void WriteBytes(System.ReadOnlySpan<byte> d) {} \
+                    public void WriteFixedBcd(decimal v, int p, int s) {} \
                     public void WriteBool(bool v) {} \
                     public void WriteOctet(byte v) {} \
                     public void WriteInt16(short v) {} \
@@ -131,9 +144,12 @@ fn check_compiles(src: &str) -> Result<(), String> {
                     public byte[] ToArray() => System.Array.Empty<byte>(); \
                 } \
                 public ref struct Xcdr2Reader { \
+                    public const int Xcdr1MaxAlignmentValue = 8; \
                     public Xcdr2Reader(System.ReadOnlySpan<byte> b) {} \
                     public Xcdr2Reader(System.ReadOnlySpan<byte> b, EndianMode e) {} \
+                    public Xcdr2Reader(System.ReadOnlySpan<byte> b, EndianMode e, int maxAlign) {} \
                     public bool ReadBool() => default; \
+                    public decimal ReadFixedBcd(int p, int s) => default; \
                     public byte ReadByte() => default; \
                     public byte ReadOctet() => default; \
                     public short ReadInt16() => default; \
@@ -244,9 +260,12 @@ fn compiles_struct_with_map_member_gated() {
 }
 
 #[test]
-fn compiles_struct_with_fixed_member_gated() {
+fn compiles_struct_with_fixed_member() {
+    // `fixed<P,S>` now emits a full TypeSupport (CORBA-BCD codec via the runtime
+    // `WriteFixedBcd`/`ReadFixedBcd` helpers on the `decimal` field), not a gated
+    // data-type-only stub. (Requires an in-sync `ZeroDDS.Cdr` build.)
     check_compiles("struct Money { fixed<10,2> amount; long n; };")
-        .expect("struct with fixed member must compile (gated)");
+        .expect("struct with fixed member must compile");
 }
 
 #[test]
@@ -264,4 +283,35 @@ fn compiles_nested_struct_codec() {
          struct Outer { Inner inner; sequence<Inner> many; long z; };",
     )
     .expect("nested struct codec must compile");
+}
+
+/// CS-cluster (#67): the real conformance fixtures that exercise the fixed
+/// aggregate codecs (map/union/array/typedef/nested-seq/nested-struct) must
+/// generate C# that compiles under Roslyn.
+#[test]
+fn compiles_conformance_fixtures() {
+    let dir = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../../tools/idlc/tests/conformance/fixtures"
+    );
+    // NOTE: 07_sequences is intentionally excluded — it contains a BOUNDED
+    // sequence member (`sequence<long, 10>`), whose property type
+    // `IBoundedSequence<T>` does not match the decoded container `ISequence<T>`.
+    // That is a separate, pre-existing latent codegen issue (bounded-sequence
+    // member decode), not part of the CS-cluster #67 fixes; see the agent
+    // notes. The unbounded + nested-sequence paths are covered by
+    // `roundtrip_xcdr2::roundtrip_nested_sequence`.
+    for f in [
+        "05_nested_structs",
+        "06_typedefs",
+        "08_arrays",
+        "09_unions",
+        "13_maps",
+        "20_mixed_combo",
+    ] {
+        let path = format!("{dir}/{f}.idl");
+        let src =
+            std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read fixture {f}: {e}"));
+        check_compiles(&src).unwrap_or_else(|e| panic!("fixture {f} must compile:\n{e}"));
+    }
 }

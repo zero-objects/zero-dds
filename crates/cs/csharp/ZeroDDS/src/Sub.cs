@@ -6,6 +6,7 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using ZeroDDS.Cdr;
 using ZeroDDS.Core;
 using ZeroDDS.Domain;
 using ZeroDDS.Topic;
@@ -36,6 +37,7 @@ public sealed class Subscriber : IDisposable
 {
     private IntPtr _handle;
     private readonly IntPtr _participant;
+    private readonly List<string> _partition = new();
     private bool _disposed;
 
     public Subscriber(DomainParticipant dp)
@@ -49,6 +51,7 @@ public sealed class Subscriber : IDisposable
     public Subscriber(DomainParticipant dp, ZeroDDS.Qos.SubscriberQos qos)
     {
         _participant = dp.Handle;
+        if (qos.Partition?.Names is { Count: > 0 }) _partition.AddRange(qos.Partition.Names);
         using var scope = new ZeroDDS.QosBridge.NativeQosScope();
         var native = ZeroDDS.QosBridge.QosBridge.ToNative(qos, scope);
         unsafe { _handle = Native.DpCreateSubscriber(_participant, (IntPtr)(&native)); }
@@ -56,6 +59,12 @@ public sealed class Subscriber : IDisposable
     }
 
     public IntPtr Handle => _handle;
+
+    /// <summary>
+    /// The PARTITION names this Subscriber was created with (Spec §2.2.3.10).
+    /// Readers created on it inherit these names unless they set their own.
+    /// </summary>
+    internal IReadOnlyList<string> PartitionNames => _partition;
 
     public void Dispose()
     {
@@ -103,7 +112,20 @@ public sealed class DataReader<T> : IDisposable
     public DataReader(Subscriber sub, Topic<T> topic)
     {
         _subscriber = sub.Handle;
-        _handle = Native.SubCreateDatareader(_subscriber, topic.Handle, IntPtr.Zero);
+        // PARTITION (Spec §2.2.3.10) is a Subscriber-level policy that readers
+        // inherit; the C-FFI reads it off the reader QoS, so carry it forward.
+        if (sub.PartitionNames.Count > 0)
+        {
+            var qos = new ZeroDDS.Qos.DataReaderQos();
+            qos.Partition.Names.AddRange(sub.PartitionNames);
+            using var scope = new ZeroDDS.QosBridge.NativeQosScope();
+            var native = ZeroDDS.QosBridge.QosBridge.ToNative(qos, scope);
+            unsafe { _handle = Native.SubCreateDatareader(_subscriber, topic.Handle, (IntPtr)(&native)); }
+        }
+        else
+        {
+            _handle = Native.SubCreateDatareader(_subscriber, topic.Handle, IntPtr.Zero);
+        }
         if (_handle == IntPtr.Zero) throw new DdsError("DataReader::create failed");
         _traits = topic.Traits;
     }
@@ -112,11 +134,61 @@ public sealed class DataReader<T> : IDisposable
     public DataReader(Subscriber sub, Topic<T> topic, ZeroDDS.Qos.DataReaderQos qos)
     {
         _subscriber = sub.Handle;
+        if (qos.Partition.Names.Count == 0 && sub.PartitionNames.Count > 0)
+            qos.Partition.Names.AddRange(sub.PartitionNames);
         using var scope = new ZeroDDS.QosBridge.NativeQosScope();
         var native = ZeroDDS.QosBridge.QosBridge.ToNative(qos, scope);
         unsafe { _handle = Native.SubCreateDatareader(_subscriber, topic.Handle, (IntPtr)(&native)); }
         if (_handle == IntPtr.Zero) throw new DdsError("DataReader::create with QoS failed");
         _traits = topic.Traits;
+    }
+
+    /// <summary>
+    /// Constructs a reader on a <see cref="ContentFilteredTopic{T}"/>: on every
+    /// take, the filter expression is evaluated and only matching samples are
+    /// delivered (Spec §2.2.2.3.3 + §2.2.2.5.2.5).
+    /// </summary>
+    public DataReader(Subscriber sub, ContentFilteredTopic<T> cft)
+    {
+        _subscriber = sub.Handle;
+        _handle = Native.SubCreateDataReaderWithCft(_subscriber, cft.Handle, IntPtr.Zero);
+        if (_handle == IntPtr.Zero) throw new DdsError("DataReader::create on CFT failed");
+        _traits = cft.Traits;
+    }
+
+    /// <summary>CFT reader with explicit QoS.</summary>
+    public DataReader(Subscriber sub, ContentFilteredTopic<T> cft, ZeroDDS.Qos.DataReaderQos qos)
+    {
+        _subscriber = sub.Handle;
+        using var scope = new ZeroDDS.QosBridge.NativeQosScope();
+        var native = ZeroDDS.QosBridge.QosBridge.ToNative(qos, scope);
+        unsafe { _handle = Native.SubCreateDataReaderWithCft(_subscriber, cft.Handle, (IntPtr)(&native)); }
+        if (_handle == IntPtr.Zero) throw new DdsError("DataReader::create on CFT with QoS failed");
+        _traits = cft.Traits;
+    }
+
+    /// <summary>
+    /// Reader-side <c>lookup_instance</c> (Spec §2.2.2.5.2.x): resolves the
+    /// <see cref="InstanceHandle"/> for a sample's key. Requires a generated
+    /// TypeSupport so the key hash can be computed.
+    /// </summary>
+    public InstanceHandle LookupInstance(T sample)
+    {
+        byte[] key = _traits is ZeroDDS.IKeyHashProvider kp
+            ? kp.KeyHashOf(sample!)
+            : throw new ZeroDDS.Core.UnsupportedException(
+                "DataReader::LookupInstance requires a generated TypeSupport (IDdsTopicType<T>)");
+        ulong h;
+        unsafe
+        {
+            fixed (byte* p = key)
+            {
+                StatusCheck.Check(
+                    Native.DrLookupInstance(_handle, (IntPtr)p, (UIntPtr)key.Length, out h),
+                    "DataReader::LookupInstance");
+            }
+        }
+        return new InstanceHandle(h);
     }
 
     public IntPtr Handle => _handle;
@@ -174,7 +246,13 @@ public sealed class DataReader<T> : IDisposable
                 {
                     var len = (int)(uint)lengths[i];
                     var span = new ReadOnlySpan<byte>(buffers[i], len);
-                    data = _traits.Decode(span);
+                    // Dispatch on the wire byte order + XCDR representation from
+                    // the encapsulation header so a big-endian and/or XCDR1 peer's
+                    // sample decodes correctly.
+                    var endian = info.BigEndian != 0
+                        ? EndianMode.BigEndian
+                        : EndianMode.LittleEndian;
+                    data = _traits.Decode(span, endian, info.Representation);
                 }
                 result.Add(new Sample<T>
                 {

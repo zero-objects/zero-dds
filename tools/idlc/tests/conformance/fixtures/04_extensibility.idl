@@ -1,0 +1,6 @@
+// Conformance feature: struct extensibility kinds (XTypes §7.2.2.4.4).
+module conf {
+  @final     struct FinalT     { long a; };
+  @appendable struct AppendT    { long a; long b; };
+  @mutable    struct MutableT    { @id(10) long a; @id(20) long b; };
+};

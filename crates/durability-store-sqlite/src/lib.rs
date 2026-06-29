@@ -40,6 +40,8 @@ CREATE TABLE IF NOT EXISTS samples (
     sequence      INTEGER NOT NULL,
     created_nanos INTEGER NOT NULL,
     payload       BLOB    NOT NULL,
+    representation INTEGER NOT NULL DEFAULT 1,
+    big_endian    INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (topic, instance, sequence)
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS idx_samples_topic ON samples(topic, instance, sequence);
@@ -196,14 +198,16 @@ impl DurabilityStore for SqliteStore {
         }
 
         conn.execute(
-            "INSERT OR REPLACE INTO samples(topic,instance,sequence,created_nanos,payload) \
-             VALUES (?1,?2,?3,?4,?5)",
+            "INSERT OR REPLACE INTO samples(topic,instance,sequence,created_nanos,payload,representation,big_endian) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7)",
             params![
                 sample.topic,
                 inst,
                 sample.sequence as i64,
                 nanos_of(sample.created_at),
-                sample.payload
+                sample.payload,
+                i64::from(sample.representation),
+                i64::from(sample.big_endian)
             ],
         )
         .map_err(|e| backend("insert", e))?;
@@ -226,7 +230,8 @@ impl DurabilityStore for SqliteStore {
         let limit = selector.limit.unwrap_or(DEFAULT_PAGE);
         // Build a dynamic WHERE with bound params (fetch limit+1 to detect more).
         let mut sql = String::from(
-            "SELECT instance,sequence,created_nanos,payload FROM samples WHERE topic=?1",
+            "SELECT instance,sequence,created_nanos,payload,representation,big_endian \
+             FROM samples WHERE topic=?1",
         );
         let mut binds: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(topic.to_string())];
         if let Some(k) = selector.instance_key {
@@ -280,6 +285,8 @@ impl DurabilityStore for SqliteStore {
                     sequence: r.get::<_, i64>(1)? as u64,
                     created_at: time_of(r.get::<_, i64>(2)?),
                     payload: r.get(3)?,
+                    representation: r.get::<_, i64>(4)? as u8,
+                    big_endian: r.get::<_, i64>(5)? != 0,
                 })
             })
             .map_err(|e| backend("query_map", e))?;

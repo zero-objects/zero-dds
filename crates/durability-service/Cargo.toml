@@ -21,14 +21,14 @@ workspace = true
 path = "src/lib.rs"
 
 [dependencies]
-zerodds-dcps = { version = "1.0.0-rc.3.1", path = "../dcps" }
-zerodds-qos = { version = "1.0.0-rc.3.1", path = "../qos" }
-zerodds-types = { version = "1.0.0-rc.3.1", path = "../types" }
-zerodds-durability-store = { version = "1.0.0-rc.3.1", path = "../durability-store" }
+zerodds-dcps = { version = "1.0.0-rc.4", path = "../dcps" }
+zerodds-qos = { version = "1.0.0-rc.4", path = "../qos" }
+zerodds-types = { version = "1.0.0-rc.4", path = "../types" }
+zerodds-durability-store = { version = "1.0.0-rc.4", path = "../durability-store" }
 
 [dev-dependencies]
-zerodds-dcps = { version = "1.0.0-rc.3.1", path = "../dcps" }
-zerodds-qos = { version = "1.0.0-rc.3.1", path = "../qos" }
-zerodds-types = { version = "1.0.0-rc.3.1", path = "../types" }
-zerodds-durability-store-sqlite = { version = "1.0.0-rc.3.1", path = "../durability-store-sqlite" }
-zerodds-durability-store-file = { version = "1.0.0-rc.3.1", path = "../durability-store-file" }
+zerodds-dcps = { version = "1.0.0-rc.4", path = "../dcps" }
+zerodds-qos = { version = "1.0.0-rc.4", path = "../qos" }
+zerodds-types = { version = "1.0.0-rc.4", path = "../types" }
+zerodds-durability-store-sqlite = { version = "1.0.0-rc.4", path = "../durability-store-sqlite" }
+zerodds-durability-store-file = { version = "1.0.0-rc.4", path = "../durability-store-file" }

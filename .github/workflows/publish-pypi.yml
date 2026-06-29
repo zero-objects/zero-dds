@@ -1,34 +1,34 @@
 # PyPI publish job for the `zerodds` Python package (crates/py).
-# Spec: docs/packaging/language-binding-publish-followup.md (RC3-Pickup).
+# Spec: internal/packaging/language-binding-publish-followup.md (RC3-Pickup).
 #
-# Auth: Trusted Publisher (OIDC) — KEIN API-Token noetig.
+# Auth: Trusted Publisher (OIDC) — NO API token needed.
 #
-# Setup once (User-Action, nicht in CI):
-#  1. PyPI Trusted Publisher konfigurieren:
+# Setup once (user action, not in CI):
+#  1. Configure a PyPI Trusted Publisher:
 #     https://pypi.org/manage/account/publishing/
-#     "Add a new pending publisher" → GitHub-Tab → Felder:
-#       PyPI Projektname:  zerodds
-#       Eigentuemer:       zero-objects
-#       Repository-Name:   zero-dds
+#     "Add a new pending publisher" → GitHub tab → fields:
+#       PyPI project name: zerodds
+#       Owner:             zero-objects
+#       Repository name:   zero-dds
 #       Workflow name:     publish-pypi.yml
 #       Environment name:  pypi
-#  2. Analog auf test.pypi.org/manage/account/publishing/ — selbe Werte,
-#     aber Environment name: testpypi
-#  3. Im GitHub-Repo "pypi" + "testpypi" als Environments anlegen
-#     (Repo → Settings → Environments → New Environment). Kann leer
-#     bleiben — die Existenz allein gated den Job per Approval-Policy
-#     falls man die einschalten will.
+#  2. Same on test.pypi.org/manage/account/publishing/ — same values,
+#     but Environment name: testpypi
+#  3. Create "pypi" + "testpypi" as environments in the GitHub repo
+#     (Repo → Settings → Environments → New Environment). Can stay
+#     empty — their mere existence gates the job per approval policy
+#     if you want to enable that.
 #
 # Trigger:
-#  - workflow_dispatch: manuell aus GitHub-UI (mit "test"-flag fuer Test-PyPI)
-#  - workflow_call: aus release.yml beim tag-push v*.*.*
+#  - workflow_dispatch: manually from the GitHub UI (with "test" flag for Test-PyPI)
+#  - workflow_call: from release.yml on tag push v*.*.*
 
 name: publish-pypi
 on:
   workflow_dispatch:
     inputs:
       target_index:
-        description: "Wohin uploaden"
+        description: "Upload target"
         required: true
         type: choice
         default: testpypi
@@ -38,7 +38,7 @@ on:
   workflow_call:
     inputs:
       target_index:
-        description: "Wohin uploaden (testpypi | pypi)"
+        description: "Upload target (testpypi | pypi)"
         required: false
         type: string
         default: pypi
@@ -47,9 +47,9 @@ permissions:
   contents: read
 
 jobs:
-  # Wheels bauen — pro Target ein Job. abi3 macht ein Wheel pro Plattform
-  # gut fuer alle Pythons >= 3.8, also brauchen wir keine separate
-  # python-version-Matrix.
+  # Build wheels — one job per target. abi3 makes one wheel per platform
+  # work for all Pythons >= 3.8, so we don't need a separate
+  # python-version matrix.
   build-wheels:
     name: Build wheel (${{ matrix.target.runner }} / ${{ matrix.target.id }})
     runs-on: ${{ matrix.target.runner }}
@@ -69,10 +69,10 @@ jobs:
             runner: macos-14   # Apple Silicon
             maturin_target: aarch64-apple-darwin
             manylinux: 'off'
-          # macOS Intel (x86_64) als RC3-Item — GitHub-free-tier macos-13
-          # Runner-Queue ist heute (2026-05-19) >10h. Alle modernen Macs
-          # sind ARM. Wenn Intel-Wheel gebraucht: lokal bauen + manuell
-          # nachuploaden, oder GitHub-Paid-Tier.
+          # macOS Intel (x86_64) as an RC3 item — the GitHub free-tier macos-13
+          # runner queue is >10h today (2026-05-19). All modern Macs
+          # are ARM. If an Intel wheel is needed: build locally + upload
+          # manually afterwards, or use the GitHub paid tier.
           # - id: macos-x86_64
           #   runner: macos-13
           #   maturin_target: x86_64-apple-darwin
@@ -95,8 +95,8 @@ jobs:
           target: ${{ matrix.target.maturin_target }}
           args: --release --out dist --manifest-path crates/py/Cargo.toml
           manylinux: ${{ matrix.target.manylinux }}
-          # Cross-compile fuer Linux aarch64 via Docker.
-          # macOS / Windows builden native auf den jeweiligen Runnern.
+          # Cross-compile for Linux aarch64 via Docker.
+          # macOS / Windows build natively on their respective runners.
           docker-options: --user root
 
       - name: List built wheels
@@ -110,8 +110,8 @@ jobs:
           path: dist/*.whl
           if-no-files-found: error
 
-  # sdist (source distribution) separat — falls Wheel-Install scheitert
-  # kann pip aus dem sdist bauen.
+  # sdist (source distribution) separately — if wheel install fails
+  # pip can build from the sdist.
   build-sdist:
     name: Build sdist
     runs-on: ubuntu-22.04
@@ -129,17 +129,17 @@ jobs:
           path: dist/*.tar.gz
           if-no-files-found: error
 
-  # Alle Artifacts sammeln + zu PyPI (oder Test-PyPI) hochladen.
-  # PyPI-publish ist atomar pro Version: schlaegt fehl wenn die Version
-  # schon existiert. Beim Tag-Re-Push muss man also vorher die Version
-  # bumpen.
+  # Collect all artifacts + upload to PyPI (or Test-PyPI).
+  # PyPI publish is atomic per version: it fails if the version
+  # already exists. So on a tag re-push you must bump the version
+  # beforehand.
   publish:
     name: Publish to ${{ inputs.target_index || 'pypi' }}
     needs: [build-wheels, build-sdist]
     runs-on: ubuntu-22.04
-    # OIDC-Auth braucht id-token: write. Trusted Publisher auf PyPI
-    # tauscht das GitHub-OIDC-Token gegen einen kurzlebigen Upload-Token
-    # ein, kein gespeichertes Secret noetig.
+    # OIDC auth needs id-token: write. The Trusted Publisher on PyPI
+    # exchanges the GitHub OIDC token for a short-lived upload token,
+    # no stored secret needed.
     permissions:
       id-token: write
     environment:

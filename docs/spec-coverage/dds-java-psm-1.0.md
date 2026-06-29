@@ -100,7 +100,7 @@ as well as a Java jar library file and the source files that
 generated it, identified on the cover page (all are normative). In
 the event of a conflict between them, the latter shall prevail."
 
-**Repo:** PDF in `docs/standards/cache/omg/`; das Java-Source-Set
+**Repo:** PDF in `internal/standards/cache/omg/`; das Java-Source-Set
 ist via `crates/idl-java/` Codegen + `crates/idl-java/runtime/`
 manueller Source-Files realisiert.
 

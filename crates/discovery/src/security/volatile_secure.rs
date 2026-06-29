@@ -235,7 +235,7 @@ impl VolatileSecureMessageReader {
         source_prefix: GuidPrefix,
         data: &DataSubmessage,
     ) -> SecurityResult<Vec<ParticipantGenericMessage>> {
-        let samples = self.inner.handle_data(source_prefix, data);
+        let samples = self.inner.handle_data(source_prefix, data, None);
         decode_samples(samples.into_iter().map(|s| s.payload))
     }
 
@@ -249,7 +249,7 @@ impl VolatileSecureMessageReader {
         df: &DataFragSubmessage,
         now: Duration,
     ) -> SecurityResult<Vec<ParticipantGenericMessage>> {
-        let samples = self.inner.handle_data_frag(source_prefix, df, now);
+        let samples = self.inner.handle_data_frag(source_prefix, df, now, None);
         decode_samples(samples.into_iter().map(|s| s.payload))
     }
 

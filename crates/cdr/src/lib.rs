@@ -97,7 +97,7 @@ pub use buffer::BufferWriter;
 pub use encode::{CdrDecode, CdrEncode};
 
 #[cfg(feature = "alloc")]
-pub use composite::WString;
+pub use composite::{WChar, WString, corba_wstring_bom, set_corba_wstring_bom};
 
 #[cfg(feature = "alloc")]
 pub use composite::{AnyValue, CorbaAny};

@@ -27,9 +27,11 @@ public sealed class TagsTypeSupport : IDdsTopicType<Tags>
 
     public byte[] Encode(Tags sample) => Encode(sample, EndianMode.LittleEndian);
 
-    public byte[] Encode(Tags sample, EndianMode endian)
+    public byte[] Encode(Tags sample, EndianMode endian) => Encode(sample, endian, 1);
+    public byte[] Encode(Tags sample, EndianMode endian, int representation)
     {
-        var w = new Xcdr2Writer(endian);
+        int __maxAlign = representation == 0 ? Xcdr2Writer.Xcdr1MaxAlignmentValue : 4;
+        var w = new Xcdr2Writer(endian, __maxAlign);
         EncodeInto(w, sample);
         return w.ToArray();
     }
@@ -37,40 +39,43 @@ public sealed class TagsTypeSupport : IDdsTopicType<Tags>
     public void EncodeInto(Xcdr2Writer w, Tags sample)
     {
         {
-            var __seq = (sample.Tags) as System.Collections.Generic.IEnumerable<string>;
-            var __mat = __seq is null ? new System.Collections.Generic.List<string>() : new System.Collections.Generic.List<string>(__seq);
-            using (var __seqdh = w.BeginAppendable())
+            var __seq0 = (sample.Tags) as System.Collections.Generic.IEnumerable<string>;
+            var __mat0 = __seq0 is null ? new System.Collections.Generic.List<string>() : new System.Collections.Generic.List<string>(__seq0);
+            using (var __seqdh0 = w.BeginAppendable())
             {
-                w.WriteSequenceLength(__mat.Count);
-                foreach (var __item in __mat)
+                w.WriteSequenceLength(__mat0.Count);
+                foreach (var __item0 in __mat0)
                 {
-                    w.WriteString(__item);
+                    w.WriteString(__item0);
                 }
             }
         }
     }
 
-    public Tags Decode(ReadOnlySpan<byte> bytes)
+    public Tags Decode(ReadOnlySpan<byte> bytes) => Decode(bytes, EndianMode.LittleEndian, 1);
+    public Tags Decode(ReadOnlySpan<byte> bytes, EndianMode endian) => Decode(bytes, endian, 1);
+    public Tags Decode(ReadOnlySpan<byte> bytes, EndianMode endian, int representation)
     {
-        var r = new Xcdr2Reader(bytes, EndianMode.LittleEndian);
-        return DecodeFrom(r);
+        int __maxAlign = representation == 0 ? Xcdr2Reader.Xcdr1MaxAlignmentValue : 4;
+        var r = new Xcdr2Reader(bytes, endian, __maxAlign);
+        return DecodeFrom(ref r);
     }
 
-    public Tags DecodeFrom(Xcdr2Reader r)
+    public Tags DecodeFrom(ref Xcdr2Reader r)
     {
-        Omg.Types.ISequence<string> __m0 = default;
+        Omg.Types.ISequence<string> __m0 = default!;
         {
-            var __seqdh = r.BeginDHeader();
-            int __cnt = r.ReadSequenceLength();
-            var __list = new Omg.Types.SequenceList<string>();
-            for (int __i = 0; __i < __cnt; __i++)
+            var __seqdh0 = r.BeginDHeader();
+            int __cnt0 = r.ReadSequenceLength();
+            var __list0 = new Omg.Types.SequenceList<string>();
+            for (int __i0 = 0; __i0 < __cnt0; __i0++)
             {
-                string __e;
-                __e = r.ReadString();
-                __list.Add(__e);
+                string __e0;
+                __e0 = r.ReadString();
+                __list0.Add(__e0);
             }
-            r.EndDHeader(__seqdh);
-            __m0 = __list;
+            r.EndDHeader(__seqdh0);
+            __m0 = __list0;
         }
         return new Tags
         {

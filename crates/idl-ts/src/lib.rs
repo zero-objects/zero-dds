@@ -128,6 +128,11 @@ pub fn generate_ts_source_with_config(
     // int32 (silent corruption of nested composites).
     build_type_registry(&spec.definitions);
 
+    // Reset the encode-loop counter so the emitted temporaries are
+    // deterministic per generation call (snapshot stability) rather than
+    // depending on how many prior calls ran in this thread.
+    ENCODE_LOOP_SEQ.with(|c| *c.borrow_mut() = 0);
+
     // §9 — collect file-level verbatim blocks across all top-level
     // definitions and modules (recursively) before emission.
     let begin_file = collect_file_verbatim(&spec.definitions, VerbatimPlacement::BeginFile);
@@ -1301,13 +1306,25 @@ fn annotation_string_value(
 }
 
 /// Returns the effective extensibility of a struct/union/enum.
-/// Defaults to `appendable` per DDS-TS 1.0 §7.13 if unset.
+///
+/// Defaults to `final` if unset — matching the cross-vendor-validated
+/// `zerodds-cdr` core / `idl-rust` reference (`idl-rust`
+/// `struct_extensibility` returns `StructExtensibility::Final` for an
+/// unannotated type). A `@final` aggregate is serialised WITHOUT a DHEADER
+/// frame (XTypes 1.3 §7.4.3.5.3 FSTRUCT_TYPE rule (17)/(18), FUNION_TYPE
+/// rule (26)); only an explicit `@appendable`/`@mutable` adds the DHEADER
+/// (rule (30)/(21)). This is required for the cross-PSM golden to be
+/// byte-identical: `combo::Sample` and `combo::Reading` are unannotated and
+/// must carry no per-element/per-union DHEADER.
 fn struct_extensibility(annotations: &[zerodds_idl::ast::Annotation]) -> &'static str {
-    if has_annotation(annotations, "final") {
-        "final"
+    if has_annotation(annotations, "appendable") {
+        "appendable"
     } else if has_annotation(annotations, "mutable") {
         "mutable"
+    } else if has_annotation(annotations, "final") {
+        "final"
     } else {
+        // SX2: unannotated default is APPENDABLE (§7.3.3.1).
         "appendable"
     }
 }
@@ -1482,7 +1499,18 @@ fn emit_struct_type_guard(
         let typeof_check = typespec_typeof_check(&m.type_spec);
         for d in &m.declarators {
             let field = d.name().text.clone();
-            if let Some(check) = &typeof_check {
+            // A fixed-size array MEMBER (`long window[4]`, `Point shape[2]`)
+            // is `Array<...>` at the TS level — NOT the element's scalar
+            // type. Checking the element typeof (`typeof o.window !==
+            // "number"`) mis-types the guard and rejects every valid value.
+            // For any array declarator the guard checks `Array.isArray`
+            // instead; per-element structural validation is delegated (the
+            // decoder enforces length + element types on the wire).
+            if matches!(d, zerodds_idl::ast::Declarator::Array(_)) {
+                out.push_str(&alloc::format!(
+                    "    if (!Array.isArray(o.{field})) return false;\n"
+                ));
+            } else if let Some(check) = &typeof_check {
                 out.push_str(&alloc::format!(
                     "    if ({check_expr}) return false;\n",
                     check_expr = check.replace("VAR", &alloc::format!("o.{field}"))
@@ -1661,9 +1689,11 @@ fn emit_struct_typesupport(
 
     // === encode (fresh writer) ===
     out.push_str(&alloc::format!(
-        "    encode(s: {name}, endian: EndianMode = \"le\"): Uint8Array {{\n"
+        "    encode(s: {name}, endian: EndianMode = \"le\", representation = 1): Uint8Array {{\n"
     ));
-    out.push_str("        const w = new Xcdr2Writer(endian);\n");
+    // representation: 1 = XCDR2 (alignment cap 4), 0 = XCDR1 / classic CDR (cap 8,
+    // no DHEADER, PL_CDR1 @mutable).
+    out.push_str("        const w = new Xcdr2Writer(endian, representation === 0 ? 8 : 4);\n");
     out.push_str("        this.encodeInto(w, s);\n");
     out.push_str("        return w.toBytes();\n");
     out.push_str("    },\n");
@@ -1676,10 +1706,16 @@ fn emit_struct_typesupport(
     out.push_str("    },\n");
 
     // === decode (fresh reader) ===
+    // `endian` is trailing-optional (default "le") so existing positional
+    // callers are unaffected; a big-endian payload decodes with decode(bytes,
+    // 0, len, "be"). The reader threads it through every read, incl. @mutable
+    // member bodies and wstring units.
     out.push_str(&alloc::format!(
-        "    decode(bytes: Uint8Array, offset = 0, length: number = bytes.length - offset): {name} {{\n"
+        "    decode(bytes: Uint8Array, offset = 0, length: number = bytes.length - offset, endian: EndianMode = \"le\", representation = 1): {name} {{\n"
     ));
-    out.push_str("        const r = new Xcdr2Reader(bytes, offset, length, \"le\");\n");
+    // representation: 1 = XCDR2 (alignment cap 4), 0 = XCDR1 / classic CDR (cap 8,
+    // no DHEADER, PL_CDR1 @mutable).
+    out.push_str("        const r = new Xcdr2Reader(bytes, offset, length, endian, representation === 0 ? 8 : 4);\n");
     out.push_str("        return this.decodeFrom(r);\n");
     out.push_str("    },\n");
 
@@ -1736,6 +1772,52 @@ fn emit_struct_encode_body(
             out.push_str(&alloc::format!("{indent}w.endAppendable(_tok);\n"));
         }
         "mutable" => {
+            // XCDR1 (classic CDR): @mutable is PL_CDR1 — a [PID][length] list with
+            // no outer DHEADER, each member body member-relative. Emit it next to
+            // the XCDR2 PL_CDR2 EMHEADER path, gated on the writer representation.
+            out.push_str(&alloc::format!("{indent}if (w.isXcdr1) {{\n"));
+            out.push_str(&alloc::format!("{indent}const _plOuter = w;\n"));
+            let mut next_id1: i64 = 0;
+            for m in &s.members {
+                let id_override = annotation_int_value(&m.annotations, "id");
+                let optional = has_annotation(&m.annotations, "optional");
+                for d in &m.declarators {
+                    let id = id_override.unwrap_or(next_id1);
+                    next_id1 = id + 1;
+                    let field = d.name().text.clone();
+                    if optional {
+                        out.push_str(&alloc::format!(
+                            "{indent}if (s.{field} !== undefined && s.{field} !== null) {{\n"
+                        ));
+                    }
+                    // Build the member body in a fresh member-relative XCDR1
+                    // sub-writer (shadowing `w` so the emitted body writes into it),
+                    // then frame it as a PL_CDR1 member.
+                    out.push_str(&alloc::format!("{indent}{{\n"));
+                    out.push_str(&alloc::format!(
+                        "{indent}    const _sub = new Xcdr2Writer(_plOuter.endian, 8);\n"
+                    ));
+                    out.push_str(&alloc::format!("{indent}    {{ const w = _sub;\n"));
+                    emit_declarator_encode(
+                        out,
+                        &m.type_spec,
+                        d,
+                        &alloc::format!("s.{field}"),
+                        &alloc::format!("{indent}        "),
+                        0,
+                    )?;
+                    out.push_str(&alloc::format!("{indent}    }}\n"));
+                    out.push_str(&alloc::format!(
+                        "{indent}    _plOuter.writePlCdr1Member({id}, _sub.toBytes());\n"
+                    ));
+                    out.push_str(&alloc::format!("{indent}}}\n"));
+                    if optional {
+                        out.push_str(&alloc::format!("{indent}}}\n"));
+                    }
+                }
+            }
+            out.push_str(&alloc::format!("{indent}_plOuter.writePlCdr1Sentinel();\n"));
+            out.push_str(&alloc::format!("{indent}}} else {{\n"));
             out.push_str(&alloc::format!("{indent}const _tok = w.beginMutable();\n"));
             let mut next_id: i64 = 0;
             for m in &s.members {
@@ -1760,9 +1842,11 @@ fn emit_struct_encode_body(
                     emit_mutable_member_encode(
                         out,
                         &m.type_spec,
+                        d,
                         &field,
                         id as u32,
                         must,
+                        optional,
                         inner_indent,
                     )?;
                     if optional {
@@ -1771,6 +1855,7 @@ fn emit_struct_encode_body(
                 }
             }
             out.push_str(&alloc::format!("{indent}w.endMutable(_tok);\n"));
+            out.push_str(&alloc::format!("{indent}}}\n"));
         }
         // struct_extensibility() is exhaustive over Final/Appendable/Mutable;
         // unknown variants are treated as Final (no DHEADER wrap).
@@ -1796,63 +1881,266 @@ fn emit_member_encode(
                 "{indent}if ({target} !== undefined && {target} !== null) {{\n"
             ));
             out.push_str(&alloc::format!("{indent}    w.writeOctet(1);\n"));
-            emit_typespec_encode(out, &m.type_spec, &target, &format!("{indent}    "))?;
+            emit_declarator_encode(out, &m.type_spec, d, &target, &format!("{indent}    "), 0)?;
             out.push_str(&alloc::format!("{indent}}} else {{\n"));
             out.push_str(&alloc::format!("{indent}    w.writeOctet(0);\n"));
             out.push_str(&alloc::format!("{indent}}}\n"));
         } else {
-            emit_typespec_encode(out, &m.type_spec, &target, indent)?;
+            emit_declarator_encode(out, &m.type_spec, d, &target, indent, 0)?;
         }
     }
     Ok(())
 }
 
-/// Produces a mutable-member encode with EMHEADER1.
+/// Encodes a struct member honouring the declarator's fixed-array dimensions
+/// (TS-cluster #2). A fixed-size array `T name[N]` (or multi-dim `T grid[R][C]`)
+/// has no length prefix on the wire (XCDR2 §7.4.3.4): each dimension is a fixed
+/// count, so emit one `for` loop per dimension iterating exactly the declared
+/// bound, then encode the element. `Declarator::Simple` falls straight through
+/// to `emit_typespec_encode`.
 ///
-/// Convention zerodds-xcdr2-bindings-conformance-1.0 §6 V-10:
-/// - Primitive member: LC=0..3 inline (1/2/4/8 byte).
-/// - Variable-size member (string, sequence, map, nested struct):
-///   LC=3 with a following NEXTINT = body size (bytes), body in
-///   normal XCDR2 form afterwards.
+/// zerodds-lint: recursion-depth 16 (array dimension count)
+fn emit_declarator_encode(
+    out: &mut String,
+    t: &TypeSpec,
+    d: &zerodds_idl::ast::Declarator,
+    expr: &str,
+    indent: &str,
+    dim: usize,
+) -> Result<(), IdlTsError> {
+    use zerodds_idl::ast::Declarator;
+    match d {
+        Declarator::Simple(_) => emit_typespec_encode(out, t, expr, indent),
+        Declarator::Array(arr) => emit_array_dim_encode(out, t, &arr.sizes, expr, indent, dim),
+    }
+}
+
+/// `true` if a TS type maps to an XCDR `IS_PRIMITIVE` scalar (integers,
+/// floats, bool, octet, char, wchar). Strings, enums, bitmask/bitset, structs,
+/// unions, sequences and maps are NON-primitive. Typedefs resolve to their
+/// target. Mirrors cdr-core `CdrEncode::IS_PRIMITIVE` (only scalar numerics
+/// set it `true`; the default is `false`).
+/// zerodds-lint: recursion-depth 64 (codegen AST walk; bounded by IDL nesting).
+fn typespec_is_primitive(t: &TypeSpec) -> bool {
+    match t {
+        // Every IDL scalar primitive (integers, floats, bool, octet, char,
+        // wchar) is XCDR `IS_PRIMITIVE`. (LongDouble has no wire codec and is
+        // gated upstream, so it never reaches an array element here.)
+        TypeSpec::Primitive(_) => true,
+        TypeSpec::Scoped(s) => match lookup_scoped_kind(s) {
+            Some(ScopedKind::Typedef(inner)) => typespec_is_primitive(&inner),
+            // enum / bitmask / bitset / struct / union → non-primitive.
+            _ => false,
+        },
+        // string / wstring / sequence / array / map / any / fixed → non-primitive.
+        _ => false,
+    }
+}
+
+/// `true` if a fixed array needs an XCDR2 collection DHEADER, decided ONCE at
+/// the outermost dimension from the leaf element type (XTypes 1.3 §7.4.3.5 r8;
+/// cdr-core `composite.rs` PARRAY vs collection DHEADER).
 ///
-/// `patchUint32` writes the body-size value in stream endian
-/// (LE in the default configuration), matching the NEXTINT read
-/// order in the reader.
+/// A multi-dimensional **primitive** array (e.g. `long[2][3]`) is a PARRAY: the
+/// whole flattened body is `IS_PRIMITIVE`, so NO DHEADER is emitted on any
+/// dimension. Only a leaf element that is itself non-primitive (struct, enum,
+/// string, bitmask/bitset, …) frames the collection in a single DHEADER at the
+/// outer dimension — e.g. `Pt[2]`. The DHEADER is therefore a property of the
+/// leaf type, NOT of multi-dimensionality (the previous rule wrongly emitted a
+/// spurious DHEADER for `long[2][3]`).
+fn array_dim_needs_dheader(
+    t: &TypeSpec,
+    _sizes: &[zerodds_idl::ast::ConstExpr],
+    dim: usize,
+) -> bool {
+    // Only the outermost dimension carries the (single) collection DHEADER, and
+    // only when the leaf element is non-primitive.
+    dim == 0 && !typespec_is_primitive(t)
+}
+
+/// Recursively emits the fixed-count loops for `sizes[dim..]`, encoding the
+/// scalar/struct element at the innermost level. Wraps each dimension whose
+/// element is non-primitive in an XCDR2 DHEADER (`beginAppendable`).
+///
+/// zerodds-lint: recursion-depth 16 (array dimension count)
+fn emit_array_dim_encode(
+    out: &mut String,
+    t: &TypeSpec,
+    sizes: &[zerodds_idl::ast::ConstExpr],
+    expr: &str,
+    indent: &str,
+    dim: usize,
+) -> Result<(), IdlTsError> {
+    if dim >= sizes.len() {
+        // All dimensions consumed → encode the element value.
+        return emit_typespec_encode(out, t, expr, indent);
+    }
+    let n = eval_const_int(&sizes[dim]).ok_or_else(|| {
+        IdlTsError::Unsupported(alloc::format!(
+            "fixed-array dimension {dim} is not a constant integer"
+        ))
+    })?;
+    // DHEADER before the (flattened) array body when the element is non-prim.
+    let dheader = array_dim_needs_dheader(t, sizes, dim);
+    let atok = alloc::format!("_atok{}", next_encode_id());
+    if dheader {
+        out.push_str(&alloc::format!(
+            "{indent}const {atok} = w.beginAppendable();\n"
+        ));
+    }
+    let idx = alloc::format!("_a{dim}");
+    let elem = alloc::format!("{expr}[{idx}]");
+    out.push_str(&alloc::format!(
+        "{indent}for (let {idx} = 0; {idx} < {n}; {idx}++) {{\n"
+    ));
+    emit_array_dim_encode(out, t, sizes, &elem, &format!("{indent}    "), dim + 1)?;
+    out.push_str(&alloc::format!("{indent}}}\n"));
+    if dheader {
+        out.push_str(&alloc::format!("{indent}w.endAppendable({atok});\n"));
+    }
+    Ok(())
+}
+
+/// Selects the compact EMHEADER LengthCode (0..7) for a `@mutable` member,
+/// mirroring cdr-core `zerodds_idl_rust::struct_emit::mutable_member_length_code`
+/// (XTypes 1.3 §7.4.3.4.2, 2-vendor consensus: CycloneDDS / RTI / FastDDS):
+///
+///   - array declarator OR `@optional`  → LC4 (universal NEXTINT form)
+///   - primitive scalar 1/2/4/8 B       → LC0/LC1/LC2/LC3 (inline, NO NEXTINT)
+///   - string / wstring                 → LC5 (the body's own leading uint32
+///                                        length word IS reused as the NEXTINT;
+///                                        NO separate NEXTINT is serialized)
+///   - everything else (struct/union/   → LC4
+///     enum/seq/map/bitmask/bitset)
+///
+/// LC0..3 carry their body inline (the reader length-skips by the LC-implied
+/// fixed size). LC5 carries a variable body whose first 4 bytes (the string
+/// length prefix) double as the framing length. LC4 emits an explicit NEXTINT
+/// = body byte length, patched after the body is written.
+fn mutable_member_lc(t: &TypeSpec, d: &zerodds_idl::ast::Declarator, optional: bool) -> u32 {
+    use zerodds_idl::ast::Declarator;
+    if matches!(d, Declarator::Array(_)) || optional {
+        return 4;
+    }
+    if let Some(lc) = primitive_lc_inline(t) {
+        return lc; // 0..3 inline primitive
+    }
+    // FINDING T1b: a member whose XCDR2 body BEGINS WITH A 4-BYTE LENGTH WORD —
+    // a string/wstring length prefix, a non-primitive sequence / map DHEADER, or
+    // a nested @appendable/@mutable struct's DHEADER — uses LC5 to REUSE that
+    // word as the framing length (NO separate NEXTINT), matching CycloneDDS /
+    // RTI / FastDDS and the cdr-core Rust reference. A @final nested struct (no
+    // DHEADER) and a sequence<primitive> (bare element count, not a byte length)
+    // fall through to the universal LC4. Mirrors cdr-core
+    // `type_map::member_body_has_leading_dheader`.
+    if member_body_has_leading_dheader(t) {
+        return 5;
+    }
+    4
+}
+
+/// `true` if the XCDR2 serialized body of `t` begins with a 4-byte length word
+/// (a leading DHEADER or a string length prefix), so a `@mutable` member of this
+/// type uses EMHEADER LengthCode 5 (reuse that word as the framing NEXTINT).
+///
+/// Mirrors cdr-core `zerodds_idl_rust::type_map::member_body_has_leading_dheader`:
+///   * `string` / `wstring` — uint32 octet length prefix → true.
+///   * `map<K,V>` — always carries a DHEADER → true.
+///   * `sequence<E>` — true iff `E` is NON-primitive (a `sequence<primitive>`
+///     starts with a bare element count, not a byte length → false).
+///   * a nested struct — true iff its extensibility is `@appendable` / `@mutable`
+///     (those self-delimit with a leading DHEADER); a `@final` nested struct is
+///     tight-packed → false. A typedef inherits its alias' framing.
+///   * everything else (primitive / enum / bitmask / bitset / union / array /
+///     fixed / any) → false.
+///
+/// zerodds-lint: recursion-depth 16
+fn member_body_has_leading_dheader(t: &TypeSpec) -> bool {
+    match t {
+        TypeSpec::String(_) => true,
+        TypeSpec::Map(_) => true,
+        TypeSpec::Sequence(seq) => !typespec_is_primitive(&seq.elem),
+        TypeSpec::Scoped(s) => match lookup_scoped_kind(s) {
+            // A typedef-to-string/seq/map/struct inherits the alias' framing.
+            Some(ScopedKind::Typedef(inner)) => member_body_has_leading_dheader(&inner),
+            // A nested struct: leading DHEADER iff @appendable / @mutable.
+            Some(ScopedKind::Struct { extensibility }) => extensibility != "final",
+            // enum / bitmask / bitset / union → no leading length word.
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
+/// Produces a mutable-member encode with a compact EMHEADER1
+/// (XTypes 1.3 §7.4.3.4.2), byte-identical to the cross-vendor-validated
+/// Rust golden through `zerodds_cdr::struct_enc::encode_member_lc`.
+///
+/// The LengthCode is chosen by [`mutable_member_lc`]:
+///   - **LC0..3** (primitive): EMHEADER, then the inline 1/2/4/8-byte body.
+///     No NEXTINT, no patch — the LC fixes the body size.
+///   - **LC5** (string/wstring): EMHEADER, then the body whose own leading
+///     uint32 length word IS the framing length. No separate NEXTINT.
+///   - **LC4** (array/optional/aggregate): EMHEADER + a NEXTINT placeholder,
+///     then the body, then patch the NEXTINT = body byte length.
+///
+/// The member body is measured from its OWN alignment origin: cdr-core
+/// serialises each member relative to the body start (a fresh per-member
+/// writer that inherits XCDR2 max-align 4 but begins at offset 0), so inner
+/// 8-byte primitives never get a leading pad inside the EMHEADER frame. We
+/// mirror that with `pushAlignmentOrigin()` / `popAlignmentOrigin()`.
+#[allow(clippy::too_many_arguments)]
 fn emit_mutable_member_encode(
     out: &mut String,
     t: &TypeSpec,
+    d: &zerodds_idl::ast::Declarator,
     field: &str,
     id: u32,
     must: bool,
+    optional: bool,
     indent: &str,
 ) -> Result<(), IdlTsError> {
     let mu_str = if must { "true" } else { "false" };
-    if let Some(lc) = primitive_lc_inline(t) {
+    let lc = mutable_member_lc(t, d, optional);
+    out.push_str(&alloc::format!("{indent}{{\n"));
+    if lc == 4 {
+        // Universal NEXTINT form: EMHEADER(LC4) + NEXTINT(body-len) + body.
         out.push_str(&alloc::format!(
-            "{indent}w.writeEmHeader({id}, {lc}, {mu_str});\n"
-        ));
-        emit_typespec_encode(out, t, &alloc::format!("s.{field}"), indent)?;
-    } else {
-        // LC=3 NEXTINT form: EMHEADER + placeholder for body size,
-        // then the body, then patch the body size back.
-        // Per §6 V-10, LC=3 for a non-primitive member is overloaded
-        // with nextInt = body byte count.
-        out.push_str(&alloc::format!("{indent}{{\n"));
-        out.push_str(&alloc::format!(
-            "{indent}    w.writeEmHeader({id}, 3, {mu_str}, 0);\n"
+            "{indent}    w.writeEmHeader({id}, 4, {mu_str}, 0);\n"
         ));
         out.push_str(&alloc::format!("{indent}    const _bodyStart = w.pos;\n"));
-        emit_typespec_encode(
+        out.push_str(&alloc::format!("{indent}    w.pushAlignmentOrigin();\n"));
+        emit_declarator_encode(
             out,
             t,
+            d,
             &alloc::format!("s.{field}"),
             &format!("{indent}    "),
+            0,
         )?;
+        out.push_str(&alloc::format!("{indent}    w.popAlignmentOrigin();\n"));
         out.push_str(&alloc::format!(
             "{indent}    w.patchUint32(_bodyStart - 4, w.pos - _bodyStart);\n"
         ));
-        out.push_str(&alloc::format!("{indent}}}\n"));
+    } else {
+        // Compact form: EMHEADER(LC0..3/5), NO separate NEXTINT. The LC (or,
+        // for LC5, the body's own leading length word) frames the body.
+        out.push_str(&alloc::format!(
+            "{indent}    w.writeEmHeader({id}, {lc}, {mu_str});\n"
+        ));
+        // Body origin resets so an 8-byte primitive (LC3) needs no leading pad.
+        out.push_str(&alloc::format!("{indent}    w.pushAlignmentOrigin();\n"));
+        emit_declarator_encode(
+            out,
+            t,
+            d,
+            &alloc::format!("s.{field}"),
+            &format!("{indent}    "),
+            0,
+        )?;
+        out.push_str(&alloc::format!("{indent}    w.popAlignmentOrigin();\n"));
     }
+    out.push_str(&alloc::format!("{indent}}}\n"));
     Ok(())
 }
 
@@ -1894,12 +2182,38 @@ fn primitive_lc_inline(t: &TypeSpec) -> Option<u32> {
 #[derive(Clone)]
 enum ScopedKind {
     /// struct — encoded via its nested `TypeSupport.encodeInto`/`decodeFrom`.
-    Struct,
-    /// union — has no XCDR2 codec in idl-ts yet, so it is not codecable; a
-    /// struct that contains a union member is gated (no TypeSupport emitted).
+    /// Carries the struct's extensibility (`final`/`appendable`/`mutable`) so a
+    /// `@mutable` member referencing it can decide whether its body begins with
+    /// a leading DHEADER (appendable/mutable → LC5 EMHEADER) or not (final →
+    /// LC4). Mirrors cdr-core `member_body_has_leading_dheader`.
+    Struct { extensibility: &'static str },
+    /// union — encoded via its emitted `TypeSupport.encodeInto`/`decodeFrom`.
     Union,
-    /// enum/bitmask/bitset — int-like (int32 representation).
-    IntLike,
+    /// enum — SIGNED ordinal wire representation routed through the emitted
+    /// `<Enum>Ordinal` / `<Enum>FromOrdinal` maps (the TS surface type is a
+    /// string-literal union, NOT a number, so a bare numeric cast corrupts it).
+    /// `holder_bytes` ∈ {1,2,4} is the @bit_bound-selected wire width (XTypes
+    /// §7.4.5.1: N≤8 → 1, N≤16 → 2, else 4) — Cyclone honours it.
+    Enum { holder_bytes: u8 },
+    /// bitmask/bitset — encoded as an unsigned integer HOLDER whose width is
+    /// the smallest of {1,2,4,8} bytes that fits the declared bits (XTypes 1.3
+    /// §7.4.5: bitmask holder = smallest unit ≥ bit_bound; bitset holder =
+    /// smallest unit ≥ Σ bitfield widths). Mirrors cdr-core
+    /// `zerodds_idl_rust::bitset_emit::bitset_storage_type` (≤8→u8, ≤16→u16,
+    /// ≤32→u32, else u64). The `u8` payload is the holder width in BYTES, so
+    /// the codec picks writeOctet/writeUint16/writeUint32/writeUint64. The TS
+    /// surface type stays `number` (≤32-bit holder) / `bigint` (64-bit holder).
+    IntLike(u8),
+    /// bitset — the TS surface is a STRUCT of named bitfields (`{kind, prio}`),
+    /// but the wire is a single packed unsigned holder (XTypes 1.3 §7.4.5 /
+    /// IDL §7.4.13). The codec must pack each field at its declared bit offset
+    /// on encode and unpack on decode. Carries the holder width in BYTES and
+    /// the `(field_name, bit_offset, bit_width)` layout in declaration order.
+    /// cf. cdr-core `Flags { storage: u8 }` with `(storage>>off)&mask`.
+    Bitset {
+        holder_bytes: u8,
+        fields: Vec<(String, u32, u32)>,
+    },
     /// typedef — resolves to the aliased type.
     Typedef(TypeSpec),
 }
@@ -1909,31 +2223,155 @@ thread_local! {
     /// Keyed by simple (last) name. Lets the codec tell a nested composite from
     /// an enum and resolve typedefs (see `build_type_registry`).
     static TYPE_REG: RefCell<BTreeMap<String, ScopedKind>> = const { RefCell::new(BTreeMap::new()) };
+
+    /// Const-name → defining expression, for folding scoped/arithmetic const
+    /// references (`const M = N * 2`). Keyed by simple (last) name.
+    static CONST_VALUES: RefCell<BTreeMap<String, zerodds_idl::ast::ConstExpr>> =
+        const { RefCell::new(BTreeMap::new()) };
+
+    /// Enum-literal-name → ordinal, so a const/case-label expression that
+    /// references an enumerator folds to its integer ordinal.
+    static ENUM_LITERAL_VALUES: RefCell<BTreeMap<String, i64>> =
+        const { RefCell::new(BTreeMap::new()) };
+
+    /// Monotonic counter for encode-loop temporaries. Indentation depth alone is
+    /// NOT unique: two SIBLING collection members live in the same function
+    /// scope at the same depth, so a depth-keyed `_seqtok` would be `const`
+    /// re-declared and the file would not parse. A run-global counter makes
+    /// every emitted loop var / token globally unique.
+    static ENCODE_LOOP_SEQ: RefCell<u64> = const { RefCell::new(0) };
 }
 
-/// Populates [`TYPE_REG`] from the spec definitions (recursing modules).
+/// Returns a fresh, run-global suffix for an encode-loop temporary, guaranteeing
+/// uniqueness across nesting AND sibling collection members in one struct body.
+fn next_encode_id() -> u64 {
+    ENCODE_LOOP_SEQ.with(|c| {
+        let mut c = c.borrow_mut();
+        let id = *c;
+        *c += 1;
+        id
+    })
+}
+
+/// Returns the holder width in BYTES (1/2/4/8) for the given total bit count,
+/// matching cdr-core `zerodds_idl_rust::bitset_emit::bitset_storage_type`
+/// (≤8→u8/1B, ≤16→u16/2B, ≤32→u32/4B, else u64/8B). XTypes 1.3 §7.4.5.
+fn holder_bytes_for_bits(total_bits: u32) -> u8 {
+    match total_bits {
+        0..=8 => 1,
+        9..=16 => 2,
+        17..=32 => 4,
+        _ => 8,
+    }
+}
+
+/// Holder width (bytes) of an IDL `bitmask` = its effective `@bit_bound`
+/// rounded up to the smallest unit (XTypes 1.3 §7.3.1.2.1.1). The DEFAULT
+/// `@bit_bound` of a bitmask is **32** (→ UInt32/4-byte holder), NOT the count
+/// of declared bit values, so `Perm{READ,WRITE,EXEC}` (3 values, unannotated)
+/// is a 4-byte holder on the wire. Mirrors cdr-core
+/// `bitmask_bit_bound(...).unwrap_or(32)` + `bitset_storage_type`.
+fn bitmask_holder_bytes(b: &zerodds_idl::ast::BitmaskDecl) -> u8 {
+    let bit_bound = annotation_int_value(&b.annotations, "bit_bound")
+        .and_then(|v| u32::try_from(v).ok())
+        .unwrap_or(32);
+    holder_bytes_for_bits(bit_bound)
+}
+
+/// Holder width (bytes) of an IDL `bitset` = smallest unit ≥ Σ bitfield widths.
+/// `Flags{bitfield<3> kind; bitfield<5> prio;}` → 8 bits → 1 byte.
+fn bitset_holder_bytes(b: &zerodds_idl::ast::BitsetDecl) -> u8 {
+    let total: i64 = b
+        .bitfields
+        .iter()
+        .map(|f| eval_const_int(&f.spec.width).unwrap_or(0))
+        .sum();
+    holder_bytes_for_bits(total.max(0) as u32)
+}
+
+/// Computes the `(name, bit_offset, bit_width)` layout of an IDL `bitset`.
+/// Bitfields are packed least-significant-bit first in declaration order
+/// (IDL §7.4.13.4.3); an anonymous (`None`) padding bitfield still advances
+/// the running offset but contributes no named field. Matches cdr-core
+/// `set_<field>` shift offsets (e.g. `Flags`: kind@0/w3, prio@3/w5).
+fn bitset_field_layout(b: &zerodds_idl::ast::BitsetDecl) -> Vec<(String, u32, u32)> {
+    let mut layout = Vec::new();
+    let mut offset: u32 = 0;
+    for bf in &b.bitfields {
+        let width = eval_const_int(&bf.spec.width).unwrap_or(0).max(0) as u32;
+        if let Some(name) = &bf.name {
+            layout.push((name.text.clone(), offset, width));
+        }
+        offset += width;
+    }
+    layout
+}
+
+/// Populates [`TYPE_REG`], [`CONST_VALUES`], and [`ENUM_LITERAL_VALUES`] from
+/// the spec definitions (recursing modules).
 fn build_type_registry(defs: &[Definition]) {
     use zerodds_idl::ast::{ConstrTypeDecl, StructDcl, TypeDecl, UnionDcl};
     /// zerodds-lint: recursion-depth 64 (bounded by IDL nesting)
-    fn walk(defs: &[Definition], reg: &mut BTreeMap<String, ScopedKind>) {
+    fn walk(
+        defs: &[Definition],
+        reg: &mut BTreeMap<String, ScopedKind>,
+        consts: &mut BTreeMap<String, zerodds_idl::ast::ConstExpr>,
+        enum_lits: &mut BTreeMap<String, i64>,
+    ) {
         for def in defs {
             match def {
-                Definition::Module(m) => walk(&m.definitions, reg),
+                Definition::Module(m) => walk(&m.definitions, reg, consts, enum_lits),
+                Definition::Const(c) => {
+                    consts.insert(c.name.text.clone(), c.value.clone());
+                }
                 Definition::Type(TypeDecl::Constr(c)) => match c {
                     ConstrTypeDecl::Struct(StructDcl::Def(s)) => {
-                        reg.insert(s.name.text.clone(), ScopedKind::Struct);
+                        reg.insert(
+                            s.name.text.clone(),
+                            ScopedKind::Struct {
+                                extensibility: struct_extensibility(&s.annotations),
+                            },
+                        );
                     }
                     ConstrTypeDecl::Union(UnionDcl::Def(u)) => {
                         reg.insert(u.name.text.clone(), ScopedKind::Union);
                     }
                     ConstrTypeDecl::Enum(e) => {
-                        reg.insert(e.name.text.clone(), ScopedKind::IntLike);
+                        let eb = annotation_int_value(&e.annotations, "bit_bound")
+                            .filter(|&v| (1..=32).contains(&v))
+                            .unwrap_or(32);
+                        let holder_bytes: u8 = if eb <= 8 {
+                            1
+                        } else if eb <= 16 {
+                            2
+                        } else {
+                            4
+                        };
+                        reg.insert(e.name.text.clone(), ScopedKind::Enum { holder_bytes });
+                        // Record each enumerator's ordinal (with @value(N)
+                        // override) so a const/case-label can fold to it.
+                        let mut next: i64 = 0;
+                        for en in &e.enumerators {
+                            let val =
+                                annotation_int_value(&en.annotations, "value").unwrap_or(next);
+                            enum_lits.insert(en.name.text.clone(), val);
+                            next = val + 1;
+                        }
                     }
                     ConstrTypeDecl::Bitmask(b) => {
-                        reg.insert(b.name.text.clone(), ScopedKind::IntLike);
+                        reg.insert(
+                            b.name.text.clone(),
+                            ScopedKind::IntLike(bitmask_holder_bytes(b)),
+                        );
                     }
                     ConstrTypeDecl::Bitset(b) => {
-                        reg.insert(b.name.text.clone(), ScopedKind::IntLike);
+                        reg.insert(
+                            b.name.text.clone(),
+                            ScopedKind::Bitset {
+                                holder_bytes: bitset_holder_bytes(b),
+                                fields: bitset_field_layout(b),
+                            },
+                        );
                     }
                     _ => {}
                 },
@@ -1950,8 +2388,12 @@ fn build_type_registry(defs: &[Definition]) {
         }
     }
     let mut reg = BTreeMap::new();
-    walk(defs, &mut reg);
+    let mut consts = BTreeMap::new();
+    let mut enum_lits = BTreeMap::new();
+    walk(defs, &mut reg, &mut consts, &mut enum_lits);
     TYPE_REG.with(|r| *r.borrow_mut() = reg);
+    CONST_VALUES.with(|r| *r.borrow_mut() = consts);
+    ENUM_LITERAL_VALUES.with(|r| *r.borrow_mut() = enum_lits);
 }
 
 /// Looks up the codec kind of a scoped reference by its simple (last) name.
@@ -1976,13 +2418,15 @@ fn scoped_dotted(s: &ScopedName) -> String {
 /// zerodds-lint: recursion-depth 64 (bounded by IDL nesting)
 fn typespec_xcdr2_codecable(t: &TypeSpec) -> bool {
     match t {
-        TypeSpec::Fixed(_) | TypeSpec::Any => false,
+        // fixed<P,S> now has a wire codec (CORBA-BCD via writeFixedBcd/readFixedBcd);
+        // `any` still has none.
+        TypeSpec::Fixed(_) => true,
+        TypeSpec::Any => false,
         TypeSpec::Sequence(s) => typespec_xcdr2_codecable(&s.elem),
         TypeSpec::Map(m) => typespec_xcdr2_codecable(&m.key) && typespec_xcdr2_codecable(&m.value),
         TypeSpec::Scoped(s) => match lookup_scoped_kind(s) {
-            // Unions have no XCDR2 codec yet → a containing type is gated.
-            Some(ScopedKind::Union) => false,
             Some(ScopedKind::Typedef(inner)) => typespec_xcdr2_codecable(&inner),
+            // struct/union/enum/bitmask/bitset all have an XCDR2 codec.
             _ => true,
         },
         _ => true,
@@ -1994,6 +2438,121 @@ fn struct_xcdr2_codecable(s: &zerodds_idl::ast::StructDef) -> bool {
     s.members
         .iter()
         .all(|m| typespec_xcdr2_codecable(&m.type_spec))
+}
+
+/// Emits the write for a bitmask/bitset HOLDER of the given byte-width.
+/// 1→writeOctet (uint8), 2→writeUint16, 4→writeUint32, 8→writeUint64.
+/// The ≤4-byte surface type is `number`; the 8-byte holder is `bigint`
+/// (so we cast through `bigint`). Matches `int_holder_read_expr`.
+fn emit_int_holder_encode(out: &mut String, width: u8, expr: &str, indent: &str) {
+    match width {
+        1 => out.push_str(&alloc::format!(
+            "{indent}w.writeOctet({expr} as unknown as number);\n"
+        )),
+        2 => out.push_str(&alloc::format!(
+            "{indent}w.writeUint16({expr} as unknown as number);\n"
+        )),
+        8 => out.push_str(&alloc::format!(
+            "{indent}w.writeUint64({expr} as unknown as bigint);\n"
+        )),
+        // width == 4 (default for 17..=32 bits) and any unexpected value.
+        _ => out.push_str(&alloc::format!(
+            "{indent}w.writeUint32({expr} as unknown as number);\n"
+        )),
+    }
+}
+
+/// Read expression for a bitmask/bitset HOLDER of the given byte-width,
+/// symmetric with [`emit_int_holder_encode`].
+fn int_holder_read_expr(width: u8) -> String {
+    match width {
+        1 => "r.readOctet() as unknown as never".into(),
+        2 => "r.readUint16() as unknown as never".into(),
+        8 => "r.readUint64() as unknown as never".into(),
+        _ => "r.readUint32() as unknown as never".into(),
+    }
+}
+
+/// Emits the write for a bitset member: pack each named bitfield into one
+/// unsigned holder, then write the holder of `holder_bytes` width. A holder
+/// ≤4 bytes packs with `number` bit-ops (`>>> 0` to stay unsigned); an 8-byte
+/// holder packs with `BigInt`. Matches cdr-core `set_<field>` masks/shifts.
+fn emit_bitset_encode(
+    out: &mut String,
+    holder_bytes: u8,
+    fields: &[(String, u32, u32)],
+    expr: &str,
+    indent: &str,
+) {
+    if holder_bytes >= 8 {
+        // 64-bit holder: BigInt arithmetic; fields >32 bits are `bigint`, ≤32
+        // are `number` — coerce both via BigInt().
+        let mut packed = String::from("0n");
+        for (name, off, width) in fields {
+            let mask = (1u128 << width) - 1;
+            packed =
+                alloc::format!("({packed} | ((BigInt(({expr}).{name}) & 0x{mask:x}n) << {off}n))");
+        }
+        out.push_str(&alloc::format!(
+            "{indent}w.writeUint64(({packed}) as unknown as bigint);\n"
+        ));
+        return;
+    }
+    // ≤32-bit holder: number arithmetic, unsigned.
+    let mut packed = String::from("0");
+    for (name, off, width) in fields {
+        let mask = (1u64 << width) - 1;
+        packed = alloc::format!("({packed} | ((({expr}).{name} & 0x{mask:x}) << {off}))");
+    }
+    let write = match holder_bytes {
+        1 => "writeOctet",
+        2 => "writeUint16",
+        _ => "writeUint32",
+    };
+    out.push_str(&alloc::format!("{indent}w.{write}(({packed}) >>> 0);\n"));
+}
+
+/// Read expression for a bitset member: read the packed holder, unpack each
+/// named bitfield. Symmetric with [`emit_bitset_encode`]; produces an inline
+/// IIFE returning the bitset struct literal.
+fn bitset_read_expr(holder_bytes: u8, fields: &[(String, u32, u32)]) -> String {
+    if holder_bytes >= 8 {
+        let read = "r.readUint64()";
+        let mut obj = String::new();
+        for (i, (name, off, width)) in fields.iter().enumerate() {
+            let mask = (1u128 << width) - 1;
+            // A ≤32-bit field surfaces as `number`, >32-bit as `bigint`.
+            if *width > 32 {
+                obj.push_str(&alloc::format!("{name}: ((_h >> {off}n) & 0x{mask:x}n)"));
+            } else {
+                obj.push_str(&alloc::format!(
+                    "{name}: Number((_h >> {off}n) & 0x{mask:x}n)"
+                ));
+            }
+            if i + 1 < fields.len() {
+                obj.push_str(", ");
+            }
+        }
+        return alloc::format!(
+            "((): never => {{ const _h = {read}; return {{ {obj} }} as unknown as never; }})()"
+        );
+    }
+    let read = match holder_bytes {
+        1 => "r.readOctet()",
+        2 => "r.readUint16()",
+        _ => "r.readUint32()",
+    };
+    let mut obj = String::new();
+    for (i, (name, off, width)) in fields.iter().enumerate() {
+        let mask = (1u64 << width) - 1;
+        obj.push_str(&alloc::format!("{name}: ((_h >>> {off}) & 0x{mask:x})"));
+        if i + 1 < fields.len() {
+            obj.push_str(", ");
+        }
+    }
+    alloc::format!(
+        "((): never => {{ const _h = {read}; return {{ {obj} }} as unknown as never; }})()"
+    )
 }
 
 /// zerodds-lint: recursion-depth 64 (bounded by IDL nesting)
@@ -2046,7 +2605,15 @@ fn emit_typespec_encode(
                 };
             }
         },
-        TypeSpec::String(StringType { wide, .. }) => {
+        TypeSpec::String(StringType { wide, bound, .. }) => {
+            // §7.6.2: a bounded string<N> over N chars must error, not corrupt.
+            // The bound counts characters (code points), so compare against the
+            // string's code-point length, not its UTF-16 `.length`.
+            if let Some(n) = bound.as_ref().and_then(eval_const_int) {
+                out.push_str(&alloc::format!(
+                    "{indent}if ([...{expr}].length > {n}) {{ throw new RangeError(`bounded string over capacity {n}: ${{[...{expr}].length}}`); }}\n"
+                ));
+            }
             if *wide {
                 out.push_str(&alloc::format!("{indent}w.writeWString({expr});\n"));
             } else {
@@ -2057,53 +2624,147 @@ fn emit_typespec_encode(
             // XCDR2 §7.4.3.5: non-primitive elements (string, struct, …)
             // → DHEADER (uint32 = byte length of [count + elements]) in front;
             // primitives not. Cyclone-DDS-verified (V-5 without, V-6 with).
+            //
+            // Loop var + token names are suffixed by nesting depth (derived from
+            // `indent`) so a `sequence<sequence<…>>` (or seq nested in a map
+            // value) does NOT reuse `_e`/`_seqtok` — reuse produced
+            // `for (const _e of _e)` and corrupted/crashed the encode.
+            let d = next_encode_id();
+            let elem_var = alloc::format!("_e{d}");
+            let tok_var = alloc::format!("_seqtok{d}");
+            // §7.6.2: a bounded sequence over its bound must error, not corrupt.
+            if let Some(bound) = seq.bound.as_ref().and_then(eval_const_int) {
+                out.push_str(&alloc::format!(
+                    "{indent}if ({expr}.length > {bound}) {{ throw new RangeError(`bounded sequence over capacity {bound}: ${{{expr}.length}}`); }}\n"
+                ));
+            }
             let non_primitive = !matches!(&*seq.elem, TypeSpec::Primitive(_));
             if non_primitive {
                 out.push_str(&alloc::format!(
-                    "{indent}const _seqtok = w.beginAppendable();\n"
+                    "{indent}const {tok_var} = w.beginAppendable();\n"
                 ));
             }
             out.push_str(&alloc::format!("{indent}w.writeUint32({expr}.length);\n"));
-            out.push_str(&alloc::format!("{indent}for (const _e of {expr}) {{\n"));
-            emit_typespec_encode(out, &seq.elem, "_e", &format!("{indent}    "))?;
+            out.push_str(&alloc::format!(
+                "{indent}for (const {elem_var} of {expr}) {{\n"
+            ));
+            emit_typespec_encode(out, &seq.elem, &elem_var, &format!("{indent}    "))?;
             out.push_str(&alloc::format!("{indent}}}\n"));
             if non_primitive {
-                out.push_str(&alloc::format!("{indent}w.endAppendable(_seqtok);\n"));
+                out.push_str(&alloc::format!("{indent}w.endAppendable({tok_var});\n"));
             }
         }
         TypeSpec::Map(map) => {
-            // Map -> sequence of (key, value) pairs (count + entries).
-            out.push_str(&alloc::format!("{indent}w.writeUint32({expr}.size);\n"));
+            // XCDR2 MAP_TYPE (XTypes 1.3 §7.4.3.5.3 rule (15), §7.4.4.6):
+            // `DHEADER + u32 count + (key, value)*`. The DHEADER (byte length
+            // of [count + pairs]) frames the whole map — same as the cdr-core
+            // `BTreeMap` `CdrEncode` impl (`crates/cdr/src/composite.rs`
+            // `write_with_dheader` under `max_alignment() == XCDR2_MAX_ALIGNMENT`).
+            //
+            // Entries are emitted in KEY-SORTED order to match the cdr-core
+            // reference (BTreeMap iteration is key-sorted, hence reproducible
+            // and cross-PSM byte-identical). String keys sort by UTF-8 bytes
+            // (BTreeMap `Ord` on `String`); numeric keys sort numerically.
+            //
+            // Depth-suffixed loop/sort vars (see Sequence above) keep nested
+            // maps / map-in-seq from clobbering `_k`/`_v`.
+            let d = next_encode_id();
+            let k_var = alloc::format!("_k{d}");
+            let v_var = alloc::format!("_v{d}");
+            let entries_var = alloc::format!("_ment{d}");
+            // §7.6.2: a bounded map over its bound must error, not corrupt.
+            if let Some(bound) = map.bound.as_ref().and_then(eval_const_int) {
+                out.push_str(&alloc::format!(
+                    "{indent}if ({expr}.size > {bound}) {{ throw new RangeError(`bounded map over capacity {bound}: ${{{expr}.size}}`); }}\n"
+                ));
+            }
+            // Key-sorted entry list. For string keys compare by UTF-8 bytes
+            // (matches Rust `String` Ord); for numeric keys compare numerically.
+            let key_is_string = matches!(&*map.key, TypeSpec::String(_));
+            let cmp = if key_is_string {
+                // Encode both keys to UTF-8 and compare byte-wise.
+                "((a, b) => { const _ea = new TextEncoder().encode(String(a[0])); const _eb = new TextEncoder().encode(String(b[0])); const _m = Math.min(_ea.length, _eb.length); for (let _j = 0; _j < _m; _j++) { if (_ea[_j] !== _eb[_j]) return _ea[_j] - _eb[_j]; } return _ea.length - _eb.length; })"
+            } else {
+                "((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))"
+            };
             out.push_str(&alloc::format!(
-                "{indent}for (const [_k, _v] of {expr}) {{\n"
+                "{indent}const {entries_var} = [...{expr}].sort({cmp});\n"
             ));
-            emit_typespec_encode(out, &map.key, "_k", &format!("{indent}    "))?;
-            emit_typespec_encode(out, &map.value, "_v", &format!("{indent}    "))?;
+            // XCDR2 §7.4.3.5: a map carries a DHEADER only when its element
+            // (key,value pair) is NON-primitive — i.e. at least one of key/value
+            // is non-primitive. `map<long,long>` (both primitive) gets NO DHEADER,
+            // matching cdr-core `needs_collection_dheader(.., K::IS_PRIMITIVE &&
+            // V::IS_PRIMITIVE)` and FastDDS/OpenDDS. (Mirrors arrays above.)
+            let map_dheader =
+                !(typespec_is_primitive(&map.key) && typespec_is_primitive(&map.value));
+            let dtok_var = alloc::format!("_maptok{d}");
+            if map_dheader {
+                out.push_str(&alloc::format!(
+                    "{indent}const {dtok_var} = w.beginAppendable();\n"
+                ));
+            }
+            out.push_str(&alloc::format!(
+                "{indent}w.writeUint32({entries_var}.length);\n"
+            ));
+            out.push_str(&alloc::format!(
+                "{indent}for (const [{k_var}, {v_var}] of {entries_var}) {{\n"
+            ));
+            emit_typespec_encode(out, &map.key, &k_var, &format!("{indent}    "))?;
+            emit_typespec_encode(out, &map.value, &v_var, &format!("{indent}    "))?;
             out.push_str(&alloc::format!("{indent}}}\n"));
+            if map_dheader {
+                out.push_str(&alloc::format!("{indent}w.endAppendable({dtok_var});\n"));
+            }
         }
         TypeSpec::Scoped(s) => match lookup_scoped_kind(s) {
             // Nested struct → encode its body into the shared writer
             // (alignment stays relative to the outer CDR stream).
-            Some(ScopedKind::Struct) => {
+            Some(ScopedKind::Struct { .. }) => {
                 out.push_str(&alloc::format!(
                     "{indent}{}TypeSupport.encodeInto(w, {expr});\n",
                     scoped_dotted(s)
                 ));
             }
-            // Union has no XCDR2 codec; a struct containing one is gated, so
-            // this arm is unreachable — guard it as a codegen error rather than
-            // emitting a broken reference.
+            // Nested union → encode via its emitted TypeSupport (shared writer).
             Some(ScopedKind::Union) => {
-                return Err(IdlTsError::Unsupported(alloc::format!(
-                    "XCDR2 codec for union member '{}' is not supported",
+                out.push_str(&alloc::format!(
+                    "{indent}{}TypeSupport.encodeInto(w, {expr});\n",
                     scoped_dotted(s)
-                )));
+                ));
+            }
+            // Enum → int32 of the ordinal. The TS surface type is a
+            // string-literal union, so write the ordinal from the emitted
+            // `<Enum>Ordinal` map, NOT a bare numeric cast (which corrupts it).
+            Some(ScopedKind::Enum { holder_bytes }) => {
+                let wm = match holder_bytes {
+                    1 => "writeInt8",
+                    2 => "writeInt16",
+                    _ => "writeInt32",
+                };
+                out.push_str(&alloc::format!(
+                    "{indent}w.{wm}({}Ordinal[{expr}]);\n",
+                    scoped_dotted(s)
+                ));
             }
             // Typedef → encode the aliased type.
             Some(ScopedKind::Typedef(inner)) => {
                 emit_typespec_encode(out, &inner, expr, indent)?;
             }
-            // enum/bitmask/bitset (int32 representation) or unresolved ref.
+            // bitmask → unsigned holder of the type's width (XTypes §7.4.5).
+            // Width comes from the registry (cdr-core sizing), so a 3-value
+            // bitmask is 1 byte, not int32. cf. `bits` golden (perm).
+            Some(ScopedKind::IntLike(width)) => {
+                emit_int_holder_encode(out, width, expr, indent);
+            }
+            // bitset → pack the named bitfields into one unsigned holder, then
+            // write the holder of the type's width. cf. `bits` golden (flags).
+            Some(ScopedKind::Bitset {
+                holder_bytes,
+                fields,
+            }) => {
+                emit_bitset_encode(out, holder_bytes, &fields, expr, indent);
+            }
+            // Unresolved ref (forward-declared / external) → 32-bit fallback.
             _ => {
                 out.push_str(&alloc::format!(
                     "{indent}w.writeInt32({expr} as unknown as number);\n"
@@ -2118,9 +2779,14 @@ fn emit_typespec_encode(
                 "XCDR2 encode for `any` member is not supported".into(),
             ));
         }
-        TypeSpec::Fixed(_) => {
-            return Err(IdlTsError::Unsupported(
-                "XCDR2 encode for `fixed` member is not supported".into(),
+        TypeSpec::Fixed(f) => {
+            // fixed<P,S>: CORBA/GIOP §9.3.2.7 packed BCD (the decimal `string`
+            // field -> (P+2)/2 octets via the runtime helper). No alignment, no
+            // length prefix, endian-independent.
+            let p = eval_const_int(&f.digits).unwrap_or(0);
+            let s = eval_const_int(&f.scale).unwrap_or(0);
+            out.push_str(&alloc::format!(
+                "{indent}w.writeFixedBcd({expr}, {p}, {s});\n"
             ));
         }
     }
@@ -2158,19 +2824,64 @@ fn emit_struct_decode_body(
             // Default initialization; fields are set via the EMHEADER loop.
             for m in &s.members {
                 let optional = has_annotation(&m.annotations, "optional");
+                let base_ts = typespec_to_ts(&m.type_spec)?;
                 for d in &m.declarators {
                     let field = d.name().text.clone();
+                    let is_array = matches!(d, zerodds_idl::ast::Declarator::Array(_));
                     let init = if optional {
                         "undefined".into()
+                    } else if is_array {
+                        // A fixed array defaults to an empty `Array<…>`.
+                        "[] as unknown as undefined".into()
                     } else {
                         default_init_for(&m.type_spec)
                     };
-                    let ts_ty = typespec_to_ts(&m.type_spec)?;
+                    let ts_ty = wrap_with_array_dimensions(&base_ts, d);
                     out.push_str(&alloc::format!(
                         "{indent}let _f_{field}: {ts_ty} | undefined = {init};\n"
                     ));
                 }
             }
+            // XCDR1 (classic CDR): @mutable is PL_CDR1 — a [PID][length] list with
+            // no outer DHEADER, each member body member-relative aligned. Emit it
+            // alongside the XCDR2 EMHEADER loop, gated on the reader representation.
+            out.push_str(&alloc::format!("{indent}if (r.isXcdr1) {{\n"));
+            out.push_str(&alloc::format!(
+                "{indent}    let _plm: {{ memberId: number; bodyEnd: number }} | null;\n"
+            ));
+            out.push_str(&alloc::format!(
+                "{indent}    while ((_plm = r.beginPlCdr1Member()) !== null) {{\n"
+            ));
+            out.push_str(&alloc::format!(
+                "{indent}        switch (_plm.memberId) {{\n"
+            ));
+            {
+                let mut next_id1: i64 = 0;
+                for m in &s.members {
+                    let id_override = annotation_int_value(&m.annotations, "id");
+                    let base_ts = typespec_to_ts(&m.type_spec)?;
+                    for d in &m.declarators {
+                        let id = id_override.unwrap_or(next_id1);
+                        next_id1 = id + 1;
+                        let field = d.name().text.clone();
+                        let ts_ty = wrap_with_array_dimensions(&base_ts, d);
+                        out.push_str(&alloc::format!("{indent}        case {id}: {{\n"));
+                        out.push_str(&alloc::format!("{indent}            const _v: {ts_ty} = "));
+                        let read_expr = read_declarator_expr(&m.type_spec, d, &base_ts)?;
+                        out.push_str(&alloc::format!("{read_expr};\n"));
+                        out.push_str(&alloc::format!("{indent}            _f_{field} = _v;\n"));
+                        out.push_str(&alloc::format!("{indent}            break;\n"));
+                        out.push_str(&alloc::format!("{indent}        }}\n"));
+                    }
+                }
+            }
+            out.push_str(&alloc::format!("{indent}        default: break;\n"));
+            out.push_str(&alloc::format!("{indent}        }}\n"));
+            out.push_str(&alloc::format!(
+                "{indent}        r.endPlCdr1Member(_plm);\n"
+            ));
+            out.push_str(&alloc::format!("{indent}    }}\n"));
+            out.push_str(&alloc::format!("{indent}}} else {{\n"));
             out.push_str(&alloc::format!("{indent}const _tok = r.beginMutable();\n"));
             out.push_str(&alloc::format!("{indent}while (r.pos < _tok.bodyEnd) {{\n"));
             out.push_str(&alloc::format!(
@@ -2180,10 +2891,12 @@ fn emit_struct_decode_body(
             let mut next_id: i64 = 0;
             for m in &s.members {
                 let id_override = annotation_int_value(&m.annotations, "id");
+                let base_ts = typespec_to_ts(&m.type_spec)?;
                 for d in &m.declarators {
                     let id = id_override.unwrap_or(next_id);
                     next_id = id + 1;
                     let field = d.name().text.clone();
+                    let is_array = matches!(d, zerodds_idl::ast::Declarator::Array(_));
                     out.push_str(&alloc::format!("{indent}        case {id}: {{\n"));
                     // EMHEADER+NEXTINT-Skip:
                     // - Primitives (LC=0..3 inline) need nothing.
@@ -2191,15 +2904,17 @@ fn emit_struct_decode_body(
                     //   after the EMHEADER (zerodds-xcdr2-bindings-
                     //   conformance-1.0 §6 V-10) — we discard it because
                     //   read_typespec_expr reads the body directly.
+                    // - A fixed-array member is always written in the LC=3
+                    //   NEXTINT form (TS-cluster #2), never inline.
                     // - LC>=4 is already consumed in readEmHeader.
-                    if primitive_lc_inline(&m.type_spec).is_none() {
+                    if is_array || primitive_lc_inline(&m.type_spec).is_none() {
                         out.push_str(&alloc::format!(
                             "{indent}            if (_emh.lc === 3) {{ r.readUint32(); }}\n"
                         ));
                     }
-                    let ts_ty = typespec_to_ts(&m.type_spec)?;
+                    let ts_ty = wrap_with_array_dimensions(&base_ts, d);
                     out.push_str(&alloc::format!("{indent}            const _v: {ts_ty} = "));
-                    let read_expr = read_typespec_expr(&m.type_spec)?;
+                    let read_expr = read_declarator_expr(&m.type_spec, d, &base_ts)?;
                     out.push_str(&alloc::format!("{read_expr};\n"));
                     out.push_str(&alloc::format!("{indent}            _f_{field} = _v;\n"));
                     out.push_str(&alloc::format!("{indent}            break;\n"));
@@ -2214,6 +2929,9 @@ fn emit_struct_decode_body(
                 "{indent}            if (_emh.nextInt !== null) {{ r.readBytes(_emh.nextInt); }}\n"
             ));
             out.push_str(&alloc::format!(
+                "{indent}            else if (_emh.lc >= 5) {{ const _len = r.readUint32(); r.readBytes(_len); }}\n"
+            ));
+            out.push_str(&alloc::format!(
                 "{indent}            else {{ const _sz = Xcdr2Reader.lcInlineSize(_emh.lc); if (_sz > 0) r.readBytes(_sz); }}\n"
             ));
             out.push_str(&alloc::format!("{indent}            break;\n"));
@@ -2221,10 +2939,12 @@ fn emit_struct_decode_body(
             out.push_str(&alloc::format!("{indent}    }}\n"));
             out.push_str(&alloc::format!("{indent}}}\n"));
             out.push_str(&alloc::format!("{indent}r.endMutable(_tok);\n"));
+            out.push_str(&alloc::format!("{indent}}}\n")); // close `else` (XCDR2 path)
             // Build the return object from _f_* variables.
             out.push_str(&alloc::format!("{indent}return {{\n"));
             for m in &s.members {
                 let optional = has_annotation(&m.annotations, "optional");
+                let base_ts = typespec_to_ts(&m.type_spec)?;
                 for d in &m.declarators {
                     let field = d.name().text.clone();
                     if optional {
@@ -2232,7 +2952,7 @@ fn emit_struct_decode_body(
                     } else {
                         out.push_str(&alloc::format!(
                             "{indent}    {field}: _f_{field} as {},\n",
-                            typespec_to_ts(&m.type_spec)?
+                            wrap_with_array_dimensions(&base_ts, d)
                         ));
                     }
                 }
@@ -2276,9 +2996,13 @@ fn emit_member_decode_decl(
     indent: &str,
 ) -> Result<(), IdlTsError> {
     let optional = has_annotation(&m.annotations, "optional");
+    let base_ts = typespec_to_ts(&m.type_spec)?;
     for d in &m.declarators {
         let field = d.name().text.clone();
-        let ts_ty = typespec_to_ts(&m.type_spec)?;
+        // TS-cluster #2: a fixed-array declarator widens the member type to
+        // `Array<…>` per dimension and reads element-by-element with no length
+        // prefix — mirror the declared shape.
+        let ts_ty = wrap_with_array_dimensions(&base_ts, d);
         if optional {
             out.push_str(&alloc::format!(
                 "{indent}const _present_{field} = r.readOctet();\n"
@@ -2286,15 +3010,67 @@ fn emit_member_decode_decl(
             out.push_str(&alloc::format!(
                 "{indent}const _f_{field}: {ts_ty} | undefined = _present_{field} === 1 ? "
             ));
-            let expr = read_typespec_expr(&m.type_spec)?;
+            let expr = read_declarator_expr(&m.type_spec, d, &base_ts)?;
             out.push_str(&alloc::format!("{expr} : undefined;\n"));
         } else {
             out.push_str(&alloc::format!("{indent}const _f_{field}: {ts_ty} = "));
-            let expr = read_typespec_expr(&m.type_spec)?;
+            let expr = read_declarator_expr(&m.type_spec, d, &base_ts)?;
             out.push_str(&alloc::format!("{expr};\n"));
         }
     }
     Ok(())
+}
+
+/// Returns the read-expression for a struct member honouring the declarator's
+/// fixed-array dimensions (TS-cluster #2). `Declarator::Simple` falls through to
+/// `read_typespec_expr`; a fixed array builds nested IIFE loops that read
+/// exactly the declared count per dimension (no length prefix).
+fn read_declarator_expr(
+    t: &TypeSpec,
+    d: &zerodds_idl::ast::Declarator,
+    base_ts: &str,
+) -> Result<String, IdlTsError> {
+    use zerodds_idl::ast::Declarator;
+    match d {
+        Declarator::Simple(_) => read_typespec_expr(t),
+        Declarator::Array(arr) => read_array_dim_expr(t, &arr.sizes, base_ts, 0),
+    }
+}
+
+/// Builds the nested fixed-count read IIFE for `sizes[dim..]`.
+///
+/// zerodds-lint: recursion-depth 16 (array dimension count)
+fn read_array_dim_expr(
+    t: &TypeSpec,
+    sizes: &[zerodds_idl::ast::ConstExpr],
+    base_ts: &str,
+    dim: usize,
+) -> Result<String, IdlTsError> {
+    if dim >= sizes.len() {
+        return read_typespec_expr(t);
+    }
+    let n = eval_const_int(&sizes[dim]).ok_or_else(|| {
+        IdlTsError::Unsupported(alloc::format!(
+            "fixed-array dimension {dim} is not a constant integer"
+        ))
+    })?;
+    // The element TS type at this depth is `base` wrapped by the remaining dims.
+    let mut elem_ts = base_ts.to_string();
+    for _ in (dim + 1)..sizes.len() {
+        elem_ts = alloc::format!("Array<{elem_ts}>");
+    }
+    let inner = read_array_dim_expr(t, sizes, base_ts, dim + 1)?;
+    // Symmetric with the encode side: consume a DHEADER when the element at
+    // this dimension is non-primitive (`beginAppendable`/`endAppendable`).
+    if array_dim_needs_dheader(t, sizes, dim) {
+        Ok(alloc::format!(
+            "((): Array<{elem_ts}> => {{ const _adt = r.beginAppendable(); const _o: Array<{elem_ts}> = []; for (let _i = 0; _i < {n}; _i++) {{ _o.push({inner}); }} r.endAppendable(_adt); return _o; }})()"
+        ))
+    } else {
+        Ok(alloc::format!(
+            "((): Array<{elem_ts}> => {{ const _o: Array<{elem_ts}> = []; for (let _i = 0; _i < {n}; _i++) {{ _o.push({inner}); }} return _o; }})()"
+        ))
+    }
 }
 
 /// Generates the `return { ... }` statement from the `_f_*` variables.
@@ -2378,30 +3154,61 @@ fn read_typespec_expr(t: &TypeSpec) -> Result<String, IdlTsError> {
             }
         }
         TypeSpec::Map(map) => {
+            // XCDR2 §7.4.3.5: the map is framed by a DHEADER ONLY when its
+            // (key,value) element is non-primitive. A `map<long,long>` (both
+            // primitive) has NO DHEADER — read count + pairs directly. Matches
+            // the encode side above + cdr-core `needs_collection_dheader`.
             let k_ts = typespec_to_ts(&map.key)?;
             let v_ts = typespec_to_ts(&map.value)?;
             let k_read = read_typespec_expr(&map.key)?;
             let v_read = read_typespec_expr(&map.value)?;
-            alloc::format!(
-                "((): ReadonlyMap<{k_ts}, {v_ts}> => {{ const _n = r.readUint32(); const _o = new Map<{k_ts}, {v_ts}>(); for (let _i = 0; _i < _n; _i++) {{ const _k = {k_read}; const _v = {v_read}; _o.set(_k, _v); }} return _o; }})()"
-            )
+            let map_dheader =
+                !(typespec_is_primitive(&map.key) && typespec_is_primitive(&map.value));
+            if map_dheader {
+                alloc::format!(
+                    "((): ReadonlyMap<{k_ts}, {v_ts}> => {{ const _mt = r.beginAppendable(); const _n = r.readUint32(); const _o = new Map<{k_ts}, {v_ts}>(); for (let _i = 0; _i < _n; _i++) {{ const _k = {k_read}; const _v = {v_read}; _o.set(_k, _v); }} r.endAppendable(_mt); return _o; }})()"
+                )
+            } else {
+                alloc::format!(
+                    "((): ReadonlyMap<{k_ts}, {v_ts}> => {{ const _n = r.readUint32(); const _o = new Map<{k_ts}, {v_ts}>(); for (let _i = 0; _i < _n; _i++) {{ const _k = {k_read}; const _v = {v_read}; _o.set(_k, _v); }} return _o; }})()"
+                )
+            }
         }
         TypeSpec::Scoped(s) => match lookup_scoped_kind(s) {
             // Nested struct → decode its body from the shared reader.
-            Some(ScopedKind::Struct) => {
+            Some(ScopedKind::Struct { .. }) => {
                 alloc::format!("{}TypeSupport.decodeFrom(r)", scoped_dotted(s))
             }
-            // Union has no XCDR2 codec; the containing struct is gated, so this
-            // is unreachable — guard it rather than emit a broken reference.
+            // Nested union → decode via its emitted TypeSupport.
             Some(ScopedKind::Union) => {
-                return Err(IdlTsError::Unsupported(alloc::format!(
-                    "XCDR2 codec for union member '{}' is not supported",
+                alloc::format!("{}TypeSupport.decodeFrom(r)", scoped_dotted(s))
+            }
+            // Enum → read the int32 ordinal and map it back to the string member
+            // via the emitted `<Enum>FromOrdinal` map (cf. encode).
+            Some(ScopedKind::Enum { holder_bytes }) => {
+                let rm = match holder_bytes {
+                    1 => "readInt8",
+                    2 => "readInt16",
+                    _ => "readInt32",
+                };
+                alloc::format!(
+                    "({}FromOrdinal.get(r.{rm}()) as {})",
+                    scoped_dotted(s),
                     scoped_dotted(s)
-                )));
+                )
             }
             // Typedef → decode the aliased type.
             Some(ScopedKind::Typedef(inner)) => read_typespec_expr(&inner)?,
-            // enum/bitmask/bitset (int32 representation) or unresolved ref.
+            // bitmask → unsigned holder of the type's width (XTypes §7.4.5),
+            // symmetric with `emit_int_holder_encode`.
+            Some(ScopedKind::IntLike(width)) => int_holder_read_expr(width),
+            // bitset → read the packed unsigned holder, then unpack each named
+            // bitfield, symmetric with `emit_bitset_encode`.
+            Some(ScopedKind::Bitset {
+                holder_bytes,
+                fields,
+            }) => bitset_read_expr(holder_bytes, &fields),
+            // Unresolved ref (forward-declared / external) → 32-bit fallback.
             _ => "r.readInt32() as unknown as never".into(),
         },
         // `any`/`fixed`: unreachable (a containing struct is gated); guard as a
@@ -2411,10 +3218,12 @@ fn read_typespec_expr(t: &TypeSpec) -> Result<String, IdlTsError> {
                 "XCDR2 decode for `any` member is not supported".into(),
             ));
         }
-        TypeSpec::Fixed(_) => {
-            return Err(IdlTsError::Unsupported(
-                "XCDR2 decode for `fixed` member is not supported".into(),
-            ));
+        TypeSpec::Fixed(f) => {
+            // fixed<P,S>: read (P+2)/2 packed-BCD octets back into the decimal
+            // `string` field via the runtime helper.
+            let p = eval_const_int(&f.digits).unwrap_or(0);
+            let s = eval_const_int(&f.scale).unwrap_or(0);
+            alloc::format!("r.readFixedBcd({p}, {s})")
         }
     })
 }
@@ -2432,7 +3241,14 @@ fn emit_struct_keyhash_body(
         }
         for d in &m.declarators {
             let field = d.name().text.clone();
-            emit_typespec_encode(out, &m.type_spec, &alloc::format!("s.{field}"), indent)?;
+            emit_declarator_encode(
+                out,
+                &m.type_spec,
+                d,
+                &alloc::format!("s.{field}"),
+                indent,
+                0,
+            )?;
         }
     }
     Ok(())
@@ -2583,6 +3399,7 @@ fn emit_union(out: &mut String, u: &zerodds_idl::ast::UnionDef) -> Result<(), Id
     out.push_str(";\n\n");
 
     emit_union_descriptor(out, u, disc_broad)?;
+    emit_union_typesupport(out, u)?;
 
     Ok(())
 }
@@ -2660,11 +3477,16 @@ fn emit_union_with_enum_discriminator(
                     } else {
                         alloc::format!("{enum_name}.{qual}")
                     };
-                    explicit_labels.push(disc_str.clone());
+                    // The enum surface is an `as const` object + string-literal
+                    // union, NOT a TS `enum`, so `Kind.K_A` is a *value*. In type
+                    // position we need `typeof Kind.K_A` (which is the literal
+                    // string member type) — a bare `Kind.K_A` is a TS2702 error.
+                    let type_disc = alloc::format!("typeof {disc_str}");
+                    explicit_labels.push(type_disc.clone());
                     let elem_ts = typespec_to_ts(&case.element.type_spec)?;
                     let field_name = case.element.declarator.name().text.clone();
                     out.push_str(&alloc::format!(
-                        "{prefix}{{ discriminator: {disc_str}; {field_name}: {elem_ts} }}\n"
+                        "{prefix}{{ discriminator: {type_disc}; {field_name}: {elem_ts} }}\n"
                     ));
                     emitted_label = true;
                 }
@@ -2699,6 +3521,7 @@ fn emit_union_with_enum_discriminator(
     out.push_str(";\n\n");
 
     emit_union_descriptor(out, u, enum_name)?;
+    emit_union_typesupport(out, u)?;
     Ok(())
 }
 
@@ -2806,6 +3629,303 @@ fn emit_union_descriptor(
     out.push_str("}\n\n");
 
     out.push_str(&alloc::format!("registerType({name}Type);\n\n"));
+    Ok(())
+}
+
+/// Maps a union `SwitchTypeSpec` to the equivalent member `TypeSpec`, so the
+/// discriminator can reuse the scalar encode/decode paths.
+fn switch_type_to_typespec(sw: &zerodds_idl::ast::SwitchTypeSpec) -> TypeSpec {
+    use zerodds_idl::ast::SwitchTypeSpec;
+    match sw {
+        SwitchTypeSpec::Integer(i) => TypeSpec::Primitive(PrimitiveType::Integer(*i)),
+        SwitchTypeSpec::Char => TypeSpec::Primitive(PrimitiveType::Char),
+        SwitchTypeSpec::Boolean => TypeSpec::Primitive(PrimitiveType::Boolean),
+        SwitchTypeSpec::Octet => TypeSpec::Primitive(PrimitiveType::Octet),
+        SwitchTypeSpec::Scoped(s) => TypeSpec::Scoped(s.clone()),
+    }
+}
+
+/// Renders a case-label as the TS runtime value used for `===` dispatch in the
+/// union codec. Enum-discriminator labels render as the qualified enum member
+/// (`Enum.MEMBER`); integer/char/boolean labels render as the literal.
+fn render_codec_label(
+    sw: &zerodds_idl::ast::SwitchTypeSpec,
+    expr: &zerodds_idl::ast::ConstExpr,
+) -> Option<String> {
+    use zerodds_idl::ast::{ConstExpr, SwitchTypeSpec};
+    if let SwitchTypeSpec::Scoped(enum_ref) = sw {
+        // Enum discriminator: a scoped label is `Enum.MEMBER`; a bare ordinal
+        // resolves to the member name via the enum-literal registry.
+        let enum_name = enum_ref
+            .parts
+            .iter()
+            .map(|p| p.text.clone())
+            .collect::<Vec<_>>()
+            .join(".");
+        if let ConstExpr::Scoped(s) = expr {
+            let qual = s
+                .parts
+                .iter()
+                .map(|p| p.text.clone())
+                .collect::<Vec<_>>()
+                .join(".");
+            return Some(if qual.contains('.') {
+                qual
+            } else {
+                alloc::format!("{enum_name}.{qual}")
+            });
+        }
+    }
+    // For broad/char/boolean discriminators reuse the per-arm literal renderer
+    // (it already folds scoped consts and renders char/bool correctly).
+    let disc_broad = match sw {
+        SwitchTypeSpec::Integer(_) | SwitchTypeSpec::Octet => "number",
+        SwitchTypeSpec::Char => "Char",
+        SwitchTypeSpec::Boolean => "boolean",
+        SwitchTypeSpec::Scoped(_) => "number",
+    };
+    render_label_for(disc_broad, expr)
+}
+
+/// Emits `<Name>TypeSupport: DdsTopicType<<Name>>` for an IDL union
+/// (TS-cluster #1). The wire form (zerodds-xcdr2-ts-1.0 §5) is: an optional
+/// DHEADER (for @appendable/@mutable extensibility), the discriminator in its
+/// scalar XCDR2 form, then the single selected branch member. On decode the
+/// discriminator value selects which branch to read (default branch otherwise).
+fn emit_union_typesupport(
+    out: &mut String,
+    u: &zerodds_idl::ast::UnionDef,
+) -> Result<(), IdlTsError> {
+    use zerodds_idl::ast::CaseLabel;
+    let name = &u.name.text;
+    let extensibility = struct_extensibility(&u.annotations);
+    let disc_ts = switch_type_to_typespec(&u.switch_type);
+    let wrap = matches!(extensibility, "appendable" | "mutable");
+
+    out.push_str(&alloc::format!(
+        "export const {name}TypeSupport: DdsTopicType<{name}> = {{\n"
+    ));
+    out.push_str(&alloc::format!("    typeName: \"{name}\",\n"));
+    out.push_str("    isKeyed: false,\n");
+    out.push_str(&alloc::format!("    extensibility: \"{extensibility}\",\n"));
+
+    // === encodeInto ===
+    out.push_str(&alloc::format!(
+        "    encodeInto(w: Xcdr2Writer, s: {name}): void {{\n"
+    ));
+    if wrap {
+        out.push_str("        const _tok = w.beginAppendable();\n");
+    }
+    // Discriminator first (enum disc routes through its ordinal map).
+    emit_typespec_encode(out, &disc_ts, "s.discriminator", "        ")?;
+    // Branch dispatch.
+    let mut first = true;
+    let mut default_case: Option<&zerodds_idl::ast::Case> = None;
+    for case in &u.cases {
+        let mut labels: Vec<String> = Vec::new();
+        let mut is_default = false;
+        for label in &case.labels {
+            match label {
+                CaseLabel::Default => is_default = true,
+                CaseLabel::Value(expr) => {
+                    if let Some(l) = render_codec_label(&u.switch_type, expr) {
+                        labels.push(l);
+                    }
+                }
+            }
+        }
+        if is_default {
+            default_case = Some(case);
+            continue;
+        }
+        if labels.is_empty() {
+            continue;
+        }
+        let cond = labels
+            .iter()
+            .map(|l| alloc::format!("s.discriminator === {l}"))
+            .collect::<Vec<_>>()
+            .join(" || ");
+        let kw = if first { "if" } else { "} else if" };
+        first = false;
+        out.push_str(&alloc::format!("        {kw} ({cond}) {{\n"));
+        emit_union_branch_encode(out, case, "            ")?;
+    }
+    if let Some(case) = default_case {
+        if first {
+            // Only a default case exists.
+            emit_union_branch_encode(out, case, "        ")?;
+        } else {
+            out.push_str("        } else {\n");
+            emit_union_branch_encode(out, case, "            ")?;
+            out.push_str("        }\n");
+        }
+    } else if !first {
+        out.push_str("        }\n");
+    }
+    if wrap {
+        out.push_str("        w.endAppendable(_tok);\n");
+    }
+    out.push_str("    },\n");
+
+    // === encode (fresh writer) ===
+    out.push_str(&alloc::format!(
+        "    encode(s: {name}, endian: EndianMode = \"le\", representation = 1): Uint8Array {{\n"
+    ));
+    // representation: 1 = XCDR2 (alignment cap 4), 0 = XCDR1 / classic CDR (cap 8,
+    // no DHEADER, PL_CDR1 @mutable).
+    out.push_str("        const w = new Xcdr2Writer(endian, representation === 0 ? 8 : 4);\n");
+    out.push_str("        this.encodeInto(w, s);\n");
+    out.push_str("        return w.toBytes();\n");
+    out.push_str("    },\n");
+
+    // === decodeFrom ===
+    out.push_str(&alloc::format!(
+        "    decodeFrom(r: Xcdr2Reader): {name} {{\n"
+    ));
+    if wrap {
+        out.push_str("        const _tok = r.beginAppendable();\n");
+    }
+    let disc_read = read_typespec_expr(&disc_ts)?;
+    let disc_ts_ty = match &u.switch_type {
+        zerodds_idl::ast::SwitchTypeSpec::Scoped(s) => scoped_dotted(s),
+        _ => typespec_to_ts(&disc_ts)?,
+    };
+    out.push_str(&alloc::format!(
+        "        const _disc: {disc_ts_ty} = {disc_read};\n"
+    ));
+    out.push_str(&alloc::format!("        let _result: {name};\n"));
+    let mut first = true;
+    let mut default_case: Option<&zerodds_idl::ast::Case> = None;
+    for case in &u.cases {
+        let mut labels: Vec<String> = Vec::new();
+        let mut is_default = false;
+        for label in &case.labels {
+            match label {
+                CaseLabel::Default => is_default = true,
+                CaseLabel::Value(expr) => {
+                    if let Some(l) = render_codec_label(&u.switch_type, expr) {
+                        labels.push(l);
+                    }
+                }
+            }
+        }
+        if is_default {
+            default_case = Some(case);
+            continue;
+        }
+        if labels.is_empty() {
+            continue;
+        }
+        let cond = labels
+            .iter()
+            .map(|l| alloc::format!("_disc === {l}"))
+            .collect::<Vec<_>>()
+            .join(" || ");
+        let kw = if first { "if" } else { "} else if" };
+        first = false;
+        out.push_str(&alloc::format!("        {kw} ({cond}) {{\n"));
+        emit_union_branch_decode(out, case, "_disc")?;
+    }
+    if let Some(case) = default_case {
+        if first {
+            emit_union_branch_decode_flat(out, case, "_disc", "        ")?;
+        } else {
+            out.push_str("        } else {\n");
+            emit_union_branch_decode(out, case, "_disc")?;
+            out.push_str("        }\n");
+        }
+    } else if !first {
+        // No default: a discriminator outside the listed labels has no branch.
+        // Per IDL §7.4.2 this is an implicit default with no member; surface a
+        // discriminator-only object so decode is total.
+        out.push_str("        } else {\n");
+        out.push_str("            _result = { discriminator: _disc } as unknown as ");
+        out.push_str(&alloc::format!("{name};\n"));
+        out.push_str("        }\n");
+    }
+    if first && default_case.is_none() {
+        // Degenerate union with no usable cases.
+        out.push_str("        _result = { discriminator: _disc } as unknown as ");
+        out.push_str(&alloc::format!("{name};\n"));
+    }
+    if wrap {
+        out.push_str("        r.endAppendable(_tok);\n");
+    }
+    out.push_str("        return _result;\n");
+    out.push_str("    },\n");
+
+    // === decode (fresh reader) ===
+    // `endian` trailing-optional (default "le") — see the struct emitter; a
+    // big-endian payload decodes via decode(bytes, 0, len, "be").
+    out.push_str(&alloc::format!(
+        "    decode(bytes: Uint8Array, offset = 0, length: number = bytes.length - offset, endian: EndianMode = \"le\", representation = 1): {name} {{\n"
+    ));
+    // representation: 1 = XCDR2 (alignment cap 4), 0 = XCDR1 / classic CDR (cap 8,
+    // no DHEADER, PL_CDR1 @mutable).
+    out.push_str("        const r = new Xcdr2Reader(bytes, offset, length, endian, representation === 0 ? 8 : 4);\n");
+    out.push_str("        return this.decodeFrom(r);\n");
+    out.push_str("    },\n");
+
+    // === keyHash (unions are not keyed) ===
+    out.push_str(&alloc::format!("    keyHash(s: {name}): Uint8Array {{\n"));
+    out.push_str("        void s;\n");
+    out.push_str("        return new Uint8Array(16);\n");
+    out.push_str("    },\n");
+    out.push_str("};\n\n");
+    Ok(())
+}
+
+/// Emits the encode of a single union branch member. The branch field is bound
+/// via a per-branch typed cast first — TS cannot narrow `s` to the active arm
+/// (the implicit-default arm has the broad `discriminator` type that subsumes
+/// the literal labels), so a direct `s.<field>` access would be rejected.
+fn emit_union_branch_encode(
+    out: &mut String,
+    case: &zerodds_idl::ast::Case,
+    indent: &str,
+) -> Result<(), IdlTsError> {
+    let field = case.element.declarator.name().text.clone();
+    let base_ts = typespec_to_ts(&case.element.type_spec)?;
+    let ts_ty = wrap_with_array_dimensions(&base_ts, &case.element.declarator);
+    out.push_str(&alloc::format!(
+        "{indent}const _v: {ts_ty} = (s as unknown as {{ {field}: {ts_ty} }}).{field};\n"
+    ));
+    emit_declarator_encode(
+        out,
+        &case.element.type_spec,
+        &case.element.declarator,
+        "_v",
+        indent,
+        0,
+    )
+}
+
+/// Emits a union branch decode inside an `if`-block (4-space inner indent under
+/// the dispatch `if`): reads the branch field and assigns `_result`.
+fn emit_union_branch_decode(
+    out: &mut String,
+    case: &zerodds_idl::ast::Case,
+    disc_var: &str,
+) -> Result<(), IdlTsError> {
+    emit_union_branch_decode_flat(out, case, disc_var, "            ")
+}
+
+/// Emits a union branch decode at the given indent.
+fn emit_union_branch_decode_flat(
+    out: &mut String,
+    case: &zerodds_idl::ast::Case,
+    disc_var: &str,
+    indent: &str,
+) -> Result<(), IdlTsError> {
+    let field = case.element.declarator.name().text.clone();
+    let base_ts = typespec_to_ts(&case.element.type_spec)?;
+    let ts_ty = wrap_with_array_dimensions(&base_ts, &case.element.declarator);
+    let read = read_declarator_expr(&case.element.type_spec, &case.element.declarator, &base_ts)?;
+    out.push_str(&alloc::format!("{indent}const _b: {ts_ty} = {read};\n"));
+    out.push_str(&alloc::format!(
+        "{indent}_result = {{ discriminator: {disc_var}, {field}: _b }} as unknown as typeof _result;\n"
+    ));
     Ok(())
 }
 
@@ -3659,7 +4779,21 @@ fn const_expr_to_ts(e: &zerodds_idl::ast::ConstExpr) -> String {
 
 /// zerodds-lint: recursion-depth 16 (const expression depth)
 pub(crate) fn eval_const_int(e: &zerodds_idl::ast::ConstExpr) -> Option<i64> {
+    eval_const_int_depth(e, 0)
+}
+
+/// Mirrors the Rust backend's `const_expr_as_i128` evaluator (Bug N): resolves
+/// scoped references through the const-value / enum-literal registries built by
+/// [`build_type_registry`], so `const M = N * 2` folds even when `N` is itself a
+/// named const or enum literal. `depth` bounds (malformed) self-referential
+/// const chains.
+///
+/// zerodds-lint: recursion-depth 32 (const-reference chains)
+fn eval_const_int_depth(e: &zerodds_idl::ast::ConstExpr, depth: u32) -> Option<i64> {
     use zerodds_idl::ast::{BinaryOp, ConstExpr, LiteralKind, UnaryOp};
+    if depth > 32 {
+        return None;
+    }
     match e {
         ConstExpr::Literal(l) if l.kind == LiteralKind::Integer => parse_int_literal(&l.raw),
         ConstExpr::Literal(l) if l.kind == LiteralKind::Boolean => {
@@ -3669,9 +4803,18 @@ pub(crate) fn eval_const_int(e: &zerodds_idl::ast::ConstExpr) -> Option<i64> {
                 Some(0)
             }
         }
-        ConstExpr::Literal(_) | ConstExpr::Scoped(_) => None,
+        ConstExpr::Literal(_) => None,
+        // A named constant or enum literal: resolve to its value and evaluate.
+        ConstExpr::Scoped(s) => {
+            let name = &s.parts.last()?.text;
+            if let Some(v) = ENUM_LITERAL_VALUES.with(|m| m.borrow().get(name).copied()) {
+                return Some(v);
+            }
+            let value = CONST_VALUES.with(|m| m.borrow().get(name).cloned())?;
+            eval_const_int_depth(&value, depth + 1)
+        }
         ConstExpr::Unary { op, operand, .. } => {
-            let v = eval_const_int(operand)?;
+            let v = eval_const_int_depth(operand, depth + 1)?;
             Some(match op {
                 UnaryOp::Plus => v,
                 UnaryOp::Minus => v.checked_neg()?,
@@ -3679,8 +4822,8 @@ pub(crate) fn eval_const_int(e: &zerodds_idl::ast::ConstExpr) -> Option<i64> {
             })
         }
         ConstExpr::Binary { op, lhs, rhs, .. } => {
-            let a = eval_const_int(lhs)?;
-            let b = eval_const_int(rhs)?;
+            let a = eval_const_int_depth(lhs, depth + 1)?;
+            let b = eval_const_int_depth(rhs, depth + 1)?;
             match op {
                 BinaryOp::Or => Some(a | b),
                 BinaryOp::Xor => Some(a ^ b),
@@ -3871,6 +5014,7 @@ mod tests {
         // Descriptor.
         assert!(ts.contains("export const PointType: DdsTypeDescriptor<Point>"));
         assert!(ts.contains("kind: \"struct\""));
+        // SX2: unannotated default extensibility is `appendable` (§7.3.3.1).
         assert!(ts.contains("extensibility: \"appendable\""));
         assert!(ts.contains("typeGuard: isPoint"));
         // Registry call.
@@ -3881,6 +5025,12 @@ mod tests {
     fn struct_with_final_annotation_sets_extensibility() {
         let ts = gen_ts(r"@final struct Point { long x; };");
         assert!(ts.contains("extensibility: \"final\""));
+    }
+
+    #[test]
+    fn struct_with_appendable_annotation_sets_extensibility() {
+        let ts = gen_ts(r"@appendable struct Point { long x; };");
+        assert!(ts.contains("extensibility: \"appendable\""));
     }
 
     #[test]
@@ -4850,6 +6000,55 @@ mod tests {
         let ts = gen_ts(r"struct V { double v[3]; };");
         assert!(ts.contains("v: Array<number>"));
         assert!(ts.contains("V_v_LENGTH = 3"));
+    }
+
+    /// Bug R2b (#72): a fixed-size array MEMBER is `Array<...>` in the
+    /// emitted interface, so the type-guard must check `Array.isArray`, NOT
+    /// the element's scalar `typeof` (`typeof o.window !== "number"`) —
+    /// which mis-typed the guard and made it reject every valid value.
+    /// Covers a 1-D primitive array, a multi-dim array, and an
+    /// array-of-struct (previously silently dropped from the guard).
+    #[test]
+    fn type_guard_checks_array_isarray_for_fixed_array_member() {
+        let ts = gen_ts(
+            r"struct Point { long x; long y; };
+              struct Telemetry {
+                  long   window[4];
+                  long   grid[2][2];
+                  Point  shape[2];
+                  double scalar;
+              };",
+        );
+        // The guard must use Array.isArray for every array member …
+        assert!(
+            ts.contains("if (!Array.isArray(o.window)) return false;"),
+            "1-D primitive array member must be guarded with Array.isArray, got:\n{ts}"
+        );
+        assert!(
+            ts.contains("if (!Array.isArray(o.grid)) return false;"),
+            "multi-dim array member must be guarded with Array.isArray, got:\n{ts}"
+        );
+        assert!(
+            ts.contains("if (!Array.isArray(o.shape)) return false;"),
+            "array-of-struct member must be guarded with Array.isArray, got:\n{ts}"
+        );
+        // … and must NOT mis-type an array member as a scalar number.
+        assert!(
+            !ts.contains("typeof o.window !== \"number\""),
+            "array member window must not be guarded as a scalar number, got:\n{ts}"
+        );
+        assert!(
+            !ts.contains("typeof o.grid !== \"number\""),
+            "array member grid must not be guarded as a scalar number, got:\n{ts}"
+        );
+        // The plain scalar member keeps its scalar typeof check.
+        assert!(
+            ts.contains("typeof o.scalar !== \"number\""),
+            "scalar member must keep its number typeof check, got:\n{ts}"
+        );
+        // The interface still types the array members as Array<...>.
+        assert!(ts.contains("window: Array<number>"), "got:\n{ts}");
+        assert!(ts.contains("shape: Array<Point>"), "got:\n{ts}");
     }
 
     #[test]

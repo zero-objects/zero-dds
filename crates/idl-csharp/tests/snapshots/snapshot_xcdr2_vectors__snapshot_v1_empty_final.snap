@@ -25,9 +25,11 @@ public sealed class EmptyTypeSupport : IDdsTopicType<Empty>
 
     public byte[] Encode(Empty sample) => Encode(sample, EndianMode.LittleEndian);
 
-    public byte[] Encode(Empty sample, EndianMode endian)
+    public byte[] Encode(Empty sample, EndianMode endian) => Encode(sample, endian, 1);
+    public byte[] Encode(Empty sample, EndianMode endian, int representation)
     {
-        var w = new Xcdr2Writer(endian);
+        int __maxAlign = representation == 0 ? Xcdr2Writer.Xcdr1MaxAlignmentValue : 4;
+        var w = new Xcdr2Writer(endian, __maxAlign);
         EncodeInto(w, sample);
         return w.ToArray();
     }
@@ -36,13 +38,16 @@ public sealed class EmptyTypeSupport : IDdsTopicType<Empty>
     {
     }
 
-    public Empty Decode(ReadOnlySpan<byte> bytes)
+    public Empty Decode(ReadOnlySpan<byte> bytes) => Decode(bytes, EndianMode.LittleEndian, 1);
+    public Empty Decode(ReadOnlySpan<byte> bytes, EndianMode endian) => Decode(bytes, endian, 1);
+    public Empty Decode(ReadOnlySpan<byte> bytes, EndianMode endian, int representation)
     {
-        var r = new Xcdr2Reader(bytes, EndianMode.LittleEndian);
-        return DecodeFrom(r);
+        int __maxAlign = representation == 0 ? Xcdr2Reader.Xcdr1MaxAlignmentValue : 4;
+        var r = new Xcdr2Reader(bytes, endian, __maxAlign);
+        return DecodeFrom(ref r);
     }
 
-    public Empty DecodeFrom(Xcdr2Reader r)
+    public Empty DecodeFrom(ref Xcdr2Reader r)
     {
         return new Empty
         {

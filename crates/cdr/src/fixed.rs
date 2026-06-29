@@ -2,11 +2,18 @@
 // Copyright 2026 ZeroDDS Contributors
 //! IDL `fixed<P, S>` decimal type (XCDR2 §7.4.4.5).
 //!
-//! Wire format: packed binary-coded decimal (BCD).
+//! Wire format: packed binary-coded decimal (BCD), CORBA/GIOP §9.3.2.7
+//! (identical in XCDR2 §7.4.4.5).
 //! - Digit count = P, scale = S (number of digits after the decimal point).
-//! - Bytes = `(P + 1) / 2 + 1`. The last half-byte is the sign nibble:
-//!   `0xC` = positive, `0xD` = negative.
-//! - Digits are packed in big-endian order, 2 per byte.
+//! - Nibbles, big-endian: `[d0 .. d(P-1)][sign]` — P digit nibbles (most
+//!   significant first) followed by the sign nibble (`0xC` = positive/zero,
+//!   `0xD` = negative). If `P + 1` is odd, a single leading `0x0` nibble is
+//!   prepended so the total nibble count is even.
+//! - Byte count = `(P + 2) / 2` = `ceil((P + 1) / 2)`. Verified byte-exact
+//!   against JacORB 3.9 and omniORB 4.3 (CORBA vendor oracle): a `fixed<5,2>`
+//!   is 3 octets `12 34 5c`, a `fixed<4,0>` is `01 23 4c`. The leading
+//!   zero digits are kept (omniORB pad-to-P form); some ORBs (JacORB) trim
+//!   them, which the decoder also accepts.
 
 #![allow(clippy::manual_div_ceil, clippy::while_let_on_iterator)]
 
@@ -28,14 +35,14 @@ use crate::error::{DecodeError, EncodeError};
 /// it with `rust_decimal` or similar via a `From` impl.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Fixed<const P: u32, const S: u32> {
-    /// Packed-BCD storage. Length `(P + 1) / 2 + 1` bytes (last
+    /// Packed-BCD storage. Length `(P + 2) / 2` bytes (last
     /// nibble = sign).
     digits: Vec<u8>,
 }
 
 impl<const P: u32, const S: u32> Default for Fixed<P, S> {
     fn default() -> Self {
-        let n = ((P + 1) / 2 + 1) as usize;
+        let n = ((P + 2) / 2) as usize;
         let mut digits = alloc::vec![0u8; n];
         // Set the sign nibble to positive (0xC).
         let last = digits.len() - 1;
@@ -48,9 +55,9 @@ impl<const P: u32, const S: u32> Fixed<P, S> {
     /// Constructs a `Fixed<P, S>` from a raw BCD byte sequence.
     ///
     /// # Errors
-    /// `Invalid` if the byte length is not `(P + 1) / 2 + 1`.
+    /// `Invalid` if the byte length is not `(P + 2) / 2`.
     pub fn from_bcd_bytes(bytes: Vec<u8>) -> Result<Self, DecodeError> {
-        let expected = ((P + 1) / 2 + 1) as usize;
+        let expected = ((P + 2) / 2) as usize;
         if bytes.len() != expected {
             return Err(DecodeError::LengthExceeded {
                 announced: bytes.len(),
@@ -107,35 +114,29 @@ impl<const P: u32, const S: u32> Fixed<P, S> {
         for _ in frac_part.len()..total_s {
             digits_buf.push('0');
         }
-        // Parse digits + pack BCD
-        let mut packed: Vec<u8> = Vec::with_capacity(((P + 1) / 2 + 1) as usize);
-        let mut chars = digits_buf.chars().rev().peekable();
-        let sign_nibble: u8 = if sign { 0x0C } else { 0x0D };
-        let mut current = sign_nibble;
-        let mut have_low = true;
-        while let Some(c) = chars.next() {
+        // Build the BCD nibble sequence big-endian: an optional leading 0
+        // pad nibble (so the total nibble count is even), the P digit
+        // nibbles most-significant first, then the sign nibble. `digits_buf`
+        // already holds exactly P digit chars. Then pack 2 nibbles per byte,
+        // high nibble first (CORBA §9.3.2.7). This replaces the old
+        // low-nibble-first loop, which dropped the most-significant digit
+        // for even P and emitted a spurious leading byte for odd P.
+        let mut nibbles: Vec<u8> = Vec::with_capacity(P as usize + 2);
+        if (P + 1) % 2 == 1 {
+            nibbles.push(0);
+        }
+        for c in digits_buf.chars() {
             let d = c.to_digit(10).ok_or(DecodeError::InvalidString {
                 offset: 0,
                 reason: "fixed: non-digit char",
             })? as u8;
-            if have_low {
-                current |= (d & 0x0F) << 4;
-                packed.push(current);
-                current = 0;
-                have_low = false;
-            } else {
-                current |= d & 0x0F;
-                have_low = true;
-            }
+            nibbles.push(d & 0x0F);
         }
-        if !have_low {
-            packed.push(current);
-        }
-        packed.reverse();
-        // Ensure the length is correct
-        let expected = ((P + 1) / 2 + 1) as usize;
-        while packed.len() < expected {
-            packed.insert(0, 0);
+        nibbles.push(if sign { 0x0C } else { 0x0D });
+        // `nibbles.len()` is even by construction.
+        let mut packed: Vec<u8> = Vec::with_capacity(nibbles.len() / 2);
+        for pair in nibbles.chunks_exact(2) {
+            packed.push((pair[0] << 4) | pair[1]);
         }
         Ok(Self { digits: packed })
     }
@@ -192,7 +193,7 @@ impl<const P: u32, const S: u32> CdrEncode for Fixed<P, S> {
 
 impl<const P: u32, const S: u32> CdrDecode for Fixed<P, S> {
     fn decode(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
-        let n = ((P + 1) / 2 + 1) as usize;
+        let n = ((P + 2) / 2) as usize;
         let bytes = r.read_bytes(n)?;
         Self::from_bcd_bytes(bytes.to_vec())
     }
@@ -239,5 +240,61 @@ mod tests {
     fn fixed_overflow_returns_error() {
         let res: Result<Fixed<3, 1>, _> = Fixed::from_str_repr("9999.5");
         assert!(res.is_err());
+    }
+
+    // ---- CORBA vendor-oracle regression (JacORB 3.9 ≡ omniORB 4.3) ----
+
+    /// Odd P: `fixed<5,2>` is exactly 3 octets `12 34 5c` — no spurious
+    /// leading byte. (Old encoder emitted 4 octets `00 12 34 5c`.)
+    #[test]
+    fn fixed_bcd_bytes_odd_p_match_orb() {
+        let f: Fixed<5, 2> = Fixed::from_str_repr("123.45").expect("parse");
+        assert_eq!(f.as_bcd_bytes(), &[0x12, 0x34, 0x5C]);
+        assert_eq!(f.to_string_repr(), "123.45");
+    }
+
+    /// Even P: `fixed<4,0>` must keep the most-significant digit — the old
+    /// encoder dropped it, encoding 1234 as `00 23 4c` and round-tripping
+    /// to "234" (silent data corruption). Correct = `01 23 4c` → "1234".
+    #[test]
+    fn fixed_even_p_keeps_msd_no_corruption() {
+        let f: Fixed<4, 0> = Fixed::from_str_repr("1234").expect("parse");
+        assert_eq!(f.as_bcd_bytes(), &[0x01, 0x23, 0x4C]);
+        assert_eq!(f.to_string_repr(), "1234");
+    }
+
+    /// Negative, pad-to-P (omniORB form): `fixed<6,2>` of -1.50 →
+    /// `00 00 15 0d` (4 octets), the conformant P-digit representation.
+    #[test]
+    fn fixed_negative_pad_to_p_match_orb() {
+        let f: Fixed<6, 2> = Fixed::from_str_repr("-1.50").expect("parse");
+        assert_eq!(f.as_bcd_bytes(), &[0x00, 0x00, 0x15, 0x0D]);
+        assert_eq!(f.to_string_repr(), "-1.50");
+    }
+
+    /// Even P with a full digit set: `fixed<6,3>` of 123.456 → `01 23 45 6c`
+    /// (leading pad nibble), every digit preserved through roundtrip.
+    #[test]
+    fn fixed_even_p_full_digits_roundtrip() {
+        let f: Fixed<6, 3> = Fixed::from_str_repr("123.456").expect("parse");
+        assert_eq!(f.as_bcd_bytes(), &[0x01, 0x23, 0x45, 0x6C]);
+        assert_eq!(f.to_string_repr(), "123.456");
+    }
+
+    /// Exhaustive small-range roundtrip: every integer 0..=9999 through
+    /// `fixed<4,0>` must survive encode→decode-as-string unchanged (guards
+    /// against any residual nibble misplacement).
+    #[test]
+    fn fixed_exhaustive_roundtrip_4_0() {
+        for n in 0u32..=9999 {
+            let s = alloc::format!("{n}");
+            let f: Fixed<4, 0> = Fixed::from_str_repr(&s).expect("parse");
+            // to_string_repr trims leading zeros, so compare numerically.
+            assert_eq!(
+                f.to_string_repr().parse::<u32>().expect("reparse"),
+                n,
+                "roundtrip lost value for {n}"
+            );
+        }
     }
 }

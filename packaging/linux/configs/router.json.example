@@ -1,0 +1,23 @@
+{
+  "_comment": "ZeroDDS routing-service example config. Copy to /etc/zerodds/router.json and edit. Config is JSON (this file) or XML (a .xml path). Both example routes are plain raw-byte forwards, so `zerodds-router run --config router.json` works with no --types file. To filter or transform a route you must also supply --types <shapes.json> describing each route's type_name; see zerodds-router(1).",
+  "name": "example-router",
+  "routes": [
+    {
+      "name": "telemetry-cross-domain",
+      "input":  { "domain": 0, "topic": "Telemetry", "type_name": "zerodds::RawBytes" },
+      "output": {
+        "domain": 1,
+        "topic": "Telemetry",
+        "type_name": "zerodds::RawBytes",
+        "qos": { "reliable": true, "durability": "transient_local" }
+      },
+      "loop_guard": true,
+      "preserve_source_timestamp": true
+    },
+    {
+      "name": "status-partition-fanout",
+      "input":  { "domain": 0, "topic": "Status", "type_name": "zerodds::RawBytes", "partition": ["sensors"] },
+      "output": { "domain": 0, "topic": "Status", "type_name": "zerodds::RawBytes", "partition": ["aggregated"] }
+    }
+  ]
+}

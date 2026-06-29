@@ -22,6 +22,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <cstdlib>
 #include <iostream>
 #include <mutex>
 #include <string>
@@ -30,7 +31,12 @@
 
 namespace {
 
-constexpr int32_t kDomain = 200;
+// Domain via ZERODDS_BENCH_DOMAIN env-var ueberschreibbar (Default 200).
+static int32_t resolve_domain() {
+    const char* s = std::getenv("ZERODDS_BENCH_DOMAIN");
+    if (s) { try { return static_cast<int32_t>(std::stoi(s)); } catch (...) {} }
+    return 200;
+}
 constexpr const char* kReqTopic  = "RoundtripBench_Request";
 constexpr const char* kEchoTopic = "RoundtripBench_Echo";
 
@@ -44,11 +50,77 @@ uint64_t now_ns() {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(t).count();
 }
 
+// Transport-Selection via env-var ZERODDS_BENCH_TRANSPORT:
+//   UDPv4 (default), UDPv6, SHM.
+// TCPv4 fuer RTI braucht eine TCP-Transport-Plugin-Konfiguration via
+// PropertyQosPolicy (dds.transport.TCPv4.tcp1.*), nicht via builtin-mask
+// -> separat zu implementieren wenn priorisiert.
+dds::domain::qos::DomainParticipantQos make_dp_qos() {
+    using namespace rti::core::policy;
+    dds::domain::qos::DomainParticipantQos qos;
+    const char* t = std::getenv("ZERODDS_BENCH_TRANSPORT");
+    std::string ts(t ? t : "UDPv4");
+    TransportBuiltinMask mask = TransportBuiltinMask::udpv4();
+    if (ts == "UDPv6") mask = TransportBuiltinMask::udpv6();
+    else if (ts == "SHM") mask = TransportBuiltinMask::shmem();
+    qos << TransportBuiltin(mask);
+
+    // DDS-Security 1.2 via Property-QoS (RTI `com.rti.serv.secure`-Plugin).
+    // ZERODDS_BENCH_SECURITY=1 + ZERODDS_BENCH_SEC_NAME={ping,pong} aktiv.
+    const char* sec = std::getenv("ZERODDS_BENCH_SECURITY");
+    if (sec && std::string(sec) == "1") {
+        const char* sec_dir = std::getenv("ZERODDS_BENCH_SEC_DIR");
+        if (!sec_dir) sec_dir = "/tmp/dds-bench-security";
+        const char* who = std::getenv("ZERODDS_BENCH_SEC_NAME");
+        if (!who) who = "ping";
+        std::string base(sec_dir);
+        auto& props = qos.policy<rti::core::policy::Property>();
+        auto add = [&](const std::string& k, const std::string& v) {
+            props.set(rti::core::policy::Property::Entry(k, v));
+        };
+        add("com.rti.serv.load_plugin", "com.rti.serv.secure");
+        add("com.rti.serv.secure.create_function",
+            "RTI_Security_PluginSuite_create");
+        add("com.rti.serv.secure.library", "nddssecurity");
+        add("com.rti.serv.secure.authentication.ca_file",
+            base + "/certs/identity_ca.pem");
+        add("com.rti.serv.secure.authentication.certificate_file",
+            base + "/certs/" + who + "_cert.pem");
+        add("com.rti.serv.secure.authentication.private_key_file",
+            base + "/certs/" + who + "_key.pem");
+        add("com.rti.serv.secure.access_control.permissions_authority_file",
+            base + "/certs/permissions_ca.pem");
+        add("com.rti.serv.secure.access_control.governance_file",
+            base + "/governance.p7s");
+        add("com.rti.serv.secure.access_control.permissions_file",
+            base + "/permissions_" + who + ".p7s");
+    }
+    return qos;
+}
+
+// Cross-Vendor-Helper: DataRepresentation auf XCDR2 setzen.
+//
+// RTI default = XCDR1 (legacy). Alle anderen Vendoren (Cyclone,
+// FastDDS, ZeroDDS, OpenDDS) defaulten auf XCDR2. Damit der Match
+// trotz `@final`-Type funktioniert, RTI auf XCDR2-only setzen.
+//
+// XCDR1+XCDR2 simultan (was permissiver wäre) crasht RTI DW-create
+// auf @final Structs — vermutlich braucht der dual-rep-buffer eine
+// extra-extensibility (APPENDABLE/MUTABLE).
+dds::core::policy::DataRepresentation xcdr2_only() {
+    dds::core::policy::DataRepresentationIdSeq seq;
+    seq.push_back(dds::core::policy::DataRepresentation::xcdr2());
+    return dds::core::policy::DataRepresentation(seq);
+}
+
 dds::pub::qos::DataWriterQos make_dw_qos() {
     using namespace dds::core::policy;
     dds::pub::qos::DataWriterQos qos;
     qos << Reliability::Reliable();
     qos << History::KeepLast(kHistoryDepth);
+    // Cross-Vendor: RTI default ist XCDR1; Cyclone/FastDDS/ZeroDDS
+    // default ist XCDR2. Wire-Match braucht XCDR2 auf RTI-Seite.
+    qos << xcdr2_only();
     return qos;
 }
 
@@ -57,6 +129,12 @@ dds::sub::qos::DataReaderQos make_dr_qos() {
     dds::sub::qos::DataReaderQos qos;
     qos << Reliability::Reliable();
     qos << History::KeepLast(kHistoryDepth);
+    // Reader-Seite: RTI muss XCDR2 anbieten (analog Writer) UND
+    // ALLOW_TYPE_COERCION damit type-hash-Differenzen zwischen
+    // Vendoren toleriert werden (RTI default = EXACT_TYPE,
+    // andere Vendoren default = ALLOW_TYPE_COERCION).
+    qos << xcdr2_only();
+    qos << TypeConsistencyEnforcement(TypeConsistencyEnforcementKind::ALLOW_TYPE_COERCION);
     return qos;
 }
 
@@ -84,7 +162,7 @@ private:
 int run_pong(uint64_t max_runtime_s) {
     using namespace dds;
 
-    domain::DomainParticipant dp(kDomain);
+    domain::DomainParticipant dp(resolve_domain(), make_dp_qos());
     topic::Topic<RoundtripBench::Roundtrip> t_req(dp, kReqTopic);
     topic::Topic<RoundtripBench::Roundtrip> t_echo(dp, kEchoTopic);
     pub::Publisher pub_(dp);
@@ -159,7 +237,7 @@ void print_quantiles(std::vector<uint64_t>& rtts, size_t payload_size) {
 int run_ping(size_t payload_size, uint64_t warmup, uint64_t samples) {
     using namespace dds;
 
-    domain::DomainParticipant dp(kDomain);
+    domain::DomainParticipant dp(resolve_domain(), make_dp_qos());
     topic::Topic<RoundtripBench::Roundtrip> t_req(dp, kReqTopic);
     topic::Topic<RoundtripBench::Roundtrip> t_echo(dp, kEchoTopic);
     pub::Publisher pub_(dp);
@@ -177,7 +255,8 @@ int run_ping(size_t payload_size, uint64_t warmup, uint64_t samples) {
     std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 
     RoundtripBench::Roundtrip msg;
-    // RTI uses public POD fields + bounded_sequence assignment.
+    // RTI 7.7 C++11-Codegen: Member sind public POD-Felder, der
+    // payload ist eine rti::core::bounded_sequence (container-like).
     msg.payload.resize(payload_size);
     std::fill(msg.payload.begin(), msg.payload.end(), 0xAB);
 
@@ -206,6 +285,11 @@ int main(int argc, char** argv) {
             "  rti-app ping --payload N [--samples N] [--warmup N]\n";
         return 2;
     }
+    // RTI-Logger auf WARNING — sonst schluckt die modern-C++-PSM den
+    // echten Grund hinter dem generischen "Failed to create
+    // DomainParticipant".
+    rti::config::Logger::instance().verbosity(
+        rti::config::Verbosity::WARNING);
     std::string mode = argv[1];
     if (mode == "pong") {
         uint64_t rt_s = (argc > 2) ? std::stoull(argv[2]) : 30;

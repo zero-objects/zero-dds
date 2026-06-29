@@ -19,9 +19,9 @@ jobs:
       matrix:
         target:
           - x86_64
-          # aarch64-rpm-build benötigt cross-compile-Setup im Fedora-Container
-          # (ring-0.17 -mbranch-protection-Flag von gcc nicht erkannt).
-          # ARM-RPMs für RC2; users auf aarch64 nutzen .tar.gz oder .deb.
+          # aarch64 rpm build needs a cross-compile setup in the Fedora container
+          # (ring-0.17 -mbranch-protection flag not recognized by gcc).
+          # ARM RPMs for RC2; users on aarch64 use .tar.gz or .deb.
     steps:
       - uses: actions/checkout@v4
       - name: Install build deps
@@ -46,11 +46,11 @@ jobs:
         run: |
           cp packaging/linux/rpm/zerodds.spec ~/rpmbuild/SPECS/
           rpmbuild -ba --target ${{ matrix.target }} ~/rpmbuild/SPECS/zerodds.spec
-      # YUM-Repo wird auf packages.zerodds.org via Pull-Deploy
-      # (nr3 cron alle 5 min) gebaut, nicht in CI gepusht. Hier nur
-      # die .rpm-Files als GH-Release-Asset hochladen — der Pull-
-      # Deploy zieht sie, verifiziert minisign + signiert lokal mit
-      # dem Server-GPG-Key.
+      # The YUM repo is built on packages.zerodds.org via pull-deploy
+      # (the server host's cron, every 5 min), not pushed from CI. Here we
+      # only upload the .rpm files as GH release assets — the pull-
+      # deploy fetches them, verifies minisign + signs them locally with
+      # the server GPG key.
       - name: Upload artifacts (release attachments)
         uses: actions/upload-artifact@v4
         with:

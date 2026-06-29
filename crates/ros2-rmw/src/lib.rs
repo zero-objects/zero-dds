@@ -4,7 +4,7 @@
 //! ROS 2 RMW Bridge Layer.
 //!
 //! Crate `zerodds-ros2-rmw`. Safety classification: **STANDARD**.
-//! Specs: `docs/standards/cache/ros2/rep-{2003,2004,2005,2007,2008,
+//! Specs: `internal/standards/cache/ros2/rep-{2003,2004,2005,2007,2008,
 //! 2009}.html` (ROS Enhancement Proposals).
 //!
 //! # Scope

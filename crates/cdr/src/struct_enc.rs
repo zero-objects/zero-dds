@@ -15,10 +15,19 @@
 //!   through member-ID-based matching.
 //!
 //! Helpers for all 3 modes with a classic 2-pass encoder (inner buffer
-//! for the body, then header + body into the outer one). Length codes:
-//! LC0..LC7 fully implemented (default constructor `LC4` variable-length
-//! with a separate `uint32` NEXTINT; LC0..LC3 compact 1/2/4/8-byte
-//! without NEXTINT; LC5..LC7 sequence/array-specific).
+//! for the body, then header + body into the outer one). Length codes
+//! (XTypes 1.3 §7.4.3.4.2):
+//!
+//! - **LC0..LC3**: compact 1/2/4/8-byte primitive bodies, no NEXTINT.
+//! - **LC4**: variable-length body with a separately-serialized `uint32`
+//!   NEXTINT = body byte length.
+//! - **LC5/LC6/LC7**: variable-length body whose own leading 4-byte
+//!   length word (a DHEADER / string length) is *reused* as the NEXTINT —
+//!   it is **NOT** serialized a second time. The reader peeks it and the
+//!   word stays as the first 4 bytes of the member body. This is what
+//!   CycloneDDS / RTI Connext / FastDDS emit; an extra NEXTINT would put
+//!   ZeroDDS off the cross-vendor wire (LC5 verified against RTI+FastDDS
+//!   `@mutable string` member, 2-vendor consensus).
 //!
 //! Alignment: the body content of a DHEADER/EMHEADER frame starts at
 //! offset 0 relative to the body start (XCDR2 §7.4.3.4.5).
@@ -114,22 +123,36 @@ pub enum LengthCode {
 impl LengthCode {
     /// Body length in bytes for this LC, given the NEXTINT value.
     #[must_use]
-    pub fn body_len(self, nextint: u32) -> u64 {
+    pub fn body_len(self, framing_word: u32) -> u64 {
         match self {
             Self::Lc0 => 1,
             Self::Lc1 => 2,
             Self::Lc2 => 4,
             Self::Lc3 => 8,
-            Self::Lc4 | Self::Lc5 => u64::from(nextint),
-            Self::Lc6 => 4 * u64::from(nextint) + 4,
-            Self::Lc7 => 8 * u64::from(nextint) + 4,
+            // LC4: `framing_word` is the separately-serialized NEXTINT =
+            // full member body byte length.
+            Self::Lc4 => u64::from(framing_word),
+            // LC5/6/7: `framing_word` is the member's own leading length
+            // word (DHEADER / string length) = byte count of the content
+            // AFTER it. The full body is that word (4 bytes) + the content.
+            Self::Lc5 | Self::Lc6 | Self::Lc7 => u64::from(framing_word) + 4,
         }
     }
 
-    /// `true` if the LC carries a NEXTINT field after the EMHEADER.
+    /// `true` if a NEXTINT is serialized **separately** after the EMHEADER
+    /// (only LC4). LC5/6/7 reuse the body's own leading length word, so
+    /// they carry no separate NEXTINT — see [`Self::reuses_leading_len`].
     #[must_use]
     pub const fn has_nextint(self) -> bool {
-        matches!(self, Self::Lc4 | Self::Lc5 | Self::Lc6 | Self::Lc7)
+        matches!(self, Self::Lc4)
+    }
+
+    /// `true` if the LC reuses the member body's own leading 4-byte length
+    /// word as the NEXTINT (LC5/6/7, §7.4.3.4.2) — no separate NEXTINT on
+    /// the wire; the word stays as the first 4 bytes of the member body.
+    #[must_use]
+    pub const fn reuses_leading_len(self) -> bool {
+        matches!(self, Self::Lc5 | Self::Lc6 | Self::Lc7)
     }
 
     /// Decode from the 3-bit wire field of an EMHEADER.
@@ -226,44 +249,48 @@ where
             }
             None
         }
-        LengthCode::Lc4 | LengthCode::Lc5 => {
+        LengthCode::Lc4 => {
+            // LC4: NEXTINT serialized separately = full body byte length.
             let n = u32::try_from(body_len).map_err(|_| EncodeError::ValueOutOfRange {
-                message: "LC4/LC5 body exceeds u32::MAX",
+                message: "LC4 body exceeds u32::MAX",
             })?;
             Some(n)
         }
-        LengthCode::Lc6 => {
-            // `body_len % 4 != 0` is equivalent to `(body_len - 4) % 4 != 0`
-            // for body_len >= 4 (after the first check). Eliminates a
-            // mathematically-equivalent `-4`/`+4` mutation.
-            if body_len < 4 || body_len % 4 != 0 {
+        LengthCode::Lc5 | LengthCode::Lc6 | LengthCode::Lc7 => {
+            // LC5/6/7 reuse the member's own leading 4-byte length word as
+            // the NEXTINT (§7.4.3.4.2) — it is NOT serialized again. The
+            // word must equal the byte count of the content that follows it
+            // (DHEADER / string-length semantics), so the decoder recovers
+            // `body_len = 4 + word`.
+            if body_len < 4 {
                 return Err(EncodeError::ValueOutOfRange {
-                    message: "LC6 body must be DHEADER + 4n bytes",
+                    message: "LC5/6/7 member body must start with a 4-byte length word",
                 });
             }
-            let n =
-                u32::try_from((body_len - 4) / 4).map_err(|_| EncodeError::ValueOutOfRange {
-                    message: "LC6 element count exceeds u32::MAX",
-                })?;
-            Some(n)
-        }
-        LengthCode::Lc7 => {
-            // body_len < 4: reject. body_len in {4,12,20,...}: pass.
-            // body_len in {5,6,7}: body_len % 8 ≠ 0 → reject. But the
-            // boundary check must be careful: body_len=8 has body_len%8=0,
-            // yet (8-4)/8=0.5 is not a valid n. We need
-            // `(body_len - 4) % 8 == 0`, which is equivalent to
-            // `body_len % 8 == 4`.
-            if body_len < 4 || body_len % 8 != 4 {
+            let mut w = [0u8; 4];
+            w.copy_from_slice(&body_bytes[0..4]);
+            let leading = writer.endianness().read_u32(w);
+            let content = body_len - 4;
+            if u64::from(leading) != content as u64 {
                 return Err(EncodeError::ValueOutOfRange {
-                    message: "LC7 body must be DHEADER + 8n bytes",
+                    message: "LC5/6/7 leading length word must equal content byte count",
                 });
             }
-            let n =
-                u32::try_from((body_len - 4) / 8).map_err(|_| EncodeError::ValueOutOfRange {
-                    message: "LC7 element count exceeds u32::MAX",
-                })?;
-            Some(n)
+            // LC6/LC7 additionally require the content to be a whole number
+            // of 4- / 8-byte primitive elements.
+            if lc == LengthCode::Lc6 && content % 4 != 0 {
+                return Err(EncodeError::ValueOutOfRange {
+                    message: "LC6 content must be a multiple of 4 bytes",
+                });
+            }
+            if lc == LengthCode::Lc7 && content % 8 != 0 {
+                return Err(EncodeError::ValueOutOfRange {
+                    message: "LC7 content must be a multiple of 8 bytes",
+                });
+            }
+            // No separately-serialized NEXTINT — the leading word stays in
+            // the body.
+            None
         }
     };
 
@@ -402,13 +429,18 @@ pub fn read_mutable_member<'a>(
         offset: reader.position(),
     })?;
 
-    let nextint = if length_code.has_nextint() {
+    let framing_word = if length_code.has_nextint() {
+        // LC4: NEXTINT is serialized separately and consumed here.
         reader.read_u32()?
+    } else if length_code.reuses_leading_len() {
+        // LC5/6/7: the member body's own leading word is the NEXTINT. Peek
+        // it WITHOUT consuming so it remains the first 4 bytes of the body.
+        reader.peek_u32()?
     } else {
         0
     };
 
-    let body_len_u64 = length_code.body_len(nextint);
+    let body_len_u64 = length_code.body_len(framing_word);
     let body_len = usize::try_from(body_len_u64).map_err(|_| DecodeError::LengthExceeded {
         announced: usize::MAX,
         remaining: reader.remaining(),
@@ -774,8 +806,12 @@ mod tests {
         })
         .unwrap();
         let bytes = w.into_bytes();
-        assert_eq!(bytes.len(), 20);
-        assert_eq!(&bytes[4..8], &[12, 0, 0, 0]);
+        // LC5 reuses the body's own leading word (8) as NEXTINT — no
+        // separate NEXTINT. Wire = EMHEADER (4) + body (4+8 = 12) = 16.
+        assert_eq!(bytes.len(), 16);
+        // The 4 bytes after the EMHEADER are the body's leading word (8),
+        // NOT a separately-serialized NEXTINT.
+        assert_eq!(&bytes[4..8], &[8, 0, 0, 0]);
         let mut r = BufferReader::new(&bytes, Endianness::Little);
         let m = read_mutable_member(&mut r).unwrap().unwrap();
         assert_eq!(m.length_code, LengthCode::Lc5);
@@ -794,8 +830,10 @@ mod tests {
         })
         .unwrap();
         let bytes = w.into_bytes();
-        assert_eq!(&bytes[4..8], &[3, 0, 0, 0]);
-        assert_eq!(bytes.len(), 4 + 4 + 16);
+        // No separate NEXTINT: the body's leading DHEADER (12 = element
+        // byte count) is reused. Wire = EMHEADER (4) + body (4+12 = 16) = 20.
+        assert_eq!(&bytes[4..8], &[12, 0, 0, 0]);
+        assert_eq!(bytes.len(), 4 + 16);
         let mut r = BufferReader::new(&bytes, Endianness::Little);
         let m = read_mutable_member(&mut r).unwrap().unwrap();
         assert_eq!(m.length_code, LengthCode::Lc6);
@@ -805,12 +843,12 @@ mod tests {
     #[test]
     fn lc6_lc7_roundtrip_against_cyclone_sample() {
         // Spec §7.4.3.4.2: LC=6 for 4-byte-element arrays; LC=7 for
-        // 8-byte-element arrays. Both encoders produce the same wire
-        // layout that Cyclone DDS and FastDDS can decode. We verify three
-        // places byte-exactly:
+        // 8-byte-element arrays. The member's own leading DHEADER is reused
+        // as NEXTINT (no separate NEXTINT) — this is the wire layout
+        // Cyclone DDS / RTI / FastDDS emit. We verify byte-exactly:
         //   - LC=6 EMHEADER (bits 30-28 = 110)
-        //   - NEXTINT = element count (4 bytes)
-        //   - DHEADER + payload
+        //   - the leading DHEADER stays as the first 4 body bytes
+        //   - no separate NEXTINT (the +4 bloat is gone)
         let mut w = BufferWriter::new(Endianness::Little);
         // LC=6 body layout: DHEADER (4) + 4n element bytes.
         // 100 u32 elements = 400 bytes → body_len = 404.
@@ -828,10 +866,11 @@ mod tests {
         // EMHEADER: must_understand=0, lc=6, member_id=0xABCD.
         // → 0x6000_ABCD LE = [0xCD, 0xAB, 0x00, 0x60].
         assert_eq!(&bytes[0..4], &[0xCD, 0xAB, 0x00, 0x60]);
-        // NEXTINT = element count = 100 LE.
-        assert_eq!(&bytes[4..8], &[100, 0, 0, 0]);
-        // Payload: DHEADER 4 + 100 * 4 = 404 bytes starting at offset 8.
-        assert_eq!(bytes.len(), 8 + 404);
+        // The 4 bytes after the EMHEADER are the reused DHEADER (400), not
+        // a separate NEXTINT.
+        assert_eq!(&bytes[4..8], &[0x90, 0x01, 0, 0]);
+        // Payload: EMHEADER 4 + body (DHEADER 4 + 100 * 4 = 404) = 408.
+        assert_eq!(bytes.len(), 4 + 404);
 
         // Decoder accepts.
         let mut r = BufferReader::new(&bytes, Endianness::Little);
@@ -843,9 +882,9 @@ mod tests {
 
     #[test]
     fn lc6_with_many_elements_decodes_correctly() {
-        // 70_000 elements — the encoder writes LC=6 with a large NEXTINT.
-        // Verifies that the decoder reads the >= u16 NEXTINT correctly
-        // (no silent truncation).
+        // 70_000 elements — the reused DHEADER is large (> u16). Verifies
+        // the decoder peeks the >= u16 leading word correctly (no silent
+        // truncation).
         let mut w = BufferWriter::new(Endianness::Little);
         encode_mutable_member_lc(&mut w, 5, false, LengthCode::Lc6, |w| {
             // DHEADER = element byte count (70_000 * 4 = 280_000).
@@ -857,8 +896,9 @@ mod tests {
         })
         .unwrap();
         let bytes = w.into_bytes();
-        let nextint = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
-        assert_eq!(nextint, 70_000);
+        // The leading word (reused as NEXTINT) is the DHEADER byte count.
+        let leading = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
+        assert_eq!(leading, 280_000);
         let mut r = BufferReader::new(&bytes, Endianness::Little);
         let m = read_mutable_member(&mut r).unwrap().unwrap();
         // body including DHEADER = 4 + 280_000.
@@ -876,8 +916,10 @@ mod tests {
         })
         .unwrap();
         let bytes = w.into_bytes();
-        assert_eq!(&bytes[4..8], &[2, 0, 0, 0]);
-        assert_eq!(bytes.len(), 4 + 4 + 20);
+        // Reused DHEADER (16 = element byte count) stays in the body; no
+        // separate NEXTINT. Wire = EMHEADER (4) + body (4+16 = 20) = 24.
+        assert_eq!(&bytes[4..8], &[16, 0, 0, 0]);
+        assert_eq!(bytes.len(), 4 + 20);
         let mut r = BufferReader::new(&bytes, Endianness::Little);
         let m = read_mutable_member(&mut r).unwrap().unwrap();
         assert_eq!(m.length_code, LengthCode::Lc7);
@@ -910,18 +952,28 @@ mod tests {
         assert_eq!(LengthCode::Lc1.body_len(0), 2);
         assert_eq!(LengthCode::Lc2.body_len(0), 4);
         assert_eq!(LengthCode::Lc3.body_len(0), 8);
+        // LC4: framing word = full body byte length.
         assert_eq!(LengthCode::Lc4.body_len(100), 100);
-        assert_eq!(LengthCode::Lc5.body_len(20), 20);
-        assert_eq!(LengthCode::Lc6.body_len(3), 16);
-        assert_eq!(LengthCode::Lc7.body_len(2), 20);
+        // LC5/6/7: framing word = leading DHEADER byte count; the whole
+        // body is that word (4 bytes) + the content it announces.
+        assert_eq!(LengthCode::Lc5.body_len(20), 24);
+        assert_eq!(LengthCode::Lc6.body_len(12), 16);
+        assert_eq!(LengthCode::Lc7.body_len(16), 20);
     }
 
     #[test]
     fn length_code_has_nextint_flag() {
+        // Only LC4 carries a separately-serialized NEXTINT.
         assert!(!LengthCode::Lc0.has_nextint());
         assert!(!LengthCode::Lc3.has_nextint());
         assert!(LengthCode::Lc4.has_nextint());
-        assert!(LengthCode::Lc7.has_nextint());
+        assert!(!LengthCode::Lc5.has_nextint());
+        assert!(!LengthCode::Lc7.has_nextint());
+        // LC5/6/7 instead reuse the body's leading length word.
+        assert!(!LengthCode::Lc4.reuses_leading_len());
+        assert!(LengthCode::Lc5.reuses_leading_len());
+        assert!(LengthCode::Lc6.reuses_leading_len());
+        assert!(LengthCode::Lc7.reuses_leading_len());
     }
 
     #[test]
@@ -1013,24 +1065,31 @@ mod tests {
         assert!(res.is_ok(), "Lc6 body_len=4 must succeed, got {res:?}");
     }
 
-    /// Catches the `-` -> `+` mutation on `(body_len - 4) / 4` for Lc6.
-    /// nextint must be EXACTLY (body_len - 4) / 4, not (body_len + 4) / 4.
-    /// body_len=12 → original n=2, mutated n=4.
+    /// LC6 reuses the body's leading DHEADER as NEXTINT — there is NO
+    /// separately-serialized NEXTINT, so the wire is exactly
+    /// `EMHEADER + body` with no +4 bloat. Catches a regression that would
+    /// re-introduce a separate NEXTINT field.
     #[test]
-    fn lc6_nextint_value_is_minus_4_div_4() {
+    fn lc6_no_separate_nextint_reuses_dheader() {
         let mut w = BufferWriter::new(Endianness::Little);
+        // Valid LC6 body: DHEADER (8 = element byte count) + two u32.
         encode_mutable_member_lc(&mut w, 1, false, LengthCode::Lc6, |inner| {
-            inner.write_bytes(&[0u8; 12])
+            8u32.encode(inner)?;
+            10u32.encode(inner)?;
+            20u32.encode(inner)?;
+            Ok(())
         })
         .unwrap();
         let bytes = w.into_bytes();
-        // Layout: 4-byte EMHEADER + 4-byte nextint + 12-byte body = 20.
-        assert_eq!(bytes.len(), 20);
-        // nextint = bytes[4..8] LE
-        let mut ni = [0u8; 4];
-        ni.copy_from_slice(&bytes[4..8]);
-        let nextint = u32::from_le_bytes(ni);
-        assert_eq!(nextint, 2, "nextint must be (12-4)/4=2, not (12+4)/4=4");
+        // Wire = EMHEADER (4) + body (4 + 8 = 12) = 16. A spurious separate
+        // NEXTINT would make this 20.
+        assert_eq!(bytes.len(), 16);
+        // The 4 bytes after the EMHEADER are the reused DHEADER (8).
+        let leading = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
+        assert_eq!(
+            leading, 8,
+            "leading word is the reused DHEADER, not a separate NEXTINT"
+        );
     }
 
     /// Lc7 variant: same mutations as Lc6 but with `% 8` and `/ 8`.
@@ -1060,22 +1119,27 @@ mod tests {
         assert!(res.is_ok());
     }
 
-    /// Lc7 nextint = (body_len - 4) / 8. body_len=20 → n=2 original,
-    /// n=3 with the `+` mutation.
+    /// LC7 counterpart: no separately-serialized NEXTINT; the body's
+    /// leading DHEADER (16 = two 8-byte elements) is reused.
     #[test]
-    fn lc7_nextint_value_is_minus_4_div_8() {
+    fn lc7_no_separate_nextint_reuses_dheader() {
         let mut w = BufferWriter::new(Endianness::Little);
         encode_mutable_member_lc(&mut w, 1, false, LengthCode::Lc7, |inner| {
-            inner.write_bytes(&[0u8; 20])
+            16u32.encode(inner)?;
+            inner.write_bytes(&100u64.to_le_bytes())?;
+            inner.write_bytes(&200u64.to_le_bytes())?;
+            Ok(())
         })
         .unwrap();
         let bytes = w.into_bytes();
-        // 4 EMHEADER + 4 nextint + 20 body = 28
-        assert_eq!(bytes.len(), 28);
-        let mut ni = [0u8; 4];
-        ni.copy_from_slice(&bytes[4..8]);
-        let nextint = u32::from_le_bytes(ni);
-        assert_eq!(nextint, 2, "nextint must be (20-4)/8=2, not (20+4)/8=3");
+        // Wire = EMHEADER (4) + body (4 + 16 = 20) = 24. A separate NEXTINT
+        // would make this 28.
+        assert_eq!(bytes.len(), 24);
+        let leading = u32::from_le_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]);
+        assert_eq!(
+            leading, 16,
+            "leading word is the reused DHEADER, not a separate NEXTINT"
+        );
     }
 
     /// Lc6 body_len=8 must pass ((8-4)%4=0 ok, so pass — no boundary

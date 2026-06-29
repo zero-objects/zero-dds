@@ -1,0 +1,13 @@
+// Conformance feature: builtin annotations (XTypes §7.3.1.2.2) —
+// @id, @default, @min, @max, @range, @unit, @hashid, @must_understand.
+module conf {
+  @appendable
+  struct Annotated {
+    @id(1) @default(0)            long  counter;
+    @min(0) @max(100)            long  percent;
+    @range(min=-40, max=85)      double tempCelsius;
+    @unit("A")                   double current;
+    @hashid                      string name;
+    @id(99) @must_understand     long  critical;
+  };
+};

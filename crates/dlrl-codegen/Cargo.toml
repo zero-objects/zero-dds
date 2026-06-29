@@ -26,4 +26,4 @@ std = ["alloc"]
 alloc = []
 
 [dependencies]
-zerodds-dlrl = { version = "1.0.0-rc.3.1", path = "../dlrl" }
+zerodds-dlrl = { version = "1.0.0-rc.4", path = "../dlrl" }

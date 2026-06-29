@@ -130,6 +130,7 @@ members = [
     "crates/xrce-client",
     "crates/xrce-agent",
     "crates/recorder",
+    "crates/recorder-decode",
     "crates/monitor",
 
     # Public API / Bindings
@@ -163,6 +164,12 @@ members = [
     "tools/bench-suite",
     "tools/qos-matrix",
     "tools/amqp-dds-endpoint",
+    # External iceoryx2 oracle — standalone consumer (iceoryx2-only, zero
+    # ZeroDDS deps) that reads a ZeroDDS-published sample over iceoryx2 SHM.
+    "tools/iceoryx2-oracle-consumer",
+    # ZeroDDS ↔ Cyclone same-host zero-copy bridge over the iceoryx C++ (POSH)
+    # transport (libiceoryx_binding_c FFI). FFI gated behind feature `posh`.
+    "crates/iceoryx-cyclone",
     # Phase-5 F.2 — chaos-engineering CLI.
     "tools/chaos",
     # Phase-5 F.2 Phase-B — LD_PRELOAD shim for clock skew.
@@ -187,7 +194,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "1.0.0-rc.3.1"
+version = "1.0.0-rc.4"
 edition = "2024"
 rust-version = "1.88"
 license = "Apache-2.0"
@@ -254,6 +261,7 @@ zerodds-amqp-bridged  = ["zddsamqp"]
 zerodds-grpc-bridged  = ["zddsgrpc"]
 zerodds-corba-bridged = ["zddscorba"]
 zerodds-ros2-shim     = ["zddsros2"]
+zerodds-router        = ["zddsrouter"]
 zerodds-admin         = ["zdds"]
 zerodds-idlc          = ["zddsidl"]
 zerodds-spy           = ["zddsspy"]
@@ -351,7 +359,9 @@ rustls-pemfile = "2"
 rustls-pki-types = { version = "1.11", default-features = false, features = ["std", "alloc"] }
 # rustls-webpki — X.509 chain validation (2 users: security-permissions,
 # security-pki). ring backend compatible with rustls above.
-rustls-webpki = { version = "0.103", default-features = false, features = ["std", "ring"] }
+# Provider (ring | aws-lc-rs) is selected by the two users' backend features
+# (security-pki / security-permissions `ring-backend` vs `aws-lc`), not forced here.
+rustls-webpki = { version = "0.103", default-features = false, features = ["std"] }
 # roxmltree — XML parser for DDS-XML config/permissions/OPC-UA NodeSet
 # (5 users: amqp-endpoint, opcua-gateway, security-permissions, xml,
 # transport-tsn). Pure-Rust, no xml-rs (heavy).

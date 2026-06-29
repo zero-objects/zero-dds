@@ -57,6 +57,7 @@ path = "src/lib.rs"
 [dependencies]
 zerodds-cdr = {{ path = "{root}/crates/cdr" }}
 zerodds-dcps = {{ path = "{root}/crates/dcps" }}
+zerodds-types = {{ path = "{root}/crates/types" }}
 zerodds-sql-filter = {{ path = "{root}/crates/sql-filter" }}
 "#,
         root = workspace_root.display()
@@ -305,6 +306,204 @@ fn wire_enum_roundtrip() {
             assert_eq!(Color::from_wire(0), Some(Color::RED));
             assert_eq!(Color::from_wire(2), Some(Color::BLUE));
             assert_eq!(Color::from_wire(99), None);
+        "#,
+    );
+}
+
+/// Bug R2 (#61): a fixed-size array MEMBER must encode AND decode every
+/// element. Before the fix the decode side named the scalar element type
+/// (`i32`) instead of the array type (`[i32; N]`), so the generated code
+/// failed to compile / read only one element. This covers 1-D and
+/// multi-dimensional primitive arrays exactly as fixture 08_arrays.idl
+/// (`long vec[3]`, `long grid[4][4]`, `double cube[2][2][2]`).
+#[test]
+#[ignore = "requires cargo offline + path-deps"]
+fn wire_fixed_array_member_roundtrip() {
+    run_wire_test(
+        "arrays",
+        r#"
+            struct Arrays {
+                long   vec[3];
+                long   grid[2][2];
+                double cube[2][2][2];
+            };
+        "#,
+        r#"
+            let original = Arrays {
+                vec: [10, 20, 30],
+                grid: [[1, 2], [3, 4]],
+                cube: [[[1.0, 2.0], [3.0, 4.0]], [[5.0, 6.0], [7.0, 8.0]]],
+            };
+            let mut buf = Vec::new();
+            original.encode(&mut buf).expect("encode");
+            let decoded = Arrays::decode(&buf).expect("decode");
+
+            // Every element of every dimension must round-trip — proving the
+            // decode reads the FULL array, not just the first element.
+            assert_eq!(decoded.vec, [10, 20, 30], "1-D array");
+            assert_eq!(decoded.grid, [[1, 2], [3, 4]], "multi-dim array");
+            assert_eq!(
+                decoded.cube,
+                [[[1.0, 2.0], [3.0, 4.0]], [[5.0, 6.0], [7.0, 8.0]]],
+                "3-D array"
+            );
+        "#,
+    );
+}
+
+/// Bug R2b (#72): a fixed-size array-OF-STRUCT member (`Point shape[2]`,
+/// fixture 08_arrays.idl) must encode AND decode every element and
+/// round-trip. The blanket `impl CdrDecode for [T; N]` in the
+/// separately-owned `zerodds-cdr` crate requires `T: Default + Copy`, and
+/// generated structs/unions are NOT `Copy` — so the codegen now emits a
+/// manual element-wise decoder (mirroring the blanket impl's XCDR2 DHEADER
+/// decision byte-for-byte, building each fixed array from a `Vec` with no
+/// `Copy` bound). This proves it round-trips at the wire level, including a
+/// 2-D array-of-struct (`Point grid[2][2]`).
+#[test]
+#[ignore = "requires cargo offline + path-deps"]
+fn wire_array_of_struct_member_roundtrip() {
+    run_wire_test(
+        "arrofstruct",
+        r#"
+            @nested struct Point { long x; long y; };
+            struct Shapes {
+                Point shape[2];
+                Point grid[2][2];
+            };
+        "#,
+        r#"
+            let original = Shapes {
+                shape: [Point { x: 1, y: 2 }, Point { x: 3, y: 4 }],
+                grid: [
+                    [Point { x: 10, y: 11 }, Point { x: 12, y: 13 }],
+                    [Point { x: 20, y: 21 }, Point { x: 22, y: 23 }],
+                ],
+            };
+            let mut buf = Vec::new();
+            original.encode(&mut buf).expect("encode");
+            let decoded = Shapes::decode(&buf).expect("decode");
+
+            // Every struct element of every dimension must round-trip —
+            // proving the decode reads the FULL array element-by-element,
+            // not just the first element (and not via the Copy-bound
+            // blanket impl, which would not even compile here).
+            assert_eq!(decoded.shape[0], Point { x: 1, y: 2 }, "1-D elem 0");
+            assert_eq!(decoded.shape[1], Point { x: 3, y: 4 }, "1-D elem 1");
+            assert_eq!(decoded.grid[0][0], Point { x: 10, y: 11 }, "2-D [0][0]");
+            assert_eq!(decoded.grid[0][1], Point { x: 12, y: 13 }, "2-D [0][1]");
+            assert_eq!(decoded.grid[1][0], Point { x: 20, y: 21 }, "2-D [1][0]");
+            assert_eq!(decoded.grid[1][1], Point { x: 22, y: 23 }, "2-D [1][1]");
+            assert_eq!(decoded, original, "full struct round-trips");
+        "#,
+    );
+}
+
+/// Bug O (#58): the generated enum must honor explicit `@value(N)` in BOTH
+/// the discriminant assignment and the `from_wire` reverse map. Fixture
+/// 03_enums.idl has a sparse enum `@value(1) ONE, @value(2) TWO, @value(8)
+/// EIGHT`; the wire byte for EIGHT must be 8, not the sequential index 2.
+#[test]
+#[ignore = "requires cargo offline + path-deps"]
+fn wire_enum_explicit_value_roundtrip() {
+    run_wire_test(
+        "enumvalue",
+        r#"enum Sparse { @value(1) ONE, @value(2) TWO, @value(8) EIGHT };"#,
+        r#"
+            use zerodds_cdr::{BufferReader, BufferWriter, CdrEncode, CdrDecode, Endianness};
+
+            // The discriminant must be the explicit @value, not 0..N-1.
+            assert_eq!(Sparse::ONE as i32, 1);
+            assert_eq!(Sparse::TWO as i32, 2);
+            assert_eq!(Sparse::EIGHT as i32, 8, "@value(8) must be 8, not index 2");
+
+            // Encode EIGHT → the wire i32 must be 8.
+            let mut w = BufferWriter::new(Endianness::Little);
+            <Sparse as CdrEncode>::encode(&Sparse::EIGHT, &mut w).expect("encode");
+            assert_eq!(w.into_bytes(), vec![8, 0, 0, 0], "EIGHT encodes as i32 8");
+
+            // Decode the wire value 8 back to EIGHT (round-trip).
+            let bytes = vec![8u8, 0, 0, 0];
+            let mut r = BufferReader::new(&bytes, Endianness::Little);
+            let decoded = <Sparse as CdrDecode>::decode(&mut r).expect("decode");
+            assert_eq!(decoded, Sparse::EIGHT);
+
+            // from_wire reverse map honors @value too.
+            assert_eq!(Sparse::from_wire(1), Some(Sparse::ONE));
+            assert_eq!(Sparse::from_wire(8), Some(Sparse::EIGHT));
+            // The OLD buggy sequential index 2 is NOT a valid wire value now.
+            assert_eq!(Sparse::from_wire(0), None);
+        "#,
+    );
+}
+
+/// Bug O (#58) consistency: when a union switches on an enum with explicit
+/// `@value`, the union's `case ENUM_LITERAL:` discriminator must match the
+/// enum's wire value (both routed through ENUM_LITERAL_VALUES).
+#[test]
+#[ignore = "requires cargo offline + path-deps"]
+fn wire_enum_value_union_case_consistency() {
+    run_wire_test(
+        "enumvalunion",
+        r#"
+            enum Mode { @value(1) ONE, @value(8) EIGHT };
+            union Reading switch (Mode) {
+                case ONE:   long a;
+                case EIGHT: double b;
+            };
+        "#,
+        r#"
+            use zerodds_cdr::{BufferReader, BufferWriter, CdrEncode, CdrDecode, Endianness};
+            fn rt(v: &Reading) -> Reading {
+                let mut w = BufferWriter::new(Endianness::Big);
+                v.encode(&mut w).expect("encode");
+                let bytes = w.into_bytes();
+                let mut r = BufferReader::new(&bytes, Endianness::Big);
+                Reading::decode(&mut r).expect("decode")
+            }
+            // The EIGHT arm's discriminator must serialize as 8 (the @value),
+            // matching the enum wire form, and round-trip.
+            let mut w = BufferWriter::new(Endianness::Big);
+            Reading::B(2.5).encode(&mut w).expect("encode");
+            let b = w.into_bytes();
+            assert_eq!(&b[..4], &8i32.to_be_bytes(), "case EIGHT disc = @value(8)");
+            assert_eq!(rt(&Reading::A(11)), Reading::A(11));
+            assert_eq!(rt(&Reading::B(2.5)), Reading::B(2.5));
+        "#,
+    );
+}
+
+/// `fixed<P,S>` over the wire (CORBA/GIOP §9.3.2.7 packed BCD). The exact bytes
+/// are the CORBA vendor-oracle vectors (JacORB 3.9 / omniORB 4.3, task CV-fixed)
+/// — and they are byte-identical to what the C++ PSM emits for the same struct
+/// (`crates/idl-cpp/tests/clang_roundtrip.rs::fixed_member_roundtrips_through_clang`),
+/// so this doubles as the rust↔cpp cross-PSM anchor for `fixed`.
+#[test]
+#[ignore = "requires cargo offline + path-deps"]
+fn wire_fixed_member_golden_bytes() {
+    run_wire_test(
+        "fixed",
+        r#"module m {
+             @final      struct Ff { long id; fixed<5,2> price; };
+             @appendable struct Fa { long id; fixed<4,0> qty;   };
+           };"#,
+        r#"
+            use zerodds_cdr::fixed::Fixed;
+            // @final: body = id(4) + bcd(3); fixed<5,2> 123.45 -> 12 34 5c.
+            let f = m::Ff { id: 7, price: Fixed::<5,2>::from_str_repr("123.45").unwrap() };
+            let mut buf = Vec::new();
+            f.encode(&mut buf).expect("encode");
+            assert_eq!(buf, vec![0x07,0,0,0, 0x12,0x34,0x5c], "Ff fixed golden");
+            let back = m::Ff::decode(&buf).expect("decode");
+            assert_eq!(back.price.to_string_repr(), "123.45");
+
+            // @appendable: DHEADER(7) + id(4) + bcd(3); fixed<4,0> 1234 -> 01 23 4c.
+            let a = m::Fa { id: 7, qty: Fixed::<4,0>::from_str_repr("1234").unwrap() };
+            let mut buf = Vec::new();
+            a.encode(&mut buf).expect("encode");
+            assert_eq!(buf, vec![0x07,0,0,0, 0x07,0,0,0, 0x01,0x23,0x4c], "Fa fixed golden");
+            let back = m::Fa::decode(&buf).expect("decode");
+            assert_eq!(back.qty.to_string_repr(), "1234");
         "#,
     );
 }

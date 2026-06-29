@@ -5,6 +5,7 @@ import org.omg.dds.core.Entity;
 import org.omg.dds.core.InstanceHandle;
 import org.omg.dds.core.ReturnCode;
 import org.omg.dds.core.policy.QosProfile;
+import org.omg.dds.topic.ContentFilteredTopic;
 import org.omg.dds.topic.Topic;
 import org.omg.dds.topic.TopicTypeSupport;
 import org.zerodds.cdr.TypeSupportResolver;
@@ -41,6 +42,19 @@ public final class Subscriber implements Entity {
     public <T> DataReader<T> createDataReader(
             Topic<T> topic, TopicTypeSupport<T> typeSupport, QosProfile qos) {
         DataReader<T> dr = new DataReader<>(domainId, topic, typeSupport, qos);
+        dr.enable();
+        return dr;
+    }
+
+    /**
+     * Create a DataReader bound to a {@link ContentFilteredTopic} — DDS-DCPS
+     * 1.4 §2.2.2.3.3. Only samples whose content satisfies the filter
+     * expression are delivered to the reader.
+     */
+    public <T> DataReader<T> createDataReader(
+            ContentFilteredTopic<T> cft, TopicTypeSupport<T> typeSupport, QosProfile qos) {
+        DataReader<T> dr = new DataReader<>(
+                domainId, cft.getRelatedTopic(), typeSupport, qos, cft::evaluate);
         dr.enable();
         return dr;
     }

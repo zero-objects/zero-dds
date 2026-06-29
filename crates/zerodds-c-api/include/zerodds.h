@@ -45,9 +45,11 @@ typedef struct zerodds_ZeroDdsQueryCondition zerodds_ZeroDdsQueryCondition;
 #include <stddef.h>
 #include <stdbool.h>
 
-typedef void (*zerodds_Option_ZeroDdsDataCallback)(void *user_data, const uint8_t *payload, size_t payload_len, uint8_t representation);
+typedef void (*zerodds_Option_ZeroDdsDataCallback)(void *user_data, const uint8_t *payload, size_t payload_len, uint8_t representation, uint8_t big_endian);
 
 typedef int (*zerodds_Option_ZeroDdsDecodeFn)(const uint8_t *buf, size_t len, void *out_sample);
+
+typedef int (*zerodds_Option_ZeroDdsDecodeReprFn)(const uint8_t *buf, size_t len, uint8_t representation, void *out_sample);
 
 typedef int (*zerodds_Option_ZeroDdsEncodeFn)(const void *sample, uint8_t *out_buf, size_t out_cap, size_t *out_len);
 
@@ -814,6 +816,20 @@ typedef struct zerodds_ZeroDdsSampleInfo {
    * `true` if the payload actually has data (vs. a lifecycle marker).
    */
   bool valid_data;
+  /**
+   * XCDR version of the payload from the encapsulation header (RTPS 2.5
+   * §10.5): `0` = XCDR1 (CDR/PL_CDR), `1` = XCDR2 (CDR2/D_CDR2/PL_CDR2).
+   * The typed consumer needs this to apply the correct alignment rule.
+   * `0` for lifecycle markers (no payload).
+   */
+  uint8_t representation;
+  /**
+   * Wire byte order of the payload: `0` = little-endian (the canonical
+   * XCDR2 wire), `1` = big-endian — from the encapsulation representation
+   * identifier's low bit. The typed consumer dispatches its little-endian
+   * vs big-endian decoder on this. `0` for lifecycle markers.
+   */
+  uint8_t big_endian;
 } zerodds_ZeroDdsSampleInfo;
 
 /**
@@ -1316,6 +1332,17 @@ typedef struct zerodds_ZeroDdsTypeSupport {
    * if the type has no heap fields.
    */
   zerodds_Option_ZeroDdsSampleFreeFn sample_free;
+  /**
+   * Representation-aware decoder (see `ZeroDdsDecodeReprFn`); Bug R4b.
+   *
+   * ADDITIVE TAIL FIELD (minor-bump ABI, `zerodds-c-api-1.0` §7): a
+   * codegen table built before this field was added simply omits it
+   * from its designated-initializer list, so it is zero-filled to
+   * NULL — the take path then falls back to the legacy `decode`
+   * pointer. New codegen that wants representation-correct alignment
+   * for 64-bit members sets this pointer.
+   */
+  zerodds_Option_ZeroDdsDecodeReprFn decode_repr;
 } zerodds_ZeroDdsTypeSupport;
 
 #ifdef __cplusplus
@@ -1332,6 +1359,19 @@ extern "C" {
  * Returns `NULL` on error.
  */
 struct zerodds_ZeroDdsRuntime *zerodds_runtime_create(uint32_t domain_id);
+
+/**
+ * Like [`zerodds_runtime_create`] but with the **ROS-2 out-of-the-box profile**
+ * ([`RuntimeConfig::ros_defaults`]): the reader announces both XCDR1 and XCDR2
+ * data representations, so a ZeroDDS node matches `rmw_cyclonedds`/
+ * `rmw_fastrtps` writers that emit XCDR1 for final/simple types
+ * (e.g. `std_msgs/String`) without any `ZERODDS_DATA_REPR_OFFER` env tuning.
+ * This is what `rmw_zerodds` uses, so ROS-2 interop works config-free.
+ *
+ * # Safety
+ * Same as [`zerodds_runtime_create`].
+ */
+struct zerodds_ZeroDdsRuntime *zerodds_runtime_create_ros_defaults(uint32_t domain_id);
 
 /**
  * Destroys a runtime. NULL-safe.
@@ -1554,6 +1594,28 @@ int zerodds_writer_unregister_with_dispose(struct zerodds_ZeroDdsWriter *writer,
                                            const uint8_t *key_hash);
 
 /**
+ * Number of remote DataReaders currently matched to this writer (DDS 1.4
+ * §2.2.4.2 PublicationMatchedStatus.current_count). Powers
+ * `rmw_publisher_count_matched_subscriptions` → `Publisher.get_subscription_count()`
+ * in rclpy/rclcpp. Returns `0` on a NULL handle.
+ *
+ * # Safety
+ * `writer` must come from `zerodds_writer_create*` or be NULL.
+ */
+uintptr_t zerodds_writer_matched_count(struct zerodds_ZeroDdsWriter *writer);
+
+/**
+ * Number of remote DataWriters currently matched to this reader (DDS 1.4
+ * §2.2.4.2 SubscriptionMatchedStatus.current_count). Powers
+ * `rmw_subscription_count_matched_publishers` → `Subscription.get_publisher_count()`.
+ * Returns `0` on a NULL handle.
+ *
+ * # Safety
+ * `reader` must come from `zerodds_reader_create*` or be NULL.
+ */
+uintptr_t zerodds_reader_matched_count(struct zerodds_ZeroDdsReader *reader);
+
+/**
  * Destroys a writer. NULL-safe.
  *
  * # Safety
@@ -1598,6 +1660,10 @@ struct zerodds_ZeroDdsReader *zerodds_reader_create_kind(struct zerodds_ZeroDdsR
  * wire sample. The typed consumer needs this to decode the body
  * with the correct alignment rule. NULL = ignore.
  *
+ * This little-endian-default form does not surface the wire byte order;
+ * a consumer that must decode a big-endian peer uses
+ * [`zerodds_reader_take_endian`].
+ *
  * # Safety
  * Pointers must be valid. `out_repr` may be NULL.
  */
@@ -1605,6 +1671,23 @@ int zerodds_reader_take(struct zerodds_ZeroDdsReader *reader,
                         uint8_t **out_buf,
                         uintptr_t *out_len,
                         uint8_t *out_repr);
+
+/**
+ * Like [`zerodds_reader_take`], plus `out_be` (nullable): receives the wire
+ * byte order — `0` = little-endian (the canonical XCDR2 wire), `1` =
+ * big-endian — derived from the encapsulation representation identifier
+ * (RTPS 2.5 §10.5). A typed FFI consumer dispatches its little-endian vs
+ * big-endian decoder on this, so a big-endian peer's sample decodes
+ * correctly. NULL = ignore (assume little-endian).
+ *
+ * # Safety
+ * Pointers must be valid. `out_repr` and `out_be` may be NULL.
+ */
+int zerodds_reader_take_endian(struct zerodds_ZeroDdsReader *reader,
+                               uint8_t **out_buf,
+                               uintptr_t *out_len,
+                               uint8_t *out_repr,
+                               uint8_t *out_be);
 
 /**
  * Fixed-buffer `take` convenience: copies one sample's payload into a
@@ -1654,6 +1737,21 @@ int zerodds_reader_wait_for_matched(struct zerodds_ZeroDdsReader *reader,
  * `reader` must come from `zerodds_reader_create*` or be NULL.
  */
 uint64_t zerodds_reader_unknown_src_count(struct zerodds_ZeroDdsReader *reader);
+
+/**
+ * A2 — arm TIME_BASED_FILTER (DDS 1.4 §2.2.3.12) on a reader: it then delivers
+ * at most one sample per instance per `min_separation_nanos`; closer-spaced
+ * samples are dropped before `zerodds_reader_take`/the data callback sees them.
+ * `0` disables the filter. ROS 2 exposes no TIME_BASED_FILTER field in
+ * `rmw_qos_profile_t`, so `rmw_zerodds` calls this from the
+ * `ZERODDS_TIME_BASED_FILTER` env to rate-limit a subscription. Returns `0` on
+ * success, `-1` on a NULL/unknown reader.
+ *
+ * # Safety
+ * `reader` must come from `zerodds_reader_create*` or be NULL.
+ */
+int zerodds_reader_set_time_based_filter_ns(struct zerodds_ZeroDdsReader *reader,
+                                            uint64_t min_separation_nanos);
 
 /**
  * Destroys a reader handle and releases its resources.
@@ -2846,6 +2944,51 @@ struct zerodds_ZeroDdsContentFilteredTopic *zerodds_dp_create_contentfilteredtop
                                                                                    uintptr_t param_count);
 
 /**
+ * Sets the positional CDR field schema on a ContentFilteredTopic so the
+ * untyped C-FFI filter actually evaluates the payload (Spec §2.2.2.3.3).
+ *
+ * `names[i]` is the field name referenced by the filter expression;
+ * `kinds[i]` is its CDR encoding (0=bool, 1=int32, 2=int64, 3=float32,
+ * 4=float64, 5=string). The fields MUST be listed in their on-wire
+ * declaration order, starting from the first member of the payload.
+ *
+ * This variant assumes a `@final` payload (no leading DHEADER, offset 0). For
+ * an `@appendable`/`@mutable` payload use [`zerodds_cft_set_schema_ex`].
+ *
+ * Note: filter literals are passed as-is — the SQL `WHERE` expression carries
+ * its own typed literals (e.g. `seq > 4`, `name = 'foo'`); the schema only
+ * declares how to decode the payload columns, it does not coerce the literals.
+ *
+ * # Safety
+ * `cft` valid; `names[0..count]` valid NUL-terminated C strings;
+ * `kinds[0..count]` readable.
+ */
+int zerodds_cft_set_schema(struct zerodds_ZeroDdsContentFilteredTopic *cft,
+                           const char *const *names,
+                           const uint32_t *kinds,
+                           uintptr_t count);
+
+/**
+ * Like [`zerodds_cft_set_schema`] but additionally declares the payload's type
+ * `extensibility` (XTypes 1.3 §7.3.1.2.1): `0 = @final`, `1 = @appendable`,
+ * `2 = @mutable`. For `@appendable`/`@mutable` the XCDR2 stream is prefixed
+ * with a 4-byte DHEADER (§7.4.3.4.2) before the first member, so the
+ * positional decoder skips 4 bytes; for `@final` the first member is at
+ * offset 0. Any other value is rejected.
+ *
+ * Filter literals are passed as-is (see [`zerodds_cft_set_schema`]).
+ *
+ * # Safety
+ * `cft` valid; `names[0..count]` valid NUL-terminated C strings;
+ * `kinds[0..count]` readable.
+ */
+int zerodds_cft_set_schema_ex(struct zerodds_ZeroDdsContentFilteredTopic *cft,
+                              const char *const *names,
+                              const uint32_t *kinds,
+                              uintptr_t count,
+                              uint32_t extensibility);
+
+/**
  * Deletes a ContentFilteredTopic.
  *
  * # Safety
@@ -3683,6 +3826,26 @@ int zerodds_xcdr2_decode(const struct zerodds_ZeroDdsTypeSupport *ts,
                          const uint8_t *buf,
                          uintptr_t len,
                          void *out_sample);
+
+/**
+ * Standalone representation-aware decoder (Bug R4b). Prefers
+ * `ts.decode_repr(buf, len, representation, out_sample)` when present so
+ * the decoder can pick the correct `max_align` (8 for XCDR1 = `0`,
+ * 4 for XCDR2 = `1`); falls back to the legacy `ts.decode` when the
+ * TypeSupport table predates the repr-aware entry-point.
+ *
+ * `representation`: `0` = XCDR1, `1` = XCDR2 (the value reported by
+ * `zerodds_reader_take`'s `out_repr`).
+ *
+ * # Safety
+ * `ts`/`buf`/`out_sample` valid; `buf` readable for `len` bytes;
+ * `out_sample` zero-initialized to the language type.
+ */
+int zerodds_xcdr2_decode_repr(const struct zerodds_ZeroDdsTypeSupport *ts,
+                              const uint8_t *buf,
+                              uintptr_t len,
+                              uint8_t representation,
+                              void *out_sample);
 
 /**
  * Writes a typed sample. Encodes via

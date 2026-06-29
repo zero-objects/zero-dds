@@ -32,6 +32,8 @@ use pyo3::types::{PyBytes, PyList};
 use zerodds_dcps::condition::{GuardCondition, WaitSet};
 use zerodds_dcps::interop::ShapeType;
 use zerodds_dcps::runtime::RuntimeConfig;
+use zerodds_dcps::sample::Sample;
+use zerodds_dcps::sample_info::{InstanceStateKind, SampleStateKind, ViewStateKind};
 use zerodds_dcps::{
     DataReader, DataReaderQos, DataWriter, DataWriterQos, DdsError, DomainParticipant,
     DomainParticipantFactory, DomainParticipantQos, Publisher, PublisherQos, RawBytes, Subscriber,
@@ -42,6 +44,122 @@ fn dds_err_to_py(e: DdsError) -> PyErr {
     match e {
         DdsError::Timeout => PyTimeoutError::new_err("dds timeout"),
         other => PyRuntimeError::new_err(format!("{other:?}")),
+    }
+}
+
+/// Converts a `Vec<Sample<RawBytes>>` into a Python `list[(bytes, SampleInfo)]`.
+fn bytes_samples_with_info<'py>(
+    py: Python<'py>,
+    samples: Vec<Sample<RawBytes>>,
+) -> PyResult<Bound<'py, PyList>> {
+    let list = PyList::empty(py);
+    for s in samples {
+        let info = Py::new(py, PySampleInfo::from_info(&s.info))?;
+        let data = PyBytes::new(py, &s.data.data);
+        list.append((data, info))?;
+    }
+    Ok(list)
+}
+
+/// Converts a `Vec<Sample<ShapeType>>` into a Python `list[(Shape, SampleInfo)]`.
+fn shape_samples_with_info<'py>(
+    py: Python<'py>,
+    samples: Vec<Sample<ShapeType>>,
+) -> PyResult<Bound<'py, PyList>> {
+    let list = PyList::empty(py);
+    for s in samples {
+        let info = Py::new(py, PySampleInfo::from_info(&s.info))?;
+        let shape = Py::new(py, PyShape::from(s.data))?;
+        list.append((shape, info))?;
+    }
+    Ok(list)
+}
+
+// =============================================================================
+// SampleInfo (Spec §2.2.2.5.1) — read-back metadata incl. instance_state
+// =============================================================================
+
+/// Python view of a DDS `SampleInfo` (DDS 1.4 §2.2.2.5.1). Carries the
+/// per-sample lifecycle metadata that `take()`/`read()` cannot express
+/// through `bytes` alone — most importantly `instance_state`
+/// (ALIVE / NOT_ALIVE_DISPOSED / NOT_ALIVE_NO_WRITERS) and `valid_data`
+/// for keyed lifecycle observability.
+#[pyclass(name = "SampleInfo", module = "zerodds_py", skip_from_py_object)]
+#[derive(Clone)]
+struct PySampleInfo {
+    /// Instance lifecycle state as a string:
+    /// `"Alive"` | `"NotAliveDisposed"` | `"NotAliveNoWriters"`.
+    #[pyo3(get)]
+    instance_state: &'static str,
+    /// Sample state: `"Read"` | `"NotRead"`.
+    #[pyo3(get)]
+    sample_state: &'static str,
+    /// View state: `"New"` | `"NotNew"`.
+    #[pyo3(get)]
+    view_state: &'static str,
+    /// `false` when the sample carries only a dispose/unregister marker
+    /// (no payload). Spec §2.2.2.5.1.13.
+    #[pyo3(get)]
+    valid_data: bool,
+    /// Per-instance handle (derived from the key hash). `0` for an
+    /// unkeyed type.
+    #[pyo3(get)]
+    instance_handle: u64,
+    /// Handle of the publication (writer) that produced the sample.
+    #[pyo3(get)]
+    publication_handle: u64,
+    /// Source timestamp in seconds (DDS `Time` → f64).
+    #[pyo3(get)]
+    source_timestamp_secs: f64,
+    /// Spec §2.2.2.5.1 generation counters.
+    #[pyo3(get)]
+    disposed_generation_count: i32,
+    /// Spec §2.2.2.5.1 generation counters.
+    #[pyo3(get)]
+    no_writers_generation_count: i32,
+}
+
+impl PySampleInfo {
+    fn from_info(info: &zerodds_dcps::sample_info::SampleInfo) -> Self {
+        let instance_state = match info.instance_state {
+            InstanceStateKind::Alive => "Alive",
+            InstanceStateKind::NotAliveDisposed => "NotAliveDisposed",
+            InstanceStateKind::NotAliveNoWriters => "NotAliveNoWriters",
+        };
+        let sample_state = match info.sample_state {
+            SampleStateKind::Read => "Read",
+            SampleStateKind::NotRead => "NotRead",
+        };
+        let view_state = match info.view_state {
+            ViewStateKind::New => "New",
+            ViewStateKind::NotNew => "NotNew",
+        };
+        Self {
+            instance_state,
+            sample_state,
+            view_state,
+            valid_data: info.valid_data,
+            instance_handle: info.instance_handle.as_raw(),
+            publication_handle: info.publication_handle.as_raw(),
+            source_timestamp_secs: f64::from(info.source_timestamp.seconds())
+                + f64::from(info.source_timestamp.nanoseconds()) / 1e9,
+            disposed_generation_count: info.disposed_generation_count,
+            no_writers_generation_count: info.no_writers_generation_count,
+        }
+    }
+}
+
+#[pymethods]
+impl PySampleInfo {
+    fn __repr__(&self) -> String {
+        format!(
+            "SampleInfo(instance_state={:?}, valid_data={}, instance_handle={}, sample_state={:?}, view_state={:?})",
+            self.instance_state,
+            self.valid_data,
+            self.instance_handle,
+            self.sample_state,
+            self.view_state
+        )
     }
 }
 
@@ -136,6 +254,17 @@ impl PyParticipant {
         Ok(PyShapeTopic { inner: topic })
     }
 
+    /// Keyed conformance topic (`conformance::Reading`, keyed by `id`).
+    /// For behavioral keyed-lifecycle demonstration (dispose/unregister +
+    /// `take_with_info` instance_state).
+    fn create_keyed_topic(&self, name: &str) -> PyResult<PyKeyedTopic> {
+        let topic = self
+            .inner
+            .create_topic::<KeyedReading>(name, TopicQos::default())
+            .map_err(dds_err_to_py)?;
+        Ok(PyKeyedTopic { inner: topic })
+    }
+
     fn create_publisher(&self) -> PyPublisher {
         PyPublisher {
             inner: Arc::new(self.inner.create_publisher(PublisherQos::default())),
@@ -209,6 +338,60 @@ impl PyParticipant {
             .into_iter()
             .map(|h| h.as_raw())
             .collect()
+    }
+
+    /// Spec §2.2.2.2.1.13 `create_contentfilteredtopic`. Creates a
+    /// content-filtered view of a `BytesTopic`.
+    ///
+    /// The Python binding accepts a *callable predicate* `bytes -> bool`
+    /// (more idiomatic than a SQL expression over an unkeyed/opaque
+    /// `RawBytes` payload, which carries no named fields). The predicate
+    /// is evaluated on every sample in the reader's `take()`/`read()`
+    /// path; returning `False` discards the sample (Spec §2.2.2.5.4).
+    fn create_bytes_contentfilteredtopic(
+        &self,
+        name: &str,
+        related_topic: &PyBytesTopic,
+        predicate: Py<PyAny>,
+    ) -> PyResult<PyBytesContentFilteredTopic> {
+        if name.is_empty() {
+            return Err(PyRuntimeError::new_err("content-filtered-topic name empty"));
+        }
+        Ok(PyBytesContentFilteredTopic {
+            name: name.to_string(),
+            related: related_topic.inner.clone(),
+            predicate,
+        })
+    }
+}
+
+// =============================================================================
+// ContentFilteredTopic (Spec §2.2.2.3.3 / §2.2.2.5.4)
+// =============================================================================
+
+/// Python content-filtered topic over a `BytesTopic`. Holds the related
+/// topic and a Python predicate `bytes -> bool` that the reader applies
+/// to every sample (DDS 1.4 §2.2.2.5.4).
+#[pyclass(name = "BytesContentFilteredTopic", module = "zerodds_py")]
+struct PyBytesContentFilteredTopic {
+    name: String,
+    related: Topic<RawBytes>,
+    predicate: Py<PyAny>,
+}
+
+#[pymethods]
+impl PyBytesContentFilteredTopic {
+    #[getter]
+    fn name(&self) -> String {
+        self.name.clone()
+    }
+    #[getter]
+    fn related_topic_name(&self) -> String {
+        self.related.name().to_string()
+    }
+    #[getter]
+    fn type_name(&self) -> &'static str {
+        <RawBytes as zerodds_dcps::DdsType>::TYPE_NAME
     }
 }
 
@@ -302,6 +485,28 @@ impl PyPublisher {
             .map_err(dds_err_to_py)?;
         Ok(PyShapeWriter { inner: Arc::new(w) })
     }
+
+    /// Keyed conformance writer (`conformance::Reading`).
+    fn create_keyed_writer(&self, topic: &PyKeyedTopic) -> PyResult<PyKeyedWriter> {
+        let w = self
+            .inner
+            .create_datawriter::<KeyedReading>(&topic.inner, DataWriterQos::default())
+            .map_err(dds_err_to_py)?;
+        Ok(PyKeyedWriter { inner: Arc::new(w) })
+    }
+
+    /// Keyed conformance writer with explicit QoS.
+    fn create_keyed_writer_with_qos(
+        &self,
+        topic: &PyKeyedTopic,
+        qos: &crate::qos::PyDataWriterQos,
+    ) -> PyResult<PyKeyedWriter> {
+        let w = self
+            .inner
+            .create_datawriter::<KeyedReading>(&topic.inner, qos.cloned_inner())
+            .map_err(dds_err_to_py)?;
+        Ok(PyKeyedWriter { inner: Arc::new(w) })
+    }
 }
 
 #[pyclass(name = "Subscriber", module = "zerodds_py")]
@@ -352,6 +557,77 @@ impl PySubscriber {
             .map_err(dds_err_to_py)?;
         Ok(PyShapeReader { inner: Arc::new(r) })
     }
+
+    /// Spec §2.2.2.5.4 — creates a DataReader on a
+    /// `BytesContentFilteredTopic`. The reader applies the topic's Python
+    /// predicate to every sample in `take()`/`read()`; samples for which
+    /// the predicate returns `False` are discarded.
+    fn create_bytes_reader_cft(
+        &self,
+        cft: &PyBytesContentFilteredTopic,
+    ) -> PyResult<PyBytesReader> {
+        self.create_bytes_reader_cft_with_qos_impl(cft, DataReaderQos::default())
+    }
+
+    /// As `create_bytes_reader_cft`, with explicit DataReaderQos.
+    fn create_bytes_reader_cft_with_qos(
+        &self,
+        cft: &PyBytesContentFilteredTopic,
+        qos: &crate::qos::PyDataReaderQos,
+    ) -> PyResult<PyBytesReader> {
+        self.create_bytes_reader_cft_with_qos_impl(cft, qos.cloned_inner())
+    }
+
+    /// Keyed conformance reader (`conformance::Reading`).
+    fn create_keyed_reader(&self, topic: &PyKeyedTopic) -> PyResult<PyKeyedReader> {
+        let r = self
+            .inner
+            .create_datareader::<KeyedReading>(&topic.inner, DataReaderQos::default())
+            .map_err(dds_err_to_py)?;
+        Ok(PyKeyedReader { inner: Arc::new(r) })
+    }
+
+    /// Keyed conformance reader with explicit QoS.
+    fn create_keyed_reader_with_qos(
+        &self,
+        topic: &PyKeyedTopic,
+        qos: &crate::qos::PyDataReaderQos,
+    ) -> PyResult<PyKeyedReader> {
+        let r = self
+            .inner
+            .create_datareader::<KeyedReading>(&topic.inner, qos.cloned_inner())
+            .map_err(dds_err_to_py)?;
+        Ok(PyKeyedReader { inner: Arc::new(r) })
+    }
+}
+
+impl PySubscriber {
+    fn create_bytes_reader_cft_with_qos_impl(
+        &self,
+        cft: &PyBytesContentFilteredTopic,
+        qos: DataReaderQos,
+    ) -> PyResult<PyBytesReader> {
+        // Clone the Python predicate into the filter closure. The closure
+        // re-acquires the GIL on each sample (it runs on the take path,
+        // where the GIL was released via `py.detach`).
+        let predicate: Py<PyAny> = Python::attach(|py| cft.predicate.clone_ref(py));
+        let r = self
+            .inner
+            .create_datareader::<RawBytes>(&cft.related, qos)
+            .map_err(dds_err_to_py)?
+            .with_filter(move |sample: &RawBytes| {
+                Python::attach(|py| {
+                    let arg = PyBytes::new(py, &sample.data);
+                    match predicate.call1(py, (arg,)) {
+                        Ok(res) => res.is_truthy(py).unwrap_or(true),
+                        // A predicate that raises is treated as "pass"
+                        // (fail-open) to avoid silently dropping data.
+                        Err(_) => true,
+                    }
+                })
+            });
+        Ok(PyBytesReader { inner: Arc::new(r) })
+    }
 }
 
 // =============================================================================
@@ -388,6 +664,57 @@ impl PyBytesWriter {
     fn matched_subscription_count(&self) -> usize {
         self.inner.matched_subscription_count()
     }
+
+    /// Spec §2.2.2.4.2.5 `register_instance`. `RawBytes` is an unkeyed
+    /// type (`HAS_KEY=false`), so there is a single notional instance and
+    /// this returns `HANDLE_NIL` (0). The method exists for spec-shaped
+    /// API parity; keyed lifecycle is exercised via `ShapeWriter`.
+    fn register_instance(&self, py: Python<'_>, data: &[u8]) -> PyResult<u64> {
+        let sample = RawBytes::new(data.to_vec());
+        let writer = Arc::clone(&self.inner);
+        py.detach(|| writer.register_instance(&sample))
+            .map(|h| h.as_raw())
+            .map_err(dds_err_to_py)
+    }
+
+    /// Spec §2.2.2.4.2.14 `lookup_instance`. Returns `HANDLE_NIL` (0) for
+    /// the unkeyed `RawBytes` type.
+    fn lookup_instance(&self, py: Python<'_>, data: &[u8]) -> u64 {
+        let sample = RawBytes::new(data.to_vec());
+        let writer = Arc::clone(&self.inner);
+        py.detach(|| writer.lookup_instance(&sample)).as_raw()
+    }
+
+    /// Spec §2.2.2.4.2.10 `dispose`. Sends a wire-lifecycle marker; for a
+    /// keyed type readers then observe `NOT_ALIVE_DISPOSED`. `RawBytes` is
+    /// unkeyed, so this is a no-op marker (no per-instance state). Use
+    /// `ShapeWriter.dispose` for behaviorally observable keyed disposal.
+    fn dispose(&self, py: Python<'_>, data: &[u8]) -> PyResult<()> {
+        let sample = RawBytes::new(data.to_vec());
+        let writer = Arc::clone(&self.inner);
+        py.detach(|| {
+            let handle = writer.lookup_instance(&sample);
+            writer.dispose(&sample, handle)
+        })
+        .map_err(dds_err_to_py)
+    }
+
+    /// Spec §2.2.2.4.2.7 `unregister_instance`. No-op for unkeyed
+    /// `RawBytes`; see `ShapeWriter.unregister_instance` for keyed
+    /// behavior (NOT_ALIVE_NO_WRITERS).
+    fn unregister_instance(&self, py: Python<'_>, data: &[u8]) -> PyResult<()> {
+        let sample = RawBytes::new(data.to_vec());
+        let writer = Arc::clone(&self.inner);
+        py.detach(|| {
+            let handle = writer.lookup_instance(&sample);
+            writer.unregister_instance(&sample, handle)
+        })
+        .map_err(dds_err_to_py)
+    }
+    // NOTE: `RawBytes` is unkeyed → `lookup_instance` is `HANDLE_NIL` and
+    // dispose/unregister are no-op markers (the unkeyed DCPS path accepts a
+    // nil handle without error). Keyed lifecycle is exercised via
+    // `ShapeWriter` (keyed by color).
 
     /// `get_publication_matched_status` — (current_count, current_count, last_handle=0).
     /// RC1: ZeroDDS-DCPS exposes only `matched_subscription_count`; total/change maintenance follows.
@@ -435,6 +762,29 @@ impl PyBytesReader {
         Ok(list)
     }
 
+    /// `take_with_info` — Spec §2.2.2.5.3.5. Returns
+    /// `list[(bytes, SampleInfo)]` so that per-sample lifecycle metadata
+    /// (most importantly `instance_state` and `valid_data`) is observable
+    /// from Python — required to read back keyed dispose/unregister
+    /// markers (NOT_ALIVE_DISPOSED / NOT_ALIVE_NO_WRITERS).
+    fn take_with_info<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
+        let reader = Arc::clone(&self.inner);
+        let samples = py
+            .detach(|| reader.take_with_info())
+            .map_err(dds_err_to_py)?;
+        bytes_samples_with_info(py, samples)
+    }
+
+    /// `read_with_info` — Spec §2.2.2.5.3.4. Non-consuming variant of
+    /// `take_with_info`.
+    fn read_with_info<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
+        let reader = Arc::clone(&self.inner);
+        let samples = py
+            .detach(|| reader.read_with_info())
+            .map_err(dds_err_to_py)?;
+        bytes_samples_with_info(py, samples)
+    }
+
     fn wait_for_data(&self, py: Python<'_>, timeout_secs: f64) -> PyResult<()> {
         let reader = Arc::clone(&self.inner);
         py.detach(|| reader.wait_for_data(Duration::from_secs_f64(timeout_secs)))
@@ -470,6 +820,12 @@ impl PyBytesReader {
     /// `get_requested_deadline_missed_status` — (count, 0).
     fn requested_deadline_missed_status(&self) -> (i32, i32) {
         (self.inner.requested_deadline_missed_count() as i32, 0)
+    }
+    /// `get_liveliness_changed_status` — Spec §2.2.4.2.14
+    /// `LIVELINESS_CHANGED_STATUS`. Returns
+    /// `(alive_now: bool, alive_count: int, not_alive_count: int)`.
+    fn liveliness_changed_status(&self) -> (bool, u64, u64) {
+        self.inner.liveliness_changed_status()
     }
 
     /// §6.5 — attach a listener with all status kinds.
@@ -571,11 +927,19 @@ impl PyShapeWriter {
 
     /// Spec §2.2.2.4.2.10 `dispose`. Sends a wire-lifecycle
     /// marker — readers see the instance as `NotAliveDisposed`.
+    ///
+    /// Spec §2.2.2.4.2.4: `write` implicitly registers the instance, but
+    /// the DCPS live `write` path is fire-and-forget and skips the
+    /// instance tracker. We therefore register the instance here if it is
+    /// not yet known, so `dispose` always resolves a valid handle.
     fn dispose(&self, py: Python<'_>, shape: &PyShape) -> PyResult<()> {
         let sample: ShapeType = shape.into();
         let writer = Arc::clone(&self.inner);
         py.detach(|| {
-            let handle = writer.lookup_instance(&sample);
+            let mut handle = writer.lookup_instance(&sample);
+            if handle.is_nil() {
+                handle = writer.register_instance(&sample)?;
+            }
             writer.dispose(&sample, handle)
         })
         .map_err(dds_err_to_py)
@@ -588,7 +952,10 @@ impl PyShapeWriter {
         let sample: ShapeType = shape.into();
         let writer = Arc::clone(&self.inner);
         py.detach(|| {
-            let handle = writer.lookup_instance(&sample);
+            let mut handle = writer.lookup_instance(&sample);
+            if handle.is_nil() {
+                handle = writer.register_instance(&sample)?;
+            }
             writer.unregister_instance(&sample, handle)
         })
         .map_err(dds_err_to_py)
@@ -635,6 +1002,28 @@ impl PyShapeReader {
         Ok(list)
     }
 
+    /// `take_with_info` — Spec §2.2.2.5.3.5. Returns
+    /// `list[(Shape, SampleInfo)]`. For the keyed `ShapeType`,
+    /// `info.instance_state` reflects the per-color instance lifecycle —
+    /// e.g. `NotAliveDisposed` after `ShapeWriter.dispose`, with
+    /// `info.valid_data == false` for the pure marker.
+    fn take_with_info<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
+        let reader = Arc::clone(&self.inner);
+        let samples = py
+            .detach(|| reader.take_with_info())
+            .map_err(dds_err_to_py)?;
+        shape_samples_with_info(py, samples)
+    }
+
+    /// `read_with_info` — Spec §2.2.2.5.3.4. Non-consuming variant.
+    fn read_with_info<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
+        let reader = Arc::clone(&self.inner);
+        let samples = py
+            .detach(|| reader.read_with_info())
+            .map_err(dds_err_to_py)?;
+        shape_samples_with_info(py, samples)
+    }
+
     fn wait_for_data(&self, py: Python<'_>, timeout_secs: f64) -> PyResult<()> {
         let reader = Arc::clone(&self.inner);
         py.detach(|| reader.wait_for_data(Duration::from_secs_f64(timeout_secs)))
@@ -654,6 +1043,12 @@ impl PyShapeReader {
         .map_err(dds_err_to_py)
     }
 
+    /// `get_liveliness_changed_status` — Spec §2.2.4.2.14.
+    /// `(alive_now: bool, alive_count: int, not_alive_count: int)`.
+    fn liveliness_changed_status(&self) -> (bool, u64, u64) {
+        self.inner.liveliness_changed_status()
+    }
+
     /// §6.5 — attach a listener with all status kinds.
     fn set_listener(&self, listener: &crate::listener::PyDataReaderListener, mask: u32) {
         let bridge = crate::listener::PyDataReaderListenerBridge::from_pyclass(listener);
@@ -662,6 +1057,261 @@ impl PyShapeReader {
 
     fn clear_listener(&self) {
         self.inner.set_listener(None, 0);
+    }
+}
+
+// =============================================================================
+// KeyedReading — a binding-local keyed DdsType for behavioral keyed-lifecycle
+// =============================================================================
+//
+// Mirrors the conformance IDL `Reading { @key long id; long seq; double value; }`.
+// Provided so the Python binding can behaviorally demonstrate keyed lifecycle
+// (dispose → NOT_ALIVE_DISPOSED, unregister → NOT_ALIVE_NO_WRITERS) with a wire
+// codec whose `decode` is *key-only tolerant* — i.e. it reconstructs the value
+// from the BE key-holder bytes the runtime stores for a lifecycle marker
+// (Spec §2.2.2.5.1.13). The `ShapeType` codec is not key-tolerant, so markers
+// for that type cannot be materialized on the reader.
+
+/// Keyed conformance type: `Reading { @key long id; long seq; double value }`.
+/// Wire form (self-consistent, big-endian): `u32 id | u32 seq | f64 value`.
+#[pyclass(name = "KeyedReading", module = "zerodds_py", from_py_object)]
+#[derive(Clone)]
+struct PyKeyedReading {
+    /// `@key long id` — the instance key.
+    #[pyo3(get, set)]
+    id: i32,
+    /// `long seq`.
+    #[pyo3(get, set)]
+    seq: i32,
+    /// `double value`.
+    #[pyo3(get, set)]
+    value: f64,
+}
+
+#[pymethods]
+impl PyKeyedReading {
+    #[new]
+    #[pyo3(signature = (id, seq=0, value=0.0))]
+    fn new(id: i32, seq: i32, value: f64) -> Self {
+        Self { id, seq, value }
+    }
+    fn __repr__(&self) -> String {
+        format!(
+            "KeyedReading(id={}, seq={}, value={})",
+            self.id, self.seq, self.value
+        )
+    }
+}
+
+/// Rust DdsType backing `PyKeyedReading`.
+#[derive(Clone)]
+struct KeyedReading {
+    id: i32,
+    seq: i32,
+    value: f64,
+}
+
+impl zerodds_dcps::DdsType for KeyedReading {
+    const TYPE_NAME: &'static str = "conformance::Reading";
+    const HAS_KEY: bool = true;
+    // `@key long id` → 4-byte BE key holder → zero-pad KeyHash path.
+    const KEY_HOLDER_MAX_SIZE: Option<usize> = Some(4);
+
+    fn encode(
+        &self,
+        out: &mut Vec<u8>,
+    ) -> core::result::Result<(), zerodds_dcps::dds_type::EncodeError> {
+        out.extend_from_slice(&(self.id as u32).to_be_bytes());
+        out.extend_from_slice(&(self.seq as u32).to_be_bytes());
+        out.extend_from_slice(&self.value.to_bits().to_be_bytes());
+        Ok(())
+    }
+
+    fn decode(bytes: &[u8]) -> core::result::Result<Self, zerodds_dcps::dds_type::DecodeError> {
+        // Key-only tolerant (Spec §2.2.2.5.1.13): a lifecycle marker holder
+        // carries just the 4-byte BE `id`; full samples carry all 16 bytes.
+        if bytes.len() < 4 {
+            return Err(zerodds_dcps::dds_type::DecodeError::Invalid {
+                what: "KeyedReading: truncated key",
+            });
+        }
+        let id = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as i32;
+        let seq = if bytes.len() >= 8 {
+            u32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]) as i32
+        } else {
+            0
+        };
+        let value = if bytes.len() >= 16 {
+            f64::from_bits(u64::from_be_bytes([
+                bytes[8], bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14],
+                bytes[15],
+            ]))
+        } else {
+            0.0
+        };
+        Ok(Self { id, seq, value })
+    }
+
+    fn encode_key_holder_be(&self, holder: &mut zerodds_dcps::dds_type::PlainCdr2BeKeyHolder) {
+        holder.write_u32(self.id as u32);
+    }
+}
+
+impl From<&PyKeyedReading> for KeyedReading {
+    fn from(r: &PyKeyedReading) -> Self {
+        Self {
+            id: r.id,
+            seq: r.seq,
+            value: r.value,
+        }
+    }
+}
+
+impl From<KeyedReading> for PyKeyedReading {
+    fn from(r: KeyedReading) -> Self {
+        Self {
+            id: r.id,
+            seq: r.seq,
+            value: r.value,
+        }
+    }
+}
+
+#[pyclass(name = "KeyedTopic", module = "zerodds_py")]
+struct PyKeyedTopic {
+    inner: Topic<KeyedReading>,
+}
+
+#[pymethods]
+impl PyKeyedTopic {
+    #[getter]
+    fn name(&self) -> String {
+        self.inner.name().to_string()
+    }
+    #[getter]
+    fn type_name(&self) -> &'static str {
+        <KeyedReading as zerodds_dcps::DdsType>::TYPE_NAME
+    }
+}
+
+#[pyclass(name = "KeyedWriter", module = "zerodds_py")]
+struct PyKeyedWriter {
+    inner: Arc<DataWriter<KeyedReading>>,
+}
+
+#[pymethods]
+impl PyKeyedWriter {
+    fn write(&self, py: Python<'_>, sample: &PyKeyedReading) -> PyResult<()> {
+        let s: KeyedReading = sample.into();
+        let writer = Arc::clone(&self.inner);
+        py.detach(|| writer.write(&s)).map_err(dds_err_to_py)
+    }
+
+    /// Spec §2.2.2.4.2.5 `register_instance` — returns the per-key handle.
+    fn register_instance(&self, py: Python<'_>, sample: &PyKeyedReading) -> PyResult<u64> {
+        let s: KeyedReading = sample.into();
+        let writer = Arc::clone(&self.inner);
+        py.detach(|| writer.register_instance(&s))
+            .map(|h| h.as_raw())
+            .map_err(dds_err_to_py)
+    }
+
+    /// Spec §2.2.2.4.2.14 `lookup_instance`.
+    fn lookup_instance(&self, py: Python<'_>, sample: &PyKeyedReading) -> u64 {
+        let s: KeyedReading = sample.into();
+        let writer = Arc::clone(&self.inner);
+        py.detach(|| writer.lookup_instance(&s)).as_raw()
+    }
+
+    /// Spec §2.2.2.4.2.10 `dispose` → readers observe `NotAliveDisposed`.
+    fn dispose(&self, py: Python<'_>, sample: &PyKeyedReading) -> PyResult<()> {
+        let s: KeyedReading = sample.into();
+        let writer = Arc::clone(&self.inner);
+        py.detach(|| {
+            let mut handle = writer.lookup_instance(&s);
+            if handle.is_nil() {
+                handle = writer.register_instance(&s)?;
+            }
+            writer.dispose(&s, handle)
+        })
+        .map_err(dds_err_to_py)
+    }
+
+    /// Spec §2.2.2.4.2.7 `unregister_instance`. With the default
+    /// WriterDataLifecycle.autodispose=true, also disposes.
+    fn unregister_instance(&self, py: Python<'_>, sample: &PyKeyedReading) -> PyResult<()> {
+        let s: KeyedReading = sample.into();
+        let writer = Arc::clone(&self.inner);
+        py.detach(|| {
+            let mut handle = writer.lookup_instance(&s);
+            if handle.is_nil() {
+                handle = writer.register_instance(&s)?;
+            }
+            writer.unregister_instance(&s, handle)
+        })
+        .map_err(dds_err_to_py)
+    }
+
+    fn wait_for_matched_subscription(
+        &self,
+        py: Python<'_>,
+        min_count: usize,
+        timeout_secs: f64,
+    ) -> PyResult<()> {
+        let writer = Arc::clone(&self.inner);
+        py.detach(|| {
+            writer.wait_for_matched_subscription(min_count, Duration::from_secs_f64(timeout_secs))
+        })
+        .map_err(dds_err_to_py)
+    }
+}
+
+#[pyclass(name = "KeyedReader", module = "zerodds_py")]
+struct PyKeyedReader {
+    inner: Arc<DataReader<KeyedReading>>,
+}
+
+#[pymethods]
+impl PyKeyedReader {
+    /// `take_with_info` — returns `list[(KeyedReading, SampleInfo)]`.
+    /// `info.instance_state` reflects the per-key lifecycle:
+    /// `Alive` / `NotAliveDisposed` / `NotAliveNoWriters`.
+    fn take_with_info<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyList>> {
+        let reader = Arc::clone(&self.inner);
+        let samples = py
+            .detach(|| reader.take_with_info())
+            .map_err(dds_err_to_py)?;
+        let list = PyList::empty(py);
+        for s in samples {
+            let info = Py::new(py, PySampleInfo::from_info(&s.info))?;
+            let data = Py::new(py, PyKeyedReading::from(s.data))?;
+            list.append((data, info))?;
+        }
+        Ok(list)
+    }
+
+    fn wait_for_data(&self, py: Python<'_>, timeout_secs: f64) -> PyResult<()> {
+        let reader = Arc::clone(&self.inner);
+        py.detach(|| reader.wait_for_data(Duration::from_secs_f64(timeout_secs)))
+            .map_err(dds_err_to_py)
+    }
+
+    fn wait_for_matched_publication(
+        &self,
+        py: Python<'_>,
+        min_count: usize,
+        timeout_secs: f64,
+    ) -> PyResult<()> {
+        let reader = Arc::clone(&self.inner);
+        py.detach(|| {
+            reader.wait_for_matched_publication(min_count, Duration::from_secs_f64(timeout_secs))
+        })
+        .map_err(dds_err_to_py)
+    }
+
+    /// `get_liveliness_changed_status` — Spec §2.2.4.2.14.
+    fn liveliness_changed_status(&self) -> (bool, u64, u64) {
+        self.inner.liveliness_changed_status()
     }
 }
 
@@ -764,6 +1414,12 @@ fn _core(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyShape>()?;
     m.add_class::<PyShapeWriter>()?;
     m.add_class::<PyShapeReader>()?;
+    m.add_class::<PySampleInfo>()?;
+    m.add_class::<PyBytesContentFilteredTopic>()?;
+    m.add_class::<PyKeyedReading>()?;
+    m.add_class::<PyKeyedTopic>()?;
+    m.add_class::<PyKeyedWriter>()?;
+    m.add_class::<PyKeyedReader>()?;
     m.add_class::<PyGuardCondition>()?;
     m.add_class::<PyWaitSet>()?;
     m.add_class::<crate::qos::PyDataWriterQos>()?;

@@ -205,7 +205,7 @@ pub fn extract_mtls_subject(conn: &rustls::ServerConnection) -> Option<AuthSubje
 }
 
 fn sha256_hex(data: &[u8]) -> String {
-    use ring::digest::{Context, SHA256};
+    use crate::backend::digest::{Context, SHA256};
     let mut ctx = Context::new(&SHA256);
     ctx.update(data);
     let d = ctx.finish();

@@ -1,0 +1,8 @@
+module IoxOracle {
+  @final
+  struct KMsg {
+    @key unsigned long id;
+    string name;
+    unsigned long value;
+  };
+};

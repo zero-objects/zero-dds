@@ -76,6 +76,27 @@ fn hex_rows(bytes: &[u8], prefix: &str) -> String {
     out
 }
 
+/// Java-Variante von [`hex_rows`]: jedes Element wird als `(byte) 0xNN,`
+/// emittiert. In Java sind `0xNN`-Literale `int`; die implizite Narrowing-
+/// Konvertierung auf `byte` ist laut JLS §5.2 nur fuer Werte in -128..127
+/// erlaubt, sodass `0x80..0xFF` ohne expliziten `(byte)`-Cast einen
+/// Compile-Fehler `incompatible types: possible lossy conversion` ausloest.
+fn hex_rows_java(bytes: &[u8], prefix: &str) -> String {
+    let mut out = String::new();
+    for (i, b) in bytes.iter().enumerate() {
+        if i % 8 == 0 {
+            if i != 0 {
+                out.push('\n');
+            }
+            out.push_str(prefix);
+        } else {
+            out.push(' ');
+        }
+        out.push_str(&format!("(byte) 0x{b:02x},"));
+    }
+    out
+}
+
 /// Rendert den sprach-idiomatischen TypeObject-Konstanten-Block fuer
 /// ein Backend. Leerer String, wenn es keine Typen gibt.
 #[must_use]
@@ -160,7 +181,7 @@ fn render_java(blobs: &[TypeObjectBlob]) -> String {
              public static final byte[] {} = {{\n{}\n    }};\n",
             b.fqn,
             ident(&b.fqn).to_uppercase(),
-            hex_rows(&b.bytes, "        ")
+            hex_rows_java(&b.bytes, "        ")
         ));
     }
     out.push_str("}\n");
@@ -235,6 +256,27 @@ mod tests {
         let out = render(Backend::Java, &sample());
         assert!(out.contains("public final class TypeObjects"));
         assert!(out.contains("public static final byte[] ROBOT_POSE"));
+    }
+
+    #[test]
+    fn java_byte_literals_are_cast_for_high_bytes() {
+        // Bug J #65(8): bare `0xff,` is an int literal in Java; assigning it to a
+        // byte[] element fails to compile for values > 0x7F. Each element must be
+        // emitted as `(byte) 0xNN,`. 0xff is > 0x7F and must carry the cast.
+        let out = render(Backend::Java, &sample());
+        assert!(
+            out.contains("(byte) 0xff,"),
+            "high byte 0xff must be cast: {out}"
+        );
+        assert!(
+            out.contains("(byte) 0x01,"),
+            "low bytes also carry the cast for consistency: {out}"
+        );
+        // The un-cast form must NOT appear anywhere in the Java emission.
+        assert!(
+            !out.contains(" 0xff,") || out.contains("(byte) 0xff,"),
+            "no bare 0xff int-literal: {out}"
+        );
     }
 
     #[test]

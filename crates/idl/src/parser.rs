@@ -31,7 +31,7 @@ use crate::lexer::{Token, TokenRules, Tokenizer};
 ///
 /// Protects the CST and AST builders from stack overflow on adversarial
 /// deeply nested IDL inputs (TS-1 finding 1,
-/// `docs/test-harness/plan.md`). The cap is well above
+/// `internal/test-harness/plan.md`). The cap is well above
 /// realistic IDL bodies (typical module hierarchies go
 /// 4-6 deep; even CCM component stacks stay under 16) and
 /// below the stack-frame limit of the recursive CST builder in the

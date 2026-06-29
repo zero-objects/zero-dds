@@ -46,18 +46,26 @@ security = [
     "zerodds-dcps/security",
     "dep:zerodds-security-runtime",
 ]
+# FIPS crypto backend (aws-lc-rs / AWS-LC, FIPS-140-3-validatable) for the whole
+# DDS-Security stack behind the C FFI. Implies `security`. Lets a C/C++/Python
+# consumer (incl. the cross-vendor bench's zerodds-roundtrip) link a FIPS-flavored
+# libzerodds_c_api. Build: `cargo build -p zerodds-c-api --release --features fips`.
+fips = ["security", "zerodds-dcps/fips", "zerodds-security-runtime/fips"]
+# wolfCrypt crypto backend for the whole DDS-Security stack behind the C FFI.
+# Implies `security`. Needs libwolfssl / WOLFSSL_SRC (wolfSSL 5.9.x source).
+wolfcrypt = ["security", "zerodds-dcps/wolfcrypt", "zerodds-security-runtime/wolfcrypt"]
 
 [dependencies]
-zerodds-cdr = { version = "1.0.0-rc.3.1", path = "../cdr", features = ["alloc", "std"] }
-zerodds-dcps = { version = "1.0.0-rc.3.1", path = "../dcps" }
-zerodds-qos = { version = "1.0.0-rc.3.1", path = "../qos" }
-zerodds-rtps = { version = "1.0.0-rc.3.1", path = "../rtps" }
-zerodds-sql-filter = { version = "1.0.0-rc.3.1", path = "../sql-filter" }
-zerodds-types = { version = "1.0.0-rc.3.1", path = "../types" }
+zerodds-cdr = { version = "1.0.0-rc.4", path = "../cdr", features = ["alloc", "std"] }
+zerodds-dcps = { version = "1.0.0-rc.4", path = "../dcps" }
+zerodds-qos = { version = "1.0.0-rc.4", path = "../qos" }
+zerodds-rtps = { version = "1.0.0-rc.4", path = "../rtps" }
+zerodds-sql-filter = { version = "1.0.0-rc.4", path = "../sql-filter" }
+zerodds-types = { version = "1.0.0-rc.4", path = "../types" }
 # Active only under the `security` feature — otherwise NOT compiled.
-zerodds-security-runtime = { version = "1.0.0-rc.3.1", path = "../security-runtime", optional = true }
+zerodds-security-runtime = { version = "1.0.0-rc.4", path = "../security-runtime", optional = true }
 # Active only under the `flatdata-loan` feature — zero-copy SHM slot loan.
-zerodds-flatdata = { version = "1.0.0-rc.3.1", path = "../flatdata", optional = true, default-features = false, features = ["std", "posix-mmap"] }
+zerodds-flatdata = { version = "1.0.0-rc.4", path = "../flatdata", optional = true, default-features = false, features = ["std", "posix-mmap"] }
 
 [build-dependencies]
 # 0.29+ understands `#[unsafe(no_mangle)]` (Rust 2024 syntax).

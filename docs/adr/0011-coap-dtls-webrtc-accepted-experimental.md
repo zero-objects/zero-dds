@@ -2,7 +2,7 @@
 
 - **Status:** Accepted (2026-06-12)
 - **Supersedes:** the "DTLS DEFER" recommendation in
-  `docs/dossiers/dtls-pure-rust-dossier.md` §5.2
+  `internal/dossiers/dtls-pure-rust-dossier.md` §5.2
 - **Related:** ADR 0010 (OSCORE accepted) — the object-security path
 
 ## Context

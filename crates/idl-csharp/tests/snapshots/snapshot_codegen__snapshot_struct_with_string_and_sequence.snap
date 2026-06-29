@@ -27,9 +27,11 @@ public sealed class BagTypeSupport : IDdsTopicType<Bag>
 
     public byte[] Encode(Bag sample) => Encode(sample, EndianMode.LittleEndian);
 
-    public byte[] Encode(Bag sample, EndianMode endian)
+    public byte[] Encode(Bag sample, EndianMode endian) => Encode(sample, endian, 1);
+    public byte[] Encode(Bag sample, EndianMode endian, int representation)
     {
-        var w = new Xcdr2Writer(endian);
+        int __maxAlign = representation == 0 ? Xcdr2Writer.Xcdr1MaxAlignmentValue : 4;
+        var w = new Xcdr2Writer(endian, __maxAlign);
         EncodeInto(w, sample);
         return w.ToArray();
     }
@@ -40,39 +42,42 @@ public sealed class BagTypeSupport : IDdsTopicType<Bag>
         {
             w.WriteString(sample.Name);
             {
-                var __seq = (sample.Ids) as System.Collections.Generic.IEnumerable<int>;
-                var __mat = __seq is null ? new System.Collections.Generic.List<int>() : new System.Collections.Generic.List<int>(__seq);
-                w.WriteSequenceLength(__mat.Count);
-                foreach (var __item in __mat)
+                var __seq0 = (sample.Ids) as System.Collections.Generic.IEnumerable<int>;
+                var __mat0 = __seq0 is null ? new System.Collections.Generic.List<int>() : new System.Collections.Generic.List<int>(__seq0);
+                w.WriteSequenceLength(__mat0.Count);
+                foreach (var __item0 in __mat0)
                 {
-                    w.WriteInt32(__item);
+                    w.WriteInt32(__item0);
                 }
             }
         }
     }
 
-    public Bag Decode(ReadOnlySpan<byte> bytes)
+    public Bag Decode(ReadOnlySpan<byte> bytes) => Decode(bytes, EndianMode.LittleEndian, 1);
+    public Bag Decode(ReadOnlySpan<byte> bytes, EndianMode endian) => Decode(bytes, endian, 1);
+    public Bag Decode(ReadOnlySpan<byte> bytes, EndianMode endian, int representation)
     {
-        var r = new Xcdr2Reader(bytes, EndianMode.LittleEndian);
-        return DecodeFrom(r);
+        int __maxAlign = representation == 0 ? Xcdr2Reader.Xcdr1MaxAlignmentValue : 4;
+        var r = new Xcdr2Reader(bytes, endian, __maxAlign);
+        return DecodeFrom(ref r);
     }
 
-    public Bag DecodeFrom(Xcdr2Reader r)
+    public Bag DecodeFrom(ref Xcdr2Reader r)
     {
         var __scope = r.BeginDHeader();
-        string __m0 = default;
+        string __m0 = default!;
         __m0 = r.ReadString();
-        Omg.Types.ISequence<int> __m1 = default;
+        Omg.Types.ISequence<int> __m1 = default!;
         {
-            int __cnt = r.ReadSequenceLength();
-            var __list = new Omg.Types.SequenceList<int>();
-            for (int __i = 0; __i < __cnt; __i++)
+            int __cnt0 = r.ReadSequenceLength();
+            var __list0 = new Omg.Types.SequenceList<int>();
+            for (int __i0 = 0; __i0 < __cnt0; __i0++)
             {
-                int __e;
-                __e = r.ReadInt32();
-                __list.Add(__e);
+                int __e0;
+                __e0 = r.ReadInt32();
+                __list0.Add(__e0);
             }
-            __m1 = __list;
+            __m1 = __list0;
         }
         r.EndDHeader(__scope);
         return new Bag

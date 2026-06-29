@@ -1,0 +1,24 @@
+[package]
+name = "zerodds-iceoryx-cyclone"
+version = "1.0.0-rc.4"
+edition = "2021"
+license = "Apache-2.0"
+description = "ZeroDDS ↔ Cyclone DDS same-host zero-copy bridge over the iceoryx C++ (POSH) shared-memory transport, via the libiceoryx_binding_c C ABI."
+publish = false
+
+[features]
+# Off by default: the FFI links libiceoryx_binding_c and only works on a Linux
+# host with the iceoryx POSH stack + iox-roudi. Without it the crate still
+# builds (exposing the DdsPsmxMetadata representation type) on any platform.
+default = []
+posh = []
+
+[[bin]]
+name = "zerodds-cyclone-iox-reader"
+path = "src/bin/reader.rs"
+required-features = ["posh"]
+
+[[bin]]
+name = "zerodds-cyclone-iox-writer"
+path = "src/bin/writer.rs"
+required-features = ["posh"]

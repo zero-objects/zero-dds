@@ -8,7 +8,154 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
 
 ## [Unreleased]
 
-Reserved for changes after the `1.0.0-rc.2` workspace tag.
+Reserved for changes after the `1.0.0-rc.4` workspace tag.
+
+## [1.0.0-rc.4] — UNRELEASED (cut pending; date stamped at tag)
+
+Cross-vendor wire-conformance and full multi-language parity release.
+The headline: **every language binding now encodes byte-identically over
+the wire, in every representation (XCDR1, XCDR2, big-endian), and is
+anchored against the Cyclone / Fast DDS / OpenDDS / RTI Connext encoders.**
+167 commits over rc.3.1.
+
+### Added
+
+- **Reflective dynamic XTypes codec** (`zerodds-types`) — `DynamicData` ↔
+  CDR over XCDR1 (classic CDR / PL_CDR1), XCDR2, and `@mutable` (PL_CDR2)
+  union framing; registry-aware `TypeObject` → `DynamicType` resolution
+  across all 10 type kinds, nested composites, scalar/composite-element
+  collections, `wstring`, and bitmask/bitset. Lets `zerodds-spy` /
+  `zerodds-record` follow a writer's real `type_name` and decode samples
+  with no compile-time type.
+- **Recorder decode + replay** (`zerodds-record`, `zerodds-replay`,
+  `zerodds-spy`) — `--decode` / `--type-file` / `--out-json` /
+  `--out-sqlite` wired into capture; typed per-topic SQLite + JSON/NDJSON
+  sinks; type-following live `.zddsrec` capture; `replay` reads
+  `.zddsrec | NDJSON | SQLite` byte-exact.
+- **`fixed<P,S>` through all seven PSMs** (C++, C, C#, Java, Python,
+  TypeScript, Rust) — previously silently dropped on the wire in some
+  backends; now byte-identical to the CORBA BCD oracle.
+- **XCDR1 (classic CDR / PL_CDR1) encode + decode in every binding** —
+  Java, TypeScript, C#, Python, the C backend (`c_mode`), and C++ (which
+  was secretly XCDR2 under the hood).
+- **Big-endian receive + emit end-to-end** — threaded through the typed
+  decode path in C++, C, Python, C#, Java, TypeScript and Rust, the
+  C-API loan-batch `SampleInfo`, the WASM / websocket-bridge browser
+  path, and durability (stored samples retain + replay their wire
+  byte-order).
+- **iceoryx ↔ Cyclone same-host zero-copy bridge** (`cyclone-iox`
+  feature) — ZeroDDS ↔ Cyclone over iceoryx C++ (POSH); the PSMX chunk
+  is stamped with the writer's real RTPS GUID.
+- **`zerodds-idlc` default-extensibility flag** —
+  `ext-default-{appendable,final,mutable}` cfg option.
+- INFO_TS source timestamp wired end-to-end through the writer send path
+  (RTPS-F1).
+- Per-binding DDS QoS + entity-lifecycle surface completed
+  (dispose/status/CFT/partition/policy classes; Java + TypeScript reached
+  parity).
+
+### Changed
+
+- **Same-host SHM carrier is now event-driven (shared futex)** instead of
+  sleep-poll. Removes a same-host round-trip latency regression
+  (≈66 µs → ≈18 µs on the internal bench).
+- **DuckDB (lakehouse) durability backend is now opt-in** — the
+  self-contained `-sqlite` / `-file` backends are the default; the
+  lakehouse adapter + daemon are `publish = false` (they link the system
+  `libduckdb`, which has no portable crates.io build).
+- Default nested-struct extensibility settled on `@final` (matches our
+  cross-vendor `@final`-everywhere bench decision; SX2).
+
+### Fixed
+
+- **Cross-PSM XCDR2 wire divergence** — the 7 backends produced 7
+  different encodings (0/42 cross-decode); all converged to one
+  byte-identical encoding, anchored against vendor `idlc` output.
+- **Canonical XCDR2 encoding**: spurious DHEADER on primitive multi-dim
+  arrays (PARRAY §7.4.3.5), `@mutable` EMHEADER length-code compaction
+  (LC=4 → compact 0–3/5), `@mutable` decoder now accepts all length codes
+  including LC5–7 from Fast DDS, and bitmask holder size honours the
+  `@bit_bound` default.
+- **`TypeObject` / `TypeIdentifier`** serialization + hash non-conformance
+  versus all three vendors; **TYPE_CONSISTENCY** — typed endpoints with a
+  complete `TypeIdentifier` now match (was a foundational matching
+  failure).
+- **DATA_REPRESENTATION (DR1)** — the reader announced only XCDR2 and
+  dropped XCDR1 writers (Cyclone / legacy RTI); it now accepts both.
+- DCPS runtime hardcoded the XCDR data-representation tag to 0 on the
+  same-runtime loopback path (R4 / R4b).
+- **CORBA wire**: `fixed<P,S>` BCD packing dropped the most-significant
+  digit / emitted the wrong octet count; standalone `wchar` / `wstring`
+  GIOP 1.2 wire form corrected.
+- **ROS rmw wire codec**: `wstring` / `wchar` fields no longer abort the
+  codec; `char` maps to `uint8` (1 byte) per REP-2008, not IDL `wchar`.
+- **Code-generation correctness sweep across all backends** — the A–Q bug
+  cluster: union (enum / scoped discriminator), map, typedef-to-primitive
+  (data loss), nested + forward-declared / mutually-recursive types
+  (one was a stack-overflow crash), sequence element types, fixed-size
+  array members, `@optional`, `const` declarations, and `@value(N)` enum
+  discriminants — fixed across Rust, C++, C, C#, Java, Python and
+  TypeScript, with a committed language × IDL-feature conformance matrix.
+- KeyHash (≤16 B inline + MD5 over 16 B) and `@key` instance handling;
+  `@bit_bound(8/16)` enums narrow-encode (spec / Cyclone), per the
+  recorded decision.
+
+### Verification
+
+- Cross-vendor rich-typed XCDR2 + DDS-Security perf/interop matrices over
+  all five stacks (`tests/perf/dds-roundtrip-bench/`), plus public proof
+  projects in the `zero-dds-snippets` example repo.
+
+## [1.0.0-rc.3] — 2026-06-19
+
+Protocol-reach release: OPC-UA client/server + Pub/Sub, a
+production-grade ROS-2 RMW with same-host zero-copy, and the in-DDS
+routing service. 121 publishable crates (rc.1 had 97; +24 new).
+
+> rc.2 was never tagged on the GitLab root — it shipped as a GitHub-only
+> `zerodds-websocket-bridge` hotfix. Root went rc.1 → rc.3 directly; this
+> section therefore also covers what rc.2 carried publicly.
+
+### Added
+
+- **OPC-UA client/server wire stack** — UACP connection protocol +
+  secured SecureChannel handshake (Part 6 §6.7) + Session + Read / Write /
+  Call + Browse (View §5.9.2) + Discovery (GetEndpoints / FindServers) +
+  Subscription / MonitoredItem (§5.13/§5.14), end-to-end over `opc.tcp`.
+- **OPC-UA Pub/Sub (Part 14)** — JSON message mapping (§7.2.3), AMQP /
+  Kafka / Ethernet carriers, AES256-GCM security policy (AEAD), the
+  PubSub Information Model (§9), and SKS `GetSecurityKeys`.
+- **`zerodds-routing-service`** — in-DDS domain routing service (v1–v3).
+- **`zerodds-secure-permissions`** — CMS / PKCS#7 signer for DDS-Security
+  governance + permissions XML.
+- **Same-host zero-copy** — real in-place `flatdata` SHM loan on the
+  runtime FFI, plus the ROS-2 `RawSameHost` / iceoryx delivery modes and
+  the rmw-side loaning path (fixed-POD + CDR interop).
+- **ROS-2 RMW shim productionized** — event-driven `rmw_wait` (no
+  busy-poll), services + actions in the C-ABI, serialized pub/take
+  (rosbag2 path), topic-level graph introspection, endpoint-info
+  (REP-2009 layers 1–5), and `rmw_get_node_names` via `ros_discovery_info`.
+- `zerodds-admin` grown into a real operator CLI (live + offline,
+  `--json`); `xmlc` / traceability binaries wired; `zerodds-monitor` 1.1.
+- Complete `TypeObject` for Bitset + Annotation; idl-cpp XCDR2
+  `sequence<@appendable/@mutable struct>` (last XCDR2 gap closed);
+  C3 initial-announcement burst for WiFi-robust discovery.
+
+## [1.0.0-rc.3.1] — 2026-06-20
+
+Release-machinery hotfix over rc.3 — no library behaviour change.
+
+### Fixed
+
+- The DuckDB lakehouse adapter + durability daemon are `publish = false`
+  (source-only): they link the *system* `libduckdb`, so the crates.io
+  verify build fails `cannot find -lduckdb` for every consumer. The
+  self-contained `-sqlite` / `-file` backends stay published.
+- `zerodds-py` pinned to `1.0.0-rc.3` so maturin can build a PyPI wheel —
+  PEP 440 cannot represent the dotted SemVer prerelease `1.0.0-rc.3.1`;
+  PyPI publish skipped for rc.3.1.
+- `c-api` `smoke_ffi` `take_into` test used a `domain_id` outside the SPDP
+  port range; rustfmt + `zerodds-lint` compliance in rc.3.1 binding code.
 
 ## [1.0.0-rc.2] — 2026-05-15
 
@@ -45,7 +192,7 @@ keeps versions consistent across all 90 crates.
 ## [1.0.0-rc.1] — 2026-05-07
 
 Initial Release Candidate. 90/91 crates RC1-ready under
-`docs/release/RC1_GUARDRAILS.md` Definition of Done.
+`internal/release/RC1_GUARDRAILS.md` Definition of Done.
 
 ### Added — Layer 0 Foundation
 

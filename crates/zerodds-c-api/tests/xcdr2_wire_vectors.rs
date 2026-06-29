@@ -94,6 +94,7 @@ fn ts_template(name: &'static [u8], ext: u8) -> ZeroDdsTypeSupport {
         decode: None,
         key_hash: None,
         sample_free: None,
+        decode_repr: None,
     }
 }
 

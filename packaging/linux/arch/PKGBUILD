@@ -27,6 +27,7 @@ _daemons=(
     zerodds-grpc-bridged
     zerodds-corba-bridged
     zerodds-ros2-shim
+    zerodds-router
 )
 
 # Spec §1.3 — siebzehn CLI-Tools.

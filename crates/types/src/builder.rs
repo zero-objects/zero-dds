@@ -50,6 +50,14 @@ use crate::type_object::minimal::{
     MinimalStructMember, MinimalStructType,
 };
 
+/// The `QualifiedTypeName` as serialized in a COMPLETE TypeObject
+/// (§7.3.4.5.4): the fully-qualified name WITHOUT its leading `::` scope token.
+/// CycloneDDS / FastDDS / RTI all omit it (byte-verified) — `::to::Plain`
+/// serializes as `to::Plain`.
+fn strip_leading_scope(name: &str) -> String {
+    name.strip_prefix("::").unwrap_or(name).into()
+}
+
 /// Extensibility kind (§7.2.2.4). Simpler representation than the
 /// flag bits: exactly one of three values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -264,7 +272,11 @@ impl StructBuilder {
             name: name.into(),
             type_id: ty,
             explicit_id: None,
-            flags: 0,
+            // Default TryConstructKind = DISCARD (XTypes 1.3 §7.2.2.4.4.4.4 /
+            // §7.3.1.2.1.1 bits[0..2]=01): every member carries this unless
+            // overridden. Matches the vendors' TypeObject member_flags; the old
+            // default of 0 (no TryConstruct bits) diverged from all three.
+            flags: StructMemberFlag::TRY_CONSTRUCT1,
             unit: None,
             min: None,
             max: None,
@@ -293,7 +305,12 @@ impl StructBuilder {
     /// - otherwise sequential from 1
     fn resolve_member_ids(&self) -> Vec<u32> {
         let mut ids = Vec::with_capacity(self.members.len());
-        let mut next_seq: u32 = 1;
+        // XTypes 1.3 §7.2.2.4.9: sequential `@autoid` assigns the FIRST member
+        // id 0, the next 1, … (NOT 1-based). This matches the vendors' TypeObject
+        // member ids AND ZeroDDS's own data-wire codegen (idl-rust struct_emit
+        // uses the 0-based positional index for @mutable EMHEADER ids) — the old
+        // 1-based start made the TypeObject inconsistent with the data wire.
+        let mut next_seq: u32 = 0;
         for spec in &self.members {
             let id = if let Some(explicit) = spec.explicit_id {
                 explicit
@@ -378,7 +395,7 @@ impl StructBuilder {
                 detail: CompleteTypeDetail {
                     ann_builtin: AppliedBuiltinTypeAnnotations::default(),
                     ann_custom: OptionalAppliedAnnotationSeq::default(),
-                    type_name: self.name.clone(),
+                    type_name: strip_leading_scope(&self.name),
                 },
             },
             member_seq,
@@ -473,7 +490,7 @@ impl EnumBuilder {
                 detail: CompleteTypeDetail {
                     ann_builtin: AppliedBuiltinTypeAnnotations::default(),
                     ann_custom: OptionalAppliedAnnotationSeq::default(),
-                    type_name: self.name.clone(),
+                    type_name: strip_leading_scope(&self.name),
                 },
             },
             literal_seq: self
@@ -533,7 +550,7 @@ impl AliasBuilder {
                 detail: CompleteTypeDetail {
                     ann_builtin: AppliedBuiltinTypeAnnotations::default(),
                     ann_custom: OptionalAppliedAnnotationSeq::default(),
-                    type_name: self.name.clone(),
+                    type_name: strip_leading_scope(&self.name),
                 },
             },
             body: CompleteAliasBody {
@@ -613,7 +630,9 @@ impl UnionBuilder {
 
     fn resolve_case_ids(&self) -> Vec<u32> {
         let mut ids = Vec::with_capacity(self.cases.len());
-        let mut next: u32 = 1;
+        // Sequential @autoid is 0-based (§7.2.2.4.9) — byte-verified against
+        // Cyclone + FastDDS union goldens.
+        let mut next: u32 = 0;
         for c in &self.cases {
             ids.push(c.member_id.unwrap_or_else(|| {
                 let v = next;
@@ -641,11 +660,14 @@ impl UnionBuilder {
             .map(|(c, id)| MinimalUnionMember {
                 common: CommonUnionMember {
                     member_id: *id,
-                    member_flags: UnionMemberFlag(if c.is_default {
-                        UnionMemberFlag::IS_DEFAULT
-                    } else {
-                        0
-                    }),
+                    member_flags: UnionMemberFlag(
+                        UnionMemberFlag::TRY_CONSTRUCT1
+                            | if c.is_default {
+                                UnionMemberFlag::IS_DEFAULT
+                            } else {
+                                0
+                            },
+                    ),
                     type_id: c.type_id.clone(),
                     label_seq: c.labels.clone(),
                 },
@@ -656,7 +678,7 @@ impl UnionBuilder {
             union_flags: self.union_flags(),
             discriminator: MinimalDiscriminatorMember {
                 common: CommonDiscriminatorMember {
-                    member_flags: UnionDiscriminatorFlag::default(),
+                    member_flags: UnionDiscriminatorFlag::discriminator_default(),
                     type_id: self.discriminator_type.clone(),
                 },
             },
@@ -682,11 +704,14 @@ impl UnionBuilder {
             .map(|(c, id)| CompleteUnionMember {
                 common: CommonUnionMember {
                     member_id: *id,
-                    member_flags: UnionMemberFlag(if c.is_default {
-                        UnionMemberFlag::IS_DEFAULT
-                    } else {
-                        0
-                    }),
+                    member_flags: UnionMemberFlag(
+                        UnionMemberFlag::TRY_CONSTRUCT1
+                            | if c.is_default {
+                                UnionMemberFlag::IS_DEFAULT
+                            } else {
+                                0
+                            },
+                    ),
                     type_id: c.type_id.clone(),
                     label_seq: c.labels.clone(),
                 },
@@ -703,12 +728,12 @@ impl UnionBuilder {
                 detail: CompleteTypeDetail {
                     ann_builtin: AppliedBuiltinTypeAnnotations::default(),
                     ann_custom: OptionalAppliedAnnotationSeq::default(),
-                    type_name: self.name.clone(),
+                    type_name: strip_leading_scope(&self.name),
                 },
             },
             discriminator: CompleteDiscriminatorMember {
                 common: CommonDiscriminatorMember {
-                    member_flags: UnionDiscriminatorFlag::default(),
+                    member_flags: UnionDiscriminatorFlag::discriminator_default(),
                     type_id: self.discriminator_type.clone(),
                 },
                 ann_builtin: AppliedBuiltinTypeAnnotations::default(),
@@ -902,7 +927,7 @@ impl BitmaskBuilder {
             detail: CompleteTypeDetail {
                 ann_builtin: AppliedBuiltinTypeAnnotations::default(),
                 ann_custom: OptionalAppliedAnnotationSeq::default(),
-                type_name: self.name.clone(),
+                type_name: strip_leading_scope(&self.name),
             },
             flag_seq: self
                 .flags
@@ -998,7 +1023,7 @@ impl BitsetBuilder {
             detail: CompleteTypeDetail {
                 ann_builtin: AppliedBuiltinTypeAnnotations::default(),
                 ann_custom: OptionalAppliedAnnotationSeq::default(),
-                type_name: self.name.clone(),
+                type_name: strip_leading_scope(&self.name),
             },
             field_seq: self
                 .fields
@@ -1108,14 +1133,15 @@ mod tests {
             .build_minimal();
 
         assert_eq!(st.member_seq.len(), 2);
-        assert_eq!(st.member_seq[0].common.member_id, 1);
+        // Sequential @autoid is 0-based (XTypes §7.2.2.4.9): first member = 0.
+        assert_eq!(st.member_seq[0].common.member_id, 0);
         assert!(
             st.member_seq[0]
                 .common
                 .member_flags
                 .has(StructMemberFlag::IS_KEY)
         );
-        assert_eq!(st.member_seq[1].common.member_id, 2);
+        assert_eq!(st.member_seq[1].common.member_id, 1);
         // NameHash deterministisch: MD5("sensor_id")[0..4]
         assert_eq!(st.member_seq[0].detail, NameHash::from_name("sensor_id"));
         assert_eq!(st.member_seq[1].detail, NameHash::from_name("text"));
@@ -1246,7 +1272,7 @@ mod tests {
                 |m| m.key().unit("celsius"),
             )
             .build_complete();
-        assert_eq!(st.header.detail.type_name, "::sensors::Chatter");
+        assert_eq!(st.header.detail.type_name, "sensors::Chatter"); // §7.3.4.5.4: no leading ::
         assert_eq!(st.member_seq[0].detail.name, "sensor_id");
         assert_eq!(
             st.member_seq[0].detail.ann_builtin.unit.as_deref(),
@@ -1302,7 +1328,7 @@ mod tests {
         let a_cmp =
             TypeObjectBuilder::alias("::Count", TypeIdentifier::Primitive(PrimitiveKind::UInt64))
                 .build_complete();
-        assert_eq!(a_cmp.header.detail.type_name, "::Count");
+        assert_eq!(a_cmp.header.detail.type_name, "Count");
     }
 
     // ------------------------------------------------------------------
@@ -1345,7 +1371,7 @@ mod tests {
             alloc::vec![1],
         )
         .build_complete();
-        assert_eq!(u.header.detail.type_name, "::Shape");
+        assert_eq!(u.header.detail.type_name, "Shape");
         assert_eq!(u.member_seq[0].detail.name, "a");
         assert_eq!(
             u.union_flags.0 & StructTypeFlag::IS_MUTABLE,
@@ -1421,7 +1447,7 @@ mod tests {
             .flag("READ", 0)
             .flag("WRITE", 1)
             .build_complete();
-        assert_eq!(b.detail.type_name, "::Perm");
+        assert_eq!(b.detail.type_name, "Perm");
         assert_eq!(b.bit_bound, 16);
         assert_eq!(b.flag_seq.len(), 2);
         assert_eq!(b.flag_seq[0].detail.name, "READ");
@@ -1434,7 +1460,7 @@ mod tests {
             .field("header", 0, 4, 0x07)
             .field("body", 4, 28, 0x07)
             .build_complete();
-        assert_eq!(b.detail.type_name, "::Packed");
+        assert_eq!(b.detail.type_name, "Packed");
         assert_eq!(b.field_seq.len(), 2);
         assert_eq!(b.field_seq[0].detail.name, "header");
         assert_eq!(b.field_seq[1].detail.name, "body");

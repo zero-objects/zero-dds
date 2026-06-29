@@ -325,8 +325,48 @@ impl Publisher {
                 },
                 T::HAS_KEY,
             )?;
+            // Spec §2.2.3.17 HISTORY: wire the writer's KeepLast depth onto
+            // the runtime writer slot so the TransientLocal retain path caps
+            // per-instance retained samples (and the late-join replay respects
+            // depth). KeepAll → unbounded (usize::MAX). A non-positive depth is
+            // clamped to 1 by `set_user_writer_history_depth`.
+            {
+                use crate::qos::HistoryKind;
+                let depth = match qos.history.kind {
+                    HistoryKind::KeepLast => qos.history.depth.max(1) as usize,
+                    HistoryKind::KeepAll => usize::MAX,
+                };
+                let _ = rt.set_user_writer_history_depth(eid, depth);
+            }
+            // XTypes 1.3 §7.6.3.1.2 / RTPS §10.5 — the user-payload encapsulation
+            // header MUST declare the type's extensibility honestly: @final →
+            // (PLAIN_)CDR2 0x07, @appendable → D_CDR2 0x09, @mutable → PL_CDR2
+            // 0x0b. The generated `encode()` already frames the body correctly
+            // (DHEADER for appendable, EMHEADER for mutable), but the writer
+            // slot defaults its `wire_extensibility` to Final, so without this
+            // it stamps a 0x07 header onto an appendable/mutable body. Lenient
+            // readers (Cyclone/FastDDS/RTI) tolerate the mismatch; a strict
+            // reader (OpenDDS `EncapsulationHeader::to_encoding`) rejects the
+            // sample ("expected APPENDABLE extensibility, but got ..."). Wire the
+            // type's declared extensibility through so the header matches.
+            {
+                use crate::dds_type::Extensibility as E;
+                use zerodds_types::qos::ExtensibilityForRepr as Efr;
+                let efr = match T::EXTENSIBILITY {
+                    E::Final => Efr::Final,
+                    E::Appendable => Efr::Appendable,
+                    E::Mutable => Efr::Mutable,
+                };
+                let _ = rt.set_user_writer_wire_extensibility(eid, efr);
+            }
             let dw =
                 DataWriter::new_live(topic.clone(), qos, self.inner.clone(), Arc::clone(rt), eid);
+            // Match the encapsulation header to the BE body the writer will emit
+            // (see `DataWriter::write` / `ZERODDS_WIRE_BIG_ENDIAN`): without this
+            // the slot would stamp a little-endian encap id on big-endian bytes.
+            if dw.big_endian {
+                let _ = rt.set_user_writer_byte_order_override(eid, true);
+            }
             // Spec §2.2.3.5 — with Durability=Transient/Persistent, pass
             // the writer's own backend to the runtime so that the match
             // path re-injects the backend samples into the HistoryCache on
@@ -467,6 +507,14 @@ pub struct DataWriter<T: DdsType> {
             u32, // active_readers_mask
         )>,
     >,
+    /// Emit the user payload big-endian (encapsulation `*_BE` id + BE body via
+    /// `DdsType::encode_be`) instead of the little-endian default. Set from
+    /// `ZERODDS_WIRE_BIG_ENDIAN` at creation. The matching `*_BE` encap header is
+    /// stamped by wiring the runtime slot's byte-order override in
+    /// `create_datawriter`. Standard DDS readers decode per-sample endianness
+    /// from the encap, so this stays cross-vendor interoperable.
+    #[cfg(feature = "std")]
+    big_endian: bool,
     _t: PhantomData<fn() -> T>,
 }
 
@@ -507,6 +555,7 @@ impl<T: DdsType> DataWriter<T> {
             durability_seq: std::sync::atomic::AtomicU64::new(1),
             #[cfg(feature = "flatdata-integration")]
             flat_backend: Mutex::new(None),
+            big_endian: std::env::var_os("ZERODDS_WIRE_BIG_ENDIAN").is_some(),
             _t: PhantomData,
         }
     }
@@ -594,6 +643,7 @@ impl<T: DdsType> DataWriter<T> {
             durability_seq: std::sync::atomic::AtomicU64::new(1),
             #[cfg(feature = "flatdata-integration")]
             flat_backend: Mutex::new(None),
+            big_endian: std::env::var_os("ZERODDS_WIRE_BIG_ENDIAN").is_some(),
             _t: PhantomData,
         }
     }
@@ -615,6 +665,16 @@ impl<T: DdsType> DataWriter<T> {
     #[must_use]
     pub fn topic(&self) -> &Topic<T> {
         &self.topic
+    }
+
+    /// This writer's 16-byte RTPS GUID, when it is bound to a live runtime
+    /// (online participant). `None` in offline mode. Used by the iceoryx-cyclone
+    /// bridge to stamp the cross-vendor PSMX chunk with the writer's real GUID
+    /// so a peer that discovered it over RTPS associates the SHM sample with it.
+    #[cfg(feature = "std")]
+    #[must_use]
+    pub fn rtps_guid(&self) -> Option<[u8; 16]> {
+        Some(self.runtime.as_ref()?.writer_guid(self.entity_id?))
     }
 
     /// Sets the `DataWriterListener` + StatusMask. `None` clears the slot.
@@ -677,13 +737,26 @@ impl<T: DdsType> DataWriter<T> {
     /// - `PreconditionNotMet` on lock poisoning.
     pub fn write(&self, sample: &T) -> Result<()> {
         let mut buf = Vec::new();
-        sample.encode(&mut buf).map_err(|e| DdsError::WireError {
+        // Big-endian wire (encap `*_BE`, set up in `create_datawriter`) uses the
+        // BE body encoder; the default is little-endian.
+        let enc = if self.big_endian {
+            sample.encode_be(&mut buf)
+        } else {
+            sample.encode(&mut buf)
+        };
+        enc.map_err(|e| DdsError::WireError {
             message: e.to_string(),
         })?;
         #[cfg(feature = "metrics")]
         crate::metrics::inc_sample_written(self.topic.name());
         #[cfg(feature = "metrics")]
         crate::metrics::record_sample_size(self.topic.name(), buf.len());
+        // Cross-vendor same-host zero-copy: if this writer was
+        // `enable_cyclone_iox`-ed, additionally publish a Cyclone-PSMX
+        // serialized chunk over iceoryx (best-effort; the RTPS path below
+        // still runs for non-iox peers).
+        #[cfg(all(feature = "std", feature = "cyclone-iox", target_os = "linux"))]
+        crate::cyclone_iox_integration::publish(self.topic.name(), sample);
         // Spec §2.2.3.5 DurabilityServiceQosPolicy: also store the sample
         // in the backend (Transient/Persistent) so that late-joiner
         // readers can still obtain it after the writer's history cleanup.
@@ -1449,6 +1522,82 @@ mod tests {
             w.entity_id.expect("live writer has entity_id").entity_kind,
             EntityKind::UserWriterNoKey,
             "keyless type must yield a NoKey writer entityid"
+        );
+    }
+
+    /// QB-cluster regression: `create_datawriter` MUST wire the History
+    /// keep-last DEPTH onto the runtime writer slot (DDS 1.4 §2.2.3.18).
+    /// With TransientLocal + KeepLast(2), writing 5 samples of the same
+    /// (keyless ⇒ single default) instance must leave only the last 2
+    /// retained for late-join replay. Before the fix the slot kept the
+    /// default depth (1) regardless of QoS — and the retain path would not
+    /// cap at the requested 2.
+    #[test]
+    fn create_datawriter_wires_history_keep_last_depth() {
+        use crate::qos::{DurabilityKind, DurabilityQosPolicy, HistoryKind, HistoryQosPolicy};
+        let participant = DomainParticipantFactory::instance()
+            .create_participant(0, DomainParticipantQos::default())
+            .expect("live participant");
+        let topic = participant
+            .create_topic::<RawBytes>("HistDepth", TopicQos::default())
+            .expect("topic");
+        let pubr = participant.create_publisher(PublisherQos::default());
+        let qos = DataWriterQos {
+            durability: DurabilityQosPolicy {
+                kind: DurabilityKind::TransientLocal,
+            },
+            history: HistoryQosPolicy {
+                kind: HistoryKind::KeepLast,
+                depth: 2,
+            },
+            ..DataWriterQos::default()
+        };
+        let w = pubr
+            .create_datawriter::<RawBytes>(&topic, qos)
+            .expect("writer");
+        let (rt, eid) = w.runtime_handle().expect("live writer");
+        for i in 0u8..5 {
+            w.write(&RawBytes::new(vec![i])).expect("write");
+        }
+        assert_eq!(
+            rt.user_writer_retained_len(eid),
+            2,
+            "KeepLast(2) must cap the retained set at 2 for the default instance"
+        );
+    }
+
+    /// Contrast: KeepAll retains every written sample (depth = unbounded).
+    #[test]
+    fn create_datawriter_keep_all_retains_every_sample() {
+        use crate::qos::{DurabilityKind, DurabilityQosPolicy, HistoryKind, HistoryQosPolicy};
+        let participant = DomainParticipantFactory::instance()
+            .create_participant(0, DomainParticipantQos::default())
+            .expect("live participant");
+        let topic = participant
+            .create_topic::<RawBytes>("HistAll", TopicQos::default())
+            .expect("topic");
+        let pubr = participant.create_publisher(PublisherQos::default());
+        let qos = DataWriterQos {
+            durability: DurabilityQosPolicy {
+                kind: DurabilityKind::TransientLocal,
+            },
+            history: HistoryQosPolicy {
+                kind: HistoryKind::KeepAll,
+                depth: 1,
+            },
+            ..DataWriterQos::default()
+        };
+        let w = pubr
+            .create_datawriter::<RawBytes>(&topic, qos)
+            .expect("writer");
+        let (rt, eid) = w.runtime_handle().expect("live writer");
+        for i in 0u8..4 {
+            w.write(&RawBytes::new(vec![i])).expect("write");
+        }
+        assert_eq!(
+            rt.user_writer_retained_len(eid),
+            4,
+            "KeepAll must retain every sample of the default instance"
         );
     }
 

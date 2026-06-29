@@ -35,8 +35,14 @@ use crate::type_object::{CompleteTypeObject, MinimalTypeObject, TypeObject};
 /// # Errors
 /// `EncodeError` if serialization overflows.
 pub fn compute_hash(to: &TypeObject) -> Result<EquivalenceHash, EncodeError> {
-    let bytes = to.to_bytes_le()?;
-    Ok(hash_bytes(&bytes))
+    // Route through the per-variant functions so EVERY hash path uses the same
+    // XCDR2 framing (DHEADER + EK + body). `to_bytes_le` is the flat internal
+    // roundtrip form and must NOT be used for hashing — mixing the two makes
+    // the registry store under one hash and look up under another.
+    match to {
+        TypeObject::Minimal(m) => compute_minimal_hash(m),
+        TypeObject::Complete(c) => compute_complete_hash(c),
+    }
 }
 
 /// Like [`compute_hash`], but directly over `MinimalTypeObject` (without
@@ -46,10 +52,9 @@ pub fn compute_hash(to: &TypeObject) -> Result<EquivalenceHash, EncodeError> {
 /// # Errors
 /// `EncodeError`.
 pub fn compute_minimal_hash(t: &MinimalTypeObject) -> Result<EquivalenceHash, EncodeError> {
-    let mut w = BufferWriter::new(Endianness::Little);
-    w.write_u8(EK_MINIMAL)?;
-    t.encode_into(&mut w)?;
-    Ok(hash_bytes(&w.into_bytes()))
+    Ok(hash_bytes(&xcdr2_typeobject_stream(EK_MINIMAL, |w| {
+        t.encode_into(w)
+    })?))
 }
 
 /// Like [`compute_minimal_hash`], only for `CompleteTypeObject`.
@@ -57,10 +62,50 @@ pub fn compute_minimal_hash(t: &MinimalTypeObject) -> Result<EquivalenceHash, En
 /// # Errors
 /// `EncodeError`.
 pub fn compute_complete_hash(t: &CompleteTypeObject) -> Result<EquivalenceHash, EncodeError> {
-    let mut w = BufferWriter::new(Endianness::Little);
-    w.write_u8(EK_COMPLETE)?;
-    t.encode_into(&mut w)?;
-    Ok(hash_bytes(&w.into_bytes()))
+    Ok(hash_bytes(&xcdr2_typeobject_stream(EK_COMPLETE, |w| {
+        t.encode_into(w)
+    })?))
+}
+
+/// The exact byte stream fed to MD5 for a `MinimalTypeObject` hash (XCDR2
+/// DHEADER + EK + body). Exposed so conformance harnesses can byte-diff it
+/// against vendor TypeObject goldens.
+///
+/// # Errors
+/// `EncodeError`.
+pub fn minimal_hash_input(t: &MinimalTypeObject) -> Result<alloc::vec::Vec<u8>, EncodeError> {
+    xcdr2_typeobject_stream(EK_MINIMAL, |w| t.encode_into(w))
+}
+
+/// The exact byte stream fed to MD5 for a `CompleteTypeObject` hash.
+///
+/// # Errors
+/// `EncodeError`.
+pub fn complete_hash_input(t: &CompleteTypeObject) -> Result<alloc::vec::Vec<u8>, EncodeError> {
+    xcdr2_typeobject_stream(EK_COMPLETE, |w| t.encode_into(w))
+}
+
+/// XTypes 1.3 §7.3.4.5: the serialized TypeObject that the EquivalenceHash is
+/// computed over is an **XCDR2** delimited stream — a 4-byte DHEADER (the byte
+/// length of the body) followed by the EquivalenceKind discriminator + the
+/// TypeObject body, all under the XCDR2 alignment cap (4). Byte-verified
+/// against CycloneDDS/FastDDS/RTI (`proofs/typeobject`); the old code used a
+/// plain (XCDR1) writer with no DHEADER, which matched no vendor.
+fn xcdr2_typeobject_stream(
+    ek: u8,
+    body: impl FnOnce(&mut BufferWriter) -> Result<(), EncodeError>,
+) -> Result<alloc::vec::Vec<u8>, EncodeError> {
+    let mut inner = BufferWriter::new(Endianness::Little).xcdr2();
+    inner.write_u8(ek)?;
+    body(&mut inner)?;
+    let body_bytes = inner.into_bytes();
+    let dheader = u32::try_from(body_bytes.len()).map_err(|_| EncodeError::ValueOutOfRange {
+        message: "TypeObject body exceeds u32::MAX",
+    })?;
+    let mut out = BufferWriter::new(Endianness::Little).xcdr2();
+    out.write_u32(dheader)?;
+    out.write_bytes(&body_bytes)?;
+    Ok(out.into_bytes())
 }
 
 /// Raw hash function: MD5 + truncate to 14 bytes.

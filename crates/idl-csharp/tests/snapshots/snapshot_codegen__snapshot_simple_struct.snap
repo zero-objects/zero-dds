@@ -26,9 +26,11 @@ public sealed class PointTypeSupport : IDdsTopicType<Point>
 
     public byte[] Encode(Point sample) => Encode(sample, EndianMode.LittleEndian);
 
-    public byte[] Encode(Point sample, EndianMode endian)
+    public byte[] Encode(Point sample, EndianMode endian) => Encode(sample, endian, 1);
+    public byte[] Encode(Point sample, EndianMode endian, int representation)
     {
-        var w = new Xcdr2Writer(endian);
+        int __maxAlign = representation == 0 ? Xcdr2Writer.Xcdr1MaxAlignmentValue : 4;
+        var w = new Xcdr2Writer(endian, __maxAlign);
         EncodeInto(w, sample);
         return w.ToArray();
     }
@@ -42,18 +44,21 @@ public sealed class PointTypeSupport : IDdsTopicType<Point>
         }
     }
 
-    public Point Decode(ReadOnlySpan<byte> bytes)
+    public Point Decode(ReadOnlySpan<byte> bytes) => Decode(bytes, EndianMode.LittleEndian, 1);
+    public Point Decode(ReadOnlySpan<byte> bytes, EndianMode endian) => Decode(bytes, endian, 1);
+    public Point Decode(ReadOnlySpan<byte> bytes, EndianMode endian, int representation)
     {
-        var r = new Xcdr2Reader(bytes, EndianMode.LittleEndian);
-        return DecodeFrom(r);
+        int __maxAlign = representation == 0 ? Xcdr2Reader.Xcdr1MaxAlignmentValue : 4;
+        var r = new Xcdr2Reader(bytes, endian, __maxAlign);
+        return DecodeFrom(ref r);
     }
 
-    public Point DecodeFrom(Xcdr2Reader r)
+    public Point DecodeFrom(ref Xcdr2Reader r)
     {
         var __scope = r.BeginDHeader();
-        int __m0 = default;
+        int __m0 = default!;
         __m0 = r.ReadInt32();
-        int __m1 = default;
+        int __m1 = default!;
         __m1 = r.ReadInt32();
         r.EndDHeader(__scope);
         return new Point

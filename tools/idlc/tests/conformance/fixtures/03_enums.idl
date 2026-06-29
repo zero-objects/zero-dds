@@ -1,0 +1,13 @@
+// Conformance feature: enums, incl. explicit @value and use as a member.
+module conf {
+  enum Color { RED, GREEN, BLUE };
+  enum Sparse {
+    @value(1) ONE,
+    @value(2) TWO,
+    @value(8) EIGHT
+  };
+  struct UsesEnum {
+    Color  primary;
+    Sparse code;
+  };
+};

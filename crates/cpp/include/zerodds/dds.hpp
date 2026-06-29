@@ -291,13 +291,16 @@ public:
         uint8_t *raw = nullptr;
         std::size_t len = 0;
         uint8_t repr = 0;
-        int rc = zerodds_reader_take(handle_, &raw, &len, &repr);
-        if (rc != 0) throw StatusError(rc, "zerodds_reader_take");
+        // `out_be` reports the wire byte order from the encapsulation header
+        // (RTPS 2.5 §10.5) so a big-endian peer's sample decodes correctly.
+        uint8_t be = 0;
+        int rc = zerodds_reader_take_endian(handle_, &raw, &len, &repr, &be);
+        if (rc != 0) throw StatusError(rc, "zerodds_reader_take_endian");
         if (!raw || len == 0) return false;
         auto version = repr == 1 ? ::dds::topic::xcdr2::XcdrVersion::Xcdr2
                                  : ::dds::topic::xcdr2::XcdrVersion::Xcdr1;
         try {
-            out = traits::decode(raw, len, version);
+            out = traits::decode(raw, len, version, be != 0);
         } catch (...) {
             zerodds_buffer_free(raw, len);
             throw;

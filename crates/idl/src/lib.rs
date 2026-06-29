@@ -18,7 +18,7 @@
 //! parser has no real use case. Safety quality is ensured via
 //! `forbid(unsafe_code)` + workspace clippy rules (no panic/unwrap/expect),
 //! not via embedded capability. See RFC 0001
-//! (`docs/rfcs/0001-idl-parser-architecture.md`).
+//! (`internal/rfcs/0001-idl-parser-architecture.md`).
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]

@@ -190,5 +190,5 @@ v5.0 eingeführt).
 Test-Lauf: `cargo test -p zerodds-mqtt-bridge --lib` — 165 Tests grün (inkl.
 der `v311_*`-Codec-Tests + `version`-Modul); In-Process
 `cargo test -p zerodds-mqtt-bridge --test broker_server_e2e` — 6 grün.
-Live-Interop (codepit, Eclipse Mosquitto 2.0): `MQTT_MOSQUITTO=1 cargo test
+Live-Interop (Linux bench host, Eclipse Mosquitto 2.0): `MQTT_MOSQUITTO=1 cargo test
 -p zerodds-mqtt-bridge --test mosquitto_interop_e2e -- --ignored` — 5 grün.

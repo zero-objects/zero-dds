@@ -23,14 +23,31 @@ public final class MTypeSupport implements org.zerodds.cdr.TopicTypeSupport<M> {
     public byte[] encode(M sample) { return encode(sample, org.zerodds.cdr.EndianMode.LITTLE_ENDIAN); }
 
     @Override
-    public byte[] encode(M sample, org.zerodds.cdr.EndianMode endian) {
-        org.zerodds.cdr.Xcdr2Writer w = new org.zerodds.cdr.Xcdr2Writer(endian);
-        int __dh = w.beginMutable();
-        w.writeEmHeader(1, org.zerodds.cdr.Xcdr2Writer.LC_INT32, false);
-        w.writeInt32(sample.getA());
-        w.writeEmHeader(2, org.zerodds.cdr.Xcdr2Writer.LC_NEXTINT, false);
-        w.writeString(sample.getB());
-        w.endDelimited(__dh);
+    public byte[] encode(M sample, org.zerodds.cdr.EndianMode endian) { return encode(sample, endian, 1); }
+
+    public byte[] encode(M sample, org.zerodds.cdr.EndianMode endian, int representation) {
+        int __maxAlign = representation == 0 ? org.zerodds.cdr.Xcdr2Writer.XCDR1_MAX_ALIGN_VALUE : 4;
+        org.zerodds.cdr.Xcdr2Writer w = new org.zerodds.cdr.Xcdr2Writer(endian, __maxAlign);
+        if (w.isXcdr1()) {
+            {
+                org.zerodds.cdr.Xcdr2Writer __plw1 = new org.zerodds.cdr.Xcdr2Writer(w.endian(), org.zerodds.cdr.Xcdr2Writer.XCDR1_MAX_ALIGN_VALUE);
+                __plw1.writeInt32(sample.getA());
+                w.writePlCdr1Member(1, __plw1.toByteArray());
+            }
+            {
+                org.zerodds.cdr.Xcdr2Writer __plw2 = new org.zerodds.cdr.Xcdr2Writer(w.endian(), org.zerodds.cdr.Xcdr2Writer.XCDR1_MAX_ALIGN_VALUE);
+                __plw2.writeString(sample.getB());
+                w.writePlCdr1Member(2, __plw2.toByteArray());
+            }
+            w.writePlCdr1Sentinel();
+        } else {
+            int __dh = w.beginMutable();
+            w.writeEmHeader(1, org.zerodds.cdr.Xcdr2Writer.LC_INT32, false);
+            w.writeInt32(sample.getA());
+            w.writeEmHeader(2, org.zerodds.cdr.Xcdr2Writer.LC_NEXTINT_4, false);
+            w.writeString(sample.getB());
+            w.endDelimited(__dh);
+        }
         return w.toByteArray();
     }
 
@@ -38,21 +55,55 @@ public final class MTypeSupport implements org.zerodds.cdr.TopicTypeSupport<M> {
     public M decode(byte[] bytes) { return decode(bytes, 0, bytes.length); }
 
     @Override
-    public M decode(byte[] bytes, int offset, int length) {
-        org.zerodds.cdr.Xcdr2Reader r = new org.zerodds.cdr.Xcdr2Reader(bytes, offset, length, org.zerodds.cdr.EndianMode.LITTLE_ENDIAN);
+    public M decode(byte[] bytes, int offset, int length) { return decode(bytes, offset, length, org.zerodds.cdr.EndianMode.LITTLE_ENDIAN); }
+    public M decode(byte[] bytes, int offset, int length, org.zerodds.cdr.EndianMode endian) { return decode(bytes, offset, length, endian, 1); }
+    public M decode(byte[] bytes, int offset, int length, org.zerodds.cdr.EndianMode endian, int representation) {
+        int __maxAlign = representation == 0 ? org.zerodds.cdr.Xcdr2Reader.XCDR1_MAX_ALIGN_VALUE : 4;
+        org.zerodds.cdr.Xcdr2Reader r = new org.zerodds.cdr.Xcdr2Reader(bytes, offset, length, endian, __maxAlign);
+        return decodeFrom(r);
+    }
+
+    public static M decodeFrom(org.zerodds.cdr.Xcdr2Reader r) {
         M v = new M();
+        if (r.isXcdr1()) {
+            org.zerodds.cdr.Xcdr2Reader.PlCdr1Member __plm;
+            while ((__plm = r.beginPlCdr1Member()) != null) {
+            if (__plm.memberId == 1) {
+                {
+                    int __rv = r.readInt32();
+                    v.setA(__rv);
+                }
+            }
+            else if (__plm.memberId == 2) {
+                {
+                    String __rv = r.readString();
+                    v.setB(__rv);
+                }
+            }
+                r.endPlCdr1Member(__plm);
+            }
+            return v;
+        }
         int __dhSize = r.readDHeader();
         int __endPos = r.position() + __dhSize;
         while (r.position() < __endPos) {
             org.zerodds.cdr.Xcdr2Reader.EmHeader __em = r.readEmHeader();
+            int __ni = (__em.lc == 4) ? r.readNextInt() : -1;
             if (__em.memberId == 1) {
-                v.setA(r.readInt32());
+                {
+                    int __rv = r.readInt32();
+                    v.setA(__rv);
+                }
             }
             else if (__em.memberId == 2) {
-                v.setB(r.readString());
+                {
+                    String __rv = r.readString();
+                    v.setB(__rv);
+                }
             }
             else {
-                skipByLc(r, __em.lc);
+                if (__ni >= 0) { r.skip(__ni); }
+                else { skipByLc(r, __em.lc); }
             }
         }
         return v;
@@ -61,5 +112,25 @@ public final class MTypeSupport implements org.zerodds.cdr.TopicTypeSupport<M> {
     @Override
     public byte[] keyHash(M sample) {
         return new byte[16];
+    }
+
+    private static void skipByLc(org.zerodds.cdr.Xcdr2Reader r, int lc) {
+        switch (lc) {
+            case 0: r.skip(1); break;
+            case 1: r.skip(2); break;
+            case 2: r.skip(4); break;
+            case 3: r.skip(8); break;
+            default: { int __n = r.readNextInt(); r.skip(__n); break; }
+        }
+    }
+
+    private static byte[] readDelimitedFrame(org.zerodds.cdr.Xcdr2Reader r) {
+        int __sz = r.readDHeader();
+        byte[] __body = r.readBytes(__sz);
+        byte[] __frame = new byte[4 + __sz];
+        __frame[0] = (byte) (__sz & 0xFF); __frame[1] = (byte) ((__sz >>> 8) & 0xFF);
+        __frame[2] = (byte) ((__sz >>> 16) & 0xFF); __frame[3] = (byte) ((__sz >>> 24) & 0xFF);
+        System.arraycopy(__body, 0, __frame, 4, __sz);
+        return __frame;
     }
 }

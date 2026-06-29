@@ -235,11 +235,13 @@ extern int rmw_zerodds_destroy_node(void * node);
 extern void * rmw_zerodds_create_publisher(void * node, const char * type_name,
                                            const char * topic_name, int reliable);
 extern int rmw_zerodds_destroy_publisher(void * pub);
+extern size_t rmw_zerodds_publisher_matched_count(void * pub);
+extern size_t rmw_zerodds_subscription_matched_count(void * sub);
 extern int rmw_zerodds_publish(void * pub, const unsigned char * data, size_t len);
 extern void * rmw_zerodds_create_subscription(void * node, const char * type_name,
                                               const char * topic_name, int reliable);
 extern int rmw_zerodds_destroy_subscription(void * sub);
-extern int rmw_zerodds_take(void * sub, unsigned char ** out_buf, size_t * out_len);
+extern int rmw_zerodds_take(void * sub, unsigned char ** out_buf, size_t * out_len, unsigned char * out_big_endian);
 extern void rmw_zerodds_buffer_free(unsigned char * buf, size_t len);
 extern void * rmw_zerodds_create_wait_set(void);
 extern int rmw_zerodds_destroy_wait_set(void * ws);
@@ -326,12 +328,12 @@ zerodds_type_name(const rosidl_message_type_support_t * ts)
 extern void * rmw_zerodds_create_client(void * node, const char * service, const char * type_name);
 extern int rmw_zerodds_destroy_client(void * client);
 extern int rmw_zerodds_send_request(void * client, const unsigned char * data, size_t len);
-extern int rmw_zerodds_take_response(void * client, unsigned char ** out_buf, size_t * out_len);
+extern int rmw_zerodds_take_response(void * client, unsigned char ** out_buf, size_t * out_len, unsigned char * out_big_endian);
 extern int rmw_zerodds_client_has_data(void * client);
 extern int rmw_zerodds_client_server_available(void * client);
 extern void * rmw_zerodds_create_service(void * node, const char * service, const char * type_name);
 extern int rmw_zerodds_destroy_service(void * service);
-extern int rmw_zerodds_take_request(void * service, unsigned char ** out_buf, size_t * out_len);
+extern int rmw_zerodds_take_request(void * service, unsigned char ** out_buf, size_t * out_len, unsigned char * out_big_endian);
 extern int rmw_zerodds_send_response(void * service, const unsigned char * data, size_t len);
 extern int rmw_zerodds_service_has_data(void * service);
 // on_new_* event callbacks (EventsExecutor) — fired on each arrival.
@@ -663,7 +665,9 @@ rmw_destroy_publisher(rmw_node_t * node, rmw_publisher_t * publisher)
 rmw_ret_t
 rmw_publisher_count_matched_subscriptions(const rmw_publisher_t * publisher, size_t * count)
 {
-  (void) publisher; if (count) { *count = 0; } return RMW_RET_OK;
+  if (!publisher || !publisher->data || !count) { return RMW_RET_INVALID_ARGUMENT; }
+  *count = rmw_zerodds_publisher_matched_count(((zerodds_pub_data_t *) publisher->data)->bridge_pub);
+  return RMW_RET_OK;
 }
 
 rmw_ret_t
@@ -757,7 +761,9 @@ rmw_destroy_subscription(rmw_node_t * node, rmw_subscription_t * subscription)
 rmw_ret_t
 rmw_subscription_count_matched_publishers(const rmw_subscription_t * subscription, size_t * count)
 {
-  (void) subscription; if (count) { *count = 0; } return RMW_RET_OK;
+  if (!subscription || !subscription->data || !count) { return RMW_RET_INVALID_ARGUMENT; }
+  *count = rmw_zerodds_subscription_matched_count(((zerodds_sub_data_t *) subscription->data)->bridge_sub);
+  return RMW_RET_OK;
 }
 
 rmw_ret_t
@@ -840,11 +846,36 @@ static int cdr_align(cdr_t * c, size_t a)
 static int cdr_put(cdr_t * c, const void * p, size_t n, size_t align)
 { if (cdr_align(c, align) || cdr_reserve(c, n)) { return -1; } memcpy(c->buf + c->len, p, n); c->len += n; return 0; }
 
-typedef struct { const unsigned char * buf; size_t len; size_t pos; } rdr_t;
+// `big_endian` = the wire byte order from the encapsulation header (RTPS 2.5
+// §10.5): a remote big-endian publisher (or a *_BE serialized message) needs
+// every multi-byte scalar byte-swapped on a little-endian host. Octet/byte runs
+// (string/wstring char data) are never swapped.
+typedef struct { const unsigned char * buf; size_t len; size_t pos; int big_endian; } rdr_t;
 static void rdr_align(rdr_t * r, size_t a) { size_t off = (r->pos - 4) % a; if (off) { r->pos += (a - off); } }
+// Reverse an n-byte scalar in place when the wire is big-endian (host assumed
+// little-endian, consistent with the LE-only serialize side).
+static void rdr_bswap(void * p, size_t n, int big_endian)
+{
+  if (!big_endian || n < 2) { return; }
+  unsigned char * b = (unsigned char *) p;
+  for (size_t i = 0; i < n / 2; ++i) { unsigned char t = b[i]; b[i] = b[n - 1 - i]; b[n - 1 - i] = t; }
+}
 static int rdr_get(rdr_t * r, void * out, size_t n, size_t align)
-{ rdr_align(r, align); if (r->pos + n > r->len) { return -1; } memcpy(out, r->buf + r->pos, n); r->pos += n; return 0; }
+{ rdr_align(r, align); if (r->pos + n > r->len) { return -1; } memcpy(out, r->buf + r->pos, n); r->pos += n;
+  if (n == 2 || n == 4 || n == 8) { rdr_bswap(out, n, r->big_endian); } return 0; }
+// Reads a 4-byte length/count word honoring the wire byte order.
+static int rdr_u32(rdr_t * r, uint32_t * out)
+{ rdr_align(r, 4); if (r->pos + 4 > r->len) { return -1; } memcpy(out, r->buf + r->pos, 4); r->pos += 4;
+  rdr_bswap(out, 4, r->big_endian); return 0; }
 
+// CDR *wire* size of a primitive field (used both as the wire put/get size and,
+// via prim_inmem_size below, as the in-memory array stride). type_id 5 (wchar)
+// is special: it occupies 2 bytes in memory (char16_t) but is serialized as a
+// 4-byte UTF-32LE code unit on the wire — so it is NOT listed here (it would put
+// the wrong wire width and read past the 2-byte slot) and is handled explicitly
+// in cdr_ser_one/cdr_de_one. type_id 17 (wstring) is variable-length, likewise
+// explicit. The wire width of a wchar is 4 (align 4); that lives in the explicit
+// path, not in prim_size.
 static size_t prim_size(uint8_t t)
 {
   switch (t) {
@@ -856,12 +887,54 @@ static size_t prim_size(uint8_t t)
   }
 }
 
+// In-memory element stride for array/sequence iteration. Identical to the wire
+// size for every fixed primitive EXCEPT wchar (type_id 5): in memory a wchar is
+// a 2-byte char16_t (the rosidl C type), even though its wire form is 4 bytes.
+// Returns 0 for non-fixed-stride members (string/wstring/nested), which routes
+// the array loop through the introspection get_(const_)function accessor.
+static size_t prim_inmem_size(uint8_t t)
+{
+  if (t == 5) { return sizeof(uint16_t); }  // wchar: char16_t in memory
+  return prim_size(t);
+}
+
+// Serialize a wstring (rosidl_runtime_c__U16String { uint16_t* data; size_t size;
+// … }) as ROS 2 XCDR1. The native wire form (verified byte-identical against
+// rmw_cyclonedds AND rmw_fastrtps on a Humble host) is: align(4); uint32 length =
+// the **UTF-16 unit count** (== U16String.size; NO null terminator); then one
+// uint32 per UTF-16 unit, each `data[i]` zero-extended to 32 bits, LE. Crucially
+// the rosidl typesupport does NOT combine surrogate pairs: an astral code point
+// (e.g. 🎉 U+1F389, stored in memory as the surrogate pair 0xD83C 0xDF89) is
+// written as TWO uint32 slots 0x0000D83C, 0x0000DF89 — length counts both. So
+// "code-point count" / surrogate-combining is NOT the wire reality; the unit is
+// the UTF-16 code unit. Cyclone is the canonical zero-trailing form; FastDDS
+// appends a 4-byte pad after the data (deserialize-irrelevant — see cdr_de_*).
+static int cdr_ser_wstring(cdr_t * c, const unsigned char * p)
+{
+  const uint16_t * const * dp = (const uint16_t * const *) p;
+  const size_t * szp = (const size_t *) (p + sizeof(uint16_t *));
+  const uint16_t * data = *dp;
+  uint32_t u16len = (uint32_t) (data ? *szp : 0);
+  if (cdr_put(c, &u16len, 4, 4)) { return -1; }
+  for (uint32_t i = 0; i < u16len; ++i) {
+    uint32_t unit = data[i];  // zero-extend UTF-16 unit to UTF-32 slot
+    if (cdr_put(c, &unit, 4, 4)) { return -1; }
+  }
+  return 0;
+}
+
 static int cdr_ser_msg(cdr_t * c, const ms_t * m, const unsigned char * base);
 static int cdr_ser_one(cdr_t * c, const mm_t * mem, const unsigned char * p)
 {
   uint8_t t = mem->type_id_;
   size_t ps = prim_size(t);
   if (ps) { return cdr_put(c, p, ps, ps); }
+  if (t == 5) {
+    // wchar: char16_t (2 bytes) in memory → one 4-byte UTF-32LE unit, align(4).
+    uint16_t u; memcpy(&u, p, sizeof(u));
+    uint32_t cp = u;  // a single wchar is one code unit (no surrogate combining)
+    return cdr_put(c, &cp, 4, 4);
+  }
   if (t == 16) {
     const char * const * sp = (const char * const *) p;
     const size_t * szp = (const size_t *) (p + sizeof(char *));
@@ -873,6 +946,7 @@ static int cdr_ser_one(cdr_t * c, const mm_t * mem, const unsigned char * p)
     c->buf[c->len++] = '\0';
     return 0;
   }
+  if (t == 17) { return cdr_ser_wstring(c, p); }
   if (t == 18) { return cdr_ser_msg(c, (const ms_t *) mem->members_->data, p); }
   return -1;
 }
@@ -884,7 +958,7 @@ static int cdr_ser_msg(cdr_t * c, const ms_t * m, const unsigned char * base)
     if (!mem->is_array_) {
       if (cdr_ser_one(c, mem, fp)) { return -1; }
     } else if (mem->array_size_ > 0 && !mem->is_upper_bound_) {
-      size_t es = prim_size(mem->type_id_);
+      size_t es = prim_inmem_size(mem->type_id_);
       for (size_t k = 0; k < mem->array_size_; ++k) {
         const unsigned char * ep = es ? fp + k * es : (const unsigned char *) mem->get_const_function(fp, k);
         if (cdr_ser_one(c, mem, ep)) { return -1; }
@@ -903,22 +977,62 @@ static int cdr_ser_msg(cdr_t * c, const ms_t * m, const unsigned char * base)
 }
 
 extern bool rosidl_runtime_c__String__assignn(void * str, const char * value, size_t n);
+// rosidl wstring assign: copies `n` UTF-16 units into the U16String (allocating
+// + null-terminating). Declared here to keep this C TU header-light.
+extern bool rosidl_runtime_c__U16String__assignn(void * str, const uint16_t * value, size_t n);
+
+// Deserialize a wstring body — the inverse of cdr_ser_wstring. Read the uint32
+// UTF-16-unit count, then that many UTF-32LE slots, truncating each back to its
+// low 16 bits (the UTF-16 unit; the high 16 bits are always zero in the ROS wire
+// form) and store via rosidl_runtime_c__U16String__assignn. No surrogate
+// re-pairing — units are stored exactly as carried, so an astral character's
+// surrogate pair round-trips bit-exactly. FastDDS's trailing 4-byte pad is never
+// read: we consume exactly `count` slots after the length, so the pad is inert.
+static int cdr_de_wstring(rdr_t * r, unsigned char * p)
+{
+  uint32_t count;
+  if (rdr_u32(r, &count)) { return -1; }
+  if ((uint64_t) r->pos + (uint64_t) count * 4u > r->len) { return -1; }
+  uint16_t stackbuf[256];
+  uint16_t * u16 = stackbuf;
+  if ((size_t) count > sizeof(stackbuf) / sizeof(stackbuf[0])) {
+    u16 = (uint16_t *) malloc((size_t) count * sizeof(uint16_t));
+    if (!u16) { return -1; }
+  }
+  for (uint32_t i = 0; i < count; ++i) {
+    uint32_t unit;
+    memcpy(&unit, r->buf + r->pos, 4); r->pos += 4;
+    rdr_bswap(&unit, 4, r->big_endian);
+    u16[i] = (uint16_t) unit;
+  }
+  bool ok = rosidl_runtime_c__U16String__assignn(p, u16, count);
+  if (u16 != stackbuf) { free(u16); }
+  return ok ? 0 : -1;
+}
+
 static int cdr_de_msg(rdr_t * r, const ms_t * m, unsigned char * base);
 static int cdr_de_one(rdr_t * r, const mm_t * mem, unsigned char * p)
 {
   uint8_t t = mem->type_id_;
   size_t ps = prim_size(t);
   if (ps) { return rdr_get(r, p, ps, ps); }
+  if (t == 5) {
+    // wchar: read 4-byte UTF-32 code unit (wire byte order), store low 16 bits.
+    uint32_t cp;
+    if (rdr_u32(r, &cp)) { return -1; }
+    uint16_t u = (uint16_t) cp;
+    memcpy(p, &u, sizeof(u));
+    return 0;
+  }
   if (t == 16) {
-    rdr_align(r, 4);
     uint32_t n;
-    if (r->pos + 4 > r->len) { return -1; }
-    memcpy(&n, r->buf + r->pos, 4); r->pos += 4;
+    if (rdr_u32(r, &n)) { return -1; }
     if (n == 0 || r->pos + n > r->len) { return -1; }
     bool ok = rosidl_runtime_c__String__assignn(p, (const char *) (r->buf + r->pos), n - 1);
     r->pos += n;
     return ok ? 0 : -1;
   }
+  if (t == 17) { return cdr_de_wstring(r, p); }
   if (t == 18) { return cdr_de_msg(r, (const ms_t *) mem->members_->data, p); }
   return -1;
 }
@@ -930,16 +1044,14 @@ static int cdr_de_msg(rdr_t * r, const ms_t * m, unsigned char * base)
     if (!mem->is_array_) {
       if (cdr_de_one(r, mem, fp)) { return -1; }
     } else if (mem->array_size_ > 0 && !mem->is_upper_bound_) {
-      size_t es = prim_size(mem->type_id_);
+      size_t es = prim_inmem_size(mem->type_id_);
       for (size_t k = 0; k < mem->array_size_; ++k) {
         unsigned char * ep = es ? fp + k * es : (unsigned char *) mem->get_function(fp, k);
         if (cdr_de_one(r, mem, ep)) { return -1; }
       }
     } else {
-      rdr_align(r, 4);
       uint32_t cnt;
-      if (r->pos + 4 > r->len) { return -1; }
-      memcpy(&cnt, r->buf + r->pos, 4); r->pos += 4;
+      if (rdr_u32(r, &cnt)) { return -1; }
       if (!mem->resize_function(fp, cnt)) { return -1; }
       for (size_t k = 0; k < cnt; ++k) {
         unsigned char * ep = (unsigned char *) mem->get_function(fp, k);
@@ -997,10 +1109,10 @@ rmw_take_with_info(const rmw_subscription_t * subscription, void * ros_message,
     if (taken) { *taken = true; }
     return RMW_RET_OK;
   }
-  unsigned char * buf = NULL; size_t len = 0;
-  int rc = rmw_zerodds_take(sd->bridge_sub, &buf, &len);
+  unsigned char * buf = NULL; size_t len = 0; unsigned char be = 0;
+  int rc = rmw_zerodds_take(sd->bridge_sub, &buf, &len, &be);
   if (rc != 0 || !buf || len < 4) { if (buf) { rmw_zerodds_buffer_free(buf, len); } return RMW_RET_OK; }
-  rdr_t r = { buf, len, 4 };
+  rdr_t r = { buf, len, 4, be };
   int dr = sd->members ? cdr_de_msg(&r, (const ms_t *) sd->members, (unsigned char *) ros_message) : -1;
   rmw_zerodds_buffer_free(buf, len);
   if (dr == 0 && taken) { *taken = true; }
@@ -1186,7 +1298,7 @@ rmw_deserialize(const rmw_serialized_message_t * serialized_message,
   }
   const ms_t * members = zerodds_introspect(type_support);
   if (!members || serialized_message->buffer_length < 4) { return RMW_RET_ERROR; }
-  rdr_t r = { serialized_message->buffer, serialized_message->buffer_length, 4 };
+  rdr_t r = { serialized_message->buffer, serialized_message->buffer_length, 4, (unsigned char) (serialized_message->buffer[1] == 0x00) };
   if (cdr_de_msg(&r, members, (unsigned char *) ros_message)) { return RMW_RET_ERROR; }
   return RMW_RET_OK;
 }
@@ -1459,14 +1571,14 @@ rmw_ret_t rmw_take_response(const rmw_client_t * c, rmw_service_info_t * h, void
   if (!c || !c->data || !r) { return RMW_RET_INVALID_ARGUMENT; }
   zerodds_client_data_t * cd = (zerodds_client_data_t *) c->data;
   for (;;) {
-    unsigned char * buf = NULL; size_t len = 0;
-    if (rmw_zerodds_take_response(cd->bridge_client, &buf, &len) != 0 || !buf) { return RMW_RET_OK; }
+    unsigned char * buf = NULL; size_t len = 0; unsigned char be = 0;
+    if (rmw_zerodds_take_response(cd->bridge_client, &buf, &len, &be) != 0 || !buf) { return RMW_RET_OK; }
     if (len < ZERODDS_SVC_HDR + 4 || memcmp(buf, cd->gid, 16) != 0) {
       rmw_zerodds_buffer_free(buf, len);  // not ours / malformed — skip
       continue;
     }
     int64_t s; memcpy(&s, buf + 16, 8);
-    rdr_t rr = { buf + ZERODDS_SVC_HDR, len - ZERODDS_SVC_HDR, 4 };
+    rdr_t rr = { buf + ZERODDS_SVC_HDR, len - ZERODDS_SVC_HDR, 4, be };
     int dr = cd->resp_members ? cdr_de_msg(&rr, cd->resp_members, (unsigned char *) r) : -1;
     rmw_zerodds_buffer_free(buf, len);
     if (dr != 0) { return RMW_RET_OK; }
@@ -1538,11 +1650,11 @@ rmw_ret_t rmw_take_request(const rmw_service_t * s, rmw_service_info_t * h, void
   if (taken) { *taken = false; }
   if (!s || !s->data || !r) { return RMW_RET_INVALID_ARGUMENT; }
   zerodds_service_data_t * sd = (zerodds_service_data_t *) s->data;
-  unsigned char * buf = NULL; size_t len = 0;
-  if (rmw_zerodds_take_request(sd->bridge_service, &buf, &len) != 0 || !buf) { return RMW_RET_OK; }
+  unsigned char * buf = NULL; size_t len = 0; unsigned char be = 0;
+  if (rmw_zerodds_take_request(sd->bridge_service, &buf, &len, &be) != 0 || !buf) { return RMW_RET_OK; }
   if (len < ZERODDS_SVC_HDR + 4) { rmw_zerodds_buffer_free(buf, len); return RMW_RET_OK; }
   int64_t s_seq; memcpy(&s_seq, buf + 16, 8);
-  rdr_t rr = { buf + ZERODDS_SVC_HDR, len - ZERODDS_SVC_HDR, 4 };
+  rdr_t rr = { buf + ZERODDS_SVC_HDR, len - ZERODDS_SVC_HDR, 4, be };
   int dr = sd->req_members ? cdr_de_msg(&rr, sd->req_members, (unsigned char *) r) : -1;
   if (dr == 0 && h) {
     memcpy(h->request_id.writer_guid, buf, 16);  // client gid → route the reply
@@ -2076,7 +2188,7 @@ rmw_ret_t rmw_take_serialized_message_with_info(const rmw_subscription_t * s, rm
   if (!s || !s->data || !m) { return RMW_RET_INVALID_ARGUMENT; }
   zerodds_sub_data_t * sd = (zerodds_sub_data_t *) s->data;
   unsigned char * buf = NULL; size_t len = 0;
-  if (rmw_zerodds_take(sd->bridge_sub, &buf, &len) != 0 || !buf || len == 0) {
+  if (rmw_zerodds_take(sd->bridge_sub, &buf, &len, NULL) != 0 || !buf || len == 0) {
     if (buf) { rmw_zerodds_buffer_free(buf, len); }
     return RMW_RET_OK;
   }

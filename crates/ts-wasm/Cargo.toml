@@ -22,7 +22,7 @@ path = "src/lib.rs"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-zerodds-cdr = { version = "1.0.0-rc.3.1", path = "../cdr", default-features = false, features = ["alloc"] }
+zerodds-cdr = { version = "1.0.0-rc.4", path = "../cdr", default-features = false, features = ["alloc"] }
 wasm-bindgen = "0.2"
 serde = { version = "1", default-features = false, features = ["alloc", "derive"] }
 serde-wasm-bindgen = "0.6"

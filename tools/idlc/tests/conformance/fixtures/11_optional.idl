@@ -1,0 +1,8 @@
+// Conformance feature: @optional members (XTypes §7.2.2.4.4.5).
+module conf {
+  struct Optionals {
+    long           required;
+    @optional long maybe;
+    @optional string note;
+  };
+};

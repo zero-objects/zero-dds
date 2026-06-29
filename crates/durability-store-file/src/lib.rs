@@ -34,7 +34,9 @@ use zerodds_durability_store::{
 };
 use zerodds_qos::policies::history::HistoryKind;
 
-const HEADER_LEN: usize = 8;
+// On-disk per-sample header: [8B created_at_nanos LE][1B representation]
+// [1B big_endian] then the payload body.
+const HEADER_LEN: usize = 10;
 const DEFAULT_PAGE: usize = 1024;
 
 /// File-per-sample durability store rooted at a directory.
@@ -157,12 +159,14 @@ impl FileStore {
         if raw.len() < HEADER_LEN {
             return None;
         }
-        let nanos = u64::from_le_bytes(raw[..HEADER_LEN].try_into().ok()?);
+        let nanos = u64::from_le_bytes(raw[..8].try_into().ok()?);
         Some(DurabilitySample {
             topic: topic.to_string(),
             instance_key: key,
             sequence: seq,
             payload: raw[HEADER_LEN..].to_vec(),
+            representation: raw[8],
+            big_endian: raw[9] != 0,
             created_at: time_of(nanos),
         })
     }
@@ -235,6 +239,8 @@ impl DurabilityStore for FileStore {
 
         let mut buf = Vec::with_capacity(HEADER_LEN + sample.payload.len());
         buf.extend_from_slice(&nanos_of(sample.created_at).to_le_bytes());
+        buf.push(sample.representation);
+        buf.push(u8::from(sample.big_endian));
         buf.extend_from_slice(&sample.payload);
         let path = inst_dir.join(format!("{}.bin", sample.sequence));
         std::fs::write(&path, &buf).map_err(|e| backend("write sample", e))?;

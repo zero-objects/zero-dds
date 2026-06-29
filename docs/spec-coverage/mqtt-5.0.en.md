@@ -404,7 +404,7 @@ Test run: `cargo test -p zerodds-mqtt-bridge` — 165 lib inline tests + 24
 integration tests green, 0 failed (modules: `broker`, `codec`,
 `control_packets`, `data_types`, `dds_bridge`, `net`, `packet`, `properties`,
 `reason_codes`, `server`, `topic_filter`, `vbi`, `version`). Live interop
-additionally (codepit): `cargo test -p zerodds-mqtt-bridge --test
+additionally (Linux bench host): `cargo test -p zerodds-mqtt-bridge --test
 mosquitto_interop_e2e -- --ignored` — 5 tests green against Eclipse
 Mosquitto 2.0.
 

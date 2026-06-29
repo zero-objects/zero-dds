@@ -486,9 +486,10 @@ public class Xcdr2WireVectorsTests
         var bytes = AllTypeSupport.Instance.Encode(sample);
 
         // Spot checks: every primitive field must sit exactly where
-        // XTypes 1.3 §7.4.1.5 prescribes (origin = 0).
+        // XTypes 1.3 §7.4.1.5 + §7.4.1.1.1 prescribe (origin = 0). XCDR2 caps
+        // the max alignment at 4, so the 8-byte ll/ull/d align to 4, never 8.
         // Layout: b(0) o(1) s(2..3) us(4..5) l(8..11) ul(12..15)
-        //         ll(16..23) ull(24..31) f(32..35) d(40..47).
+        //         ll(16..23) ull(24..31) f(32..35) d(36..43).
         Assert.Equal((byte)1, bytes[0]);
         Assert.Equal((byte)0xAB, bytes[1]);
         Assert.Equal((short)-12345, BitConverter.ToInt16(bytes, 2));
@@ -498,7 +499,7 @@ public class Xcdr2WireVectorsTests
         Assert.Equal(-987654321L, BitConverter.ToInt64(bytes, 16));
         Assert.Equal(123456789UL, BitConverter.ToUInt64(bytes, 24));
         Assert.Equal(2.5f, BitConverter.ToSingle(bytes, 32));
-        Assert.Equal(3.14159, BitConverter.ToDouble(bytes, 40));
+        Assert.Equal(3.14159, BitConverter.ToDouble(bytes, 36));
 
         Assert.Equal(sample, AllTypeSupport.Instance.Decode(bytes));
         Assert.Equal("All", AllTypeSupport.Instance.TypeName);
@@ -560,7 +561,9 @@ public class Xcdr2WireVectorsTests
     public void V8_KeyedFinal_MatchesWire()
     {
         var sample = new Sensor { Id = 42, Value = 3.14 };
-        var expected = Hex("2A 00 00 00 00 00 00 00 1F 85 EB 51 B8 1E 09 40");
+        // XCDR2 caps max alignment at 4 (§7.4.1.1.1): the double follows the
+        // int32 immediately at offset 4, NO 8-byte over-alignment padding.
+        var expected = Hex("2A 00 00 00 1F 85 EB 51 B8 1E 09 40");
         var bytes = SensorTypeSupport.Instance.Encode(sample);
         Assert.Equal(ToHex(expected), ToHex(bytes));
         Assert.Equal(sample, SensorTypeSupport.Instance.Decode(bytes));
@@ -656,5 +659,22 @@ public class Xcdr2WireVectorsTests
                      bytes[^2] == 0x00 &&
                      bytes[^1] == 0x00,
                      "XCDR2 mutable stream MUST NOT emit explicit sentinel");
+    }
+
+    // fixed<P,S> packed BCD (CORBA/GIOP §9.3.2.7); oracle vectors == the Rust,
+    // C++, Python, TS PSMs + JacORB 3.9 / omniORB 4.3.
+    [Theory]
+    [InlineData("123.45", 5, 2, "12 34 5c")]
+    [InlineData("1234", 4, 0, "01 23 4c")]
+    [InlineData("-1.50", 6, 2, "00 00 15 0d")]
+    public void FixedBcd_OracleVectors_Roundtrip(string val, int p, int s, string hex)
+    {
+        var w = new Xcdr2Writer(EndianMode.LittleEndian);
+        w.WriteFixedBcd(decimal.Parse(val, System.Globalization.CultureInfo.InvariantCulture), p, s);
+        Assert.Equal(Hex(hex), w.ToArray());
+
+        var r = new Xcdr2Reader(w.ToArray(), EndianMode.LittleEndian);
+        Assert.Equal(decimal.Parse(val, System.Globalization.CultureInfo.InvariantCulture),
+                     r.ReadFixedBcd(p, s));
     }
 }

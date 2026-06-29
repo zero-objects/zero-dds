@@ -34,7 +34,8 @@ public:
     /// With QoS — converted into C-FFI form via `qos_bridge.hpp`.
     Publisher(::dds::domain::DomainParticipant& dp, const ::dds::core::PublisherQos& qos)
         : participant_(dp.native_handle()) {
-        auto native = ::dds::core::detail::to_native(qos);
+        ::dds::core::detail::PartitionPtrs part;
+        auto native = ::dds::core::detail::to_native(qos, part);
         handle_ = zerodds_dp_create_publisher(participant_, &native);
         if (handle_ == nullptr) {
             throw ::dds::core::Error("Publisher::create with QoS failed");
@@ -120,7 +121,8 @@ public:
     /// With QoS.
     DataWriter(Publisher& pub, ::dds::topic::Topic<T>& topic, const ::dds::core::DataWriterQos& qos)
         : publisher_(pub.native_handle()) {
-        auto native = ::dds::core::detail::to_native(qos);
+        ::dds::core::detail::PartitionPtrs part;
+        auto native = ::dds::core::detail::to_native(qos, part);
         handle_ = zerodds_pub_create_datawriter(publisher_, topic.native_handle(), &native);
         if (handle_ == nullptr) {
             throw ::dds::core::Error("DataWriter::create with QoS failed");
@@ -157,6 +159,75 @@ public:
         int rc = zerodds_dw_write_w_timestamp(handle_, buf.data(), buf.size(), 0,
                                               ts.sec(), ts.nanosec());
         ::dds::core::check_status(rc, "DataWriter::write@ts");
+    }
+
+    /// `register_instance(sample)` (Spec §2.2.2.4.2.5). Returns the
+    /// instance handle that subsequent keyed writes/dispose/unregister can
+    /// reference. Drives `zerodds_dw_register_instance` with the sample's
+    /// 16-byte XCDR2 key serialization.
+    ::dds::core::InstanceHandle register_instance(const T& sample) {
+        auto kh = ::dds::topic::topic_type_support<T>::key_hash(sample);
+        uint64_t h = 0;
+        int rc = zerodds_dw_register_instance(handle_, kh.data(), kh.size(), &h);
+        ::dds::core::check_status(rc, "DataWriter::register_instance");
+        return ::dds::core::InstanceHandle(h);
+    }
+    /// `register_instance_w_timestamp(sample, ts)`.
+    ::dds::core::InstanceHandle register_instance(const T& sample,
+                                                  const ::dds::core::Time& ts) {
+        auto kh = ::dds::topic::topic_type_support<T>::key_hash(sample);
+        uint64_t h = 0;
+        int rc = zerodds_dw_register_instance_w_timestamp(
+            handle_, kh.data(), kh.size(), ts.sec(), ts.nanosec(), &h);
+        ::dds::core::check_status(rc, "DataWriter::register_instance@ts");
+        return ::dds::core::InstanceHandle(h);
+    }
+
+    /// `lookup_instance(sample)` (Spec §2.2.2.4.2.16). Maps a keyed sample
+    /// to its instance handle without registering it.
+    ::dds::core::InstanceHandle lookup_instance(const T& sample) {
+        auto kh = ::dds::topic::topic_type_support<T>::key_hash(sample);
+        uint64_t h = 0;
+        int rc = zerodds_dw_lookup_instance(handle_, kh.data(), kh.size(), &h);
+        ::dds::core::check_status(rc, "DataWriter::lookup_instance");
+        return ::dds::core::InstanceHandle(h);
+    }
+
+    /// `dispose(sample)` (Spec §2.2.2.4.2.13) — emits the DISPOSE lifecycle
+    /// so matched readers see the instance as NOT_ALIVE_DISPOSED. The key is
+    /// taken from `sample` (only the @key fields are significant).
+    void dispose_instance(const T& sample) {
+        auto kh = ::dds::topic::topic_type_support<T>::key_hash(sample);
+        int rc = zerodds_dw_dispose(handle_, kh.data(), 0);
+        ::dds::core::check_status(rc, "DataWriter::dispose");
+    }
+    /// `dispose_w_timestamp(sample, ts)`.
+    void dispose_instance(const T& sample, const ::dds::core::Time& ts) {
+        auto kh = ::dds::topic::topic_type_support<T>::key_hash(sample);
+        int rc = zerodds_dw_dispose_w_timestamp(handle_, kh.data(), 0,
+                                                ts.sec(), ts.nanosec());
+        ::dds::core::check_status(rc, "DataWriter::dispose@ts");
+    }
+
+    /// `unregister_instance(sample)` (Spec §2.2.2.4.2.7) — emits the
+    /// UNREGISTER lifecycle so readers see NOT_ALIVE_NO_WRITERS. Resolves the
+    /// handle from the sample key, then unregisters by handle.
+    void unregister_instance(const T& sample) {
+        ::dds::core::InstanceHandle h = lookup_instance(sample);
+        int rc = zerodds_dw_unregister_instance(handle_, h.value());
+        ::dds::core::check_status(rc, "DataWriter::unregister_instance");
+    }
+    /// `unregister_instance_w_timestamp(sample, ts)`.
+    void unregister_instance(const T& sample, const ::dds::core::Time& ts) {
+        ::dds::core::InstanceHandle h = lookup_instance(sample);
+        int rc = zerodds_dw_unregister_instance_w_timestamp(
+            handle_, h.value(), ts.sec(), ts.nanosec());
+        ::dds::core::check_status(rc, "DataWriter::unregister_instance@ts");
+    }
+    /// Handle-based unregister (Spec §2.2.2.4.2.7, handle overload).
+    void unregister_instance(const ::dds::core::InstanceHandle& h) {
+        int rc = zerodds_dw_unregister_instance(handle_, h.value());
+        ::dds::core::check_status(rc, "DataWriter::unregister_instance(handle)");
     }
 
     /// `wait_for_acknowledgments`.

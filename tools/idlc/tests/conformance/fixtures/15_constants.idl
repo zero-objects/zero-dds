@@ -1,0 +1,16 @@
+// Conformance feature: const declarations of various types + expressions.
+// IDL constant expressions are arithmetic/bitwise only — no relational or
+// ternary operators (OMG IDL 4.2 §7.4.1.13 const_exp).
+module conf {
+  const long     MAX_ITEMS = 100;
+  const double   PI = 3.14159;
+  const string   VERSION = "1.0";
+  const boolean  ENABLED = TRUE;
+  const long     COMPUTED = (MAX_ITEMS * 2) + 1;
+  const octet    MASK = 0xFF;
+  const long     SHIFTED = 1 << 4;
+  struct UsesConst {
+    long   items[MAX_ITEMS];
+    double scale;
+  };
+};

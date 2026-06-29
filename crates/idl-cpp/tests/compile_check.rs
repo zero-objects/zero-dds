@@ -280,8 +280,12 @@ fn roundtrip_module_nested() {
 
 #[test]
 fn roundtrip_primitives_and_bool() {
+    // `@final` so NEITHER repr carries a DHEADER — that isolates the pure
+    // alignment-cap effect in the size assert below. (An `@appendable` struct
+    // would add a 4-byte DHEADER under XCDR2 only, which for this member set
+    // happens to exactly offset the XCDR1 8-byte padding — masking the cap.)
     let cpp = gen_default(
-        "struct All {\n\
+        "@final struct All {\n\
             boolean b; octet o; short s; unsigned short us;\n\
             long l; unsigned long ul; long long ll; unsigned long long ull;\n\
             float f; double d;\n\
@@ -290,7 +294,8 @@ fn roundtrip_primitives_and_bool() {
     // Dual-version: `All` carries long long/ull/double (64-bit) → exactly the
     // types where XCDR1 (8-byte align) and XCDR2 (4-byte cap,
     // XTypes §7.4.1.1.1) differ in the wire layout. BOTH must round-trip
-    // cleanly; the size assert proves the cap actually takes effect.
+    // cleanly; the size assert proves the cap actually takes effect (XCDR1
+    // pads the 64-bit members to 8, XCDR2 caps at 4 → strictly smaller).
     let asserts = |q: &str| {
         format!(
             "                assert({q}.b() == true);\n\

@@ -764,7 +764,7 @@ mod tests {
     }
 
     #[test]
-    fn struct_autoid_sequential_starts_at_1() {
+    fn struct_autoid_sequential_starts_at_0() {
         let s = StructType {
             name: "X".into(),
             extensibility: None,
@@ -784,8 +784,9 @@ mod tests {
         };
         let mto = xml_type_to_minimal_typeobject(&TypeDef::Struct(s)).unwrap();
         if let MinimalTypeObject::Struct(st) = mto {
-            assert_eq!(st.member_seq[0].common.member_id, 1);
-            assert_eq!(st.member_seq[1].common.member_id, 2);
+            // Sequential @autoid is 0-based (XTypes §7.2.2.4.9).
+            assert_eq!(st.member_seq[0].common.member_id, 0);
+            assert_eq!(st.member_seq[1].common.member_id, 1);
         } else {
             panic!("not a struct");
         }

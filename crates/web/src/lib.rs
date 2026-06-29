@@ -4,7 +4,7 @@
 //! OMG DDS-WEB 1.0 — Web-Enabled DDS Object Model + REST PSM.
 //!
 //! Crate `zerodds-web`. Safety classification: **STANDARD**.
-//! Spec `formal/2014-12-01` (`docs/standards/cache/omg/zerodds-web-1.0.pdf`).
+//! Spec `formal/2014-12-01` (`internal/standards/cache/omg/zerodds-web-1.0.pdf`).
 //!
 //! # Scope
 //!

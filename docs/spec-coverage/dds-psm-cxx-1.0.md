@@ -82,7 +82,7 @@ well as a set of C++ header files, references on the cover page. Both
 are normative. In the event of a conflict between them, the latter
 shall prevail."
 
-**Repo:** PDF in `docs/standards/cache/omg/dds-psm-cxx-1.0.pdf`;
+**Repo:** PDF in `internal/standards/cache/omg/dds-psm-cxx-1.0.pdf`;
 normative C++-Header-Files via Codegen aus den Templates in
 `crates/idl-cpp/templates/dds-psm-cxx/` produziert.
 

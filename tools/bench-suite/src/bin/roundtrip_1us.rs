@@ -524,6 +524,7 @@ fn run_pong_dcps_listener(args: &Args) -> std::io::Result<()> {
             payload: *const u8,
             len: usize,
             _representation: u8,
+            _big_endian: u8,
         ) {
             // SAFETY: writer_addr lebt bis pong_cb deregistriert ist.
             let writer_addr = unsafe { *(user_data as *const usize) };
@@ -652,6 +653,7 @@ fn run_ping_dcps_listener(args: &Args) -> std::io::Result<Stats> {
             payload: *const u8,
             len: usize,
             _representation: u8,
+            _big_endian: u8,
         ) {
             // SAFETY: state lebt bis Listener deregistriert + Arc::from_raw cleanup.
             let state = unsafe { &*(user_data as *const PingState) };

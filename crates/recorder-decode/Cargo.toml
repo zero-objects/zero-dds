@@ -1,0 +1,30 @@
+[package]
+name = "zerodds-recorder-decode"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Decode DDS samples to typed JSON + SQLite for zerodds-spy/-record: IDL→DynamicType type source, DynamicData→JSON, per-topic relational SQLite sink."
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-recorder-decode"
+readme = "README.md"
+keywords = ["dds", "decode", "dynamic", "sqlite", "json"]
+categories = ["network-programming", "encoding"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+zerodds-types = { version = "1.0.0-rc.4", path = "../types" }
+zerodds-idl = { version = "1.0.0-rc.4", path = "../idl" }
+zerodds-cdr = { version = "1.0.0-rc.4", path = "../cdr" }
+serde_json = "1"
+rusqlite = { workspace = true }
+
+[dev-dependencies]

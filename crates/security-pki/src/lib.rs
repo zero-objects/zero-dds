@@ -51,6 +51,62 @@
 
 extern crate alloc;
 
+// Crypto primitive backend: `ring` (default) or `aws-lc-rs` (FIPS, via `aws-lc`).
+// Symmetric/verify APIs are identical; the asymmetric *signing* keypair APIs
+// differ slightly between ring 0.17 and aws-lc-rs — bridged in `compat`.
+#[cfg(feature = "aws-lc")]
+pub(crate) use aws_lc_rs as backend;
+#[cfg(all(
+    feature = "ring-backend",
+    not(any(feature = "aws-lc", feature = "wolfcrypt"))
+))]
+pub(crate) use ring as backend;
+#[cfg(all(feature = "wolfcrypt", not(feature = "aws-lc")))]
+pub(crate) use wolfcrypt_compat as backend;
+#[cfg(not(any(feature = "ring-backend", feature = "aws-lc", feature = "wolfcrypt")))]
+compile_error!(
+    "enable exactly one crypto backend: `ring-backend` (default), `aws-lc`, or `wolfcrypt`"
+);
+
+/// Backend API deltas: ring 0.17 dropped `EcdsaKeyPair::from_pkcs8`'s `rng`
+/// arg and exposes RSA modulus length via `RsaKeyPair::public().modulus_len()`,
+/// while aws-lc-rs (and wolfcrypt-ring-compat, which mirrors its API) kept the
+/// rng-less ctor and offers `public_modulus_len()`.
+pub(crate) mod compat {
+    use crate::backend::error::KeyRejected;
+    use crate::backend::rand::SecureRandom;
+    use crate::backend::signature::{EcdsaKeyPair, EcdsaSigningAlgorithm, RsaKeyPair};
+
+    // zerodds-lint: allow no_dyn_in_safe — `&dyn SecureRandom` mirrors ring's
+    // `EcdsaKeyPair::from_pkcs8` API signature (external crate boundary, not our
+    // own dynamic dispatch); the aws-lc/wolfcrypt arms below don't use it.
+    #[cfg(not(any(feature = "aws-lc", feature = "wolfcrypt")))]
+    pub(crate) fn ecdsa_from_pkcs8(
+        alg: &'static EcdsaSigningAlgorithm,
+        pkcs8: &[u8],
+        rng: &dyn SecureRandom,
+    ) -> Result<EcdsaKeyPair, KeyRejected> {
+        EcdsaKeyPair::from_pkcs8(alg, pkcs8, rng)
+    }
+    #[cfg(any(feature = "aws-lc", feature = "wolfcrypt"))]
+    pub(crate) fn ecdsa_from_pkcs8(
+        alg: &'static EcdsaSigningAlgorithm,
+        pkcs8: &[u8],
+        _rng: &dyn SecureRandom,
+    ) -> Result<EcdsaKeyPair, KeyRejected> {
+        EcdsaKeyPair::from_pkcs8(alg, pkcs8)
+    }
+
+    #[cfg(not(any(feature = "aws-lc", feature = "wolfcrypt")))]
+    pub(crate) fn rsa_modulus_len(k: &RsaKeyPair) -> usize {
+        k.public().modulus_len()
+    }
+    #[cfg(any(feature = "aws-lc", feature = "wolfcrypt"))]
+    pub(crate) fn rsa_modulus_len(k: &RsaKeyPair) -> usize {
+        k.public_modulus_len()
+    }
+}
+
 pub mod auth_request;
 pub mod crl;
 pub mod delegation;

@@ -1,5 +1,6 @@
 ---
 source: crates/idl-rust/tests/snapshot_codegen.rs
+assertion_line: 162
 expression: run(idl)
 ---
 // SPDX-License-Identifier: Apache-2.0
@@ -7,6 +8,7 @@ expression: run(idl)
 
 #![allow(clippy::too_many_lines)]
 #![allow(unused_imports)]
+#![allow(non_snake_case)]
 
 use zerodds_cdr::{BufferReader, BufferWriter, CdrDecode, CdrEncode, DecodeError, EncodeError, Endianness};
 
@@ -23,28 +25,71 @@ pub mod geom {
 
     impl zerodds_dcps::DdsType for Pose {
         const TYPE_NAME: &'static str = "geom::Pose";
-        const EXTENSIBILITY: zerodds_dcps::Extensibility = zerodds_dcps::Extensibility::Final;
-        const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0xe8, 0xb0, 0x20, 0x30, 0xb4, 0x3e, 0x34, 0xea, 0x02, 0xf8, 0x72, 0xd4, 0xf2, 0x67]));
+        const EXTENSIBILITY: zerodds_dcps::Extensibility = zerodds_dcps::Extensibility::Appendable;
+        const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0xb9, 0x12, 0xf4, 0xc1, 0xf0, 0x3d, 0xaf, 0x28, 0xdc, 0x76, 0x5b, 0xdd, 0x7d, 0x38]));
 
         fn encode(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
             let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little).xcdr2();
-            <_ as zerodds_cdr::CdrEncode>::encode(&self.x, &mut writer)?;
-            <_ as zerodds_cdr::CdrEncode>::encode(&self.y, &mut writer)?;
-            <_ as zerodds_cdr::CdrEncode>::encode(&self.z, &mut writer)?;
+            zerodds_cdr::struct_enc::encode_appendable(&mut writer, |w| {
+                <_ as zerodds_cdr::CdrEncode>::encode(&self.x, w)?;
+                <_ as zerodds_cdr::CdrEncode>::encode(&self.y, w)?;
+                <_ as zerodds_cdr::CdrEncode>::encode(&self.z, w)?;
+                Ok(())
+            })?;
+            out.extend_from_slice(&writer.into_bytes());
+            Ok(())
+        }
+
+        fn encode_be(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
+            let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Big).xcdr2();
+            zerodds_cdr::struct_enc::encode_appendable(&mut writer, |w| {
+                <_ as zerodds_cdr::CdrEncode>::encode(&self.x, w)?;
+                <_ as zerodds_cdr::CdrEncode>::encode(&self.y, w)?;
+                <_ as zerodds_cdr::CdrEncode>::encode(&self.z, w)?;
+                Ok(())
+            })?;
             out.extend_from_slice(&writer.into_bytes());
             Ok(())
         }
 
         fn decode(bytes: &[u8]) -> ::core::result::Result<Self, zerodds_dcps::DecodeError> {
             let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Little).xcdr2();
-            let x = <f64 as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
-            let y = <f64 as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
-            let z = <f64 as zerodds_cdr::CdrDecode>::decode(&mut reader)?;
-            Ok(Self {
-                x,
-                y,
-                z,
-            })
+            zerodds_cdr::struct_enc::decode_appendable(&mut reader, |r| {
+                let x = <f64 as zerodds_cdr::CdrDecode>::decode(r)?;
+                let y = <f64 as zerodds_cdr::CdrDecode>::decode(r)?;
+                let z = <f64 as zerodds_cdr::CdrDecode>::decode(r)?;
+                Ok(Self {
+                    x,
+                    y,
+                    z,
+                })
+            }).map_err(::core::convert::Into::into)
+        }
+
+        fn decode_be(bytes: &[u8]) -> ::core::result::Result<Self, zerodds_dcps::DecodeError> {
+            let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Big).xcdr2();
+            zerodds_cdr::struct_enc::decode_appendable(&mut reader, |r| {
+                let x = <f64 as zerodds_cdr::CdrDecode>::decode(r)?;
+                let y = <f64 as zerodds_cdr::CdrDecode>::decode(r)?;
+                let z = <f64 as zerodds_cdr::CdrDecode>::decode(r)?;
+                Ok(Self {
+                    x,
+                    y,
+                    z,
+                })
+            }).map_err(::core::convert::Into::into)
+        }
+
+        fn encode_xcdr1(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
+            let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little);
+            <Self as zerodds_cdr::CdrEncode>::encode(self, &mut writer)?;
+            out.extend_from_slice(&writer.into_bytes());
+            Ok(())
+        }
+
+        fn decode_xcdr1(bytes: &[u8]) -> ::core::result::Result<Self, zerodds_dcps::DecodeError> {
+            let mut reader = zerodds_cdr::BufferReader::new(bytes, zerodds_cdr::Endianness::Little);
+            <Self as zerodds_cdr::CdrDecode>::decode(&mut reader).map_err(::core::convert::Into::into)
         }
 
         fn field_value(&self, path: &str) -> ::core::option::Option<zerodds_sql_filter::Value> {
@@ -59,23 +104,45 @@ pub mod geom {
 
     impl zerodds_cdr::CdrEncode for Pose {
         fn encode(&self, writer: &mut zerodds_cdr::BufferWriter) -> ::core::result::Result<(), zerodds_cdr::EncodeError> {
-            <_ as zerodds_cdr::CdrEncode>::encode(&self.x, writer)?;
-            <_ as zerodds_cdr::CdrEncode>::encode(&self.y, writer)?;
-            <_ as zerodds_cdr::CdrEncode>::encode(&self.z, writer)?;
+            if writer.max_alignment() == 4 {
+                zerodds_cdr::struct_enc::encode_appendable(writer, |w| {
+                    <_ as zerodds_cdr::CdrEncode>::encode(&self.x, w)?;
+                    <_ as zerodds_cdr::CdrEncode>::encode(&self.y, w)?;
+                    <_ as zerodds_cdr::CdrEncode>::encode(&self.z, w)?;
+                    Ok(())
+                })?;
+            } else {
+                <_ as zerodds_cdr::CdrEncode>::encode(&self.x, writer)?;
+                <_ as zerodds_cdr::CdrEncode>::encode(&self.y, writer)?;
+                <_ as zerodds_cdr::CdrEncode>::encode(&self.z, writer)?;
+            }
             ::core::result::Result::Ok(())
         }
     }
 
     impl zerodds_cdr::CdrDecode for Pose {
         fn decode(reader: &mut zerodds_cdr::BufferReader<'_>) -> ::core::result::Result<Self, zerodds_cdr::DecodeError> {
-            let x = <f64 as zerodds_cdr::CdrDecode>::decode(reader)?;
-            let y = <f64 as zerodds_cdr::CdrDecode>::decode(reader)?;
-            let z = <f64 as zerodds_cdr::CdrDecode>::decode(reader)?;
-            ::core::result::Result::Ok(Self {
-                x,
-                y,
-                z,
-            })
+            if reader.max_alignment() == 4 {
+                zerodds_cdr::struct_enc::decode_appendable(reader, |r| {
+                    let x = <f64 as zerodds_cdr::CdrDecode>::decode(r)?;
+                    let y = <f64 as zerodds_cdr::CdrDecode>::decode(r)?;
+                    let z = <f64 as zerodds_cdr::CdrDecode>::decode(r)?;
+                    ::core::result::Result::Ok(Self {
+                        x,
+                        y,
+                        z,
+                    })
+                })
+            } else {
+                let x = <f64 as zerodds_cdr::CdrDecode>::decode(reader)?;
+                let y = <f64 as zerodds_cdr::CdrDecode>::decode(reader)?;
+                let z = <f64 as zerodds_cdr::CdrDecode>::decode(reader)?;
+                ::core::result::Result::Ok(Self {
+                    x,
+                    y,
+                    z,
+                })
+            }
         }
     }
 

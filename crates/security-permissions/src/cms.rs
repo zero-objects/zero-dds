@@ -51,13 +51,13 @@ use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
+use crate::backend::signature;
 use cms::cert::CertificateChoices;
 use cms::content_info::ContentInfo;
 use cms::signed_data::SignedData;
 use const_oid::ObjectIdentifier;
 use const_oid::db::rfc5911::{ID_DATA, ID_SIGNED_DATA};
 use der::{Decode, Encode, Tag, Tagged, asn1::SetOfVec};
-use ring::signature;
 use rustls_pki_types::CertificateDer;
 use rustls_pki_types::pem::PemObject;
 use sha2::{Digest, Sha256};

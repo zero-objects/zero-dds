@@ -172,7 +172,7 @@ marker and left untouched.
 
 Non-trivial design decisions go under `docs/adr/` as numbered ADRs
 following the [Nygard format](https://www.cognitect.com/blog/2011/11/15/documenting-architecture-decisions).
-Larger technical proposals live as RFCs under `docs/rfcs/`.
+Larger technical proposals live as RFCs under `internal/rfcs/`.
 
 ## Documentation Build
 

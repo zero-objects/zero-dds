@@ -289,7 +289,7 @@ fn emit_struct_file(
     // sub-struct is still `instanceof TopicType<Base>` and thus
     // registerable as a topic type.
     //
-    // Findings anchor: TS-3 finding 4 (`docs/test-harness/plan.md`).
+    // Findings anchor: TS-3 finding 4 (`internal/test-harness/plan.md`).
     let lowered_type = lower_or_empty(&s.annotations);
     if !has_nested(&lowered_type) && s.base.is_none() {
         implements.push(format!("org.omg.dds.topic.TopicType<{class}>"));
@@ -463,7 +463,7 @@ fn emit_union_files(
     // `cannot find symbol`; `permits Foo.A, Foo.B, Foo.C` is the correct
     // form.
     //
-    // Findings anchor: TS-3 finding 5 (`docs/test-harness/plan.md`).
+    // Findings anchor: TS-3 finding 5 (`internal/test-harness/plan.md`).
     let permits_clause = if permits.is_empty() {
         String::new()
     } else {
@@ -750,15 +750,13 @@ fn boxed_for_optional(ts: &TypeSpec) -> String {
         TypeSpec::Primitive(p) => primitive_to_java_boxed(*p).to_string(),
         TypeSpec::Scoped(s) => scoped_to_java(s),
         TypeSpec::String(_) => "String".into(),
-        TypeSpec::Sequence(s) => {
-            // List<Boxed<T>>
-            let inner = match &*s.elem {
-                TypeSpec::Primitive(p) => primitive_to_java_boxed(*p).to_string(),
-                TypeSpec::Scoped(sn) => scoped_to_java(sn),
-                TypeSpec::String(_) => "String".into(),
-                _ => "Object".into(),
-            };
-            format!("java.util.List<{inner}>")
+        // Aggregates (sequence, map, …) reuse the canonical declared-type
+        // mapping so the `Optional<…>` slot is fully generic. Previously
+        // `map<…>` and nested aggregates fell through to a raw `Object`, which
+        // both lost the static type and produced an `Optional<Object>` field
+        // the codec then could not assign into.
+        TypeSpec::Sequence(_) | TypeSpec::Map(_) => {
+            typespec_to_java(ts).unwrap_or_else(|_| "Object".into())
         }
         _ => "Object".into(),
     }

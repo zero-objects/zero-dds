@@ -76,7 +76,7 @@ gesteuert durch Build-Flag UND Config-Flag.**
 **Folge-Aufgaben**:
 - F-Iox: Iceoryx2SlotAdapter implementieren (gegen `SlotBackend`-
   Trait aus ADR-0003).
-- Doku: `docs/integration/flatdata-backend-choice.md` als
+- Doku: `internal/integration/flatdata-backend-choice.md` als
   Entscheidungshilfe für Caller.
 - CI: `--features iceoryx2-bridge`-Build als separater Job.
 

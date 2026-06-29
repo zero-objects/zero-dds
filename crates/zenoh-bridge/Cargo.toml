@@ -31,10 +31,10 @@ zenoh-runtime = [
 ]
 
 [dependencies]
-zerodds-qos = { version = "1.0.0-rc.3.1", path = "../qos" }
+zerodds-qos = { version = "1.0.0-rc.4", path = "../qos" }
 
 # Optional, active only with zenoh-runtime.
-zerodds-dcps = { version = "1.0.0-rc.3.1", path = "../dcps", optional = true }
+zerodds-dcps = { version = "1.0.0-rc.4", path = "../dcps", optional = true }
 zenoh = { version = "1", optional = true }
 tokio = { version = "1", optional = true, features = ["rt", "rt-multi-thread", "sync", "macros"] }
 thiserror = { version = "2", optional = true }
