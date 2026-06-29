@@ -34,6 +34,13 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
+      # `--all-features` pulls the optional wolfcrypt FIPS backend, whose
+      # wolfcrypt-sys build.rs needs a wolfSSL source tree (WOLFSSL_SRC); the
+      # published wolfssl-src crate ships no C sources. Provision wolfSSL 5.9.1.
+      - name: Provision wolfSSL for the wolfcrypt FIPS backend
+        run: |
+          curl -sSL https://github.com/wolfSSL/wolfssl/archive/refs/tags/v5.9.1-stable.tar.gz | tar xz -C /tmp
+          echo "WOLFSSL_SRC=/tmp/wolfssl-5.9.1-stable" >> "$GITHUB_ENV"
       - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
 
   deny:
