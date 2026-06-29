@@ -55,6 +55,11 @@ jobs:
         with:
           command: check
           rust-version: "1.88.0"
+          # Override the action's `--all-features` default: audit the default
+          # feature graph (what ships), matching root's `cargo deny check`. The
+          # opt-in features pull GPL-or-commercial wolfSSL + the quinn http3
+          # stack, whose licenses/advisories are accepted by whoever enables them.
+          arguments: ""
 
   # ---------------------------------------------------------------------------
   # Build & test matrix — Full profile on Linux x86_64 and ARM64.
@@ -87,13 +92,20 @@ jobs:
       - name: Build
         run: |
           if [ "${{ matrix.cross }}" = "true" ]; then
-            cross build --workspace --target ${{ matrix.target }}
+            # iceoryx2/iceoryx C-FFI crates don't cross-compile cleanly (the
+            # cross image's C toolchain can't satisfy iceoryx2-pal-posix's
+            # <stddef.h>); they target the x86_64 same-host SHM path anyway.
+            cross build --workspace --target ${{ matrix.target }} \
+              --exclude zerodds-iceoryx-cyclone --exclude iceoryx2-oracle-consumer
           else
             cargo build --workspace --target ${{ matrix.target }}
           fi
       - name: Test (non-DCPS workspace, parallel)
         if: ${{ !matrix.cross }}
-        run: cargo test --workspace --exclude zerodds-dcps --target ${{ matrix.target }}
+        # zerodds-conformance's cross-language tests shell out to mvn / npm /
+        # dotnet, which aren't on the GitHub runner; exclude that crate (the
+        # Rust-side wire goldens are covered by the per-binding crates' tests).
+        run: cargo test --workspace --exclude zerodds-dcps --exclude zerodds-conformance --target ${{ matrix.target }}
       - name: Test (DCPS, serial — UDP multicast tests share one multicast group per binary)
         if: ${{ !matrix.cross }}
         run: cargo test -p zerodds-dcps --target ${{ matrix.target }} -- --test-threads=1
