@@ -20,7 +20,7 @@
 //! - E2E-Latenz (Send→Recv Roundtrip).
 //! - Multi-producer/consumer contention.
 //! - Cross-Vendor-Vergleich gegen Cyclone/FastDDS — Sache des
-//!   Live-Interop-Harness in `docs/interop/`.
+//!   Live-Interop-Harness in `internal/interop/`.
 //!
 //! # Run
 //!

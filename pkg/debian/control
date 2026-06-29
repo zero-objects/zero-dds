@@ -10,8 +10,8 @@ Build-Depends: debhelper-compat (= 13),
                pkg-config
 Standards-Version: 4.6.2
 Homepage: https://zerodds.io
-Vcs-Browser: https://github.com/zero-objects/zero-dds
-Vcs-Git: https://github.com/zero-objects/zero-dds.git
+Vcs-Browser: https://gitlab.sandra-kessler.eu/fishermen21/zerodds
+Vcs-Git: https://gitlab.sandra-kessler.eu/fishermen21/zerodds.git
 Rules-Requires-Root: no
 
 Package: zerodds-tools

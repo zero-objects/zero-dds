@@ -14,10 +14,10 @@
 class Zerodds < Formula
   desc "Pure-Rust DDS implementation (OMG DDS 1.4 + RTPS 2.5)"
   homepage "https://zerodds.io"
-  url "https://github.com/zero-objects/zero-dds/archive/refs/tags/v0.0.0.tar.gz"
+  url "https://gitlab.sandra-kessler.eu/fishermen21/zerodds/-/archive/v0.0.0/zerodds-v0.0.0.tar.gz"
   sha256 "0000000000000000000000000000000000000000000000000000000000000000"
   license "Apache-2.0"
-  head "https://github.com/zero-objects/zero-dds.git", branch: "main"
+  head "https://gitlab.sandra-kessler.eu/fishermen21/zerodds.git", branch: "main"
 
   depends_on "rust" => :build
 
