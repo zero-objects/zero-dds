@@ -223,7 +223,10 @@ targets = [
     "x86_64-unknown-linux-gnu",
     "aarch64-unknown-linux-gnu",
     "x86_64-unknown-linux-musl",
-    "aarch64-unknown-linux-musl",
+    # aarch64-unknown-linux-musl dropped: cross-musl needs a real
+    # aarch64-musl gcc; the glibc-cross-gcc hack breaks on C deps that
+    # pull glibc FORTIFY headers (libsqlite3-sys: __memcpy_chk/fcntl64).
+    # ARM64 Linux is shipped via aarch64-unknown-linux-gnu.
     "x86_64-apple-darwin",
     "aarch64-apple-darwin",
     "x86_64-pc-windows-msvc",
