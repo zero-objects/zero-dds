@@ -267,6 +267,7 @@ exit 0
 %{_mandir}/man1/zerodds-admin.1*
 %{_mandir}/man1/zerodds-idlc.1*
 %{_mandir}/man1/zerodds-record.1*
+%{_mandir}/man1/zerodds-replay.1*
 %{_mandir}/man1/zerodds-bench.1*
 %{_mandir}/man1/zerodds-monitor.1*
 %{_mandir}/man1/zerodds-spy.1*
