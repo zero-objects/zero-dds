@@ -4,7 +4,12 @@ version = "1.0.0-rc.4"
 edition = "2021"
 license = "Apache-2.0"
 description = "ZeroDDS ↔ Cyclone DDS same-host zero-copy bridge over the iceoryx C++ (POSH) shared-memory transport, via the libiceoryx_binding_c C ABI."
-publish = false
+repository = "https://github.com/zero-objects/zero-dds"
+# Publishable: with default features the crate builds on any platform (it only
+# exposes the DdsPsmxMetadata representation type). The `posh` FFI that links
+# libiceoryx_binding_c is opt-in and Linux-only, so it never blocks packaging.
+# zerodds-dcps carries an optional `cyclone-iox` dep on this crate, so it must
+# resolve on crates.io — hence it is published rather than source-only.
 
 [features]
 # Off by default: the FFI links libiceoryx_binding_c and only works on a Linux
