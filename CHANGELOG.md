@@ -10,7 +10,7 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
 
 Reserved for changes after the `1.0.0-rc.4` workspace tag.
 
-## [1.0.0-rc.4] — UNRELEASED (cut pending; date stamped at tag)
+## [1.0.0-rc.4] — 2026-06-30
 
 Cross-vendor wire-conformance and full multi-language parity release.
 The headline: **every language binding now encodes byte-identically over
