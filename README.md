@@ -9,17 +9,19 @@
 > OMG-assigned Vendor-ID**. Until the OMG registers the Vendor-ID,
 > Discovery packets (SPDP/SEDP `vendor_id` field in the
 > `ProtocolHeader`) carry a **provisional marker** and are therefore
-> **not cleared for production cross-vendor deployments**. Wire
-> compatibility against Cyclone DDS / RTI Connext / eProsima Fast DDS
-> is byte-identical; the `vendor_id` field is the sole deviation. The
-> application has been filed with the OMG; this README will be updated
-> once the Vendor-ID is assigned.
+> **not cleared for production cross-vendor deployments**. ZeroDDS speaks
+> **native OMG DDSI-RTPS 2.5**; cross-vendor wire interop against Cyclone
+> DDS / RTI Connext / eProsima Fast DDS is validated in the conformance
+> suite, and the `vendor_id` field is the sole deviation. The application
+> has been filed with the OMG; this README will be updated once the
+> Vendor-ID is assigned.
 
 Production-grade pure-Rust implementation of the **OMG Data Distribution
-Service** with bindings for C, C++, C#, Java, Python, TypeScript and
-Flutter, plus seven protocol bridges and a complete CORBA/CCM stack.
+Service** — seven native language PSMs (C-FFI, C++, C#, Java, Python,
+TypeScript, Rust), ten first-class protocol bridges, and a complete CORBA/CCM
+stack.
 
-> **Status:** `1.0.0-rc.3.1` Release Candidate. 122 crates published on
+> **Status:** `1.0.0-rc.4` Release Candidate. 122 crates published on
 > crates.io, all bridge layers conformance-verified against Cyclone DDS,
 > RabbitMQ, mosquitto, omniORB and gRPC reflection.
 
@@ -36,28 +38,17 @@ Flutter, plus seven protocol bridges and a complete CORBA/CCM stack.
 
 ## Spec Coverage
 
-ZeroDDS implements the full OMG DDS family plus modern bridging:
+ZeroDDS implements the full OMG DDS family — **DDS-DCPS 1.4, DDSI-RTPS 2.5,
+DDS-XTypes 1.3, DDS-Security 1.2, DDS-XML 1.0, DDS-XRCE 1.0, DDS-RPC 1.0**, the
+**DDS-PSM-Cxx** and **DDS-Java-PSM** language mappings, **OMG IDL 4.2**,
+**DDS4CCM 1.1** and **CORBA 3.3** — plus the ZeroDDS-published vendor
+specifications (the protocol bridges, the per-language XCDR2 binding
+conformance, delivery modes, zero-copy, and more).
 
-| Spec | Version | Status |
-|---|---|---|
-| OMG DDS DCPS | 1.4 | 100/100 + 2 n/a |
-| OMG DDSI-RTPS | 2.5 | 121/121 + 3 n/a |
-| OMG DDS-XTypes | 1.3 | 82/82 + 1 n/a |
-| OMG DDS-Security | 1.2 | 50/50 + 3 n/a |
-| OMG DDS-XML | 1.0 | 73/73 + 15 n/a |
-| OMG DDS-XRCE | 1.0 | 82/82 + 13 n/a |
-| OMG DDS-RPC | 1.0 | 94/94 + 10 n/a |
-| OMG DDS-PSM C++ | 1.0 | 103/103 + 19 n/a |
-| OMG DDS-Java-PSM | 1.0 | 156/156 + 15 n/a |
-| OMG DDS4CCM | 1.1 | 24/24 + 10 n/a |
-| OMG IDL | 4.2 | 649/649 + 24 n/a |
-| OMG CORBA | 3.3 | 51/51 + 12 n/a |
-
-Plus seven ZeroDDS-published Vendor Specifications:
-**DDS-AMQP**, **DDS-TS**, **DDS-WebSocket-Bridge**, **DDS-MQTT-Bridge**,
-**DDS-CoAP-Bridge**, **DDS-gRPC-Bridge**, **DDS-CORBA-Bridge** plus
-**ZeroDDS-FFI-Loader** and **ZeroDDS-Deployment** specs. Full coverage
-matrix in [`docs/spec-coverage/`](docs/spec-coverage/).
+The complete, per-section coverage matrix — every normative section traced to
+source + tests, always current — is published live at
+**<https://zerodds.org/spec-coverage/>** (source under
+[`docs/spec-coverage/`](docs/spec-coverage/)).
 
 ## Quickstart
 
@@ -71,10 +62,10 @@ sudo apt install zerodds-cli                 # Debian/Ubuntu (.deb)
 sudo dnf install zerodds-cli                 # RHEL/Fedora (.rpm)
 
 # Or via Docker (one image per tool/bridge)
-docker pull ghcr.io/zero-objects/zerodds-cli:1.0.0-rc.3
+docker pull ghcr.io/zero-objects/zerodds-cli:1.0.0-rc.4
 ```
 
-Hello world publisher (compiles + runs against the published `1.0.0-rc.3.1`
+Hello world publisher (compiles + runs against the published `1.0.0-rc.4`
 crate — see [`examples/`](https://github.com/zero-objects/zerodds-examples)):
 
 ```rust
@@ -100,7 +91,7 @@ chapters in [`examples/tutorials/dds-chat/`](examples/tutorials/dds-chat/).
 
 ## Architecture
 
-Nine layers, ~95 crates, single Cargo workspace:
+Nine layers, 135 workspace crates (122 published on crates.io), single Cargo workspace:
 
 ```
 Layer 8  CORBA + CCM (17 crates)            corba-ior, corba-iiop, ami4ccm, ...
@@ -118,35 +109,40 @@ Per-layer details in [`docs/architecture/`](docs/architecture/).
 
 ## Bindings + Bridges
 
-**Language Bindings** (Layer 6):
+**Language bindings** (Layer 6) — seven native PSMs on one Pure-Rust core;
+**no JNI, no P/Invoke, no thin wrappers** — each is a first-class crate:
 
-| Language | Crate | Wire |
+| Language | Crate | PSM |
 |---|---|---|
-| Rust | `dds-dcps` (native) | XCDR2 |
-| C | `zerodds-c-api` (cdylib + staticlib) | XCDR2 |
-| C++17 | `zerodds-cpp` (header + ABI) | XCDR2 |
-| C# / .NET 8 | `zerodds-cs` (P/Invoke) | XCDR2 |
-| Java 21 | `zerodds-java-jni` (JNI) | XCDR2 |
-| Python 3.10+ | `zerodds-py` (PyO3) | XCDR2 |
-| TypeScript Node | `zerodds-ts-node` (NAPI) | XCDR2 |
-| TypeScript Browser | `zerodds-ts-wasm` (WASM) | XCDR2 |
-| Flutter / Dart | `zerodds-flutter` (`dart:ffi`) | XCDR2 |
+| Rust | `zerodds-rs` (idiomatic SDK) / `zerodds-dcps` (core) | ZeroDDS vendor PSM |
+| C | `zerodds-c-api` (stable C ABI, cdylib + staticlib) | C-FFI |
+| C++17 | `zerodds-cpp` — ABI-stable headers via `zerodds-idlc --cpp` | **OMG DDS-PSM-Cxx 1.0** |
+| C# / .NET 8 | `zerodds-cs` (netstandard2.1, NuGet-packageable) | ZeroDDS vendor PSM |
+| Java 21 | `zerodds-java-omgdds` (`org.omg.dds.*`, pure Java) | **OMG DDS-Java-PSM** |
+| Python 3.8–3.14 | `zerodds-py` (PyO3, abi3 wheels) | ZeroDDS vendor PSM |
+| TypeScript (Node) | `zerodds-ts-node` | ZeroDDS vendor PSM |
+| TypeScript (browser) | `zerodds-ts-wasm` (WASM, WebSocket transport) | ZeroDDS vendor PSM |
 
-**Protocol Bridges** (Layer 5) — daemons under `target/release/zerodds-*-bridged`:
+**Protocol bridges** (Layer 5) — ten first-class bridge daemons, each a
+workspace crate with its own protocol-conformance suite:
 
-| Bridge | Spec | Wire |
+| Bridge | External spec | Crate |
 |---|---|---|
-| WebSocket | RFC 6455 + RFC 7692 | DDS-WebSocket-Bridge 1.0 |
-| MQTT | OASIS MQTT 5.0 | DDS-MQTT-Bridge 1.0 |
-| CoAP | RFC 7252 + 7641 + 7959 | DDS-CoAP-Bridge 1.0 |
-| AMQP | OASIS AMQP 1.0 | DDS-AMQP 1.0 |
-| gRPC | gRPC Protocol + gRPC-Web | DDS-gRPC-Bridge 1.0 |
-| CORBA | OMG CORBA 3.3 GIOP/IIOP | DDS-CORBA-Bridge 1.0 |
-| ROS-2 | REP-2007/2008/2009 | DDS-ROS2-Bridge 1.0 |
+| MQTT | OASIS MQTT 5.0 (+ 3.1.1) | `zerodds-mqtt-bridge` |
+| AMQP | OASIS AMQP 1.0 (+ 0.9.1) | `zerodds-amqp-bridge` |
+| CoAP | IETF RFC 7252 (+ 7641 observe, 7959 block-wise) | `zerodds-coap-bridge` |
+| WebSocket | IETF RFC 6455 | `zerodds-websocket-bridge` |
+| gRPC | HTTP/2 + Protobuf 3 (DDS-RPC flows here) | `zerodds-grpc-bridge` |
+| ROS 2 | REP-2007/2008/2009 (drop-in `rmw`) | `rmw-zerodds-shim` |
+| DDS-XRCE | OMG DDS-XRCE 1.0 (MCU clients over serial/UDP) | `zerodds-xrce-agent` |
+| Zenoh | Eclipse Zenoh wire protocol | `zerodds-zenoh-bridge` |
+| OPC UA | OMG DDS-OPCUA 1.0 gateway | `zerodds-opcua-gateway` |
+| SOAP | WSDL / Web Services | `zerodds-soap` |
 
-All bridges share `bridge-security`: TLS 1.3 (rustls 0.23), bearer/JWT-RS256/
-mTLS/SASL-PLAIN auth modes, ACL with wildcard and group matching, SIGHUP
-cert rotation.
+Shared `zerodds-bridge-security`: TLS 1.3 (rustls), bearer/JWT-RS256/mTLS/
+SASL-PLAIN auth, ACL with wildcard + group matching, SIGHUP cert rotation.
+In-DDS domain routing via `zerodds-routing-service`; the full CORBA/CCM
+GIOP/IIOP stack lives in Layer 8.
 
 ## Linux / macOS / Windows
 
@@ -225,12 +221,12 @@ in the `vendor_id` field of every DDSI-RTPS header (see DDSI-RTPS 2.5
 processes the application, ZeroDDS runs with a provisional marker.
 Implications:
 
-- **Wire format**: Discovery packets are byte-identical to Cyclone /
-  RTI / Fast DDS — only the `vendor_id` field differs.
+- **Wire format**: native DDSI-RTPS 2.5 — only the `vendor_id` field
+  differs from Cyclone / RTI / Fast DDS.
 - **Cross-vendor discovery**: other vendors do not yet recognise
   ZeroDDS Participants in their Vendor-ID list and treat them as
-  "unknown vendor". Byte-accurate interop is nevertheless validated
-  in the cross-vendor conformance suite.
+  "unknown vendor". Cross-vendor interop is nevertheless validated
+  in the conformance suite.
 - **Production deployments**: cross-vendor setups using ZeroDDS should
   be regarded as **experimental until the Vendor-ID has been
   assigned**.
