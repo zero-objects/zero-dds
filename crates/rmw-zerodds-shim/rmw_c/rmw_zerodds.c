@@ -1182,7 +1182,7 @@ rmw_wait(rmw_subscriptions_t * subscriptions, rmw_guard_conditions_t * guard_con
     if (guard_conditions) {
       for (size_t i = 0; i < guard_conditions->guard_condition_count; ++i) {
         rmw_guard_condition_t * gc = (rmw_guard_condition_t *) guard_conditions->guard_conditions[i];
-        unsigned int * f = gc ? (unsigned int *) gc->data : NULL;
+        unsigned int * f = (gc && gc->implementation_identifier == ZERODDS_IDENTIFIER) ? (unsigned int *) gc->data : NULL;
         if (f && *f) { ready++; }
       }
     }
