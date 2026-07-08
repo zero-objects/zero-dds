@@ -55,10 +55,10 @@ jobs:
     name: Pack + push ZeroDDS to nuget.org
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           # 9.0.x is locally verified. Otherwise setup-dotnet pulls the
           # newest preview (10.0.300 RC), which escalates NU5128 to an error.
@@ -108,7 +108,7 @@ jobs:
           ls -la ../../../dist/
 
       - name: Upload nupkg artifacts
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: nuget-packages
           path: dist/*.nupkg

@@ -72,7 +72,7 @@ jobs:
     name: Build + publish @zerodds/node
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Setup Node
         uses: actions/setup-node@v5
@@ -116,7 +116,7 @@ jobs:
           ls -la *.tgz
 
       - name: Upload tarball as artifact
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v7
         with:
           name: npm-tarball
           path: crates/ts-node/*.tgz
