@@ -12418,17 +12418,25 @@ mod tests {
     fn assert_liveliness_enqueues_wlp_pulse_without_panic() {
         // Smoke test: assert_liveliness() must not poison the lock
         // and must return synchronously.
-        let rt = DcpsRuntime::start(
-            8,
-            GuidPrefix::from_bytes([0xF; 12]),
-            RuntimeConfig::default(),
-        )
-        .expect("start");
+        //
+        // Isolate discovery: a UNIQUE multicast group (239.255.88.1, used by no
+        // other test) + multicast send off, so no co-running test's participant
+        // can announce itself into this group. Using RuntimeConfig::default()
+        // put this runtime on the shared spec group (239.255.0.1), where a
+        // parallel test's participant leaked in and made peer_count flaky under
+        // the coverage run — a real test-isolation defect, following the same
+        // unique-group convention the other multi-runtime tests already use.
+        let cfg = RuntimeConfig {
+            spdp_multicast_group: Ipv4Addr::new(239, 255, 88, 1),
+            spdp_multicast_send: false,
+            ..RuntimeConfig::default()
+        };
+        let rt = DcpsRuntime::start(8, GuidPrefix::from_bytes([0xF; 12]), cfg).expect("start");
         rt.assert_liveliness();
         rt.assert_writer_liveliness(alloc::vec![0xDE, 0xAD]);
-        // The lock must stay usable.
+        // Genuinely isolated now → no peer, and the lock stays usable.
         let count = rt.wlp.lock().map(|w| w.peer_count()).unwrap_or(usize::MAX);
-        assert_eq!(count, 0, "no peer announced itself → 0");
+        assert_eq!(count, 0, "isolated runtime: no peer announced itself → 0");
     }
 
     #[test]

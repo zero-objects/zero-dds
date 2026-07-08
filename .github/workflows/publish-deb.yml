@@ -21,7 +21,7 @@ jobs:
           - x86_64-unknown-linux-gnu
           - aarch64-unknown-linux-gnu
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@1.88
         with:
           targets: ${{ matrix.target }}
@@ -55,7 +55,7 @@ jobs:
       # only upload the .deb files as GH release assets — the
       # pull-deploy fetches them and signs them locally with the server GPG key.
       - name: Upload artifacts (release attachments)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: zerodds-deb-${{ matrix.target }}
           path: dist/*.deb

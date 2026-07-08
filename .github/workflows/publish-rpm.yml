@@ -23,7 +23,7 @@ jobs:
           # (ring-0.17 -mbranch-protection flag not recognized by gcc).
           # ARM RPMs for RC2; users on aarch64 use .tar.gz or .deb.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Install build deps
         # Fedora 40 ships rust 1.78; ZeroDDS needs 1.88+ → rustup.
         run: |
@@ -52,7 +52,7 @@ jobs:
       # deploy fetches them, verifies minisign + signs them locally with
       # the server GPG key.
       - name: Upload artifacts (release attachments)
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: zerodds-rpm-${{ matrix.target }}
           path: ~/rpmbuild/RPMS/${{ matrix.target }}/*.rpm

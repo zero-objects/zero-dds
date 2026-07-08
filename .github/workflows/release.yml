@@ -34,7 +34,7 @@ jobs:
       tag: ${{ steps.plan.outputs.tag }}
       val: ${{ steps.plan.outputs.val }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - name: Install cargo-dist
         run: cargo install cargo-dist --version 0.22.1 --locked
@@ -78,7 +78,7 @@ jobs:
             os: windows-2022
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -175,7 +175,7 @@ jobs:
           DEV_ID_INSTALLER:   "Developer ID Installer: Sandra Theresa Keler (YU6XNW6DG7)"
           ZERODDS_PKG_VERSION: "1.0.0"
         run: bash packaging/github-actions/sign-macos.sh target/distrib
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: artifacts-${{ matrix.target }}
           path: target/distrib/
@@ -221,7 +221,7 @@ jobs:
           - cpp-runtime
           - ts-node-runtime
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: docker/setup-qemu-action@v3
       - uses: docker/setup-buildx-action@v3
       - name: Login to Docker Hub
@@ -256,8 +256,8 @@ jobs:
     continue-on-error: true
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v5
         with:
           name: artifacts-x86_64-pc-windows-msvc
           path: payload\
@@ -319,7 +319,7 @@ jobs:
           signtool sign /f cert.pfx /p $env:WIN_CERT_PWD `
                    /tr http://timestamp.digicert.com /td SHA256 /fd SHA256 `
                    dist/zerodds-1.0.0-x64.msi
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         with:
           name: zerodds-msi
           path: dist/*.msi
@@ -329,13 +329,13 @@ jobs:
     needs: [plan, build, package-msi]
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           repository: zero-objects/homebrew-zerodds
           token: ${{ secrets.HOMEBREW_TAP_PAT }}
           path: tap
       - name: Checkout main repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: main
       - name: Render formulae
@@ -359,7 +359,7 @@ jobs:
     if: always() && needs.plan.outputs.tag != ''
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Verify release is published before AUR update
         env:
           GH_TOKEN: ${{ github.token }}
@@ -398,13 +398,13 @@ jobs:
     needs: [plan, build, package-msi]
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           repository: zero-objects/scoop-zerodds
           token: ${{ secrets.SCOOP_BUCKET_PAT }}
           path: bucket
       - name: Checkout main repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           path: main
       - name: Render manifest
@@ -435,7 +435,7 @@ jobs:
       && needs.package-docker.result == 'success'
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v5
         with: { path: dist }
       - name: Create release
         id: gh_release
