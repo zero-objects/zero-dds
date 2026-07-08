@@ -4,6 +4,23 @@
 [graph]
 all-features = false
 no-default-features = false
+# Opt-in-only backends/transports that a default build never pulls. They carry
+# licenses/deps we deliberately keep out of the public default scan (see the GPL
+# policy in licenses below, §2.3). Newer cargo-deny (the public GitHub mirror
+# runs a newer version than GitLab's pinned 0.19.4) traverses the optional graph
+# even with `all-features = false`, so exclude them explicitly — version-robust
+# and policy-preserving (we do NOT allow GPL; we scope the opt-in crate out).
+#   * wolfCrypt backend (GPL-3.0 OR wolfSSL-commercial) — feature `wolfcrypt`,
+#     needs libwolfssl / WOLFSSL_SRC; opt-in for users with a wolfSSL licence.
+#   * quinn / quinn-proto (QUIC transport) — pulls RUSTSEC-2026-0185 and a
+#     duplicate `untrusted`; opt-in transport, not in the default build.
+exclude = [
+    "wolfcrypt-ring-compat",
+    "wolfcrypt-rs",
+    "wolfcrypt-sys",
+    "quinn",
+    "quinn-proto",
+]
 
 [advisories]
 version = 2
@@ -208,6 +225,14 @@ skip = [
     { crate = "oid-registry" },
     { crate = "rcgen" },
     { crate = "x509-parser" },
+
+    # ----- crypto-backend transitive skew (surfaced under --all-features) -----
+    # untrusted 0.7.1 (via aws-lc-rs) vs 0.9.0 (via ring). The two crypto
+    # backends pin different versions of this tiny input-parsing crate; both are
+    # legitimate backends (ring/aws-lc-rs swap via the `backend` alias), so the
+    # duplicate is transitive with no direct workspace lever. Only visible when a
+    # build activates both backends (e.g. --all-features on the public mirror).
+    { crate = "untrusted" },
 ]
 # Verbotene Crates. Ergaenzt durch Clippy disallowed-types in Safe-Crates.
 deny = [

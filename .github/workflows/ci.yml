@@ -34,7 +34,15 @@ jobs:
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      # NOTE: no `--all-features` here. `--all-features` activates the opt-in
+      # `wolfcrypt` backend, whose `wolfcrypt-sys` build needs libwolfssl /
+      # WOLFSSL_SRC — not present on the hosted GitHub runner (it panics:
+      # "required wolfcrypt source not found"). wolfCrypt is an opt-in,
+      # GPL-3.0/wolfSSL-commercial backend; the FULL `--all-features` clippy
+      # (including wolfcrypt, aws-lc, fips) runs on the GitLab CI, whose ci-rust
+      # image ships libwolfssl. This public mirror lints default features
+      # (ring backend) + all targets, which is green without any system lib.
+      - run: cargo clippy --workspace --all-targets -- -D warnings
 
   deny:
     name: cargo-deny (licenses, advisories, bans)
