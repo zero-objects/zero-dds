@@ -1220,7 +1220,9 @@ rmw_wait(rmw_subscriptions_t * subscriptions, rmw_guard_conditions_t * guard_con
         for (size_t i = 0; i < guard_conditions->guard_condition_count; ++i) {
           rmw_guard_condition_t * gc =
             (rmw_guard_condition_t *) guard_conditions->guard_conditions[i];
-          unsigned int * f = gc ? (unsigned int *) gc->data : NULL;
+          // Same guard as the readiness loop: never cast/deref/write a foreign
+          // guard condition's data. Here `*f = 0` would corrupt rcl's memory.
+          unsigned int * f = (gc && gc->implementation_identifier == ZERODDS_IDENTIFIER) ? (unsigned int *) gc->data : NULL;
           if (f && *f) { *f = 0; } else { guard_conditions->guard_conditions[i] = NULL; }
         }
       }
