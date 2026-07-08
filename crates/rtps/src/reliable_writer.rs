@@ -39,7 +39,7 @@ use alloc::rc::Rc;
 
 use crate::error::WireError;
 use crate::header::RtpsHeader;
-use crate::history_cache::{CacheChange, HistoryCache, HistoryKind};
+use crate::history_cache::{CacheChange, ChangeKind, HistoryCache, HistoryKind};
 use crate::message_builder::{AddError, MessageBuilder, OutboundDatagram};
 use crate::reader_proxy::ReaderProxy;
 use crate::submessage_header::{FLAG_E_LITTLE_ENDIAN, SubmessageId};
@@ -1163,19 +1163,52 @@ impl ReliableWriter {
 
         let mut out = Vec::new();
         for idx in 0..self.reader_proxies.len() {
-            let advanced = self.reader_proxies[idx].next_unsent_change(sn);
-            if advanced != Some(sn) {
-                continue;
-            }
             let reader_id = self.reader_proxies[idx].remote_reader_guid.entity_id;
             let targets = self.targets_for(idx);
-            out.push(self.build_lifecycle_datagram(
-                sn,
-                key_hash,
-                status_bits,
-                reader_id,
-                &targets,
-            )?);
+            // Drain every change this proxy has not yet been sent, in order, up
+            // to and including the new lifecycle marker at `sn`.
+            //
+            // A plain `write` gates on `next_unsent_change(sn) == Some(sn)` and
+            // only fires when the proxy's send cursor sits *exactly* at `sn-1`.
+            // For a dispose that is wrong: the SEDP writer's cursor races the
+            // periodic-(re)announce SN churn, and whenever it lags by ≥1 the
+            // dispose is silently dropped from the direct send and left to
+            // NACK-repair — which, under the SEDP writer's KeepLast history, the
+            // reliable reader does not reliably close inside the discovery
+            // window (the reader keeps the stale match forever). Draining makes
+            // delivery cursor-independent: cached ALIVE changes go out as DATA,
+            // lifecycle markers as a lifecycle DATA, and KeepLast-evicted SNs as
+            // GAP so the reader can still advance to and deliver the marker.
+            loop {
+                let Some(next) = self.reader_proxies[idx].next_unsent_change(sn) else {
+                    break;
+                };
+                match self.cache.get(next) {
+                    Some(change) => match change.kind {
+                        ChangeKind::Alive | ChangeKind::AliveFiltered => {
+                            let payload = change.payload.clone();
+                            out.extend(
+                                self.build_sample_datagrams(next, &payload, reader_id, &targets)?,
+                            );
+                        }
+                        marker_kind => {
+                            // Lifecycle marker: the change payload holds the
+                            // 16-byte key hash (see `CacheChange::lifecycle`).
+                            let kh = lifecycle_key_hash(&change.payload).unwrap_or(key_hash);
+                            let bits = status_bits_for_kind(marker_kind);
+                            out.push(
+                                self.build_lifecycle_datagram(next, kh, bits, reader_id, &targets)?,
+                            );
+                        }
+                    },
+                    None => {
+                        out.push(self.build_gap_datagram(next, reader_id, &targets)?);
+                    }
+                }
+                if next == sn {
+                    break;
+                }
+            }
         }
         Ok(out)
     }
@@ -1299,6 +1332,27 @@ impl ReliableWriter {
         builder.finish().ok_or(WireError::ValueOutOfRange {
             message: "MessageBuilder finish returned no datagram",
         })
+    }
+}
+
+/// Extracts the 16-byte instance key hash a lifecycle [`CacheChange`] stores in
+/// its payload (see [`CacheChange::lifecycle`]). Returns `None` if the payload
+/// is not exactly 16 bytes (so the caller can fall back to a known hash).
+fn lifecycle_key_hash(payload: &[u8]) -> Option<[u8; 16]> {
+    payload.try_into().ok()
+}
+
+/// Maps a not-alive [`ChangeKind`] back to its `PID_STATUS_INFO` bits, the
+/// inverse of the classification in [`ReliableWriter::write_lifecycle`].
+fn status_bits_for_kind(kind: ChangeKind) -> u32 {
+    use crate::inline_qos::status_info::{DISPOSED, UNREGISTERED};
+    match kind {
+        ChangeKind::NotAliveDisposed => DISPOSED,
+        ChangeKind::NotAliveUnregistered => UNREGISTERED,
+        ChangeKind::NotAliveDisposedUnregistered => DISPOSED | UNREGISTERED,
+        // Alive kinds never reach this helper (the drain handles them as DATA);
+        // default to a dispose marker rather than emitting an empty status.
+        ChangeKind::Alive | ChangeKind::AliveFiltered => DISPOSED,
     }
 }
 
@@ -2057,5 +2111,78 @@ mod tests {
             .filter(|s| matches!(s, ParsedSubmessage::Heartbeat(_)))
             .count();
         assert_eq!(hb_count, 1);
+    }
+
+    /// Regression (SEDP dispose delivery): `write_lifecycle` must deliver the
+    /// lifecycle marker to a proxy whose send cursor lags behind the cache —
+    /// not only to one sitting exactly at `dispose_sn - 1`. Previously the
+    /// direct send was gated on `next_unsent_change == Some(sn)`, so a lagging
+    /// proxy got **zero** datagrams and the disposed endpoint lingered. The
+    /// writer now drains the proxy in-order up to and including the marker.
+    #[test]
+    fn write_lifecycle_drains_a_lagging_proxy() {
+        // Writer with NO proxy yet: stage three ALIVE samples into the cache
+        // (SN 1..3) so any later-joining proxy starts two-plus changes behind.
+        let writer_guid = Guid::new(
+            GuidPrefix::from_bytes([1; 12]),
+            EntityId::user_writer_with_key([0x10, 0x20, 0x30]),
+        );
+        let mut w = ReliableWriter::new(ReliableWriterConfig {
+            guid: writer_guid,
+            vendor_id: VendorId::ZERODDS,
+            reader_proxies: alloc::vec![],
+            max_samples: 10,
+            history_kind: HistoryKind::KeepAll,
+            heartbeat_period: Duration::from_secs(10),
+            fragment_size: DEFAULT_FRAGMENT_SIZE,
+            mtu: DEFAULT_MTU,
+        });
+        for _ in 0..3 {
+            w.write(b"announce").unwrap();
+        }
+        // A reader discovered late — its send cursor starts at SN 0, i.e. three
+        // changes behind the cache.
+        w.add_reader_proxy(ReaderProxy::new(
+            reader_guid(),
+            alloc::vec![Locator::udp_v4([127, 0, 0, 1], 7410)],
+            alloc::vec![],
+            true,
+        ));
+        use crate::inline_qos::status_info::DISPOSED;
+        let key = [0xABu8; 16];
+        let dgs = w.write_lifecycle(key, DISPOSED).unwrap();
+        // Old behaviour: empty (dispose dropped). New: drains SN 1..3 + the
+        // marker at SN 4, so the lagging proxy is caught up and disposed.
+        assert!(
+            !dgs.is_empty(),
+            "lifecycle marker must reach a lagging proxy"
+        );
+        assert_eq!(
+            first_proxy(&w).highest_sent_sn(),
+            sn(4),
+            "proxy must be drained up to the dispose SN"
+        );
+        // The dispose itself (SN 4, STATUS_INFO=DISPOSED) is on the wire.
+        let mut saw_dispose = false;
+        for dg in &dgs {
+            let parsed = decode_datagram(&dg.bytes).unwrap();
+            for s in &parsed.submessages {
+                if let ParsedSubmessage::Data(d) = s {
+                    if d.writer_sn == sn(4) {
+                        let bits = d
+                            .inline_qos
+                            .as_ref()
+                            .and_then(crate::inline_qos::find_status_info)
+                            .unwrap_or(0);
+                        assert!(bits & DISPOSED != 0, "SN 4 must carry a DISPOSED marker");
+                        saw_dispose = true;
+                    }
+                }
+            }
+        }
+        assert!(
+            saw_dispose,
+            "the dispose DATA (SN 4) must be among the datagrams"
+        );
     }
 }

@@ -152,10 +152,10 @@ fn publication_announce_then_reader_fills_cache() {
         let parsed = decode_datagram(&dg.bytes).expect("decode");
         for sub in parsed.submessages {
             if let ParsedSubmessage::Data(d) = sub {
-                let samples = reader
+                let delta = reader
                     .handle_data(parsed.header.guid_prefix, &d)
                     .expect("handle_data");
-                for s in samples {
+                for s in delta.added {
                     cache.insert_publication(s, now);
                 }
             }
@@ -202,7 +202,11 @@ fn multiple_publications_accumulate_in_cache() {
             let parsed = decode_datagram(&dg.bytes).unwrap();
             for sub in parsed.submessages {
                 if let ParsedSubmessage::Data(d) = sub {
-                    for s in reader.handle_data(parsed.header.guid_prefix, &d).unwrap() {
+                    for s in reader
+                        .handle_data(parsed.header.guid_prefix, &d)
+                        .unwrap()
+                        .added
+                    {
                         cache.insert_publication(s, now);
                     }
                 }
@@ -244,7 +248,11 @@ fn subscription_announce_then_reader_fills_cache() {
         let parsed = decode_datagram(&dg.bytes).unwrap();
         for sub in parsed.submessages {
             if let ParsedSubmessage::Data(d) = sub {
-                for s in reader.handle_data(parsed.header.guid_prefix, &d).unwrap() {
+                for s in reader
+                    .handle_data(parsed.header.guid_prefix, &d)
+                    .unwrap()
+                    .added
+                {
                     cache.insert_subscription(s, now);
                 }
             }
@@ -297,7 +305,11 @@ fn matching_publications_and_subscriptions_by_topic() {
         let parsed = decode_datagram(&dg.bytes).unwrap();
         for sub in parsed.submessages {
             if let ParsedSubmessage::Data(d) = sub {
-                for s in p_reader.handle_data(parsed.header.guid_prefix, &d).unwrap() {
+                for s in p_reader
+                    .handle_data(parsed.header.guid_prefix, &d)
+                    .unwrap()
+                    .added
+                {
                     cache.insert_publication(s, now);
                 }
             }
@@ -307,7 +319,11 @@ fn matching_publications_and_subscriptions_by_topic() {
         let parsed = decode_datagram(&dg.bytes).unwrap();
         for sub in parsed.submessages {
             if let ParsedSubmessage::Data(d) = sub {
-                for s in s_reader.handle_data(parsed.header.guid_prefix, &d).unwrap() {
+                for s in s_reader
+                    .handle_data(parsed.header.guid_prefix, &d)
+                    .unwrap()
+                    .added
+                {
                     cache.insert_subscription(s, now);
                 }
             }

@@ -22,8 +22,8 @@ name = "zerodds-replay"
 path = "src/main.rs"
 
 [dependencies]
-zerodds-recorder = { version = "1.0.0-rc.4", path = "../../crates/recorder" }
+zerodds-recorder = { version = "1.0.0-rc.5", path = "../../crates/recorder" }
 # Decoded-format readers (NDJSON + SQLite → raw-CDR frames for byte-exact replay).
-zerodds-recorder-decode = { version = "1.0.0-rc.4", path = "../../crates/recorder-decode" }
+zerodds-recorder-decode = { version = "1.0.0-rc.5", path = "../../crates/recorder-decode" }
 # Live re-injection target: re-publish recorded frames into a live DCPS domain.
-zerodds = { version = "1.0.0-rc.4", path = "../../crates/zerodds-c-api", package = "zerodds-c-api" }
+zerodds = { version = "1.0.0-rc.5", path = "../../crates/zerodds-c-api", package = "zerodds-c-api" }

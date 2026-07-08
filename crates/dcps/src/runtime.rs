@@ -4712,14 +4712,119 @@ impl DcpsRuntime {
         Ok((eid, rx))
     }
 
+    /// Tears down a deleted local user **writer** (DataWriter delete / drop):
+    /// removes its slot — which drops the contained RTPS `ReliableWriter` and
+    /// with it the heartbeat schedule + reader proxies — rebuilds the
+    /// intra-runtime routes, stops announcing it to late in-process joiners, and
+    /// sends an SEDP **dispose** so remote peers drop the matched writer at once
+    /// instead of waiting for a liveliness timeout.
+    pub(crate) fn remove_user_writer(&self, eid: EntityId) {
+        if let Ok(mut w) = self.user_writers.write() {
+            w.remove(&eid);
+        }
+        self.recompute_intra_runtime_routes();
+        if let Ok(mut v) = self.announced_pubs.lock() {
+            v.retain(|p| p.key.entity_id != eid);
+        }
+        self.send_endpoint_dispose(eid, true);
+    }
+
+    /// Tears down a deleted local user **reader** — symmetric to
+    /// [`Self::remove_user_writer`] (drops the slot, rebuilds routes, stops
+    /// announcing, and disposes the SEDP subscription).
+    pub(crate) fn remove_user_reader(&self, eid: EntityId) {
+        if let Ok(mut r) = self.user_readers.write() {
+            r.remove(&eid);
+        }
+        self.recompute_intra_runtime_routes();
+        if let Ok(mut v) = self.announced_subs.lock() {
+            v.retain(|s| s.key.entity_id != eid);
+        }
+        self.send_endpoint_dispose(eid, false);
+    }
+
+    /// Sends the SEDP dispose datagrams for a deleted endpoint, mirroring the
+    /// send path of `announce_publication` (secure-wrap + routable-locator
+    /// filter + metatraffic unicast socket).
+    fn send_endpoint_dispose(&self, eid: EntityId, is_publication: bool) {
+        let guid = Guid::new(self.guid_prefix, eid);
+        let datagrams = {
+            let mut sedp = match self.sedp.lock() {
+                Ok(s) => s,
+                Err(_) => return,
+            };
+            #[cfg(feature = "security")]
+            self.sync_sedp_discovery_protected(&mut sedp);
+            let res = if is_publication {
+                sedp.dispose_publication(guid)
+            } else {
+                sedp.dispose_subscription(guid)
+            };
+            match res {
+                Ok(d) => d,
+                Err(_) => return,
+            }
+        };
+        for dg in datagrams {
+            if let Some(secured) = secure_outbound_bytes(self, &dg.bytes) {
+                for t in dg.targets.iter() {
+                    if is_routable_user_locator(t) {
+                        let _ = self.spdp_unicast.send(t, &secured);
+                    }
+                }
+            }
+        }
+    }
+
+    /// Unmatches a remote **writer** from every local user reader — the inverse
+    /// of `wire_reader_to_remote_writer`/`add_writer_proxy` (`runtime.rs:5661`).
+    ///
+    /// Called when a remote writer is lost: SEDP dispose of its publication
+    /// (the immediate driver), and — once wired — also participant-lost and a
+    /// liveliness-lease expiry. ZeroDDS previously had **no** unmatch path at
+    /// all (the matching subsystem was add-only), so a deleted remote writer
+    /// lingered as a stale `WriterProxy` until the local reader was itself
+    /// dropped. Removing the proxy here makes the reader's
+    /// `subscription_matched_status` / `discovered_publications` drop
+    /// immediately instead of after the liveliness timeout.
+    ///
+    /// Idempotent: a GUID that matches no local reader is a silent no-op.
+    pub(crate) fn remove_remote_writer(&self, guid: Guid) {
+        for (reader_eid, r_arc) in self.reader_slots_snapshot() {
+            let Ok(mut slot) = r_arc.lock() else { continue };
+            if slot.reader.remove_writer_proxy(guid).is_some() {
+                // Drop the per-writer caches keyed by the remote GUID so a
+                // later writer reusing the same GUID starts clean (ownership
+                // strength + intra-runtime liveliness tracking).
+                let key = guid.to_bytes();
+                slot.writer_strengths.remove(&key);
+                slot.liveliness_alive_writers.remove(&key);
+                // Release the same-host SHM pairing, if one was registered.
+                let local_reader_guid = Guid::new(self.guid_prefix, reader_eid);
+                self.same_host.remove(guid, local_reader_guid);
+            }
+        }
+    }
+
+    /// Unmatches a remote **reader** from every local user writer — the inverse
+    /// of `wire_writer_to_remote_reader`/`add_reader_proxy`. Symmetric to
+    /// [`Self::remove_remote_writer`]; driven by an SEDP dispose of the remote
+    /// subscription. Idempotent.
+    pub(crate) fn remove_remote_reader(&self, guid: Guid) {
+        for (_writer_eid, w_arc) in self.writer_slots_snapshot() {
+            let Ok(mut slot) = w_arc.lock() else { continue };
+            slot.writer.remove_reader_proxy(guid);
+        }
+    }
+
     /// Rebuilds the same-runtime writer→reader routing table.
     /// Called in `register_user_writer_kind` and `register_user_reader_kind`
-    /// after every endpoint create. Per local writer it collects
-    /// all local readers that have exactly the same `topic_name`
-    /// and `type_name`. The lookup in the write hot path
+    /// after every endpoint create, and on endpoint removal via
+    /// [`Self::remove_user_writer`] / [`Self::remove_user_reader`]. Per local
+    /// writer it collects all local readers that have exactly the same
+    /// `topic_name` and `type_name`. The lookup in the write hot path
     /// (`write_user_sample_borrowed`) is read-locked and cheap
-    /// (BTreeMap lookup → Vec clone). On endpoint removal (TODO: not
-    /// yet hooked everywhere) this would be called too.
+    /// (BTreeMap lookup → Vec clone).
     fn recompute_intra_runtime_routes(&self) {
         let writer_snap = self.writer_slots_snapshot();
         let reader_snap = self.reader_slots_snapshot();
@@ -7331,6 +7436,7 @@ fn recv_metatraffic_loop(rt: Arc<DcpsRuntime>, stop: Arc<AtomicBool>) {
             if let Some(ev) = events {
                 if !ev.is_empty() {
                     run_matching_pass(&rt);
+                    apply_sedp_removals(&rt, &ev);
                     push_sedp_events_to_builtin_readers(&rt, &ev);
                 }
             }
@@ -8123,6 +8229,7 @@ fn run_tick_iteration(rt: Arc<DcpsRuntime>, st: &mut TickState) {
                     if let Some(ev) = events {
                         if !ev.is_empty() {
                             run_matching_pass(&rt);
+                            apply_sedp_removals(&rt, &ev);
                             push_sedp_events_to_builtin_readers(&rt, &ev);
                         }
                     }
@@ -9451,6 +9558,30 @@ fn push_sedp_events_to_builtin_readers(
             let _ = sinks.push_subscription(&sub_sample);
             let _ = sinks.push_topic(&topic_sample);
         }
+    }
+    // Endpoint deletion (SEDP dispose): mark the matching built-in instance
+    // disposed so a DCPSPublication/DCPSSubscription observer sees the remote
+    // endpoint vanish (DDSI-RTPS §8.5.4). The unmatch of local user endpoints
+    // is driven separately via `apply_sedp_removals`.
+    for g in &events.removed_publications {
+        sinks.dispose_publication(*g);
+    }
+    for g in &events.removed_subscriptions {
+        sinks.dispose_subscription(*g);
+    }
+}
+
+/// Drives the unmatch of local user endpoints when SEDP reported a remote
+/// endpoint deletion: each removed remote publication is removed from every
+/// local reader's proxy set, each removed remote subscription from every local
+/// writer's. See [`DcpsRuntime::remove_remote_writer`] /
+/// [`DcpsRuntime::remove_remote_reader`].
+fn apply_sedp_removals(rt: &Arc<DcpsRuntime>, events: &zerodds_discovery::sedp::SedpEvents) {
+    for g in &events.removed_publications {
+        rt.remove_remote_writer(*g);
+    }
+    for g in &events.removed_subscriptions {
+        rt.remove_remote_reader(*g);
     }
 }
 

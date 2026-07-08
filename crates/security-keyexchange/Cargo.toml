@@ -33,7 +33,7 @@ aws-lc = ["dep:aws-lc-rs", "std"]
 wolfcrypt = ["dep:wolfcrypt-compat", "std"]
 
 [dependencies]
-zerodds-security = { version = "1.0.0-rc.4", path = "../security" }
+zerodds-security = { version = "1.0.0-rc.5", path = "../security" }
 ring = { workspace = true, optional = true }
 aws-lc-rs = { version = "1", optional = true }
 # wolfCrypt backend — its `[lib] name` is `ring`, so it MUST be renamed here to

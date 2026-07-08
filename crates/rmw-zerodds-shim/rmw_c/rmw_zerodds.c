@@ -1182,7 +1182,11 @@ rmw_wait(rmw_subscriptions_t * subscriptions, rmw_guard_conditions_t * guard_con
     if (guard_conditions) {
       for (size_t i = 0; i < guard_conditions->guard_condition_count; ++i) {
         rmw_guard_condition_t * gc = (rmw_guard_condition_t *) guard_conditions->guard_conditions[i];
-        unsigned int * f = (gc && gc->implementation_identifier == ZERODDS_IDENTIFIER) ? (unsigned int *) gc->data : NULL;
+        // Only our own guard conditions carry an `unsigned int *` flag in `data`.
+        // rcl creates internal guard conditions that bypass rmw_create_guard_condition,
+        // so their `data` is foreign memory — casting/dereferencing it is UB (segfault).
+        unsigned int * f = (gc && gc->implementation_identifier == ZERODDS_IDENTIFIER)
+                             ? (unsigned int *) gc->data : NULL;
         if (f && *f) { ready++; }
       }
     }
@@ -1220,9 +1224,11 @@ rmw_wait(rmw_subscriptions_t * subscriptions, rmw_guard_conditions_t * guard_con
         for (size_t i = 0; i < guard_conditions->guard_condition_count; ++i) {
           rmw_guard_condition_t * gc =
             (rmw_guard_condition_t *) guard_conditions->guard_conditions[i];
-          // Same guard as the readiness loop: never cast/deref/write a foreign
-          // guard condition's data. Here `*f = 0` would corrupt rcl's memory.
-          unsigned int * f = (gc && gc->implementation_identifier == ZERODDS_IDENTIFIER) ? (unsigned int *) gc->data : NULL;
+          // Same foreign-guard-condition guard as the readiness loop above: never
+          // cast/deref/write `data` of a guard condition we did not create. Here the
+          // stakes are higher — `*f = 0` would corrupt rcl's foreign memory, not just read it.
+          unsigned int * f = (gc && gc->implementation_identifier == ZERODDS_IDENTIFIER)
+                               ? (unsigned int *) gc->data : NULL;
           if (f && *f) { *f = 0; } else { guard_conditions->guard_conditions[i] = NULL; }
         }
       }

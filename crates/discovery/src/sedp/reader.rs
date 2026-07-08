@@ -22,7 +22,7 @@ use zerodds_rtps::error::WireError;
 use zerodds_rtps::fragment_assembler::AssemblerCaps;
 use zerodds_rtps::publication_data::PublicationBuiltinTopicData;
 use zerodds_rtps::reliable_reader::{
-    DEFAULT_HEARTBEAT_RESPONSE_DELAY, ReliableReader, ReliableReaderConfig,
+    DEFAULT_HEARTBEAT_RESPONSE_DELAY, DeliveredSample, ReliableReader, ReliableReaderConfig,
 };
 use zerodds_rtps::submessages::{
     DataFragSubmessage, DataSubmessage, GapSubmessage, HeartbeatSubmessage,
@@ -54,6 +54,43 @@ impl From<WireError> for SedpReaderError {
             WireError::ValueOutOfRange { message } => Self::InvalidPayload { reason: message },
             other => Self::Wire(other),
         }
+    }
+}
+
+/// Outcome of processing an incoming SEDP submessage.
+///
+/// SEDP carries endpoint lifecycle just like any keyed topic (DDSI-RTPS
+/// §8.5.4): an ALIVE sample announces (or updates) a remote endpoint, while a
+/// `dispose`/`unregister` marker — sent when the remote participant deletes the
+/// endpoint — says "forget it". The two are split here so the discovery layer
+/// can both *match* new endpoints (`added`) and *unmatch* gone ones
+/// (`removed`). Before this split the readers decoded every sample as a full
+/// announcement, which (a) ignored disposes entirely and (b) errored the whole
+/// datagram when a vendor sent a key-only dispose payload that is not a valid
+/// `PL_CDR_LE` `*BuiltinTopicData`.
+#[derive(Debug)]
+pub struct SedpDelta<T> {
+    /// Endpoints announced (or re-announced) ALIVE, fully decoded.
+    pub added: Vec<T>,
+    /// GUIDs of endpoints the remote disposed/unregistered (from the
+    /// `PID_KEY_HASH` of the lifecycle marker — for SEDP the endpoint GUID).
+    pub removed: Vec<Guid>,
+}
+
+impl<T> Default for SedpDelta<T> {
+    fn default() -> Self {
+        Self {
+            added: Vec::new(),
+            removed: Vec::new(),
+        }
+    }
+}
+
+impl<T> SedpDelta<T> {
+    /// `true` if neither an announcement nor a disposal was carried.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.added.is_empty() && self.removed.is_empty()
     }
 }
 
@@ -164,9 +201,9 @@ impl SedpPublicationsReader {
         &mut self,
         source_prefix: GuidPrefix,
         data: &DataSubmessage,
-    ) -> Result<Vec<PublicationBuiltinTopicData>, SedpReaderError> {
+    ) -> Result<SedpDelta<PublicationBuiltinTopicData>, SedpReaderError> {
         let samples = self.inner.handle_data(source_prefix, data, None);
-        decode_publication_samples(samples.into_iter().map(|s| s.payload))
+        partition_publication_samples(samples)
     }
 
     /// Processes an incoming DATA_FRAG submessage.
@@ -178,9 +215,9 @@ impl SedpPublicationsReader {
         source_prefix: GuidPrefix,
         df: &DataFragSubmessage,
         now: Duration,
-    ) -> Result<Vec<PublicationBuiltinTopicData>, SedpReaderError> {
+    ) -> Result<SedpDelta<PublicationBuiltinTopicData>, SedpReaderError> {
         let samples = self.inner.handle_data_frag(source_prefix, df, now, None);
-        decode_publication_samples(samples.into_iter().map(|s| s.payload))
+        partition_publication_samples(samples)
     }
 
     /// Processes an incoming GAP submessage (returns any
@@ -192,9 +229,9 @@ impl SedpPublicationsReader {
         &mut self,
         source_prefix: GuidPrefix,
         gap: &GapSubmessage,
-    ) -> Result<Vec<PublicationBuiltinTopicData>, SedpReaderError> {
+    ) -> Result<SedpDelta<PublicationBuiltinTopicData>, SedpReaderError> {
         let samples = self.inner.handle_gap(source_prefix, gap);
-        decode_publication_samples(samples.into_iter().map(|s| s.payload))
+        partition_publication_samples(samples)
     }
 
     /// Processes an incoming HEARTBEAT.
@@ -317,9 +354,9 @@ impl SedpSubscriptionsReader {
         &mut self,
         source_prefix: GuidPrefix,
         data: &DataSubmessage,
-    ) -> Result<Vec<SubscriptionBuiltinTopicData>, SedpReaderError> {
+    ) -> Result<SedpDelta<SubscriptionBuiltinTopicData>, SedpReaderError> {
         let samples = self.inner.handle_data(source_prefix, data, None);
-        decode_subscription_samples(samples.into_iter().map(|s| s.payload))
+        partition_subscription_samples(samples)
     }
 
     /// DATA_FRAG.
@@ -331,9 +368,9 @@ impl SedpSubscriptionsReader {
         source_prefix: GuidPrefix,
         df: &DataFragSubmessage,
         now: Duration,
-    ) -> Result<Vec<SubscriptionBuiltinTopicData>, SedpReaderError> {
+    ) -> Result<SedpDelta<SubscriptionBuiltinTopicData>, SedpReaderError> {
         let samples = self.inner.handle_data_frag(source_prefix, df, now, None);
-        decode_subscription_samples(samples.into_iter().map(|s| s.payload))
+        partition_subscription_samples(samples)
     }
 
     /// GAP.
@@ -344,9 +381,9 @@ impl SedpSubscriptionsReader {
         &mut self,
         source_prefix: GuidPrefix,
         gap: &GapSubmessage,
-    ) -> Result<Vec<SubscriptionBuiltinTopicData>, SedpReaderError> {
+    ) -> Result<SedpDelta<SubscriptionBuiltinTopicData>, SedpReaderError> {
         let samples = self.inner.handle_gap(source_prefix, gap);
-        decode_subscription_samples(samples.into_iter().map(|s| s.payload))
+        partition_subscription_samples(samples)
     }
 
     /// HEARTBEAT.
@@ -411,32 +448,51 @@ fn make_sedp_reader(
     })
 }
 
-fn decode_publication_samples<B, I>(
-    payloads: I,
-) -> Result<Vec<PublicationBuiltinTopicData>, SedpReaderError>
+/// Splits delivered SEDP samples into ALIVE announcements (decoded) and
+/// dispose/unregister markers (collected by endpoint GUID). The decode is
+/// gated on `is_alive_kind` so a key-only lifecycle payload — which is *not* a
+/// valid `PL_CDR_LE` `PublicationBuiltinTopicData` — never errors the datagram.
+fn partition_publication_samples<I>(
+    samples: I,
+) -> Result<SedpDelta<PublicationBuiltinTopicData>, SedpReaderError>
 where
-    B: AsRef<[u8]>,
-    I: IntoIterator<Item = B>,
+    I: IntoIterator<Item = DeliveredSample>,
 {
-    let mut out = Vec::new();
-    for p in payloads {
-        out.push(PublicationBuiltinTopicData::from_pl_cdr_le(p.as_ref())?);
+    let mut delta = SedpDelta::default();
+    for s in samples {
+        if s.kind.is_alive_kind() {
+            delta
+                .added
+                .push(PublicationBuiltinTopicData::from_pl_cdr_le(
+                    s.payload.as_ref(),
+                )?);
+        } else if let Some(h) = s.key_hash {
+            delta.removed.push(Guid::from_bytes(h));
+        }
     }
-    Ok(out)
+    Ok(delta)
 }
 
-fn decode_subscription_samples<B, I>(
-    payloads: I,
-) -> Result<Vec<SubscriptionBuiltinTopicData>, SedpReaderError>
+/// Subscription counterpart of [`partition_publication_samples`].
+fn partition_subscription_samples<I>(
+    samples: I,
+) -> Result<SedpDelta<SubscriptionBuiltinTopicData>, SedpReaderError>
 where
-    B: AsRef<[u8]>,
-    I: IntoIterator<Item = B>,
+    I: IntoIterator<Item = DeliveredSample>,
 {
-    let mut out = Vec::new();
-    for p in payloads {
-        out.push(SubscriptionBuiltinTopicData::from_pl_cdr_le(p.as_ref())?);
+    let mut delta = SedpDelta::default();
+    for s in samples {
+        if s.kind.is_alive_kind() {
+            delta
+                .added
+                .push(SubscriptionBuiltinTopicData::from_pl_cdr_le(
+                    s.payload.as_ref(),
+                )?);
+        } else if let Some(h) = s.key_hash {
+            delta.removed.push(Guid::from_bytes(h));
+        }
     }
-    Ok(out)
+    Ok(delta)
 }
 
 // Reference String to avoid an unused-import warning (for
@@ -524,9 +580,41 @@ mod tests {
         let out = r
             .handle_data(GuidPrefix::from_bytes([2; 12]), &data)
             .unwrap();
-        assert_eq!(out.len(), 1);
-        assert_eq!(out[0].topic_name, "ChatterTopic");
-        assert_eq!(out[0].type_name, "std_msgs::String");
+        assert_eq!(out.added.len(), 1);
+        assert!(out.removed.is_empty());
+        assert_eq!(out.added[0].topic_name, "ChatterTopic");
+        assert_eq!(out.added[0].type_name, "std_msgs::String");
+    }
+
+    #[test]
+    fn handle_data_reports_dispose_as_removed() {
+        let mut r = make_reader();
+        // The disposed endpoint's GUID is carried in PID_KEY_HASH; SEDP uses
+        // the endpoint GUID as the instance key.
+        let disposed = Guid::new(
+            GuidPrefix::from_bytes([2; 12]),
+            EntityId::user_writer_with_key([0xAA, 0xBB, 0xCC]),
+        );
+        let data = DataSubmessage {
+            extra_flags: 0,
+            reader_id: EntityId::SEDP_BUILTIN_PUBLICATIONS_READER,
+            writer_id: EntityId::SEDP_BUILTIN_PUBLICATIONS_WRITER,
+            writer_sn: SequenceNumber(1),
+            inline_qos: Some(zerodds_rtps::inline_qos::lifecycle_inline_qos(
+                disposed.to_bytes(),
+                zerodds_rtps::inline_qos::status_info::DISPOSED
+                    | zerodds_rtps::inline_qos::status_info::UNREGISTERED,
+            )),
+            // Key-only dispose: no valid PL_CDR BuiltinTopicData payload.
+            key_flag: true,
+            non_standard_flag: false,
+            serialized_payload: alloc::vec::Vec::new().into(),
+        };
+        let out = r
+            .handle_data(GuidPrefix::from_bytes([2; 12]), &data)
+            .unwrap();
+        assert!(out.added.is_empty());
+        assert_eq!(out.removed, alloc::vec![disposed]);
     }
 
     #[test]

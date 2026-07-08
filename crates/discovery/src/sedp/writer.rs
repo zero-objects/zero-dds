@@ -125,6 +125,22 @@ impl SedpPublicationsWriter {
         self.inner.write(&payload)
     }
 
+    /// Announces the **deletion** of a local publication: an SEDP
+    /// dispose+unregister keyed on the endpoint GUID (RTPS §8.5.5.3). The
+    /// remote SEDP reader removes the matched writer immediately instead of
+    /// waiting for a liveliness timeout — the same signal Cyclone / Fast DDS
+    /// send when a `DataWriter` is deleted.
+    ///
+    /// # Errors
+    /// Wire encode error or sequence-number overflow.
+    pub fn dispose(&mut self, endpoint_guid: Guid) -> Result<Vec<OutboundDatagram>, WireError> {
+        self.inner.write_lifecycle(
+            endpoint_guid.to_bytes(),
+            zerodds_rtps::inline_qos::status_info::DISPOSED
+                | zerodds_rtps::inline_qos::status_info::UNREGISTERED,
+        )
+    }
+
     /// ADR-0006: announces a publication AND injects
     /// PID_SHM_LOCATOR (vendor PID 0x8001) at the end of the ParameterList.
     /// Called by the DcpsRuntime when the side map carries a locator
@@ -229,6 +245,20 @@ impl SedpSubscriptionsWriter {
     ) -> Result<Vec<OutboundDatagram>, WireError> {
         let payload = s.to_pl_cdr_le()?;
         self.inner.write(&payload)
+    }
+
+    /// Announces the **deletion** of a local subscription — SEDP
+    /// dispose+unregister keyed on the endpoint GUID (counterpart of the
+    /// publications-writer `dispose`).
+    ///
+    /// # Errors
+    /// Wire encode error or sequence-number overflow.
+    pub fn dispose(&mut self, endpoint_guid: Guid) -> Result<Vec<OutboundDatagram>, WireError> {
+        self.inner.write_lifecycle(
+            endpoint_guid.to_bytes(),
+            zerodds_rtps::inline_qos::status_info::DISPOSED
+                | zerodds_rtps::inline_qos::status_info::UNREGISTERED,
+        )
     }
 
     /// Tick.

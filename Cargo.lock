@@ -94,7 +94,7 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
 name = "amqp-dds-endpoint"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "rcgen 0.13.2",
  "rustls",
@@ -803,7 +803,7 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
 name = "chaos-clock-skew"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 
 [[package]]
 name = "chrono"
@@ -2370,7 +2370,7 @@ dependencies = [
 
 [[package]]
 name = "iceoryx2-oracle-consumer"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "iceoryx2",
 ]
@@ -4089,7 +4089,7 @@ dependencies = [
 
 [[package]]
 name = "rmw-zerodds-shim"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "cbindgen",
  "sha2",
@@ -4346,7 +4346,7 @@ checksum = "9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f"
 
 [[package]]
 name = "safe-crates-only"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-cdr",
  "zerodds-discovery",
@@ -7050,7 +7050,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-admin"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-cli-common",
  "zerodds-dcps",
@@ -7061,18 +7061,18 @@ dependencies = [
 
 [[package]]
 name = "zerodds-ami4ccm"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-idl",
 ]
 
 [[package]]
 name = "zerodds-amqp-0-9-1"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 
 [[package]]
 name = "zerodds-amqp-bridge"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "criterion",
  "proptest",
@@ -7080,7 +7080,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-amqp-endpoint"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "base64",
  "hmac",
@@ -7103,7 +7103,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-bench"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-cli-common",
  "zerodds-dcps",
@@ -7114,7 +7114,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-bench-suite"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "criterion",
  "hdrhistogram",
@@ -7132,7 +7132,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-bridge-security"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "aws-lc-rs",
  "base64",
@@ -7145,7 +7145,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-c-api"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "cbindgen",
  "serde",
@@ -7164,18 +7164,18 @@ dependencies = [
 
 [[package]]
 name = "zerodds-cargo-dag"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 
 [[package]]
 name = "zerodds-ccm"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-idl",
 ]
 
 [[package]]
 name = "zerodds-cdr"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "criterion",
  "proptest",
@@ -7186,7 +7186,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-cdr-derive"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -7197,11 +7197,11 @@ dependencies = [
 
 [[package]]
 name = "zerodds-chaos"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 
 [[package]]
 name = "zerodds-cli-common"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "libc",
  "zerodds-dcps",
@@ -7212,7 +7212,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-coap-bridge"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "aes",
  "ccm",
@@ -7233,7 +7233,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-conformance"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-coap-bridge",
  "zerodds-grpc-bridge",
@@ -7246,7 +7246,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-corba-ccm"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "flate2",
  "zerodds-cdr",
@@ -7260,47 +7260,47 @@ dependencies = [
 
 [[package]]
 name = "zerodds-corba-ccm-ejb"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-corba-ccm",
 ]
 
 [[package]]
 name = "zerodds-corba-ccm-lib"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-corba-ccm",
 ]
 
 [[package]]
 name = "zerodds-corba-codegen"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 
 [[package]]
 name = "zerodds-corba-cos-event"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 
 [[package]]
 name = "zerodds-corba-cos-notify"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-cdr",
 ]
 
 [[package]]
 name = "zerodds-corba-cos-trading"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 
 [[package]]
 name = "zerodds-corba-cos-transactions"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-cdr",
 ]
 
 [[package]]
 name = "zerodds-corba-cosnaming"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-cdr",
  "zerodds-corba-ior",
@@ -7308,14 +7308,14 @@ dependencies = [
 
 [[package]]
 name = "zerodds-corba-csiv2"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-cdr",
 ]
 
 [[package]]
 name = "zerodds-corba-dds-bridge"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "libc",
  "rcgen 0.13.2",
@@ -7336,21 +7336,21 @@ dependencies = [
 
 [[package]]
 name = "zerodds-corba-dnc"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-corba-ccm",
 ]
 
 [[package]]
 name = "zerodds-corba-giop"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-cdr",
 ]
 
 [[package]]
 name = "zerodds-corba-iiop"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "rcgen 0.13.2",
  "rustls",
@@ -7363,7 +7363,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-corba-interop"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "rustls",
  "zerodds-cdr",
@@ -7385,7 +7385,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-corba-ior"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-cdr",
  "zerodds-corba-csiv2",
@@ -7394,25 +7394,25 @@ dependencies = [
 
 [[package]]
 name = "zerodds-corba-ir"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 
 [[package]]
 name = "zerodds-corba-poa"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-corba-ir",
 ]
 
 [[package]]
 name = "zerodds-corba-rt"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-cdr",
 ]
 
 [[package]]
 name = "zerodds-corba-rust"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "insta",
  "zerodds-cdr",
@@ -7423,15 +7423,15 @@ dependencies = [
 
 [[package]]
 name = "zerodds-cpp"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 
 [[package]]
 name = "zerodds-cs"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 
 [[package]]
 name = "zerodds-dashboard"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-foundation",
  "zerodds-monitor",
@@ -7439,7 +7439,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-dcps"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "libc",
  "rcgen 0.13.2",
@@ -7474,7 +7474,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-dcps-async"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "criterion",
  "futures-core",
@@ -7486,7 +7486,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-discovery"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "rcgen 0.13.2",
  "rustls-pki-types",
@@ -7503,18 +7503,18 @@ dependencies = [
 
 [[package]]
 name = "zerodds-dlrl"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 
 [[package]]
 name = "zerodds-dlrl-codegen"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-dlrl",
 ]
 
 [[package]]
 name = "zerodds-durability-service"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-dcps",
  "zerodds-durability-store",
@@ -7526,7 +7526,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-durability-service-bin"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "ctrlc",
  "zerodds-dcps",
@@ -7540,14 +7540,14 @@ dependencies = [
 
 [[package]]
 name = "zerodds-durability-store"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-qos",
 ]
 
 [[package]]
 name = "zerodds-durability-store-file"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-durability-store",
  "zerodds-qos",
@@ -7555,7 +7555,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-durability-store-lakehouse"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "duckdb",
  "zerodds-durability-store",
@@ -7564,7 +7564,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-durability-store-sqlite"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "rusqlite",
  "zerodds-durability-store",
@@ -7573,7 +7573,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-flatdata"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "criterion",
  "dhat",
@@ -7585,7 +7585,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-flatdata-derive"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -7595,11 +7595,11 @@ dependencies = [
 
 [[package]]
 name = "zerodds-foundation"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 
 [[package]]
 name = "zerodds-grpc-bridge"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "libc",
  "rcgen 0.13.2",
@@ -7618,19 +7618,19 @@ dependencies = [
 
 [[package]]
 name = "zerodds-hpack"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 
 [[package]]
 name = "zerodds-http2"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 
 [[package]]
 name = "zerodds-iceoryx-cyclone"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 
 [[package]]
 name = "zerodds-idl"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "criterion",
  "num-bigint",
@@ -7640,7 +7640,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-idl-cpp"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "insta",
  "tempfile",
@@ -7650,7 +7650,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-idl-csharp"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "insta",
  "tempfile",
@@ -7659,7 +7659,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-idl-java"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "insta",
  "tempfile",
@@ -7669,14 +7669,14 @@ dependencies = [
 
 [[package]]
 name = "zerodds-idl-python"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-idl",
 ]
 
 [[package]]
 name = "zerodds-idl-rust"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "insta",
  "zerodds-cdr",
@@ -7687,7 +7687,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-idl-ts"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "insta",
  "tempfile",
@@ -7696,7 +7696,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-idlc"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "tempfile",
  "zerodds-corba-rust",
@@ -7711,7 +7711,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-inspect-endpoint"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "serde",
  "serde_json",
@@ -7722,11 +7722,11 @@ dependencies = [
 
 [[package]]
 name = "zerodds-interop-matrix"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 
 [[package]]
 name = "zerodds-isolation-smoke"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "tempfile",
  "zerodds-rtps",
@@ -7738,11 +7738,11 @@ dependencies = [
 
 [[package]]
 name = "zerodds-java-omgdds"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 
 [[package]]
 name = "zerodds-lint"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "anyhow",
  "cargo_metadata",
@@ -7755,14 +7755,14 @@ dependencies = [
 
 [[package]]
 name = "zerodds-monitor"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-foundation",
 ]
 
 [[package]]
 name = "zerodds-monitor-cli"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-cli-common",
  "zerodds-dcps",
@@ -7771,7 +7771,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-mq"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-cli-common",
  "zerodds-dcps",
@@ -7781,7 +7781,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-mqtt-bridge"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "rcgen 0.13.2",
  "rustls",
@@ -7798,21 +7798,21 @@ dependencies = [
 
 [[package]]
 name = "zerodds-observability-otlp"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-foundation",
 ]
 
 [[package]]
 name = "zerodds-opcua-gateway"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "roxmltree",
 ]
 
 [[package]]
 name = "zerodds-opcua-pubsub"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -7826,7 +7826,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-opcua-server"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "rand 0.8.6",
  "zerodds-opcua-gateway",
@@ -7836,7 +7836,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-opcua-uacp"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "aes",
  "cbc",
@@ -7850,7 +7850,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-pcap"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-cli-common",
  "zerodds-rtps",
@@ -7858,7 +7858,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-perf"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "ring",
  "zerodds-monitor",
@@ -7867,7 +7867,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-py"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "pyo3",
  "zerodds-dcps",
@@ -7876,21 +7876,21 @@ dependencies = [
 
 [[package]]
 name = "zerodds-qos"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-cdr",
 ]
 
 [[package]]
 name = "zerodds-qos-matrix"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-qos",
 ]
 
 [[package]]
 name = "zerodds-record"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "libc",
  "rusqlite",
@@ -7906,11 +7906,11 @@ dependencies = [
 
 [[package]]
 name = "zerodds-recorder"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 
 [[package]]
 name = "zerodds-recorder-bridge"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-c-api",
  "zerodds-recorder",
@@ -7918,7 +7918,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-recorder-decode"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "rusqlite",
  "serde_json",
@@ -7929,7 +7929,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-replay"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-c-api",
  "zerodds-recorder",
@@ -7938,11 +7938,11 @@ dependencies = [
 
 [[package]]
 name = "zerodds-ros2-rmw"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 
 [[package]]
 name = "zerodds-routing-service"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "ctrlc",
  "roxmltree",
@@ -7960,7 +7960,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-rpc"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-dcps",
  "zerodds-idl",
@@ -7972,7 +7972,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-rs"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-dcps",
  "zerodds-dcps-async",
@@ -7985,18 +7985,18 @@ dependencies = [
 
 [[package]]
 name = "zerodds-rt-linux"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "libc",
 ]
 
 [[package]]
 name = "zerodds-rtc"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 
 [[package]]
 name = "zerodds-rtps"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "criterion",
  "portable-atomic",
@@ -8011,7 +8011,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-secure-permissions"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "base64",
  "cms",
@@ -8029,11 +8029,11 @@ dependencies = [
 
 [[package]]
 name = "zerodds-security"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 
 [[package]]
 name = "zerodds-security-crypto"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "aws-lc-rs",
  "ring",
@@ -8044,7 +8044,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-security-keyexchange"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "aws-lc-rs",
  "ring",
@@ -8054,14 +8054,14 @@ dependencies = [
 
 [[package]]
 name = "zerodds-security-logging"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-security",
 ]
 
 [[package]]
 name = "zerodds-security-permissions"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "aws-lc-rs",
  "cms",
@@ -8081,7 +8081,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-security-pki"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "aws-lc-rs",
  "rcgen 0.13.2",
@@ -8097,7 +8097,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-security-rtps"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-security",
  "zerodds-security-crypto",
@@ -8105,7 +8105,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-security-runtime"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "ring",
  "zerodds-discovery",
@@ -8121,7 +8121,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-snitch"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-cli-common",
  "zerodds-dcps",
@@ -8130,14 +8130,14 @@ dependencies = [
 
 [[package]]
 name = "zerodds-soap"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-xml-wire",
 ]
 
 [[package]]
 name = "zerodds-spy"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-cli-common",
  "zerodds-dcps",
@@ -8147,30 +8147,30 @@ dependencies = [
 
 [[package]]
 name = "zerodds-sql-filter"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 
 [[package]]
 name = "zerodds-sys"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 
 [[package]]
 name = "zerodds-time-service"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 
 [[package]]
 name = "zerodds-traceability"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 
 [[package]]
 name = "zerodds-transport"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-rtps",
 ]
 
 [[package]]
 name = "zerodds-transport-shm"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "libc",
  "shared_memory",
@@ -8182,7 +8182,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-transport-tcp"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-rtps",
  "zerodds-transport",
@@ -8190,7 +8190,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-transport-tsn"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "libc",
  "roxmltree",
@@ -8200,7 +8200,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-transport-udp"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "criterion",
  "libc",
@@ -8213,7 +8213,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-transport-uds"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "libc",
  "socket2 0.5.10",
@@ -8224,7 +8224,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-ts-wasm"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "console_error_panic_hook",
  "serde",
@@ -8235,7 +8235,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-types"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "proptest",
  "zerodds-cdr",
@@ -8244,11 +8244,11 @@ dependencies = [
 
 [[package]]
 name = "zerodds-web"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 
 [[package]]
 name = "zerodds-websocket-bridge"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "rcgen 0.13.2",
  "rustls",
@@ -8265,7 +8265,7 @@ dependencies = [
 
 [[package]]
 name = "zerodds-xml"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "criterion",
  "roxmltree",
@@ -8275,18 +8275,18 @@ dependencies = [
 
 [[package]]
 name = "zerodds-xml-wire"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 
 [[package]]
 name = "zerodds-xmlc"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-xml",
 ]
 
 [[package]]
 name = "zerodds-xrce"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "criterion",
  "rcgen 0.13.2",
@@ -8300,21 +8300,21 @@ dependencies = [
 
 [[package]]
 name = "zerodds-xrce-agent"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-xrce",
 ]
 
 [[package]]
 name = "zerodds-xrce-client"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "zerodds-xrce",
 ]
 
 [[package]]
 name = "zerodds-zenoh-bridge"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 dependencies = [
  "thiserror 2.0.18",
  "tokio",

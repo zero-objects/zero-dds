@@ -42,13 +42,13 @@ lakehouse = [
 ]
 
 [dependencies]
-zerodds-durability-service = { version = "1.0.0-rc.4", path = "../durability-service" }
-zerodds-durability-store = { version = "1.0.0-rc.4", path = "../durability-store" }
-zerodds-durability-store-sqlite = { version = "1.0.0-rc.4", path = "../durability-store-sqlite" }
-zerodds-durability-store-file = { version = "1.0.0-rc.4", path = "../durability-store-file" }
-zerodds-durability-store-lakehouse = { version = "1.0.0-rc.4", path = "../durability-store-lakehouse", optional = true }
+zerodds-durability-service = { version = "1.0.0-rc.5", path = "../durability-service" }
+zerodds-durability-store = { version = "1.0.0-rc.5", path = "../durability-store" }
+zerodds-durability-store-sqlite = { version = "1.0.0-rc.5", path = "../durability-store-sqlite" }
+zerodds-durability-store-file = { version = "1.0.0-rc.5", path = "../durability-store-file" }
+zerodds-durability-store-lakehouse = { version = "1.0.0-rc.5", path = "../durability-store-lakehouse", optional = true }
 ctrlc = { workspace = true }
 
 [dev-dependencies]
-zerodds-dcps = { version = "1.0.0-rc.4", path = "../dcps" }
-zerodds-qos = { version = "1.0.0-rc.4", path = "../qos" }
+zerodds-dcps = { version = "1.0.0-rc.5", path = "../dcps" }
+zerodds-qos = { version = "1.0.0-rc.5", path = "../qos" }

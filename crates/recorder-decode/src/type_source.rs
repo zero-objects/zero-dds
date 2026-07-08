@@ -237,9 +237,15 @@ impl TypeBook {
                 let tail = sn.parts.last().map(|i| i.text.as_str()).unwrap_or("");
                 self.resolve_scoped(tail)
             }
-            TypeSpec::Map(_) | TypeSpec::Fixed(_) | TypeSpec::Any => Err(
-                TypeSourceError::Unsupported(format!("map/fixed/any member {name}")),
-            ),
+            TypeSpec::Map(m) => {
+                let key = self.resolve_member_type(&m.key, name)?;
+                let value = self.resolve_member_type(&m.value, name)?;
+                let bound = m.bound.as_ref().and_then(const_to_u32).unwrap_or(0);
+                Ok(collection::map_of(key, value, bound, name))
+            }
+            TypeSpec::Fixed(_) | TypeSpec::Any => Err(TypeSourceError::Unsupported(format!(
+                "fixed/any member {name}"
+            ))),
         }
     }
 

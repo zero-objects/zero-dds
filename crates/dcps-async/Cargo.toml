@@ -24,8 +24,8 @@ std = []
 tokio-glue = ["dep:tokio"]
 
 [dependencies]
-zerodds-dcps = { version = "1.0.0-rc.4", path = "../dcps" }
-zerodds-qos = { version = "1.0.0-rc.4", path = "../qos" }
+zerodds-dcps = { version = "1.0.0-rc.5", path = "../dcps" }
+zerodds-qos = { version = "1.0.0-rc.5", path = "../qos" }
 futures-core = "0.3"
 tokio = { version = "1", optional = true, features = ["rt", "sync", "time"] }
 

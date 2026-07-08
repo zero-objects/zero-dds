@@ -21,4 +21,4 @@ workspace = true
 path = "src/lib.rs"
 
 [dependencies]
-zerodds-idl = { version = "1.0.0-rc.4", path = "../idl" }
+zerodds-idl = { version = "1.0.0-rc.5", path = "../idl" }

@@ -1,6 +1,6 @@
 [package]
 name = "dds-roundtrip-codegen"
-version = "1.0.0-rc.3"
+version = "1.0.0-rc.5"
 edition = "2024"
 rust-version = "1.88"
 description = "Internal build helper: generates C++17 headers from tests/perf/dds-roundtrip-bench/roundtrip.idl via the zerodds-idl-cpp library API. Used by the cross-vendor roundtrip benchmark."

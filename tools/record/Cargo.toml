@@ -26,16 +26,16 @@ name = "zerodds_record"
 path = "src/lib.rs"
 
 [dependencies]
-zerodds-recorder = { version = "1.0.0-rc.4", path = "../../crates/recorder" }
-zerodds-dcps     = { version = "1.0.0-rc.4", path = "../../crates/dcps" }
-zerodds-rtps     = { version = "1.0.0-rc.4", path = "../../crates/rtps" }
-zerodds-qos      = { version = "1.0.0-rc.4", path = "../../crates/qos" }
-zerodds-types    = { version = "1.0.0-rc.4", path = "../../crates/types", default-features = false, features = ["std"] }
-zerodds-recorder-decode = { version = "1.0.0-rc.4", path = "../../crates/recorder-decode" }
+zerodds-recorder = { version = "1.0.0-rc.5", path = "../../crates/recorder" }
+zerodds-dcps     = { version = "1.0.0-rc.5", path = "../../crates/dcps" }
+zerodds-rtps     = { version = "1.0.0-rc.5", path = "../../crates/rtps" }
+zerodds-qos      = { version = "1.0.0-rc.5", path = "../../crates/qos" }
+zerodds-types    = { version = "1.0.0-rc.5", path = "../../crates/types", default-features = false, features = ["std"] }
+zerodds-recorder-decode = { version = "1.0.0-rc.5", path = "../../crates/recorder-decode" }
 libc             = { workspace = true }
 
 [dev-dependencies]
 tempfile = "3"
-zerodds-recorder = { version = "1.0.0-rc.4", path = "../../crates/recorder" }
+zerodds-recorder = { version = "1.0.0-rc.5", path = "../../crates/recorder" }
 rusqlite = { workspace = true }
 serde_json = "1"

@@ -27,13 +27,9 @@ jobs:
       - name: Install build deps
         # Fedora 40 ships rust 1.78; ZeroDDS needs 1.88+ → rustup.
         run: |
-          # clang provides libclang for iceoryx2-pal-posix's bindgen build
-          # script (the rpm %build is --workspace, which pulls the
-          # iceoryx2-oracle-consumer tool); without it the build aborts with
-          # "Unable to find libclang".
           dnf install -y rpm-build rpmdevtools pkgconfig \
               openssl-devel systemd-rpm-macros gnupg2 \
-              gcc gcc-c++ make curl clang
+              gcc gcc-c++ make curl
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
               sh -s -- --default-toolchain 1.88.0 -y
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH

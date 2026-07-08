@@ -67,6 +67,10 @@ pub enum DynamicValue {
     /// Sequence of DynamicData (spec: the element type is known from the
     /// containerizing TypeDescriptor).
     Sequence(Vec<DynamicData>),
+    /// `map<K,V>` — ordered key→value entries. Each key/value is a `DynamicData`
+    /// (a scalar wrapped under member id 0, or a composite aggregate), matching
+    /// how sequence elements are stored. Entry order mirrors the wire order.
+    Map(Vec<(DynamicData, DynamicData)>),
     /// Discard / not set (the default value is returned).
     None,
 }
@@ -93,6 +97,12 @@ impl PartialEq for DynamicValue {
             (Self::Complex(a), Self::Complex(b)) => a.equals(b),
             (Self::Sequence(a), Self::Sequence(b)) => {
                 a.len() == b.len() && a.iter().zip(b.iter()).all(|(x, y)| x.equals(y))
+            }
+            (Self::Map(a), Self::Map(b)) => {
+                a.len() == b.len()
+                    && a.iter()
+                        .zip(b.iter())
+                        .all(|((ka, va), (kb, vb))| ka.equals(kb) && va.equals(vb))
             }
             (Self::None, Self::None) => true,
             _ => false,
@@ -121,6 +131,7 @@ impl DynamicValue {
             Self::WString(_) => "wstring",
             Self::Complex(_) => "complex",
             Self::Sequence(_) => "sequence",
+            Self::Map(_) => "map",
             Self::None => "none",
         }
     }
@@ -456,6 +467,18 @@ impl DynamicData {
         self.set(member_id, DynamicValue::Sequence(value))
     }
 
+    /// Sets a `map<K,V>` member completely, as ordered key→value entries.
+    ///
+    /// # Errors
+    /// Type mismatch.
+    pub fn set_map_value(
+        &mut self,
+        member_id: MemberId,
+        entries: Vec<(DynamicData, DynamicData)>,
+    ) -> Result<(), DynamicError> {
+        self.set(member_id, DynamicValue::Map(entries))
+    }
+
     /// Returns an element of a sequence member.
     ///
     /// # Errors
@@ -552,6 +575,7 @@ fn check_value_kind_matches_type(value: &DynamicValue, kind: TypeKind) -> Result
         (DynamicValue::WString(_), TypeKind::String16) => true,
         (DynamicValue::Complex(_), k) if k.is_aggregable() => true,
         (DynamicValue::Sequence(_), TypeKind::Sequence | TypeKind::Array) => true,
+        (DynamicValue::Map(_), TypeKind::Map) => true,
         (DynamicValue::None, _) => true,
         _ => false,
     };

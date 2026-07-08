@@ -39,7 +39,9 @@ use zerodds_rtps::wire_types::{EntityId, Guid, GuidPrefix, VendorId};
 use zerodds_rtps::writer_proxy::WriterProxy;
 
 use crate::sedp::cache::DiscoveredEndpointsCache;
-use crate::sedp::reader::{SedpPublicationsReader, SedpReaderError, SedpSubscriptionsReader};
+use crate::sedp::reader::{
+    SedpDelta, SedpPublicationsReader, SedpReaderError, SedpSubscriptionsReader,
+};
 use crate::sedp::writer::{SedpPublicationsWriter, SedpSubscriptionsWriter};
 use crate::spdp::DiscoveredParticipant;
 
@@ -51,13 +53,22 @@ pub struct SedpEvents {
     pub new_publications: Vec<PublicationBuiltinTopicData>,
     /// Newly received subscriptions (already stored in the cache).
     pub new_subscriptions: Vec<SubscriptionBuiltinTopicData>,
+    /// GUIDs of remote publications that were disposed/unregistered (the
+    /// remote deleted its DataWriter). Already removed from the cache; the
+    /// runtime unmatches them from local readers. DDSI-RTPS §8.5.4.
+    pub removed_publications: Vec<Guid>,
+    /// GUIDs of remote subscriptions that were disposed/unregistered.
+    pub removed_subscriptions: Vec<Guid>,
 }
 
 impl SedpEvents {
-    /// True if both are empty.
+    /// True if no discovery (additions or removals) was carried.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.new_publications.is_empty() && self.new_subscriptions.is_empty()
+        self.new_publications.is_empty()
+            && self.new_subscriptions.is_empty()
+            && self.removed_publications.is_empty()
+            && self.removed_subscriptions.is_empty()
     }
 }
 
@@ -187,6 +198,23 @@ impl SedpStack {
         }
     }
 
+    /// Disposes a deleted local publication (SEDP dispose+unregister keyed on
+    /// the endpoint GUID) — routed to the secure or plain publications writer
+    /// exactly like `announce_publication`.
+    ///
+    /// # Errors
+    /// Wire encode error or sequence-number overflow.
+    pub fn dispose_publication(
+        &mut self,
+        endpoint_guid: Guid,
+    ) -> Result<Vec<OutboundDatagram>, WireError> {
+        if self.discovery_protected {
+            self.secure_pub_writer.dispose(endpoint_guid)
+        } else {
+            self.pub_writer.dispose(endpoint_guid)
+        }
+    }
+
     /// ADR-0006: publication with PID_SHM_LOCATOR (vendor PID 0x8001).
     ///
     /// # Errors
@@ -216,6 +244,22 @@ impl SedpStack {
             self.secure_sub_writer.announce(s)
         } else {
             self.sub_writer.announce(s)
+        }
+    }
+
+    /// Disposes a deleted local subscription (counterpart of
+    /// `dispose_publication`).
+    ///
+    /// # Errors
+    /// Wire encode error or sequence-number overflow.
+    pub fn dispose_subscription(
+        &mut self,
+        endpoint_guid: Guid,
+    ) -> Result<Vec<OutboundDatagram>, WireError> {
+        if self.discovery_protected {
+            self.secure_sub_writer.dispose(endpoint_guid)
+        } else {
+            self.sub_writer.dispose(endpoint_guid)
         }
     }
 
@@ -388,10 +432,49 @@ impl SedpStack {
         (pubs, subs)
     }
 
+    /// Folds a publications [`SedpDelta`] into the cache + the event set:
+    /// ALIVE announcements are stored and reported as `new_publications`,
+    /// dispose/unregister GUIDs are evicted from the cache and reported as
+    /// `removed_publications`. Shared by the DATA/DATA_FRAG/GAP dispatch arms
+    /// for both the plain and the secure publications readers.
+    fn absorb_pub_delta(
+        &mut self,
+        delta: SedpDelta<PublicationBuiltinTopicData>,
+        now: Duration,
+        events: &mut SedpEvents,
+    ) {
+        for p in delta.added {
+            self.cache.insert_publication(p.clone(), now);
+            events.new_publications.push(p);
+        }
+        for g in delta.removed {
+            self.cache.remove_publication(g);
+            events.removed_publications.push(g);
+        }
+    }
+
+    /// Subscriptions counterpart of [`Self::absorb_pub_delta`].
+    fn absorb_sub_delta(
+        &mut self,
+        delta: SedpDelta<SubscriptionBuiltinTopicData>,
+        now: Duration,
+        events: &mut SedpEvents,
+    ) {
+        for s in delta.added {
+            self.cache.insert_subscription(s.clone(), now);
+            events.new_subscriptions.push(s);
+        }
+        for g in delta.removed {
+            self.cache.remove_subscription(g);
+            events.removed_subscriptions.push(g);
+        }
+    }
+
     /// Processes an incoming RTPS datagram into the SEDP stack.
     /// Routes the submessages by target EntityId to the matching
-    /// endpoint and updates the cache. Returns the delta of
-    /// newly discovered samples.
+    /// endpoint and updates the cache. Returns the [`SedpEvents`] delta —
+    /// newly discovered endpoints **and** the GUIDs of endpoints the remote
+    /// disposed (deleted).
     ///
     /// # Errors
     /// Wire decode error or malformed PL_CDR payloads.
@@ -412,54 +495,36 @@ impl SedpStack {
                 ParsedSubmessage::Data(d) => {
                     // reader_id match with UNKNOWN→writer_id fallback (§8.3.7.2).
                     if routes_to_pub(d.reader_id, d.writer_id) {
-                        for p in self.pub_reader.handle_data(source_prefix, &d)? {
-                            self.cache.insert_publication(p.clone(), now);
-                            events.new_publications.push(p);
-                        }
+                        let delta = self.pub_reader.handle_data(source_prefix, &d)?;
+                        self.absorb_pub_delta(delta, now, &mut events);
                     } else if routes_to_sub(d.reader_id, d.writer_id) {
-                        for s in self.sub_reader.handle_data(source_prefix, &d)? {
-                            self.cache.insert_subscription(s.clone(), now);
-                            events.new_subscriptions.push(s);
-                        }
+                        let delta = self.sub_reader.handle_data(source_prefix, &d)?;
+                        self.absorb_sub_delta(delta, now, &mut events);
                     } else if routes_to_sec_pub(d.reader_id, d.writer_id) {
-                        for p in self.secure_pub_reader.handle_data(source_prefix, &d)? {
-                            self.cache.insert_publication(p.clone(), now);
-                            events.new_publications.push(p);
-                        }
+                        let delta = self.secure_pub_reader.handle_data(source_prefix, &d)?;
+                        self.absorb_pub_delta(delta, now, &mut events);
                     } else if routes_to_sec_sub(d.reader_id, d.writer_id) {
-                        for s in self.secure_sub_reader.handle_data(source_prefix, &d)? {
-                            self.cache.insert_subscription(s.clone(), now);
-                            events.new_subscriptions.push(s);
-                        }
+                        let delta = self.secure_sub_reader.handle_data(source_prefix, &d)?;
+                        self.absorb_sub_delta(delta, now, &mut events);
                     }
                 }
                 ParsedSubmessage::DataFrag(df) => {
                     if routes_to_pub(df.reader_id, df.writer_id) {
-                        for p in self.pub_reader.handle_data_frag(source_prefix, &df, now)? {
-                            self.cache.insert_publication(p.clone(), now);
-                            events.new_publications.push(p);
-                        }
+                        let delta = self.pub_reader.handle_data_frag(source_prefix, &df, now)?;
+                        self.absorb_pub_delta(delta, now, &mut events);
                     } else if routes_to_sub(df.reader_id, df.writer_id) {
-                        for s in self.sub_reader.handle_data_frag(source_prefix, &df, now)? {
-                            self.cache.insert_subscription(s.clone(), now);
-                            events.new_subscriptions.push(s);
-                        }
+                        let delta = self.sub_reader.handle_data_frag(source_prefix, &df, now)?;
+                        self.absorb_sub_delta(delta, now, &mut events);
                     } else if routes_to_sec_pub(df.reader_id, df.writer_id) {
-                        for p in self
-                            .secure_pub_reader
-                            .handle_data_frag(source_prefix, &df, now)?
-                        {
-                            self.cache.insert_publication(p.clone(), now);
-                            events.new_publications.push(p);
-                        }
+                        let delta =
+                            self.secure_pub_reader
+                                .handle_data_frag(source_prefix, &df, now)?;
+                        self.absorb_pub_delta(delta, now, &mut events);
                     } else if routes_to_sec_sub(df.reader_id, df.writer_id) {
-                        for s in self
-                            .secure_sub_reader
-                            .handle_data_frag(source_prefix, &df, now)?
-                        {
-                            self.cache.insert_subscription(s.clone(), now);
-                            events.new_subscriptions.push(s);
-                        }
+                        let delta =
+                            self.secure_sub_reader
+                                .handle_data_frag(source_prefix, &df, now)?;
+                        self.absorb_sub_delta(delta, now, &mut events);
                     }
                 }
                 ParsedSubmessage::Heartbeat(h) => {
@@ -483,25 +548,17 @@ impl SedpStack {
                     // DATA paths (H-5): without it the reliable SEDP reader
                     // stalls against cyclone, which sends GAP with reader_id=UNKNOWN.
                     if routes_to_pub(g.reader_id, g.writer_id) {
-                        for p in self.pub_reader.handle_gap(source_prefix, &g)? {
-                            self.cache.insert_publication(p.clone(), now);
-                            events.new_publications.push(p);
-                        }
+                        let delta = self.pub_reader.handle_gap(source_prefix, &g)?;
+                        self.absorb_pub_delta(delta, now, &mut events);
                     } else if routes_to_sub(g.reader_id, g.writer_id) {
-                        for s in self.sub_reader.handle_gap(source_prefix, &g)? {
-                            self.cache.insert_subscription(s.clone(), now);
-                            events.new_subscriptions.push(s);
-                        }
+                        let delta = self.sub_reader.handle_gap(source_prefix, &g)?;
+                        self.absorb_sub_delta(delta, now, &mut events);
                     } else if routes_to_sec_pub(g.reader_id, g.writer_id) {
-                        for p in self.secure_pub_reader.handle_gap(source_prefix, &g)? {
-                            self.cache.insert_publication(p.clone(), now);
-                            events.new_publications.push(p);
-                        }
+                        let delta = self.secure_pub_reader.handle_gap(source_prefix, &g)?;
+                        self.absorb_pub_delta(delta, now, &mut events);
                     } else if routes_to_sec_sub(g.reader_id, g.writer_id) {
-                        for s in self.secure_sub_reader.handle_gap(source_prefix, &g)? {
-                            self.cache.insert_subscription(s.clone(), now);
-                            events.new_subscriptions.push(s);
-                        }
+                        let delta = self.secure_sub_reader.handle_gap(source_prefix, &g)?;
+                        self.absorb_sub_delta(delta, now, &mut events);
                     }
                 }
                 ParsedSubmessage::AckNack(ack) => {

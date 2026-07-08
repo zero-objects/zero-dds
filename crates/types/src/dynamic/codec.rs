@@ -119,6 +119,25 @@ const fn is_primitive_kind(kind: TypeKind) -> bool {
 /// Build a `DynamicType` for a scalar (primitive or string) element/target
 /// described by `desc`. Returns `None` for composite kinds (the documented
 /// collection-of-composite / alias-to-composite residual).
+/// Resolve an alias (typedef) to its target type. Typedefs are transparent, so
+/// the TypeObject bridge already resolves alias members to their target — this
+/// defensive fallback rebuilds a scalar target from the shallow
+/// `base_type`/`element_type` descriptor for any alias node reaching the codec.
+fn alias_target(ty: &DynamicType) -> R<DynamicType> {
+    let desc = ty.descriptor();
+    desc.base_type
+        .as_ref()
+        .or(desc.element_type.as_ref())
+        .and_then(|b| scalar_dynamic_type(b))
+        .ok_or_else(|| {
+            CodecError::NotSupported(
+                "alias target: composite typedefs are resolved transparently by the bridge; \
+                 a bare composite alias node reaching the codec is unsupported"
+                    .to_string(),
+            )
+        })
+}
+
 fn scalar_dynamic_type(desc: &crate::dynamic::descriptor::TypeDescriptor) -> Option<DynamicType> {
     use crate::dynamic::builder::DynamicTypeBuilderFactory as F;
     match desc.kind {
@@ -550,17 +569,8 @@ fn read_value(ty: &DynamicType, r: &mut BufferReader<'_>, xcdr2: bool) -> R<Dyna
             let n: usize = ty.descriptor().bound.iter().copied().product::<u32>() as usize;
             read_collection(ty, r, xcdr2, Some(n))?
         }
-        TypeKind::Alias => {
-            // The type model does not auto-deref typedefs; follow base_type to a
-            // scalar target. Composite alias targets are the documented residual.
-            let target = ty
-                .descriptor()
-                .base_type
-                .as_ref()
-                .and_then(|b| scalar_dynamic_type(b))
-                .ok_or_else(|| CodecError::NotSupported("alias-to-composite target".to_string()))?;
-            read_value(&target, r, xcdr2)?
-        }
+        TypeKind::Map => read_map(ty, r, xcdr2)?,
+        TypeKind::Alias => read_value(&alias_target(ty)?, r, xcdr2)?,
         other => {
             return Err(CodecError::NotSupported(alloc::format!(
                 "member kind {other:?}"
@@ -602,20 +612,71 @@ fn read_collection(
     };
     let mut out = Vec::with_capacity(count.min(4096));
     for _ in 0..count {
-        let v = read_value(&elem_ty, r, xcdr2)?;
-        let elem_data = match v {
-            // Composite element: read_value already built the aggregate.
-            DynamicValue::Complex(d) => *d,
-            // Scalar element: wrap the value under member id 0.
-            scalar => {
-                let mut d = DynamicData::new(elem_ty.clone());
-                d.set_value_raw(0, scalar);
-                d
-            }
-        };
-        out.push(elem_data);
+        out.push(read_element(&elem_ty, r, xcdr2)?);
     }
     Ok(DynamicValue::Sequence(out))
+}
+
+/// Read one collection element / map key / map value of type `elem_ty` into a
+/// `DynamicData`: a composite (struct/union) is the decoded aggregate; a scalar
+/// is wrapped under member id 0. Shared by [`read_collection`] and [`read_map`].
+fn read_element(elem_ty: &DynamicType, r: &mut BufferReader<'_>, xcdr2: bool) -> R<DynamicData> {
+    Ok(match read_value(elem_ty, r, xcdr2)? {
+        DynamicValue::Complex(d) => *d,
+        scalar => {
+            let mut d = DynamicData::new(elem_ty.clone());
+            d.set_value_raw(0, scalar);
+            d
+        }
+    })
+}
+
+/// Decode a `map<K,V>` — mirror of the compiled `BTreeMap` codec
+/// (`zerodds-cdr` §7.4.4.6): optional collection DHEADER (XCDR2, only when the
+/// key/value PAIR is non-primitive), then a `u32` entry count, then `count`
+/// flat `(key, value)` pairs in wire order. Key + value types are the fully
+/// resolved ones retained by [`crate::dynamic::collection::map_of`], falling
+/// back to a scalar rebuild from the shallow descriptor.
+/// zerodds-lint: recursion-depth 64 (runtime DynamicData codec; bounded by type nesting).
+fn read_map(ty: &DynamicType, r: &mut BufferReader<'_>, xcdr2: bool) -> R<DynamicValue> {
+    let (key_ty, val_ty, pair_primitive) = map_kv_types(ty)?;
+    let w = |e: DecodeError| CodecError::Wire(e.to_string());
+    if xcdr2 && !pair_primitive {
+        let _dheader = r.read_u32().map_err(w)?;
+    }
+    let count = r.read_u32().map_err(w)? as usize;
+    let mut out = Vec::with_capacity(count.min(4096));
+    for _ in 0..count {
+        let k = read_element(&key_ty, r, xcdr2)?;
+        let v = read_element(&val_ty, r, xcdr2)?;
+        out.push((k, v));
+    }
+    Ok(DynamicValue::Map(out))
+}
+
+/// Resolve a `map<K,V>`'s key type, value type, and whether the pair is fully
+/// primitive (drives the XCDR2 collection-DHEADER rule, matching the compiled
+/// `K::IS_PRIMITIVE && V::IS_PRIMITIVE`).
+fn map_kv_types(ty: &DynamicType) -> R<(DynamicType, DynamicType, bool)> {
+    let desc = ty.descriptor();
+    let key_desc = desc
+        .key_element_type
+        .as_ref()
+        .ok_or_else(|| CodecError::Dynamic("map has no key type".to_string()))?;
+    let val_desc = desc
+        .element_type
+        .as_ref()
+        .ok_or_else(|| CodecError::Dynamic("map has no value type".to_string()))?;
+    let key_ty = crate::dynamic::collection::resolved_map_key(ty)
+        .cloned()
+        .or_else(|| scalar_dynamic_type(key_desc))
+        .ok_or_else(|| CodecError::NotSupported("map key (no resolved type)".to_string()))?;
+    let val_ty = crate::dynamic::collection::resolved_map_value(ty)
+        .cloned()
+        .or_else(|| scalar_dynamic_type(val_desc))
+        .ok_or_else(|| CodecError::NotSupported("map value (no resolved type)".to_string()))?;
+    let pair_primitive = is_primitive_kind(key_desc.kind) && is_primitive_kind(val_desc.kind);
+    Ok((key_ty, val_ty, pair_primitive))
 }
 
 /// Resolve the element `DynamicType` of a collection: the fully-resolved element
@@ -653,7 +714,6 @@ fn write_collection(
         .ok_or_else(|| CodecError::Dynamic("collection has no element_type".to_string()))?;
     let elem_kind = elem_desc.kind;
     let elem_ty = element_type(ty, elem_desc)?;
-    let composite = matches!(elem_ty.kind(), TypeKind::Structure | TypeKind::Union);
     let is_array = ty.kind() == TypeKind::Array;
     let e = |x: EncodeError| CodecError::Wire(x.to_string());
 
@@ -662,14 +722,7 @@ fn write_collection(
             w.write_u32(items.len() as u32).map_err(e)?;
         }
         for d in items {
-            if composite {
-                write_aggregate(d, w, xcdr2)?;
-            } else {
-                let v = d
-                    .get_value(0)
-                    .ok_or_else(|| CodecError::Dynamic("scalar element unset".to_string()))?;
-                write_value(&v.clone(), &elem_ty, w, xcdr2)?;
-            }
+            write_element(d, &elem_ty, w, xcdr2)?;
         }
         Ok(())
     };
@@ -680,6 +733,58 @@ fn write_collection(
         if xcdr2 {
             sub = sub.xcdr2();
         }
+        write_body(&mut sub)?;
+        let body = sub.into_bytes();
+        w.write_u32(body.len() as u32).map_err(e)?;
+        w.write_bytes(&body).map_err(e)?;
+        Ok(())
+    } else {
+        write_body(w)
+    }
+}
+
+/// Write one collection element / map key / map value: composite (struct/union)
+/// as an aggregate; scalar as the value under member id 0. Shared by
+/// [`write_collection`] and [`write_map`].
+fn write_element(
+    d: &DynamicData,
+    elem_ty: &DynamicType,
+    w: &mut BufferWriter,
+    xcdr2: bool,
+) -> R<()> {
+    if matches!(elem_ty.kind(), TypeKind::Structure | TypeKind::Union) {
+        write_aggregate(d, w, xcdr2)
+    } else {
+        let v = d
+            .get_value(0)
+            .ok_or_else(|| CodecError::Dynamic("scalar element unset".to_string()))?;
+        write_value(&v.clone(), elem_ty, w, xcdr2)
+    }
+}
+
+/// Encode a `map<K,V>`, the mirror of [`read_map`]: optional XCDR2 collection
+/// DHEADER (only for a non-primitive key/value pair), a `u32` entry count, then
+/// flat `(key, value)` pairs in the stored order.
+/// zerodds-lint: recursion-depth 64 (runtime DynamicData codec; bounded by type nesting).
+fn write_map(
+    entries: &[(DynamicData, DynamicData)],
+    ty: &DynamicType,
+    w: &mut BufferWriter,
+    xcdr2: bool,
+) -> R<()> {
+    let (key_ty, val_ty, pair_primitive) = map_kv_types(ty)?;
+    let e = |x: EncodeError| CodecError::Wire(x.to_string());
+    let write_body = |w: &mut BufferWriter| -> R<()> {
+        w.write_u32(entries.len() as u32).map_err(e)?;
+        for (k, v) in entries {
+            write_element(k, &key_ty, w, xcdr2)?;
+            write_element(v, &val_ty, w, xcdr2)?;
+        }
+        Ok(())
+    };
+    if xcdr2 && !pair_primitive {
+        let mut sub = BufferWriter::new(w.endianness());
+        sub = sub.xcdr2();
         write_body(&mut sub)?;
         let body = sub.into_bytes();
         w.write_u32(body.len() as u32).map_err(e)?;
@@ -1025,6 +1130,7 @@ fn write_value(v: &DynamicValue, ty: &DynamicType, w: &mut BufferWriter, xcdr2: 
         }
         DynamicValue::Complex(d) => write_aggregate(d, w, xcdr2),
         DynamicValue::Sequence(items) => write_collection(items, ty, w, xcdr2),
+        DynamicValue::Map(entries) => write_map(entries, ty, w, xcdr2),
         DynamicValue::None => Ok(()),
     }
 }
@@ -1455,5 +1561,183 @@ mod tests {
         let inner_back = back.get_complex_value(1).unwrap();
         assert_eq!(inner_back.get_string_value(2).unwrap(), "hello-dynamic");
         assert_eq!(encode_dynamic(&back, true, false).unwrap(), bytes);
+    }
+
+    // ------------------------------------------------------------------
+    // map<K,V> — the reflective codec must be byte-identical to the compiled
+    // `BTreeMap` CdrEncode (the same wire the generated types + cross-vendor
+    // stacks emit). These are the authoritative oracle tests.
+    // ------------------------------------------------------------------
+
+    fn scalar_dd(ty: &DynamicType, v: DynamicValue) -> DynamicData {
+        let mut d = DynamicData::new(ty.clone());
+        d.set_value_raw(0, v);
+        d
+    }
+
+    #[test]
+    fn map_primitive_pair_byte_identical_to_compiled() {
+        use alloc::collections::BTreeMap;
+        let kt = DynamicType::new_primitive(TypeKind::Int32);
+        let vt = DynamicType::new_primitive(TypeKind::Int32);
+        let map_ty = crate::dynamic::collection::map_of(kt.clone(), vt.clone(), 0, "m");
+        // Key-sorted, matching BTreeMap iteration order.
+        let entries = alloc::vec![
+            (
+                scalar_dd(&kt, DynamicValue::Int32(1)),
+                scalar_dd(&vt, DynamicValue::Int32(2))
+            ),
+            (
+                scalar_dd(&kt, DynamicValue::Int32(7)),
+                scalar_dd(&vt, DynamicValue::Int32(42))
+            ),
+        ];
+        let mut oracle: BTreeMap<i32, i32> = BTreeMap::new();
+        oracle.insert(7, 42);
+        oracle.insert(1, 2);
+
+        for xcdr2 in [true, false] {
+            let mut wr = BufferWriter::new(Endianness::Little);
+            let mut wo = BufferWriter::new(Endianness::Little);
+            if xcdr2 {
+                wr = wr.xcdr2();
+                wo = wo.xcdr2();
+            }
+            write_map(&entries, &map_ty, &mut wr, xcdr2).unwrap();
+            oracle.encode(&mut wo).unwrap();
+            assert_eq!(
+                wr.into_bytes(),
+                wo.into_bytes(),
+                "map<i32,i32> byte-identical to compiled BTreeMap, xcdr2={xcdr2}"
+            );
+        }
+    }
+
+    #[test]
+    fn map_nonprimitive_value_byte_identical_to_compiled() {
+        use alloc::collections::BTreeMap;
+        let kt = DynamicType::new_primitive(TypeKind::Int32);
+        let vt = DynamicTypeBuilderFactory::create_string_type(0);
+        let map_ty = crate::dynamic::collection::map_of(kt.clone(), vt.clone(), 0, "m");
+        let entries = alloc::vec![
+            (
+                scalar_dd(&kt, DynamicValue::Int32(1)),
+                scalar_dd(&vt, DynamicValue::String("one".to_string()))
+            ),
+            (
+                scalar_dd(&kt, DynamicValue::Int32(7)),
+                scalar_dd(&vt, DynamicValue::String("seven".to_string()))
+            ),
+        ];
+        let mut oracle: BTreeMap<i32, String> = BTreeMap::new();
+        oracle.insert(7, "seven".to_string());
+        oracle.insert(1, "one".to_string());
+
+        for xcdr2 in [true, false] {
+            let mut wr = BufferWriter::new(Endianness::Little);
+            let mut wo = BufferWriter::new(Endianness::Little);
+            if xcdr2 {
+                wr = wr.xcdr2();
+                wo = wo.xcdr2();
+            }
+            write_map(&entries, &map_ty, &mut wr, xcdr2).unwrap();
+            oracle.encode(&mut wo).unwrap();
+            // The non-primitive-value pair carries the XCDR2 collection DHEADER.
+            assert_eq!(
+                wr.into_bytes(),
+                wo.into_bytes(),
+                "map<i32,string> byte-identical to compiled BTreeMap, xcdr2={xcdr2}"
+            );
+        }
+    }
+
+    /// Full struct-wrapped round-trip: `M { m: map<i32,i32> }` encode → decode →
+    /// re-encode byte-exact, values preserved.
+    #[test]
+    fn roundtrip_map_of_scalar() {
+        let kt = DynamicType::new_primitive(TypeKind::Int32);
+        let vt = DynamicType::new_primitive(TypeKind::Int32);
+        let map_ty = crate::dynamic::collection::map_of(kt.clone(), vt.clone(), 0, "m");
+        let mut desc = TypeDescriptor::structure("M");
+        desc.extensibility_kind = ExtensibilityKind::Final;
+        let mut b = DynamicTypeBuilderFactory::create_type(desc).unwrap();
+        let mut md = MemberDescriptor::new("m", 0, map_ty.descriptor().clone());
+        md.index = 0;
+        b.add_member_resolved(md, map_ty).unwrap();
+        let ty = b.build().unwrap();
+
+        let mut d = DynamicData::new(ty.clone());
+        d.set_map_value(
+            0,
+            alloc::vec![
+                (
+                    scalar_dd(&kt, DynamicValue::Int32(1)),
+                    scalar_dd(&vt, DynamicValue::Int32(2))
+                ),
+                (
+                    scalar_dd(&kt, DynamicValue::Int32(7)),
+                    scalar_dd(&vt, DynamicValue::Int32(42))
+                ),
+            ],
+        )
+        .unwrap();
+
+        for xcdr2 in [true, false] {
+            let bytes = encode_dynamic(&d, xcdr2, false).expect("encode");
+            let back = decode_dynamic(&ty, &bytes, xcdr2, false).expect("decode");
+            let DynamicValue::Map(got) = back.get_value(0).unwrap() else {
+                panic!("m is a map")
+            };
+            assert_eq!(got.len(), 2);
+            assert_eq!(got[0].0.get_int32_value(0).unwrap(), 1);
+            assert_eq!(got[1].1.get_int32_value(0).unwrap(), 42);
+            assert_eq!(
+                encode_dynamic(&back, xcdr2, false).unwrap(),
+                bytes,
+                "byte-exact map<i32,i32> round-trip xcdr2={xcdr2}"
+            );
+        }
+    }
+
+    /// `map<i32,Struct>` — composite value carries its members and round-trips
+    /// byte-exact (the non-primitive pair takes the XCDR2 DHEADER path).
+    #[test]
+    fn roundtrip_map_of_struct() {
+        let kt = DynamicType::new_primitive(TypeKind::Int32);
+        let vt = sample_type(ExtensibilityKind::Final);
+        let map_ty = crate::dynamic::collection::map_of(kt.clone(), vt.clone(), 0, "m");
+        let mut desc = TypeDescriptor::structure("M");
+        desc.extensibility_kind = ExtensibilityKind::Final;
+        let mut b = DynamicTypeBuilderFactory::create_type(desc).unwrap();
+        let mut md = MemberDescriptor::new("m", 0, map_ty.descriptor().clone());
+        md.index = 0;
+        b.add_member_resolved(md, map_ty).unwrap();
+        let ty = b.build().unwrap();
+
+        let entry_val = populate(&vt);
+        let mut d = DynamicData::new(ty.clone());
+        d.set_map_value(
+            0,
+            alloc::vec![(scalar_dd(&kt, DynamicValue::Int32(5)), entry_val)],
+        )
+        .unwrap();
+
+        for xcdr2 in [true, false] {
+            let bytes = encode_dynamic(&d, xcdr2, false).expect("encode");
+            let back = decode_dynamic(&ty, &bytes, xcdr2, false).expect("decode");
+            let DynamicValue::Map(got) = back.get_value(0).unwrap() else {
+                panic!("map")
+            };
+            assert_eq!(got.len(), 1);
+            assert_eq!(got[0].0.get_int32_value(0).unwrap(), 5);
+            // The value is the composite aggregate itself.
+            assert_eq!(got[0].1.dynamic_type().kind(), TypeKind::Structure);
+            assert_eq!(got[0].1.get_string_value(2).unwrap(), "hello-dynamic");
+            assert_eq!(
+                encode_dynamic(&back, xcdr2, false).unwrap(),
+                bytes,
+                "byte-exact map<i32,struct> round-trip xcdr2={xcdr2}"
+            );
+        }
     }
 }

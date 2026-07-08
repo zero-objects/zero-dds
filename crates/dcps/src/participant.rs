@@ -265,6 +265,24 @@ impl core::fmt::Debug for DomainParticipant {
     }
 }
 
+impl DomainParticipant {
+    /// A **weak** handle to this participant's inner state. The
+    /// `DomainParticipantFactory` stores these so it never keeps a participant
+    /// alive past the user's last strong handle — dropping the user's
+    /// `DomainParticipant` then runs the natural RAII teardown (runtime threads,
+    /// UDP sockets and multicast memberships released via the `Arc<DcpsRuntime>`
+    /// drop chain).
+    pub(crate) fn downgrade(&self) -> alloc::sync::Weak<ParticipantInner> {
+        Arc::downgrade(&self.inner)
+    }
+
+    /// Reconstruct a strong participant handle from inner state — used by the
+    /// factory's `lookup_participant` after `Weak::upgrade`.
+    pub(crate) fn from_inner(inner: Arc<ParticipantInner>) -> Self {
+        Self { inner }
+    }
+}
+
 pub(crate) struct ParticipantInner {
     pub(crate) domain_id: DomainId,
     pub(crate) qos: Mutex<DomainParticipantQos>,

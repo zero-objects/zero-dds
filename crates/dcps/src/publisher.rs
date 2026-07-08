@@ -528,6 +528,20 @@ impl<T: DdsType> core::fmt::Debug for DataWriter<T> {
     }
 }
 
+/// RAII teardown (Spec §2.2.2.4.1.2 — deleting a `DataWriter`). Dropping the
+/// user's handle deregisters the writer from the runtime: it removes the slot
+/// (stopping the RTPS heartbeats), rebuilds the intra-runtime route, and sends
+/// an SEDP dispose so remote peers drop the matched writer at once instead of
+/// waiting for a liveliness timeout. Offline writers (no runtime) are no-ops.
+#[cfg(feature = "std")]
+impl<T: DdsType> Drop for DataWriter<T> {
+    fn drop(&mut self) {
+        if let (Some(rt), Some(eid)) = (self.runtime.as_ref(), self.entity_id) {
+            rt.remove_user_writer(eid);
+        }
+    }
+}
+
 impl<T: DdsType> DataWriter<T> {
     #[cfg(feature = "std")]
     fn new_offline(topic: Topic<T>, qos: DataWriterQos, publisher: Arc<PublisherInner>) -> Self {

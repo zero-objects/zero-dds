@@ -20,10 +20,10 @@ use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 #[cfg(feature = "std")]
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Mutex, OnceLock, Weak};
 
 use crate::error::{DdsError, Result};
-use crate::participant::{DomainId, DomainParticipant};
+use crate::participant::{DomainId, DomainParticipant, ParticipantInner};
 use crate::qos::DomainParticipantQos;
 use crate::runtime::RuntimeConfig;
 
@@ -52,9 +52,16 @@ impl Default for DomainParticipantFactoryQos {
 pub struct DomainParticipantFactory {
     /// Registry of all participants created via `create_participant*` —
     /// indexed by `DomainId`, multiple participants per domain allowed
-    /// (Spec §2.2.2.2.2.4 `lookup_participant` returns "any"
-    /// participant for the given domain).
-    participants: Mutex<BTreeMap<DomainId, Vec<DomainParticipant>>>,
+    /// (Spec §2.2.2.2.2.4 `lookup_participant` returns "any" participant for
+    /// the given domain).
+    ///
+    /// Stored as **weak** references so the factory never keeps a participant
+    /// alive past the user's last strong handle: dropping the user's
+    /// `DomainParticipant` releases its runtime (threads + sockets) via RAII.
+    /// `lookup_participant` upgrades on demand and garbage-collects dead weaks;
+    /// `delete_participant` stays available for explicit, spec-symmetric cleanup
+    /// but is a no-op once the participant has already dropped.
+    participants: Mutex<BTreeMap<DomainId, Vec<Weak<ParticipantInner>>>>,
     /// Factory default QoS for newly created participants (Spec
     /// §2.2.2.2.2.5 `set_default_participant_qos`).
     default_participant_qos: Mutex<DomainParticipantQos>,
@@ -81,7 +88,7 @@ impl DomainParticipantFactory {
 
     fn track(&self, p: &DomainParticipant) {
         if let Ok(mut reg) = self.participants.lock() {
-            reg.entry(p.domain_id()).or_default().push(p.clone());
+            reg.entry(p.domain_id()).or_default().push(p.downgrade());
         }
     }
 
@@ -142,8 +149,27 @@ impl DomainParticipantFactory {
     /// domain, the implementation returns the first.
     #[must_use]
     pub fn lookup_participant(&self, domain_id: DomainId) -> Option<DomainParticipant> {
-        let reg = self.participants.lock().ok()?;
-        reg.get(&domain_id).and_then(|v| v.first().cloned())
+        let mut reg = self.participants.lock().ok()?;
+        let mut found = None;
+        let mut now_empty = false;
+        if let Some(vec) = reg.get_mut(&domain_id) {
+            // Upgrade weaks; return the first still-live participant and garbage
+            // -collect any that the user has already dropped.
+            vec.retain(|w| match w.upgrade() {
+                Some(inner) => {
+                    if found.is_none() {
+                        found = Some(DomainParticipant::from_inner(inner));
+                    }
+                    true
+                }
+                None => false,
+            });
+            now_empty = vec.is_empty();
+        }
+        if now_empty {
+            reg.remove(&domain_id);
+        }
+        found
     }
 
     /// Spec §2.2.2.2.2.3 `delete_participant`. Removes the participant
@@ -162,14 +188,27 @@ impl DomainParticipantFactory {
                 reason: "factory participants poisoned",
             })?;
         let target_handle = p.instance_handle();
+        let did = p.domain_id();
         let mut found = false;
-        if let Some(vec) = reg.get_mut(&p.domain_id()) {
-            let before = vec.len();
-            vec.retain(|q| q.instance_handle() != target_handle);
-            found = vec.len() < before;
-            if vec.is_empty() {
-                reg.remove(&p.domain_id());
-            }
+        let mut now_empty = false;
+        if let Some(vec) = reg.get_mut(&did) {
+            // Remove the target (matched by handle through an upgrade) and GC any
+            // already-dropped weaks while we hold the lock.
+            vec.retain(|w| match w.upgrade() {
+                Some(inner) => {
+                    let is_target =
+                        DomainParticipant::from_inner(inner).instance_handle() == target_handle;
+                    if is_target {
+                        found = true;
+                    }
+                    !is_target
+                }
+                None => false,
+            });
+            now_empty = vec.is_empty();
+        }
+        if now_empty {
+            reg.remove(&did);
         }
         drop(reg);
         if !found {
@@ -351,6 +390,27 @@ mod tests {
         let found = f.lookup_participant(domain);
         assert!(found.is_some());
         assert_eq!(found.unwrap().domain_id(), domain);
+    }
+
+    #[test]
+    fn dropping_participant_releases_it_from_the_factory() {
+        // The factory holds only weak references: once the user drops their last
+        // strong handle, the participant is gone (RAII) and `lookup_participant`
+        // returns `None`, garbage-collecting the dead weak. (Pre-weak-refs the
+        // factory kept a strong clone and this would still return `Some`.)
+        let f = DomainParticipantFactory::instance();
+        let domain = 9182; // isolated from other tests
+        {
+            let _p = f.create_participant_offline(domain, DomainParticipantQos::default());
+            assert!(
+                f.lookup_participant(domain).is_some(),
+                "tracked while a strong handle is alive"
+            );
+        } // _p dropped here
+        assert!(
+            f.lookup_participant(domain).is_none(),
+            "factory must not keep the participant alive after the user drops it"
+        );
     }
 
     #[test]

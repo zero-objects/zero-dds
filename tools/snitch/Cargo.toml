@@ -26,6 +26,6 @@ name = "zerodds_snitch"
 path = "src/lib.rs"
 
 [dependencies]
-zerodds-cli-common = { version = "1.0.0-rc.4", path = "../cli-common" }
-zerodds-dcps       = { version = "1.0.0-rc.4", path = "../../crates/dcps" }
-zerodds-discovery  = { version = "1.0.0-rc.4", path = "../../crates/discovery" }
+zerodds-cli-common = { version = "1.0.0-rc.5", path = "../cli-common" }
+zerodds-dcps       = { version = "1.0.0-rc.5", path = "../../crates/dcps" }
+zerodds-discovery  = { version = "1.0.0-rc.5", path = "../../crates/discovery" }

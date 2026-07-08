@@ -136,6 +136,37 @@ impl BuiltinSinks {
     pub fn push_subscription(&self, sample: &SubscriptionBuiltinTopicData) -> Result<()> {
         push_into(&self.subscription, sample)
     }
+
+    /// Marks the `DCPSPublication` instance for `guid` disposed — the remote
+    /// deleted its DataWriter (SEDP dispose). Observers of the built-in
+    /// publications reader then see the instance go `NOT_ALIVE_DISPOSED`
+    /// (DDS-DCPS 1.4 §2.2.5). The instance key of a built-in publication is the
+    /// endpoint GUID, which for a ≤16-byte key is its own KeyHash
+    /// (DDSI-RTPS §9.6.4.8) — so `guid.to_bytes()` addresses exactly the
+    /// instance an earlier ALIVE sample created.
+    pub fn dispose_publication(&self, guid: zerodds_rtps::wire_types::Guid) {
+        push_lifecycle(&self.publication, guid);
+    }
+
+    /// `DCPSSubscription` counterpart of [`Self::dispose_publication`].
+    pub fn dispose_subscription(&self, guid: zerodds_rtps::wire_types::Guid) {
+        push_lifecycle(&self.subscription, guid);
+    }
+}
+
+/// Pushes a `NOT_ALIVE_DISPOSED` lifecycle marker for `guid` into a built-in
+/// reader inbox. Silent no-op if the inbox mutex is poisoned (a dropped
+/// discovery notification is non-fatal).
+fn push_lifecycle(
+    sink: &Arc<Mutex<Vec<crate::runtime::UserSample>>>,
+    guid: zerodds_rtps::wire_types::Guid,
+) {
+    if let Ok(mut guard) = sink.lock() {
+        guard.push(crate::runtime::UserSample::Lifecycle {
+            key_hash: guid.to_bytes(),
+            kind: zerodds_rtps::history_cache::ChangeKind::NotAliveDisposed,
+        });
+    }
 }
 
 fn push_into<T: DdsType>(

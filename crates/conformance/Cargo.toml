@@ -26,10 +26,10 @@ std = ["alloc"]
 alloc = []
 
 [dependencies]
-zerodds-websocket-bridge = { version = "1.0.0-rc.4", path = "../websocket-bridge" }
-zerodds-mqtt-bridge = { version = "1.0.0-rc.4", path = "../mqtt-bridge" }
-zerodds-http2 = { version = "1.0.0-rc.4", path = "../http2" }
-zerodds-hpack = { version = "1.0.0-rc.4", path = "../hpack" }
-zerodds-grpc-bridge = { version = "1.0.0-rc.4", path = "../grpc-bridge" }
-zerodds-coap-bridge = { version = "1.0.0-rc.4", path = "../coap-bridge" }
-zerodds-xml-wire = { version = "1.0.0-rc.4", path = "../zerodds-xml-wire" }
+zerodds-websocket-bridge = { version = "1.0.0-rc.5", path = "../websocket-bridge" }
+zerodds-mqtt-bridge = { version = "1.0.0-rc.5", path = "../mqtt-bridge" }
+zerodds-http2 = { version = "1.0.0-rc.5", path = "../http2" }
+zerodds-hpack = { version = "1.0.0-rc.5", path = "../hpack" }
+zerodds-grpc-bridge = { version = "1.0.0-rc.5", path = "../grpc-bridge" }
+zerodds-coap-bridge = { version = "1.0.0-rc.5", path = "../coap-bridge" }
+zerodds-xml-wire = { version = "1.0.0-rc.5", path = "../zerodds-xml-wire" }

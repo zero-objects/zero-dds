@@ -372,7 +372,10 @@ fn scalar_param(v: &DynamicValue) -> SqlValue {
         DynamicValue::Float64(x) => SqlValue::Real(*x),
         DynamicValue::String(s) => SqlValue::Text(s.clone()),
         DynamicValue::WString(u) => SqlValue::Text(String::from_utf16_lossy(u)),
-        DynamicValue::Complex(_) | DynamicValue::Sequence(_) | DynamicValue::None => SqlValue::Null,
+        DynamicValue::Complex(_)
+        | DynamicValue::Sequence(_)
+        | DynamicValue::Map(_)
+        | DynamicValue::None => SqlValue::Null,
     }
 }
 

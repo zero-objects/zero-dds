@@ -480,6 +480,19 @@ type RawIngestSample = (
     u8,
 );
 
+/// RAII teardown (Spec §2.2.2.5.1.2 — deleting a `DataReader`). Dropping the
+/// user's handle deregisters the reader from the runtime: it removes the slot,
+/// rebuilds the intra-runtime route, and sends an SEDP dispose so remote peers
+/// drop the matched reader at once. Offline readers (no runtime) are no-ops.
+#[cfg(feature = "std")]
+impl<T: DdsType> Drop for DataReader<T> {
+    fn drop(&mut self) {
+        if let (Some(rt), Some(eid)) = (self.runtime.as_ref(), self.entity_id) {
+            rt.remove_user_reader(eid);
+        }
+    }
+}
+
 impl<T: DdsType> DataReader<T> {
     #[cfg(feature = "std")]
     fn new_offline(topic: Topic<T>, qos: DataReaderQos, subscriber: Arc<SubscriberInner>) -> Self {

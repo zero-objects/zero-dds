@@ -26,8 +26,8 @@ std = ["alloc"]
 alloc = []
 
 [dependencies]
-zerodds-rtps = { version = "1.0.0-rc.4", path = "../rtps" }
-zerodds-transport = { version = "1.0.0-rc.4", path = "../transport" }
+zerodds-rtps = { version = "1.0.0-rc.5", path = "../rtps" }
+zerodds-transport = { version = "1.0.0-rc.5", path = "../transport" }
 
 [dev-dependencies]
 zerodds-rtps = { path = "../rtps" }

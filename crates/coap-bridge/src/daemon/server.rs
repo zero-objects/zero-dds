@@ -18,6 +18,8 @@
 use std::collections::BTreeMap;
 use std::net::{SocketAddr, UdpSocket};
 use std::string::{String, ToString};
+#[cfg(feature = "dtls")]
+use std::sync::atomic::AtomicU64;
 use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
@@ -78,6 +80,15 @@ impl core::fmt::Display for ServerError {
 
 impl std::error::Error for ServerError {}
 
+/// DTLS (`coaps://`) listener: its runtime thread, a shutdown signal, and the
+/// slot the accept loop publishes its bound address into.
+#[cfg(feature = "dtls")]
+struct DtlsHandle {
+    thread: JoinHandle<()>,
+    shutdown: Arc<tokio::sync::Notify>,
+    bound: Arc<Mutex<Option<SocketAddr>>>,
+}
+
 /// Daemon handle. Drop initiates shutdown.
 pub struct DaemonHandle {
     stop: Arc<AtomicBool>,
@@ -101,12 +112,29 @@ pub struct DaemonHandle {
     /// Metric set for tests.
     #[cfg(feature = "daemon")]
     pub metrics: Option<BridgeMetrics>,
+    /// DTLS (`coaps://`) listener — present only when `dtls.enabled` + feature.
+    #[cfg(feature = "dtls")]
+    dtls: Option<DtlsHandle>,
 }
 
 impl DaemonHandle {
+    /// The bound `coaps://` (DTLS) address, once the listener is up.
+    #[cfg(feature = "dtls")]
+    #[must_use]
+    pub fn dtls_local_addr(&self) -> Option<SocketAddr> {
+        self.dtls
+            .as_ref()
+            .and_then(|d| d.bound.lock().ok().and_then(|b| *b))
+    }
+
     /// Sets the stop flag and joins workers.
     pub fn shutdown(&mut self) {
         self.stop.store(true, Ordering::SeqCst);
+        #[cfg(feature = "dtls")]
+        if let Some(d) = self.dtls.take() {
+            d.shutdown.notify_one();
+            let _ = d.thread.join();
+        }
         #[cfg(feature = "daemon")]
         {
             self.healthy.store(false, Ordering::SeqCst);
@@ -146,11 +174,44 @@ impl Drop for DaemonHandle {
     }
 }
 
-/// Observer registry entry.
+/// Observer registry entry — a registered CoAP Observe (RFC 7641) client,
+/// reachable either over the plaintext UDP socket (by peer addr) or over a
+/// DTLS session (by a channel into that session's task).
 #[derive(Debug, Clone)]
-struct Observer {
-    addr: SocketAddr,
-    token: Vec<u8>,
+enum Observer {
+    /// Plaintext: notify by sending to `addr` on the shared UDP socket.
+    Udp { addr: SocketAddr, token: Vec<u8> },
+    /// DTLS: hand the built notification to the owning session task, which
+    /// writes it as DTLS application data. `session` identifies the session so
+    /// a deregister only drops this client's registration.
+    #[cfg(feature = "dtls")]
+    Dtls {
+        session: u64,
+        token: Vec<u8>,
+        tx: tokio::sync::mpsc::UnboundedSender<CoapMessage>,
+    },
+}
+
+impl Observer {
+    fn token(&self) -> &[u8] {
+        match self {
+            Observer::Udp { token, .. } => token,
+            #[cfg(feature = "dtls")]
+            Observer::Dtls { token, .. } => token,
+        }
+    }
+
+    /// True when both observers are the same transport endpoint (UDP peer addr
+    /// / DTLS session), ignoring the token — used to scope a deregister.
+    fn same_endpoint_as(&self, other: &Observer) -> bool {
+        match (self, other) {
+            (Observer::Udp { addr: a, .. }, Observer::Udp { addr: b, .. }) => a == b,
+            #[cfg(feature = "dtls")]
+            (Observer::Dtls { session: a, .. }, Observer::Dtls { session: b, .. }) => a == b,
+            #[cfg(feature = "dtls")]
+            _ => false,
+        }
+    }
 }
 
 /// Topic state.
@@ -193,9 +254,14 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
         ctx_from_daemon_config(&cfg).map_err(|e| ServerError::Dtls(format!("security: {e}")))?;
     let security_ctx = Arc::new(security_ctx);
     eprintln!(
-        "[zerodds-coap-bridged] auth-mode={} acl-entries={} (dtls=rejected per §7.1 next-phase)",
+        "[zerodds-coap-bridged] auth-mode={} acl-entries={} dtls={}",
         cfg.auth_mode,
         cfg.topic_acl.len(),
+        if cfg.dtls_enabled {
+            "enabled (fail-closed: see below)"
+        } else {
+            "off"
+        },
     );
 
     // 1. Bind the UDP socket.
@@ -210,9 +276,20 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
 
     eprintln!("[zerodds-coap-bridged] bound on {local_addr}");
 
+    // DTLS (`coaps://`, RFC 7252 §9). Fail closed without the `dtls` feature:
+    // the operator asked for DTLS but this binary can't provide it, so refuse to
+    // start rather than silently serve plaintext on a port expected to be
+    // secured. With the feature, the real coaps:// listener is started further
+    // down, once the shared DDS state exists.
+    #[cfg(not(feature = "dtls"))]
     if cfg.dtls_enabled {
-        // FUTURE: DTLS handshake layer (RFC 7252 §9). L5 stub.
-        eprintln!("[zerodds-coap-bridged] DTLS L5-stub: not implemented");
+        return Err(ServerError::Dtls(
+            "dtls.enabled=true but this build has no `dtls` feature (rebuild with \
+             --features dtls); refusing to start so the bridge never serves \
+             plaintext on a port expected to be coaps://. Set dtls.enabled=false \
+             to run the plaintext coap:// bridge."
+                .to_string(),
+        ));
     }
 
     // 2. DCPS runtime.
@@ -277,6 +354,10 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
         .map_err(|e| ServerError::Io(format!("{e}")))?;
     let writers_arc = Arc::new(writers);
     let path_to_dds_arc = Arc::new(path_to_dds);
+    // The DTLS server shares the same DDS state — clone the handles before the
+    // plaintext accept thread below consumes `writers_arc` / `path_to_dds_arc`.
+    #[cfg(feature = "dtls")]
+    let dtls_shared = (Arc::clone(&writers_arc), Arc::clone(&path_to_dds_arc));
     let runtime_arc = Arc::clone(&runtime);
     let topic_state_acc = Arc::clone(&topic_state);
     let cfg_arc = Arc::new(cfg.clone());
@@ -331,6 +412,42 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
             }
         }
     });
+
+    // 5b. DTLS (`coaps://`) listener — shares the DDS state with the plaintext
+    // path through the same `dispatch` core (opt-in `dtls` feature, ADR 0011).
+    #[cfg(feature = "dtls")]
+    let dtls = {
+        let (dtls_writers, dtls_path_to_dds) = dtls_shared;
+        if cfg.dtls_enabled {
+            let dtls_bind = cfg
+                .bind_dtls
+                .clone()
+                .unwrap_or_else(|| default_coaps_bind(&local_addr));
+            let shutdown = Arc::new(tokio::sync::Notify::new());
+            let bound = Arc::new(Mutex::new(None));
+            let thread = spawn_dtls_server(
+                dtls_bind,
+                Arc::clone(&shutdown),
+                Arc::clone(&bound),
+                Arc::clone(&runtime),
+                dtls_writers,
+                dtls_path_to_dds,
+                Arc::clone(&topic_state),
+                Arc::clone(&block1_state),
+                metrics.clone(),
+                Arc::clone(&security_ctx),
+            )?;
+            Some(DtlsHandle {
+                thread,
+                shutdown,
+                bound,
+            })
+        } else {
+            // Not serving DTLS — drop the cloned shared handles.
+            let _ = (dtls_writers, dtls_path_to_dds);
+            None
+        }
+    };
 
     // 6. Admin-Endpoint (§5.2 Catalog/Healthz + §8.2 Metrics).
     let mut admin_thread: Option<JoinHandle<()>> = None;
@@ -395,25 +512,50 @@ pub fn start(cfg: DaemonConfig) -> Result<DaemonHandle, ServerError> {
         reload_flag,
         healthy,
         metrics: Some(metrics),
+        #[cfg(feature = "dtls")]
+        dtls,
     })
 }
 
+/// What a dispatched request wants done with the observe registry. The
+/// transport-specific caller applies it with its own [`Observer`] flavour.
+#[cfg(feature = "daemon")]
+enum ObserveDirective {
+    None,
+    Register { path: String, token: Vec<u8> },
+    Deregister { path: String, token: Vec<u8> },
+}
+
+/// Transport-agnostic outcome of handling one CoAP request: the responses to
+/// send back (in order) + an observe-registry directive. DDS writes and the
+/// per-request metric side effects already happened inside [`dispatch`]; the
+/// caller only performs the transport I/O and applies the observe directive
+/// with its transport's observer kind.
+#[cfg(feature = "daemon")]
+struct Dispatched {
+    responses: Vec<CoapMessage>,
+    observe: ObserveDirective,
+}
+
+/// Handle one decoded CoAP request against the DDS runtime. Shared by the
+/// plaintext UDP path ([`handle_request`]) and the DTLS path
+/// (`super::dtls_server`) so both transports behave identically (no drift).
 #[cfg(feature = "daemon")]
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
-fn handle_request(
+fn dispatch(
     bytes: &[u8],
     peer: SocketAddr,
-    socket: &UdpSocket,
     writers: &Arc<BTreeMap<String, EntityId>>,
     path_to_dds: &Arc<BTreeMap<String, String>>,
     runtime: &Arc<DcpsRuntime>,
-    topic_state: &Arc<Mutex<BTreeMap<String, TopicState>>>,
-    _mid: &Arc<AtomicU16>,
-    _cfg: &Arc<DaemonConfig>,
     block1_state: &Arc<Mutex<BTreeMap<BlockKey, BlockReassembler>>>,
     metrics: &BridgeMetrics,
     security: &Arc<SecurityCtx>,
-) -> Result<(), String> {
+) -> Result<Dispatched, String> {
+    let mut out = Dispatched {
+        responses: Vec::new(),
+        observe: ObserveDirective::None,
+    };
     let req = decode(bytes).map_err(|e| format!("decode: {e}"))?;
     let path = extract_uri_path(&req);
 
@@ -422,21 +564,23 @@ fn handle_request(
         let body = render_well_known_core(path_to_dds);
         let mut resp = make_response(&req, CoapCode::CONTENT, body.into_bytes());
         resp.options.push(CoapOption::content_format(40)); // application/link-format
-        send_msg(socket, &resp, peer);
-        return Ok(());
+        out.responses.push(resp);
+        return Ok(out);
     }
 
     // §7.2 — Authentication via CoAP-Option 65000 (Bearer-Token).
     let auth_token = extract_auth_token(&req);
     let subject = match authenticate_coap(&security.auth, auth_token.as_deref()) {
         Ok(s) => s,
-        Err(e) => {
+        Err(_e) => {
             metrics.errors_total.inc();
             // 4.01 Unauthorized.
-            let resp = make_response(&req, CoapCode::new(4, 1), b"unauthorized".to_vec());
-            send_msg(socket, &resp, peer);
-            metrics.frames_out_total.inc();
-            return Err(format!("auth reject: {e}"));
+            out.responses.push(make_response(
+                &req,
+                CoapCode::new(4, 1),
+                b"unauthorized".to_vec(),
+            ));
+            return Ok(out);
         }
     };
 
@@ -449,10 +593,12 @@ fn handle_request(
         if !authorize(&security.acl, &subject, AclOp::Write, dds_topic) {
             metrics.errors_total.inc();
             // 4.03 Forbidden.
-            let resp = make_response(&req, CoapCode::new(4, 3), b"forbidden".to_vec());
-            send_msg(socket, &resp, peer);
-            metrics.frames_out_total.inc();
-            return Ok(());
+            out.responses.push(make_response(
+                &req,
+                CoapCode::new(4, 3),
+                b"forbidden".to_vec(),
+            ));
+            return Ok(out);
         }
         let eid = writers.get(dds_topic).ok_or("no writer")?;
 
@@ -488,26 +634,23 @@ fn handle_request(
                 // 2.04 Changed with Block1 echo (more=false).
                 let mut resp = make_response(&req, CoapCode::CHANGED, Vec::new());
                 resp.options.push(CoapOption::block1(b1.num, false, b1.szx));
-                send_msg(socket, &resp, peer);
-                metrics.frames_out_total.inc();
+                out.responses.push(resp);
             } else {
                 // 2.31 Continue with Block1 echo (more=true).
                 let mut resp = make_response(&req, CoapCode::new(2, 31), Vec::new());
                 resp.options.push(CoapOption::block1(b1.num, true, b1.szx));
-                send_msg(socket, &resp, peer);
-                metrics.frames_out_total.inc();
+                out.responses.push(resp);
             }
-            return Ok(());
+            return Ok(out);
         }
 
         runtime
             .write_user_sample(*eid, req.payload.clone())
             .map_err(|e| format!("dds-write: {e:?}"))?;
         metrics.dds_samples_in_total.inc();
-        let resp = make_response(&req, CoapCode::CHANGED, Vec::new());
-        send_msg(socket, &resp, peer);
-        metrics.frames_out_total.inc();
-        return Ok(());
+        out.responses
+            .push(make_response(&req, CoapCode::CHANGED, Vec::new()));
+        return Ok(out);
     }
 
     if req.code == CoapCode::GET {
@@ -518,72 +661,135 @@ fn handle_request(
         // §7.3 — ACL read check for observe-register and plain GET.
         if !authorize(&security.acl, &subject, AclOp::Read, dds_topic) {
             metrics.errors_total.inc();
-            let resp = make_response(&req, CoapCode::new(4, 3), b"forbidden".to_vec());
-            send_msg(socket, &resp, peer);
-            metrics.frames_out_total.inc();
-            return Ok(());
+            out.responses.push(make_response(
+                &req,
+                CoapCode::new(4, 3),
+                b"forbidden".to_vec(),
+            ));
+            return Ok(out);
         }
         match observe {
             Some(0) => {
-                // Register.
-                if let Ok(mut st) = topic_state.lock() {
-                    let entry = st.entry(path.clone()).or_default();
-                    entry.observers.push(Observer {
-                        addr: peer,
-                        token: req.token.clone(),
-                    });
-                }
-                metrics.connections_total.inc();
-                metrics.connections_active.inc();
+                // Register — the caller inserts the transport-specific observer.
+                out.observe = ObserveDirective::Register {
+                    path: path.clone(),
+                    token: req.token.clone(),
+                };
                 // Initial response 2.05 with observe seq 0 (Spec §4.3).
                 let mut resp = make_response(&req, CoapCode::CONTENT, Vec::new());
                 resp.options.push(CoapOption::observe(0));
                 resp.options.push(CoapOption::content_format(65000));
-                send_msg(socket, &resp, peer);
-                metrics.frames_out_total.inc();
+                out.responses.push(resp);
                 let _ = dds_topic; // placeholder for catalog
-                return Ok(());
+                return Ok(out);
             }
             Some(1) => {
                 // Deregister.
-                if let Ok(mut st) = topic_state.lock() {
-                    if let Some(entry) = st.get_mut(&path) {
-                        let before = entry.observers.len();
-                        entry
-                            .observers
-                            .retain(|o| !(o.addr == peer && o.token == req.token));
-                        let removed = before - entry.observers.len();
-                        for _ in 0..removed {
-                            metrics.connections_active.dec();
-                        }
-                    }
-                }
-                let resp = make_response(&req, CoapCode::CONTENT, Vec::new());
-                send_msg(socket, &resp, peer);
-                metrics.frames_out_total.inc();
-                return Ok(());
+                out.observe = ObserveDirective::Deregister {
+                    path: path.clone(),
+                    token: req.token.clone(),
+                };
+                out.responses
+                    .push(make_response(&req, CoapCode::CONTENT, Vec::new()));
+                return Ok(out);
             }
             _ => {
-                // Plain GET — empty content (spec says 2.05 with the current sample;
-                // we have no cache layer in L1-L4).
-                let resp = make_response(&req, CoapCode::CONTENT, Vec::new());
-                send_msg(socket, &resp, peer);
-                metrics.frames_out_total.inc();
-                return Ok(());
+                // Plain GET — empty content (spec says 2.05 with the current
+                // sample; we have no cache layer in L1-L4).
+                out.responses
+                    .push(make_response(&req, CoapCode::CONTENT, Vec::new()));
+                return Ok(out);
             }
         }
     }
 
     if req.code == CoapCode::DELETE {
         // DELETE → dispose marker (L1-L3 stub: only 2.02 back).
-        let resp = make_response(&req, CoapCode::DELETED, Vec::new());
-        send_msg(socket, &resp, peer);
-        return Ok(());
+        out.responses
+            .push(make_response(&req, CoapCode::DELETED, Vec::new()));
+        return Ok(out);
     }
 
     // Unknown code — 4.00 Bad Request.
-    let resp = make_response(&req, CoapCode::BAD_REQUEST, Vec::new());
-    send_msg(socket, &resp, peer);
+    out.responses
+        .push(make_response(&req, CoapCode::BAD_REQUEST, Vec::new()));
+    Ok(out)
+}
+
+/// Apply an [`ObserveDirective`] to the shared observer registry. `make_observer`
+/// builds the transport-specific observer for a register and, for a deregister,
+/// a probe used to scope the removal to this client's endpoint.
+#[cfg(feature = "daemon")]
+fn apply_observe(
+    directive: ObserveDirective,
+    topic_state: &Arc<Mutex<BTreeMap<String, TopicState>>>,
+    metrics: &BridgeMetrics,
+    make_observer: &dyn Fn(Vec<u8>) -> Observer,
+) {
+    match directive {
+        ObserveDirective::None => {}
+        ObserveDirective::Register { path, token } => {
+            let obs = make_observer(token);
+            if let Ok(mut st) = topic_state.lock() {
+                st.entry(path).or_default().observers.push(obs);
+            }
+            metrics.connections_total.inc();
+            metrics.connections_active.inc();
+        }
+        ObserveDirective::Deregister { path, token } => {
+            let probe = make_observer(token.clone());
+            if let Ok(mut st) = topic_state.lock() {
+                if let Some(entry) = st.get_mut(&path) {
+                    let before = entry.observers.len();
+                    entry
+                        .observers
+                        .retain(|o| !(o.same_endpoint_as(&probe) && o.token() == token.as_slice()));
+                    let removed = before - entry.observers.len();
+                    for _ in 0..removed {
+                        metrics.connections_active.dec();
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Plaintext UDP path: dispatch + send the responses over the socket + apply
+/// the observe directive with a UDP (`peer`-addressed) observer.
+#[cfg(feature = "daemon")]
+#[allow(clippy::too_many_arguments)]
+fn handle_request(
+    bytes: &[u8],
+    peer: SocketAddr,
+    socket: &UdpSocket,
+    writers: &Arc<BTreeMap<String, EntityId>>,
+    path_to_dds: &Arc<BTreeMap<String, String>>,
+    runtime: &Arc<DcpsRuntime>,
+    topic_state: &Arc<Mutex<BTreeMap<String, TopicState>>>,
+    _mid: &Arc<AtomicU16>,
+    _cfg: &Arc<DaemonConfig>,
+    block1_state: &Arc<Mutex<BTreeMap<BlockKey, BlockReassembler>>>,
+    metrics: &BridgeMetrics,
+    security: &Arc<SecurityCtx>,
+) -> Result<(), String> {
+    let d = dispatch(
+        bytes,
+        peer,
+        writers,
+        path_to_dds,
+        runtime,
+        block1_state,
+        metrics,
+        security,
+    )?;
+    for resp in &d.responses {
+        send_msg(socket, resp, peer);
+        metrics.frames_out_total.inc();
+    }
+    apply_observe(d.observe, topic_state, metrics, &|token| Observer::Udp {
+        addr: peer,
+        token,
+    });
     Ok(())
 }
 
@@ -745,12 +951,218 @@ fn push_notify(
             message_type: MessageType::NonConfirmable,
             code: CoapCode::CONTENT,
             message_id: new_mid,
-            token: obs.token.clone(),
+            token: obs.token().to_vec(),
             options: vec![CoapOption::observe(seq), CoapOption::content_format(65000)],
             payload: payload.to_vec(),
         };
-        send_msg(socket, &msg, obs.addr);
+        match obs {
+            Observer::Udp { addr, .. } => send_msg(socket, &msg, addr),
+            // DTLS: hand the built notification to the owning session task,
+            // which writes it as DTLS application data. A closed channel means
+            // the session ended; the stale observer is reaped on its next
+            // deregister / topic sweep.
+            #[cfg(feature = "dtls")]
+            Observer::Dtls { tx, .. } => {
+                let _ = tx.send(msg);
+            }
+        }
     }
+}
+
+// ---------------------------------------------------------------------------
+// DTLS (`coaps://`) serving — RFC 7252 §9, opt-in `dtls` feature (ADR 0011).
+// Runs the webrtc-dtls record layer on its own tokio runtime thread and feeds
+// accepted sessions through the *same* `dispatch` core as the plaintext path,
+// so request/response + CoAP Observe behave identically over coaps://.
+// ---------------------------------------------------------------------------
+
+/// Default `coaps://` bind: same host as the plaintext bind, port 5684.
+#[cfg(feature = "dtls")]
+fn default_coaps_bind(plain: &str) -> String {
+    match plain.parse::<SocketAddr>() {
+        Ok(a) => SocketAddr::new(a.ip(), crate::dtls_transport::COAPS_PORT).to_string(),
+        Err(_) => format!("0.0.0.0:{}", crate::dtls_transport::COAPS_PORT),
+    }
+}
+
+/// Spawn the DTLS server on its own thread (hosting a tokio runtime). The bound
+/// address is published into `bound` once the listener is up.
+#[cfg(feature = "dtls")]
+#[allow(clippy::too_many_arguments)]
+fn spawn_dtls_server(
+    bind_addr: String,
+    shutdown: Arc<tokio::sync::Notify>,
+    bound: Arc<Mutex<Option<SocketAddr>>>,
+    runtime: Arc<DcpsRuntime>,
+    writers: Arc<BTreeMap<String, EntityId>>,
+    path_to_dds: Arc<BTreeMap<String, String>>,
+    topic_state: Arc<Mutex<BTreeMap<String, TopicState>>>,
+    block1_state: Arc<Mutex<BTreeMap<BlockKey, BlockReassembler>>>,
+    metrics: BridgeMetrics,
+    security: Arc<SecurityCtx>,
+) -> Result<JoinHandle<()>, ServerError> {
+    let addr: SocketAddr = bind_addr
+        .parse()
+        .map_err(|e| ServerError::Dtls(format!("dtls bind addr {bind_addr}: {e}")))?;
+    thread::Builder::new()
+        .name("coap-dtls".into())
+        .spawn(move || {
+            let rt = match tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
+                .enable_all()
+                .build()
+            {
+                Ok(rt) => rt,
+                Err(e) => {
+                    eprintln!("[zerodds-coap-bridged] dtls tokio runtime: {e}");
+                    return;
+                }
+            };
+            rt.block_on(dtls_accept_loop(
+                addr,
+                shutdown,
+                bound,
+                runtime,
+                writers,
+                path_to_dds,
+                topic_state,
+                block1_state,
+                metrics,
+                security,
+            ));
+        })
+        .map_err(|e| ServerError::Io(format!("spawn dtls thread: {e}")))
+}
+
+#[cfg(feature = "dtls")]
+#[allow(clippy::too_many_arguments)]
+async fn dtls_accept_loop(
+    addr: SocketAddr,
+    shutdown: Arc<tokio::sync::Notify>,
+    bound: Arc<Mutex<Option<SocketAddr>>>,
+    runtime: Arc<DcpsRuntime>,
+    writers: Arc<BTreeMap<String, EntityId>>,
+    path_to_dds: Arc<BTreeMap<String, String>>,
+    topic_state: Arc<Mutex<BTreeMap<String, TopicState>>>,
+    block1_state: Arc<Mutex<BTreeMap<BlockKey, BlockReassembler>>>,
+    metrics: BridgeMetrics,
+    security: Arc<SecurityCtx>,
+) {
+    let server = match crate::dtls_transport::DtlsCoapServer::bind(addr).await {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("[zerodds-coap-bridged] dtls bind {addr}: {e}");
+            return;
+        }
+    };
+    if let Ok(la) = server.local_addr().await {
+        if let Ok(mut slot) = bound.lock() {
+            *slot = Some(la);
+        }
+        eprintln!("[zerodds-coap-bridged] coaps:// (DTLS) listening on {la}");
+    }
+    let session_ctr = AtomicU64::new(1);
+    loop {
+        tokio::select! {
+            () = shutdown.notified() => break,
+            accepted = server.accept() => {
+                let session = match accepted {
+                    Ok(s) => s,
+                    Err(e) => {
+                        eprintln!("[zerodds-coap-bridged] dtls accept: {e}");
+                        continue;
+                    }
+                };
+                let sid = session_ctr.fetch_add(1, Ordering::SeqCst);
+                metrics.connections_total.inc();
+                tokio::spawn(dtls_session_task(
+                    session,
+                    sid,
+                    Arc::clone(&runtime),
+                    Arc::clone(&writers),
+                    Arc::clone(&path_to_dds),
+                    Arc::clone(&topic_state),
+                    Arc::clone(&block1_state),
+                    metrics.clone(),
+                    Arc::clone(&security),
+                ));
+            }
+        }
+    }
+}
+
+/// One accepted DTLS session: `select!` between inbound CoAP requests (handled
+/// by the shared `dispatch`) and outbound observe notifications pushed by the
+/// DDS pump threads through this session's channel.
+#[cfg(feature = "dtls")]
+#[allow(clippy::too_many_arguments)]
+async fn dtls_session_task(
+    session: crate::dtls_transport::DtlsCoapSession,
+    sid: u64,
+    runtime: Arc<DcpsRuntime>,
+    writers: Arc<BTreeMap<String, EntityId>>,
+    path_to_dds: Arc<BTreeMap<String, String>>,
+    topic_state: Arc<Mutex<BTreeMap<String, TopicState>>>,
+    block1_state: Arc<Mutex<BTreeMap<BlockKey, BlockReassembler>>>,
+    metrics: BridgeMetrics,
+    security: Arc<SecurityCtx>,
+) {
+    let peer = session.peer_addr();
+    let (notify_tx, mut notify_rx) = tokio::sync::mpsc::unbounded_channel::<CoapMessage>();
+    loop {
+        tokio::select! {
+            recv = session.recv_message() => {
+                let req = match recv {
+                    Ok(m) => m,
+                    Err(_) => break, // peer closed / DTLS error
+                };
+                let bytes = match encode(&req) {
+                    Ok(b) => b,
+                    Err(_) => { metrics.errors_total.inc(); continue; }
+                };
+                metrics.frames_in_total.inc();
+                metrics.bytes_in_total.add(bytes.len() as u64);
+                match dispatch(
+                    &bytes, peer, &writers, &path_to_dds, &runtime,
+                    &block1_state, &metrics, &security,
+                ) {
+                    Ok(d) => {
+                        for resp in &d.responses {
+                            if session.send_message(resp).await.is_ok() {
+                                metrics.frames_out_total.inc();
+                            }
+                        }
+                        let tx = notify_tx.clone();
+                        apply_observe(d.observe, &topic_state, &metrics, &move |token| {
+                            Observer::Dtls { session: sid, token, tx: tx.clone() }
+                        });
+                    }
+                    Err(e) => {
+                        metrics.errors_total.inc();
+                        eprintln!("[zerodds-coap-bridged] dtls handle err from {peer}: {e}");
+                    }
+                }
+            }
+            note = notify_rx.recv() => {
+                if let Some(msg) = note {
+                    let _ = session.send_message(&msg).await;
+                }
+            }
+        }
+    }
+    // Session ended — reap its observers + keep `connections_active` accurate.
+    if let Ok(mut st) = topic_state.lock() {
+        for entry in st.values_mut() {
+            let before = entry.observers.len();
+            entry
+                .observers
+                .retain(|o| !matches!(o, Observer::Dtls { session, .. } if *session == sid));
+            for _ in 0..(before - entry.observers.len()) {
+                metrics.connections_active.dec();
+            }
+        }
+    }
+    let _ = session.close().await;
 }
 
 #[cfg(feature = "daemon")]

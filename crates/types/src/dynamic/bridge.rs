@@ -18,16 +18,27 @@
 //! `create_type_w_type_object_in` additionally follows composite member
 //! `EquivalenceHash` references through a [`crate::resolve::TypeRegistry`] so a
 //! struct/union with nested struct/union/enum/bitmask/bitset MEMBERS yields a
-//! fully-populated `DynamicType`. Residual (honest `Unsupported`): a COLLECTION
-//! whose element is itself a composite keeps a shallow element descriptor (the
-//! `TypeDescriptor::element_type` model holds a descriptor, not a full
-//! `DynamicType`), Minimal TypeObjects, and alias-to-composite targets.
+//! fully-populated `DynamicType`. Collections whose element/key/value is itself a
+//! composite (`sequence<Struct>`, `Struct[N]`, `map<K,Struct>`, and arbitrary
+//! nesting) are also fully resolved — retained via [`super::collection`] so the
+//! reflective codec walks them. `map<K,V>` is codec-complete (byte-identical to
+//! the compiled `BTreeMap`); composite `typedef` targets resolve transparently.
+//!
+//! **Minimal TypeObjects** resolve too (`resolve_minimal`): a Minimal object
+//! carries the full structure — member ids, types, flags, nesting — in its shared
+//! `common` fields, so a Minimal-resolved type encodes/decodes wire data
+//! byte-identically to its Complete twin. The one intrinsic difference is that a
+//! Minimal object holds only 4-byte name *hashes* (by XTypes design), so member /
+//! type names are synthetic (`m_<hash>`) unless the Complete form is co-published.
+//! (The bare, registry-less `create_type_w_type_object` still declines Minimal,
+//! since nested minimal-hash members need the registry.)
 
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 use crate::type_identifier::{PrimitiveKind, TypeIdentifier};
+use crate::type_object::common::NameHash;
 use crate::type_object::common::{CommonStructMember, CommonUnionMember};
 use crate::type_object::complete::{
     CompleteAliasBody, CompleteAliasHeader, CompleteAliasType, CompleteAnnotationParameter,
@@ -47,11 +58,12 @@ use crate::type_object::flags::{
 use crate::type_object::minimal::CommonDiscriminatorMember;
 use crate::type_object::minimal::{
     CommonBitfield, CommonBitflag, CommonCollectionElement, CommonEnumeratedHeader,
-    CommonEnumeratedLiteral,
+    CommonEnumeratedLiteral, MinimalTypeObject,
 };
 use crate::type_object::{CompleteTypeObject, TypeObject};
 
 use super::builder::{DynamicTypeBuilder, DynamicTypeBuilderFactory};
+use super::collection;
 use super::descriptor::{ExtensibilityKind, MemberDescriptor, TypeDescriptor, TypeKind};
 use super::error::DynamicError;
 use super::type_::DynamicType;
@@ -647,24 +659,23 @@ impl DynamicTypeBuilderFactory {
     /// bitset MEMBERS yields a fully-populated `DynamicType` (members carry
     /// their own members). Covers all 10 top-level Complete kinds.
     ///
-    /// Residual (honest `Unsupported`, not silent): a COLLECTION whose element
-    /// is itself a composite keeps a shallow element descriptor — the
-    /// `TypeDescriptor::element_type` model holds a descriptor, not a full
-    /// `DynamicType`, so `sequence<NestedStruct>` cannot yet carry the nested
-    /// members (needs a model change); likewise Minimal TypeObjects and
-    /// alias-to-composite targets.
+    /// Collections whose element/key/value is composite (`sequence<NestedStruct>`,
+    /// `NestedStruct[N]`, `map<K,Struct>`, and arbitrary nesting) are fully
+    /// resolved too, retained via [`super::collection`] so the codec walks the
+    /// nested members. Composite `typedef` targets resolve transparently, and
+    /// `TypeObject::Minimal` resolves via [`resolve_minimal`] (wire-identical to
+    /// Complete; only the names are synthetic hashes).
     ///
     /// # Errors
-    /// `Unsupported` for the residual cases above and unresolvable hashes.
+    /// `Unsupported` only for unresolvable registry hashes and minimal annotation
+    /// types (annotations are metadata, not data members).
     pub fn create_type_w_type_object_in(
         type_obj: &TypeObject,
         registry: &crate::resolve::TypeRegistry,
     ) -> Result<DynamicType, DynamicError> {
         match type_obj {
             TypeObject::Complete(c) => resolve_complete(c, registry),
-            TypeObject::Minimal(_) => Err(DynamicError::unsupported(
-                "minimal-typeobject → dynamic-type pending C4.2 TypeRegistry",
-            )),
+            TypeObject::Minimal(m) => resolve_minimal(m, registry, "MinimalType"),
         }
     }
 }
@@ -688,17 +699,58 @@ fn resolve_type_id(
         TypeIdentifier::String8Large { bound } => Ok(F::create_string_type(*bound)),
         TypeIdentifier::String16Small { bound } => Ok(F::create_wstring_type(u32::from(*bound))),
         TypeIdentifier::String16Large { bound } => Ok(F::create_wstring_type(*bound)),
-        // Plain collections: build the collection DynamicType. A composite
-        // element keeps a shallow element descriptor (model residual above).
-        TypeIdentifier::PlainSequenceSmall { .. }
-        | TypeIdentifier::PlainSequenceLarge { .. }
-        | TypeIdentifier::PlainArraySmall { .. }
-        | TypeIdentifier::PlainArrayLarge { .. }
-        | TypeIdentifier::PlainMapSmall { .. }
-        | TypeIdentifier::PlainMapLarge { .. } => {
-            let kind = type_id_to_kind(ti)?;
-            let desc = type_id_to_descriptor(ti, kind)?;
-            F::create_type(desc)?.build()
+        // Plain (anonymous) collections: resolve the element FULLY and retain it
+        // via `collection::{sequence_of,array_of}` so a composite element
+        // (`sequence<Struct>`, `Struct[N]`) — and arbitrary nesting like
+        // `sequence<sequence<Struct>>` — carries its members for the reflective
+        // codec. Scalar / string / nested-collection elements resolve through the
+        // same recursion.
+        TypeIdentifier::PlainSequenceSmall { bound, element, .. } => {
+            let elem = resolve_type_id(element, registry)?;
+            Ok(collection::sequence_of(elem, u32::from(*bound)))
+        }
+        TypeIdentifier::PlainSequenceLarge { bound, element, .. } => {
+            let elem = resolve_type_id(element, registry)?;
+            Ok(collection::sequence_of(elem, *bound))
+        }
+        TypeIdentifier::PlainArraySmall {
+            array_bounds,
+            element,
+            ..
+        } => {
+            let elem = resolve_type_id(element, registry)?;
+            let dims = array_bounds.iter().map(|b| u32::from(*b)).collect();
+            Ok(collection::array_of(elem, dims, "<arr>"))
+        }
+        TypeIdentifier::PlainArrayLarge {
+            array_bounds,
+            element,
+            ..
+        } => {
+            let elem = resolve_type_id(element, registry)?;
+            Ok(collection::array_of(elem, array_bounds.clone(), "<arr>"))
+        }
+        // Plain map: resolve BOTH key and value fully and retain them via
+        // `collection::map_of` so a composite key/value carries its members.
+        TypeIdentifier::PlainMapSmall {
+            bound,
+            key,
+            element,
+            ..
+        } => {
+            let k = resolve_type_id(key, registry)?;
+            let v = resolve_type_id(element, registry)?;
+            Ok(collection::map_of(k, v, u32::from(*bound), "<map>"))
+        }
+        TypeIdentifier::PlainMapLarge {
+            bound,
+            key,
+            element,
+            ..
+        } => {
+            let k = resolve_type_id(key, registry)?;
+            let v = resolve_type_id(element, registry)?;
+            Ok(collection::map_of(k, v, *bound, "<map>"))
         }
         TypeIdentifier::EquivalenceHashComplete(h) => {
             let c = registry.get_complete(h).ok_or_else(|| {
@@ -706,9 +758,18 @@ fn resolve_type_id(
             })?;
             resolve_complete(c, registry)
         }
-        TypeIdentifier::EquivalenceHashMinimal(_) => Err(DynamicError::unsupported(
-            "minimal composite member → dynamic-type pending C4.2",
-        )),
+        TypeIdentifier::EquivalenceHashMinimal(h) => {
+            let m = registry.get_minimal(h).ok_or_else(|| {
+                DynamicError::unsupported(
+                    "minimal composite member: EquivalenceHash not in registry",
+                )
+            })?;
+            let name = format!(
+                "T_{:08x}",
+                u32::from_be_bytes([h.0[0], h.0[1], h.0[2], h.0[3]])
+            );
+            resolve_minimal(m, registry, &name)
+        }
         other => Err(DynamicError::unsupported(format!(
             "resolve_type_id: {other:?} not yet supported"
         ))),
@@ -797,20 +858,34 @@ fn resolve_complete(
             b.build()
         }
         CompleteTypeObject::Alias(a) => {
-            // Leaf alias targets resolve fully; a composite target keeps a
-            // shallow descriptor (model residual).
             let target_kind = type_id_to_kind(&a.body.related_type)?;
-            let target = type_id_to_descriptor(&a.body.related_type, target_kind)?;
-            let mut desc = bare_descriptor(TypeKind::Alias, a.header.detail.type_name.clone());
-            desc.element_type = Some(alloc::boxed::Box::new(target));
-            F::create_type(desc)?.build()
+            if matches!(
+                target_kind,
+                TypeKind::Structure
+                    | TypeKind::Union
+                    | TypeKind::Sequence
+                    | TypeKind::Array
+                    | TypeKind::Map
+            ) {
+                // A typedef has the same wire form as its target, so a composite /
+                // collection target is resolved TRANSPARENTLY (fully, members
+                // carried) rather than kept as a shallow alias node.
+                resolve_type_id(&a.body.related_type, registry)
+            } else {
+                // Scalar / enum / bitmask target: a shallow alias node suffices
+                // (the codec rebuilds the scalar target from the descriptor).
+                let target = type_id_to_descriptor(&a.body.related_type, target_kind)?;
+                let mut desc = bare_descriptor(TypeKind::Alias, a.header.detail.type_name.clone());
+                desc.element_type = Some(alloc::boxed::Box::new(target));
+                F::create_type(desc)?.build()
+            }
         }
         CompleteTypeObject::Sequence(_)
         | CompleteTypeObject::Array(_)
         | CompleteTypeObject::Map(_) => {
-            // Named (non-anonymous) collection TypeObject: build via descriptor;
-            // composite elements stay shallow (model residual).
-            resolve_named_collection(c)
+            // Named (non-anonymous) collection TypeObject: resolve the element
+            // fully through the registry so composite elements carry their members.
+            resolve_named_collection(c, registry)
         }
         CompleteTypeObject::Annotation(an) => {
             let desc = bare_descriptor(TypeKind::Annotation, an.detail.type_name.clone());
@@ -826,6 +901,144 @@ fn resolve_complete(
             }
             b.build()
         }
+    }
+}
+
+/// A stable, non-empty synthetic name for a Minimal member/type: its 4-byte
+/// `NameHash` rendered as hex. A Minimal TypeObject carries no readable names by
+/// XTypes design — only these hashes — so this is the best name recoverable from
+/// a bare Minimal form (the Complete form, if co-published, has the real names).
+fn hash_name(prefix: &str, h: &NameHash) -> String {
+    format!("{prefix}_{:08x}", u32::from_be_bytes(h.0))
+}
+
+/// Builds a full `DynamicType` from a `MinimalTypeObject`. A Minimal object
+/// carries the FULL structure — member ids, types, flags, nesting — in its
+/// shared `common` fields (identical to Complete); only the readable member/type
+/// NAMES are absent (4-byte hashes). Because the reflective codec keys on member
+/// ids + types, a Minimal-resolved type encodes/decodes wire data byte-identically
+/// to its Complete twin; only reflection shows hash-based names.
+/// zerodds-lint: recursion-depth 64 (runtime DynamicData codec; bounded by type nesting).
+fn resolve_minimal(
+    m: &MinimalTypeObject,
+    registry: &crate::resolve::TypeRegistry,
+    type_name: &str,
+) -> Result<DynamicType, DynamicError> {
+    use super::builder::DynamicTypeBuilderFactory as F;
+    match m {
+        MinimalTypeObject::Struct(s) => {
+            let mut desc = TypeDescriptor::structure(type_name.to_string());
+            desc.extensibility_kind = flag_bits_to_extensibility(s.struct_flags.0);
+            if (s.struct_flags.0 & StructTypeFlag::IS_NESTED) != 0 {
+                desc.is_nested = true;
+            }
+            let mut b = F::create_type(desc)?;
+            for (idx, mem) in s.member_seq.iter().enumerate() {
+                let mt = resolve_type_id(&mem.common.member_type_id, registry)?;
+                let mut md = MemberDescriptor::new(
+                    hash_name("m", &mem.detail),
+                    mem.common.member_id,
+                    mt.descriptor().clone(),
+                );
+                md.index = u32::try_from(idx).unwrap_or(u32::MAX);
+                md.is_key = (mem.common.member_flags.0 & StructMemberFlag::IS_KEY) != 0;
+                md.is_optional = (mem.common.member_flags.0 & StructMemberFlag::IS_OPTIONAL) != 0;
+                md.is_must_understand =
+                    (mem.common.member_flags.0 & StructMemberFlag::IS_MUST_UNDERSTAND) != 0;
+                md.is_shared = (mem.common.member_flags.0 & StructMemberFlag::IS_EXTERNAL) != 0;
+                b.add_member_resolved(md, mt)?;
+            }
+            b.build()
+        }
+        MinimalTypeObject::Union(u) => {
+            let disc_kind = type_id_to_kind(&u.discriminator.common.type_id)?;
+            let disc_desc = type_id_to_descriptor(&u.discriminator.common.type_id, disc_kind)?;
+            let mut b = F::create_type(TypeDescriptor::union(type_name.to_string(), disc_desc))?;
+            for mem in &u.member_seq {
+                let mt = resolve_type_id(&mem.common.type_id, registry)?;
+                let mut md = MemberDescriptor::new(
+                    hash_name("m", &mem.detail),
+                    mem.common.member_id,
+                    mt.descriptor().clone(),
+                );
+                md.label = mem.common.label_seq.iter().map(|&v| i64::from(v)).collect();
+                md.is_default_label =
+                    (mem.common.member_flags.0 & UnionMemberFlag::IS_DEFAULT) != 0;
+                b.add_member_resolved(md, mt)?;
+            }
+            b.build()
+        }
+        MinimalTypeObject::Enumerated(e) => {
+            let mut desc = TypeDescriptor::enumeration(type_name.to_string());
+            desc.bound = alloc::vec![u32::from(e.header.common.bit_bound)];
+            let mut b = F::create_type(desc)?;
+            for lit in &e.literal_seq {
+                let id = u32::try_from(lit.common.value).unwrap_or(0);
+                let mut md = MemberDescriptor::new(
+                    hash_name("e", &lit.detail),
+                    id,
+                    TypeDescriptor::primitive(TypeKind::Int32, "int32"),
+                );
+                md.is_default_label =
+                    (lit.common.flags.0 & EnumLiteralFlag::IS_DEFAULT_LITERAL) != 0;
+                b.add_member(md)?;
+            }
+            b.build()
+        }
+        MinimalTypeObject::Bitmask(bm) => {
+            let mut desc = bare_descriptor(TypeKind::Bitmask, type_name.to_string());
+            desc.bound = alloc::vec![u32::from(bm.bit_bound)];
+            let mut b = F::create_type(desc)?;
+            for f in &bm.flag_seq {
+                let md = MemberDescriptor::new(
+                    hash_name("f", &f.detail),
+                    u32::from(f.common.position),
+                    TypeDescriptor::primitive(TypeKind::Boolean, "boolean"),
+                );
+                b.add_member(md)?;
+            }
+            b.build()
+        }
+        MinimalTypeObject::Bitset(bs) => {
+            let desc = bare_descriptor(TypeKind::Bitset, type_name.to_string());
+            let mut b = F::create_type(desc)?;
+            for f in &bs.field_seq {
+                let holder = PrimitiveKind::from_u8(f.common.holder_type).ok_or_else(|| {
+                    DynamicError::inconsistent(format!(
+                        "bitset field holder_type {} is not a primitive",
+                        f.common.holder_type
+                    ))
+                })?;
+                let mut md = MemberDescriptor::new(
+                    hash_name("f", &f.name_hash),
+                    u32::from(f.common.position),
+                    TypeDescriptor::primitive(primitive_kind_to_type_kind(holder), "holder"),
+                );
+                md.bit_bound = Some(f.common.bitcount);
+                b.add_member(md)?;
+            }
+            b.build()
+        }
+        MinimalTypeObject::Alias(a) => {
+            // Typedefs are transparent (same wire form as their target).
+            resolve_type_id(&a.body.common.related_type, registry)
+        }
+        MinimalTypeObject::Sequence(s) => {
+            let elem = resolve_type_id(&s.element.common.type_id, registry)?;
+            Ok(collection::sequence_named(type_name, elem, s.bound))
+        }
+        MinimalTypeObject::Array(a) => {
+            let elem = resolve_type_id(&a.element.common.type_id, registry)?;
+            Ok(collection::array_of(elem, a.bound_seq.clone(), type_name))
+        }
+        MinimalTypeObject::Map(mp) => {
+            let key = resolve_type_id(&mp.key.common.type_id, registry)?;
+            let value = resolve_type_id(&mp.element.common.type_id, registry)?;
+            Ok(collection::map_of(key, value, mp.bound, type_name))
+        }
+        MinimalTypeObject::Annotation(_) => Err(DynamicError::unsupported(
+            "minimal annotation type → dynamic-type (annotations are metadata, not data members)",
+        )),
     }
 }
 
@@ -860,35 +1073,40 @@ fn complete_struct_to_builder_in(
     Ok(b)
 }
 
-/// Builds a top-level named collection (Sequence/Array/Map) `CompleteTypeObject`
-/// into a `DynamicType` via its descriptor.
-fn resolve_named_collection(c: &CompleteTypeObject) -> Result<DynamicType, DynamicError> {
-    use super::builder::DynamicTypeBuilderFactory as F;
-    let desc = match c {
+/// Builds a top-level named collection (Sequence/Array) `CompleteTypeObject`
+/// into a `DynamicType`, resolving the element fully through `registry` (so a
+/// composite element carries its members via `collection::{sequence_named,
+/// array_of,map_of}`), so composite keys/values/elements carry their members.
+fn resolve_named_collection(
+    c: &CompleteTypeObject,
+    registry: &crate::resolve::TypeRegistry,
+) -> Result<DynamicType, DynamicError> {
+    match c {
         CompleteTypeObject::Sequence(s) => {
-            let ek = type_id_to_kind(&s.element.common.type_id)?;
-            let ed = type_id_to_descriptor(&s.element.common.type_id, ek)?;
-            TypeDescriptor::sequence(s.detail.type_name.clone(), ed, s.bound)
+            let elem = resolve_type_id(&s.element.common.type_id, registry)?;
+            Ok(collection::sequence_named(
+                &s.detail.type_name,
+                elem,
+                s.bound,
+            ))
         }
         CompleteTypeObject::Array(a) => {
-            let ek = type_id_to_kind(&a.element.common.type_id)?;
-            let ed = type_id_to_descriptor(&a.element.common.type_id, ek)?;
-            TypeDescriptor::array(a.detail.type_name.clone(), ed, a.bound_seq.clone())
+            let elem = resolve_type_id(&a.element.common.type_id, registry)?;
+            Ok(collection::array_of(
+                elem,
+                a.bound_seq.clone(),
+                &a.detail.type_name,
+            ))
         }
         CompleteTypeObject::Map(m) => {
-            let kk = type_id_to_kind(&m.key.common.type_id)?;
-            let kd = type_id_to_descriptor(&m.key.common.type_id, kk)?;
-            let vk = type_id_to_kind(&m.element.common.type_id)?;
-            let vd = type_id_to_descriptor(&m.element.common.type_id, vk)?;
-            TypeDescriptor::map(m.detail.type_name.clone(), kd, vd, m.bound)
+            let key = resolve_type_id(&m.key.common.type_id, registry)?;
+            let value = resolve_type_id(&m.element.common.type_id, registry)?;
+            Ok(collection::map_of(key, value, m.bound, &m.detail.type_name))
         }
-        other => {
-            return Err(DynamicError::unsupported(format!(
-                "resolve_named_collection called on non-collection: {other:?}"
-            )));
-        }
-    };
-    F::create_type(desc)?.build()
+        other => Err(DynamicError::unsupported(format!(
+            "resolve_named_collection called on non-collection: {other:?}"
+        ))),
+    }
 }
 
 /// A bare `TypeDescriptor` carrying just `kind` + `name` (all structural fields
@@ -1413,8 +1631,9 @@ mod tests {
     }
 
     #[test]
-    fn create_type_w_minimal_typeobject_is_unsupported() {
-        use crate::type_object::MinimalTypeObject;
+    fn create_type_w_minimal_typeobject_bare_needs_registry() {
+        // The BARE overload has no registry to resolve nested minimal hashes, so
+        // it still declines Minimal — callers use the registry-aware `_in` form.
         use crate::type_object::minimal::{MinimalStructHeader, MinimalStructType};
         let m = MinimalStructType {
             struct_flags: StructTypeFlag::default(),
@@ -1426,6 +1645,85 @@ mod tests {
         let to = TypeObject::Minimal(MinimalTypeObject::Struct(m));
         let err = DynamicTypeBuilderFactory::create_type_w_type_object(&to).unwrap_err();
         assert!(matches!(err, DynamicError::Unsupported(_)));
+    }
+
+    /// A Minimal TypeObject carries the FULL structure (member ids + types) — only
+    /// the readable names are hashes. So a Minimal-resolved type encodes/decodes
+    /// wire data BYTE-IDENTICALLY to its Complete twin; only reflection differs.
+    #[test]
+    fn minimal_resolves_wire_identical_to_complete() {
+        use crate::builder::TypeObjectBuilder;
+        use crate::dynamic::DynamicData;
+        use crate::dynamic::codec::{decode_dynamic, encode_dynamic};
+
+        let reg = crate::resolve::TypeRegistry::new();
+        let sb = TypeObjectBuilder::struct_type("::Point")
+            .member("x", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| m)
+            .member("y", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| m);
+        let complete = TypeObject::Complete(CompleteTypeObject::Struct(sb.build_complete()));
+        let minimal = TypeObject::Minimal(MinimalTypeObject::Struct(sb.build_minimal()));
+
+        let ct = DynamicTypeBuilderFactory::create_type_w_type_object_in(&complete, &reg).unwrap();
+        let mt = DynamicTypeBuilderFactory::create_type_w_type_object_in(&minimal, &reg).unwrap();
+
+        assert_eq!(mt.kind(), TypeKind::Structure);
+        assert_eq!(mt.member_count(), 2, "minimal carries the full structure");
+        assert!(
+            mt.member_by_name("x").is_none(),
+            "minimal has hash names, not the readable 'x'"
+        );
+
+        // Member IDs are identical between the forms → identical wire encoding.
+        let cx = ct.member_by_name("x").unwrap().id();
+        let cy = ct.member_by_name("y").unwrap().id();
+        let mut dc = DynamicData::new(ct.clone());
+        dc.set_int32_value(cx, 11).unwrap();
+        dc.set_int32_value(cy, 22).unwrap();
+        let mut dm = DynamicData::new(mt.clone());
+        dm.set_int32_value(cx, 11).unwrap();
+        dm.set_int32_value(cy, 22).unwrap();
+
+        for xcdr2 in [true, false] {
+            let bc = encode_dynamic(&dc, xcdr2, false).unwrap();
+            let bm = encode_dynamic(&dm, xcdr2, false).unwrap();
+            assert_eq!(
+                bc, bm,
+                "minimal-resolved encodes byte-identically to complete xcdr2={xcdr2}"
+            );
+            let back = decode_dynamic(&mt, &bm, xcdr2, false).unwrap();
+            assert_eq!(back.get_int32_value(cx).unwrap(), 11);
+        }
+    }
+
+    /// A Minimal struct member referenced by `EquivalenceHashMinimal` resolves
+    /// fully through the registry (the old "pending C4.2" residual).
+    #[test]
+    fn minimal_nested_member_resolves_via_registry() {
+        use crate::builder::TypeObjectBuilder;
+        use crate::resolve::TypeRegistry;
+        use crate::type_identifier::EquivalenceHash;
+
+        let inner = TypeObjectBuilder::struct_type("::Point")
+            .member("x", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| m)
+            .build_minimal();
+        let h = EquivalenceHash([0x7; 14]);
+        let mut reg = TypeRegistry::new();
+        reg.insert_minimal(h, MinimalTypeObject::Struct(inner));
+
+        let outer = TypeObjectBuilder::struct_type("::Line")
+            .member("p", TypeIdentifier::EquivalenceHashMinimal(h), |m| m)
+            .build_minimal();
+        let to = TypeObject::Minimal(MinimalTypeObject::Struct(outer));
+        let dt = DynamicTypeBuilderFactory::create_type_w_type_object_in(&to, &reg).unwrap();
+
+        assert_eq!(dt.member_count(), 1);
+        let p = dt.member_by_index(0).unwrap();
+        assert_eq!(
+            p.dynamic_type().kind(),
+            TypeKind::Structure,
+            "nested minimal struct resolved fully"
+        );
+        assert_eq!(p.dynamic_type().member_count(), 1);
     }
 
     #[test]
@@ -1475,5 +1773,288 @@ mod tests {
             DynamicTypeBuilderFactory::create_type_w_type_object_in(&bad, &reg),
             Err(DynamicError::Unsupported(_))
         ));
+    }
+
+    // ------------------------------------------------------------------
+    // O3: composite-in-collection — the element of a collection is itself a
+    // composite and must resolve to a fully-populated DynamicType (its members
+    // carried), not a shallow name-only descriptor.
+    // ------------------------------------------------------------------
+
+    /// Registers `::Point { x: int32, y: int32 }` and returns `(registry, hash)`.
+    fn point_registry() -> (
+        crate::resolve::TypeRegistry,
+        crate::type_identifier::EquivalenceHash,
+    ) {
+        use crate::builder::TypeObjectBuilder;
+        use crate::resolve::TypeRegistry;
+        use crate::type_identifier::EquivalenceHash;
+        let point = TypeObjectBuilder::struct_type("::Point")
+            .member("x", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| m)
+            .member("y", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| m)
+            .build_complete();
+        let h = EquivalenceHash([0x11; 14]);
+        let mut reg = TypeRegistry::new();
+        reg.insert_complete(h, CompleteTypeObject::Struct(point));
+        (reg, h)
+    }
+
+    /// A struct member `field: <ti>` built through the bridge with `registry`.
+    fn resolve_member(
+        ti: TypeIdentifier,
+        reg: &crate::resolve::TypeRegistry,
+    ) -> Result<DynamicType, DynamicError> {
+        use crate::builder::TypeObjectBuilder;
+        let s = TypeObjectBuilder::struct_type("::Holder")
+            .member("field", ti, |m| m)
+            .build_complete();
+        let to = TypeObject::Complete(CompleteTypeObject::Struct(s));
+        let dt = DynamicTypeBuilderFactory::create_type_w_type_object_in(&to, reg)?;
+        Ok(dt
+            .member_by_name("field")
+            .expect("field member")
+            .dynamic_type()
+            .clone())
+    }
+
+    fn seq_of(elem: TypeIdentifier) -> TypeIdentifier {
+        TypeIdentifier::PlainSequenceSmall {
+            header: crate::type_identifier::PlainCollectionHeader::default(),
+            bound: 0,
+            element: alloc::boxed::Box::new(elem),
+        }
+    }
+
+    #[test]
+    fn resolve_seq_of_struct_fully_via_registry() {
+        let (reg, h) = point_registry();
+        let seq = resolve_member(seq_of(TypeIdentifier::EquivalenceHashComplete(h)), &reg).unwrap();
+        assert_eq!(seq.kind(), TypeKind::Sequence);
+        let elem = collection::resolved_element(&seq).expect("resolved composite element");
+        assert_eq!(
+            elem.kind(),
+            TypeKind::Structure,
+            "seq element is a full struct"
+        );
+        assert_eq!(elem.member_count(), 2, "Point's x + y survived");
+        assert!(elem.member_by_name("x").is_some());
+        assert!(elem.member_by_name("y").is_some());
+    }
+
+    #[test]
+    fn resolve_array_of_struct_fully_via_registry() {
+        let (reg, h) = point_registry();
+        let arr_ti = TypeIdentifier::PlainArraySmall {
+            header: crate::type_identifier::PlainCollectionHeader::default(),
+            array_bounds: alloc::vec![3],
+            element: alloc::boxed::Box::new(TypeIdentifier::EquivalenceHashComplete(h)),
+        };
+        let arr = resolve_member(arr_ti, &reg).unwrap();
+        assert_eq!(arr.kind(), TypeKind::Array);
+        let elem = collection::resolved_element(&arr).expect("resolved composite element");
+        assert_eq!(elem.kind(), TypeKind::Structure);
+        assert_eq!(elem.member_count(), 2);
+    }
+
+    #[test]
+    fn resolve_seq_of_seq_of_struct_nested() {
+        let (reg, h) = point_registry();
+        let nested = seq_of(seq_of(TypeIdentifier::EquivalenceHashComplete(h)));
+        let outer = resolve_member(nested, &reg).unwrap();
+        assert_eq!(outer.kind(), TypeKind::Sequence);
+        let inner = collection::resolved_element(&outer).expect("inner sequence");
+        assert_eq!(
+            inner.kind(),
+            TypeKind::Sequence,
+            "element is itself a sequence"
+        );
+        let leaf = collection::resolved_element(inner).expect("leaf struct");
+        assert_eq!(leaf.kind(), TypeKind::Structure);
+        assert_eq!(
+            leaf.member_count(),
+            2,
+            "innermost Point still carries its members"
+        );
+    }
+
+    #[test]
+    fn resolve_seq_of_scalar_still_works() {
+        // Regression: a scalar element must keep round-tripping (no composite).
+        let reg = crate::resolve::TypeRegistry::new();
+        let seq = resolve_member(
+            seq_of(TypeIdentifier::Primitive(PrimitiveKind::Int32)),
+            &reg,
+        )
+        .unwrap();
+        assert_eq!(seq.kind(), TypeKind::Sequence);
+        let elem = collection::resolved_element(&seq).expect("scalar element retained");
+        assert_eq!(elem.kind(), TypeKind::Int32);
+    }
+
+    #[test]
+    fn resolve_map_of_struct_fully_via_registry() {
+        // map<int32, Point> — key stays scalar, value resolves to a full Point.
+        let (reg, h) = point_registry();
+        let map_ti = TypeIdentifier::PlainMapSmall {
+            header: crate::type_identifier::PlainCollectionHeader::default(),
+            bound: 0,
+            key_flags: crate::type_identifier::CollectionElementFlag(0),
+            key: alloc::boxed::Box::new(TypeIdentifier::Primitive(PrimitiveKind::Int32)),
+            element: alloc::boxed::Box::new(TypeIdentifier::EquivalenceHashComplete(h)),
+        };
+        let map = resolve_member(map_ti, &reg).unwrap();
+        assert_eq!(map.kind(), TypeKind::Map);
+        let key = collection::resolved_map_key(&map).expect("resolved key");
+        let val = collection::resolved_map_value(&map).expect("resolved value");
+        assert_eq!(key.kind(), TypeKind::Int32);
+        assert_eq!(
+            val.kind(),
+            TypeKind::Structure,
+            "map value is a full struct"
+        );
+        assert_eq!(val.member_count(), 2, "Point's x + y survived");
+    }
+
+    /// End-to-end: a `sequence<Point>` type built via the TypeObject BRIDGE
+    /// (not hand-assembled) is codec-usable — encode → decode round-trips
+    /// byte-exact and the nested Point members survive on the wire. This is the
+    /// O3 guarantee proven against the real reflective codec.
+    #[test]
+    fn bridge_built_seq_of_struct_roundtrips_on_the_wire() {
+        use crate::builder::TypeObjectBuilder;
+        use crate::dynamic::codec::{decode_dynamic, encode_dynamic};
+        use crate::dynamic::{DynamicData, DynamicValue};
+
+        let (reg, h) = point_registry();
+        let path = TypeObjectBuilder::struct_type("::Path")
+            .member(
+                "pts",
+                seq_of(TypeIdentifier::EquivalenceHashComplete(h)),
+                |m| m,
+            )
+            .build_complete();
+        let to = TypeObject::Complete(CompleteTypeObject::Struct(path));
+        let ty = DynamicTypeBuilderFactory::create_type_w_type_object_in(&to, &reg).unwrap();
+
+        let pts_member = ty.member_by_name("pts").expect("pts");
+        let pts_id = pts_member.id();
+        let elem = collection::resolved_element(pts_member.dynamic_type()).expect("elem");
+        let xid = elem.member_by_name("x").unwrap().id();
+        let yid = elem.member_by_name("y").unwrap().id();
+
+        let mut p0 = DynamicData::new(elem.clone());
+        p0.set_int32_value(xid, 3).unwrap();
+        p0.set_int32_value(yid, 4).unwrap();
+        let mut p1 = DynamicData::new(elem.clone());
+        p1.set_int32_value(xid, 5).unwrap();
+        p1.set_int32_value(yid, 6).unwrap();
+
+        let mut d = DynamicData::new(ty.clone());
+        d.set_sequence_value(pts_id, alloc::vec![p0, p1]).unwrap();
+
+        for xcdr2 in [true, false] {
+            let bytes = encode_dynamic(&d, xcdr2, false).expect("encode");
+            let back = decode_dynamic(&ty, &bytes, xcdr2, false).expect("decode");
+            let DynamicValue::Sequence(v) = back.get_value(pts_id).unwrap() else {
+                panic!("pts is a sequence")
+            };
+            assert_eq!(v.len(), 2);
+            assert_eq!(v[0].dynamic_type().kind(), TypeKind::Structure);
+            assert_eq!(v[0].get_int32_value(xid).unwrap(), 3);
+            assert_eq!(v[1].get_int32_value(yid).unwrap(), 6);
+            assert_eq!(
+                encode_dynamic(&back, xcdr2, false).unwrap(),
+                bytes,
+                "byte-exact bridge-built seq<struct> xcdr2={xcdr2}"
+            );
+        }
+    }
+
+    /// End-to-end: a `map<i32,Point>` built via the bridge round-trips byte-exact
+    /// through the shared codec, with the composite value carrying its members.
+    #[test]
+    fn bridge_built_map_roundtrips_on_the_wire() {
+        use crate::builder::TypeObjectBuilder;
+        use crate::dynamic::codec::{decode_dynamic, encode_dynamic};
+        use crate::dynamic::{DynamicData, DynamicValue};
+
+        let (reg, h) = point_registry();
+        let map_ti = TypeIdentifier::PlainMapSmall {
+            header: crate::type_identifier::PlainCollectionHeader::default(),
+            bound: 0,
+            key_flags: crate::type_identifier::CollectionElementFlag(0),
+            key: alloc::boxed::Box::new(TypeIdentifier::Primitive(PrimitiveKind::Int32)),
+            element: alloc::boxed::Box::new(TypeIdentifier::EquivalenceHashComplete(h)),
+        };
+        let holder = TypeObjectBuilder::struct_type("::Holder")
+            .member("m", map_ti, |m| m)
+            .build_complete();
+        let to = TypeObject::Complete(CompleteTypeObject::Struct(holder));
+        let ty = DynamicTypeBuilderFactory::create_type_w_type_object_in(&to, &reg).unwrap();
+
+        let m_id = ty.member_by_name("m").unwrap().id();
+        let map_ty = ty.member_by_name("m").unwrap().dynamic_type().clone();
+        let kt = collection::resolved_map_key(&map_ty).unwrap().clone();
+        let vt = collection::resolved_map_value(&map_ty).unwrap().clone();
+        let xid = vt.member_by_name("x").unwrap().id();
+        let yid = vt.member_by_name("y").unwrap().id();
+
+        let mut kd = DynamicData::new(kt.clone());
+        kd.set_value_raw(0, DynamicValue::Int32(9));
+        let mut vd = DynamicData::new(vt.clone());
+        vd.set_int32_value(xid, 3).unwrap();
+        vd.set_int32_value(yid, 4).unwrap();
+
+        let mut d = DynamicData::new(ty.clone());
+        d.set_map_value(m_id, alloc::vec![(kd, vd)]).unwrap();
+
+        for xcdr2 in [true, false] {
+            let bytes = encode_dynamic(&d, xcdr2, false).unwrap();
+            let back = decode_dynamic(&ty, &bytes, xcdr2, false).unwrap();
+            let DynamicValue::Map(got) = back.get_value(m_id).unwrap() else {
+                panic!("m is a map")
+            };
+            assert_eq!(got.len(), 1);
+            assert_eq!(got[0].0.get_int32_value(0).unwrap(), 9);
+            assert_eq!(got[0].1.dynamic_type().kind(), TypeKind::Structure);
+            assert_eq!(got[0].1.get_int32_value(xid).unwrap(), 3);
+            assert_eq!(
+                encode_dynamic(&back, xcdr2, false).unwrap(),
+                bytes,
+                "byte-exact bridge-built map<i32,struct> xcdr2={xcdr2}"
+            );
+        }
+    }
+
+    #[test]
+    fn alias_to_composite_resolves_transparently() {
+        // typedef Point PointAlias — the alias target is a composite; typedefs
+        // are transparent, so resolving the alias yields the full Point struct.
+        use crate::builder::TypeObjectBuilder;
+        let (reg, h) = point_registry();
+        let alias =
+            TypeObjectBuilder::alias("::PointAlias", TypeIdentifier::EquivalenceHashComplete(h))
+                .build_complete();
+        let to = TypeObject::Complete(CompleteTypeObject::Alias(alias));
+        let dt = DynamicTypeBuilderFactory::create_type_w_type_object_in(&to, &reg).unwrap();
+        assert_eq!(
+            dt.kind(),
+            TypeKind::Structure,
+            "alias resolved transparently to its target"
+        );
+        assert_eq!(dt.member_count(), 2);
+        assert!(dt.member_by_name("x").is_some());
+
+        // A scalar alias (typedef int32 Id) stays a shallow Alias node.
+        let scalar_alias =
+            TypeObjectBuilder::alias("::Id", TypeIdentifier::Primitive(PrimitiveKind::Int32))
+                .build_complete();
+        let sto = TypeObject::Complete(CompleteTypeObject::Alias(scalar_alias));
+        let sdt = DynamicTypeBuilderFactory::create_type_w_type_object_in(&sto, &reg).unwrap();
+        assert_eq!(
+            sdt.kind(),
+            TypeKind::Alias,
+            "scalar typedef stays an alias node"
+        );
     }
 }

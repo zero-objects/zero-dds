@@ -27,11 +27,11 @@ alloc = []
 safety = []
 
 [dependencies]
-zerodds-dcps = { version = "1.0.0-rc.4", path = "../dcps" }
-zerodds-idl = { version = "1.0.0-rc.4", path = "../idl" }
-zerodds-qos = { version = "1.0.0-rc.4", path = "../qos" }
-zerodds-rtps = { version = "1.0.0-rc.4", path = "../rtps" }
-zerodds-types = { version = "1.0.0-rc.4", path = "../types" }
-zerodds-xml = { version = "1.0.0-rc.4", path = "../xml" }
+zerodds-dcps = { version = "1.0.0-rc.5", path = "../dcps" }
+zerodds-idl = { version = "1.0.0-rc.5", path = "../idl" }
+zerodds-qos = { version = "1.0.0-rc.5", path = "../qos" }
+zerodds-rtps = { version = "1.0.0-rc.5", path = "../rtps" }
+zerodds-types = { version = "1.0.0-rc.5", path = "../types" }
+zerodds-xml = { version = "1.0.0-rc.5", path = "../xml" }
 
 [dev-dependencies]

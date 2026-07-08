@@ -17,14 +17,14 @@ name = "isolation-smoke"
 path = "src/main.rs"
 
 [dependencies]
-zerodds-rtps = { version = "1.0.0-rc.4", path = "../../crates/rtps" }
-zerodds-transport = { version = "1.0.0-rc.4", path = "../../crates/transport" }
-zerodds-transport-udp = { version = "1.0.0-rc.4", path = "../../crates/transport-udp" }
-zerodds-transport-shm = { version = "1.0.0-rc.4", path = "../../crates/transport-shm" }
+zerodds-rtps = { version = "1.0.0-rc.5", path = "../../crates/rtps" }
+zerodds-transport = { version = "1.0.0-rc.5", path = "../../crates/transport" }
+zerodds-transport-udp = { version = "1.0.0-rc.5", path = "../../crates/transport-udp" }
+zerodds-transport-shm = { version = "1.0.0-rc.5", path = "../../crates/transport-shm" }
 
 # UDS-Transport ist POSIX-only; auf Windows nicht in den Build aufnehmen.
 [target.'cfg(unix)'.dependencies]
-zerodds-transport-uds = { version = "1.0.0-rc.4", path = "../../crates/transport-uds" }
+zerodds-transport-uds = { version = "1.0.0-rc.5", path = "../../crates/transport-uds" }
 
 [dev-dependencies]
 tempfile = "3"

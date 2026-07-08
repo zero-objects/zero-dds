@@ -1,6 +1,6 @@
 [package]
 name = "zerodds-iceoryx-cyclone"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 edition = "2021"
 license = "Apache-2.0"
 description = "ZeroDDS ↔ Cyclone DDS same-host zero-copy bridge over the iceoryx C++ (POSH) shared-memory transport, via the libiceoryx_binding_c C ABI."

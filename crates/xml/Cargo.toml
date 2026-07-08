@@ -34,11 +34,11 @@ roxmltree = { workspace = true }
 # Data model for QoS profiles (DDS-XML 1.0 §7.3.2). `zerodds-xml`
 # may have `zerodds-qos` as a dep (natural data-model source), but
 # NOT `zerodds-dcps` (layer inversion).
-zerodds-qos = { version = "1.0.0-rc.4", path = "../qos", default-features = false, features = ["alloc"] }
+zerodds-qos = { version = "1.0.0-rc.5", path = "../qos", default-features = false, features = ["alloc"] }
 
 # XTypes-1.3 TypeObject/TypeIdentifier — XML→TypeObject bridge.
 # zerodds-types does not depend on zerodds-xml — no circular edge.
-zerodds-types = { version = "1.0.0-rc.4", path = "../types", default-features = false, features = ["alloc"] }
+zerodds-types = { version = "1.0.0-rc.5", path = "../types", default-features = false, features = ["alloc"] }
 
 [dev-dependencies]
 criterion = { workspace = true }

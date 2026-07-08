@@ -61,12 +61,8 @@ jobs:
             os: ubuntu-22.04
           - target: x86_64-unknown-linux-musl
             os: ubuntu-22.04
-          # aarch64-unknown-linux-musl dropped: the only sound way to cross it
-          # is a real aarch64-musl gcc (musl.cc / zigbuild). The glibc-cross-gcc
-          # hack breaks the moment a C dep (libsqlite3-sys) pulls glibc FORTIFY
-          # headers (__memcpy_chk / fcntl64 undefined against musl). ARM64 Linux
-          # is covered by aarch64-unknown-linux-gnu; the static-musl aarch64
-          # variant is niche enough to not warrant a second cross toolchain.
+          - target: aarch64-unknown-linux-musl
+            os: ubuntu-22.04
           # macos-13 is effectively no longer available on the public
           # GH Action runners (>1h queue times). We build
           # x86_64-apple-darwin via cross-compile on a macos-14
@@ -99,6 +95,14 @@ jobs:
               sudo apt-get install -y --no-install-recommends \
                   gcc-aarch64-linux-gnu libc6-dev-arm64-cross
               ;;
+            aarch64-unknown-linux-musl)
+              # musl-cross: gcc-aarch64-linux-musl is not in the default
+              # archive; use gcc-aarch64-linux-gnu with musl-libc because
+              # musl links statically and cc-rs only needs the compiler for
+              # syscall headers.
+              sudo apt-get install -y --no-install-recommends \
+                  gcc-aarch64-linux-gnu libc6-dev-arm64-cross
+              ;;
           esac
       - name: Configure cross-compile linker for aarch64
         if: runner.os == 'Linux' && startsWith(matrix.target, 'aarch64-unknown-linux-')
@@ -107,10 +111,14 @@ jobs:
           {
             echo "[target.aarch64-unknown-linux-gnu]"
             echo 'linker = "aarch64-linux-gnu-gcc"'
+            echo "[target.aarch64-unknown-linux-musl]"
+            echo 'linker = "aarch64-linux-gnu-gcc"'
           } >> ~/.cargo/config.toml
           {
             echo "CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc"
             echo "AR_aarch64_unknown_linux_gnu=aarch64-linux-gnu-ar"
+            echo "CC_aarch64_unknown_linux_musl=aarch64-linux-gnu-gcc"
+            echo "AR_aarch64_unknown_linux_musl=aarch64-linux-gnu-ar"
           } >> $GITHUB_ENV
       # macOS code-signing: import the Developer ID Application + Installer
       # certs into an ad-hoc keychain. apple-actions/import-codesign-certs

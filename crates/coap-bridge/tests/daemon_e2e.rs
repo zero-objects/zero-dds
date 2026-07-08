@@ -255,3 +255,25 @@ fn block1_out_of_order_returns_2_31_continue_only_in_order() {
     assert_eq!(resp.code, CoapCode::new(2, 31));
     handle.shutdown();
 }
+
+/// `dtls.enabled=true` must **fail closed** when this binary was built WITHOUT
+/// the `dtls` feature: the bridge must never silently fall back to serving
+/// plaintext on a port the operator expects to be `coaps://` (RFC 7252 §9).
+/// (With the `dtls` feature it instead serves real DTLS — see
+/// `daemon_dtls_e2e.rs`.)
+#[cfg(not(feature = "dtls"))]
+#[test]
+fn dtls_enabled_fails_closed_never_serves_plaintext() {
+    let mut cfg = make_test_config("127.0.0.1:0");
+    cfg.dtls_enabled = true;
+    let res = server::start(cfg);
+    assert!(
+        res.is_err(),
+        "dtls.enabled=true must fail closed, not start a plaintext server"
+    );
+    let msg = format!("{:?}", res.err().expect("err")).to_lowercase();
+    assert!(
+        msg.contains("dtls") && msg.contains("refusing"),
+        "fail-closed error must explain the dtls refusal, got: {msg}"
+    );
+}

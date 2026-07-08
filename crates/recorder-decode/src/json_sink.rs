@@ -49,6 +49,17 @@ pub fn value_to_json(v: &DynamicValue) -> Value {
         DynamicValue::WString(u) => Value::String(String::from_utf16_lossy(u)),
         DynamicValue::Complex(d) => data_to_json(d),
         DynamicValue::Sequence(items) => Value::Array(items.iter().map(element_to_json).collect()),
+        DynamicValue::Map(entries) => Value::Array(
+            entries
+                .iter()
+                .map(|(k, v)| {
+                    let mut o = Map::new();
+                    o.insert("key".to_string(), element_to_json(k));
+                    o.insert("value".to_string(), element_to_json(v));
+                    Value::Object(o)
+                })
+                .collect(),
+        ),
         DynamicValue::None => Value::Null,
     }
 }

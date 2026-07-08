@@ -8,7 +8,58 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
 
 ## [Unreleased]
 
-Reserved for changes after the `1.0.0-rc.4` workspace tag.
+Reserved for changes after the `1.0.0-rc.5` workspace tag.
+
+## [1.0.0-rc.5] — 2026-07-08
+
+Hardening + reflective-completeness release. 32 commits over rc.4.
+
+### Added
+
+- Reflective `DynamicData` codec `map<K,V>` support end-to-end — `read_map` /
+  `write_map` byte-identical to the compiled `BTreeMap` CdrEncode (XCDR1/XCDR2,
+  primitive-pair + non-primitive DHEADER), `DynamicValue::Map`,
+  `collection::map_of`, and JSON/SQLite recorder sinks. Works uniformly in the
+  TypeObject bridge, `record`, `replay` and `spy`.
+- Composite-in-collection reflection: `sequence<Struct>`, `Struct[N]`, and
+  arbitrary nesting (`sequence<sequence<Struct>>`) resolve to fully-populated
+  `DynamicType`s via `dynamic::collection`, so a bridge-built type is codec-usable.
+- `resolve_minimal` — Minimal TypeObjects resolve to working `DynamicType`s (all
+  kinds + `EquivalenceHashMinimal` members), wire-identical to their Complete
+  twin (member/type names are synthetic hashes, an intrinsic XTypes property).
+- Endpoint-delete lifecycle: `Drop` for `DataWriter`/`DataReader` → local
+  teardown + SEDP dispose, the `remove_remote_writer/reader` unmatch primitive,
+  cache eviction, and builtin-reader dispose. Both directions verified
+  cross-host on Linux multicast.
+- `DomainParticipantFactory` RAII: weak refs release the runtime (threads +
+  sockets) when the user handle drops.
+- CoAP-bridge serves `coaps://` over DTLS (ADR 0011), fail-closed on
+  `dtls.enabled` — never serves plaintext silently.
+- Website: favicon, `robots.txt`, `sitemap.xml`.
+
+### Changed
+
+- Composite `typedef` targets resolve transparently in the TypeObject bridge
+  (a typedef has its target's wire form).
+- Shared `read_element` / `write_element` factored across the sequence, array
+  and map codecs.
+
+### Fixed
+
+- rmw `rmw_wait` segfault on nodes using rcl-internal guard conditions (e.g.
+  rclrs): both wait-set casts now gate on `implementation_identifier` before
+  touching `gc->data`. Reported via PR #8; verified against the real ROS-Humble
+  ABI.
+- Reliable SEDP dispose delivery — `write_lifecycle` drains a lagging proxy so
+  the dispose reaches cursor-independent readers.
+- RUSTSEC-2026-0204: bump `crossbeam-epoch` 0.9.18 → 0.9.20.
+
+### Verification
+
+- `zerodds-types` 324 tests + `recorder-decode` green; `map<K,V>` byte-oracle
+  vs the compiled `BTreeMap`; Minimal-vs-Complete wire identity; `cargo check
+  --workspace` green. The rmw fix verified on codepit against the real
+  ROS-Humble ABI (deterministic before/after segfault harness).
 
 ## [1.0.0-rc.4] — 2026-06-30
 
