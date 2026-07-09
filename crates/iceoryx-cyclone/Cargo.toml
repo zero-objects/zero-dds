@@ -11,6 +11,15 @@ repository = "https://github.com/zero-objects/zero-dds"
 # zerodds-dcps carries an optional `cyclone-iox` dep on this crate, so it must
 # resolve on crates.io — hence it is published rather than source-only.
 
+# Keep the crate OUT of the release-binary set (cargo-dist): its two [[bin]]
+# targets (iox reader/writer) are `required-features = ["posh"]` demos that link
+# libiceoryx_binding_c and only run on a Linux host with the iceoryx POSH stack.
+# cargo-dist builds without `posh`, so those bins are never produced and it fails
+# with "failed to find bin". This does NOT affect crates.io publishing (dist
+# metadata is release-tooling only).
+[package.metadata.dist]
+dist = false
+
 [features]
 # Off by default: the FFI links libiceoryx_binding_c and only works on a Linux
 # host with the iceoryx POSH stack + iox-roudi. Without it the crate still
