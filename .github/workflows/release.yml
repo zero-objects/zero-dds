@@ -248,7 +248,11 @@ jobs:
             ghcr.io/zero-objects/zerodds-${{ matrix.image }}:${{ needs.plan.outputs.tag }}
             ghcr.io/zero-objects/zerodds-${{ matrix.image }}:1.0
           cache-from: type=gha
-          cache-to:   type=gha,mode=max
+          # mode=min (not max): cache only the final layers needed for future
+          # builds, not every intermediate layer. max bloats the gha cache across
+          # the multi-image matrix and triggers transient "cache entry no longer
+          # exists" evictions mid-build (which failed the cli image at 49m).
+          cache-to:   type=gha,mode=min
 
   package-msi:
     name: Build Windows MSI
