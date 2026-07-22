@@ -247,12 +247,13 @@ jobs:
             fishermen21/zerodds-${{ matrix.image }}:1.0
             ghcr.io/zero-objects/zerodds-${{ matrix.image }}:${{ needs.plan.outputs.tag }}
             ghcr.io/zero-objects/zerodds-${{ matrix.image }}:1.0
-          cache-from: type=gha,scope=${{ matrix.image }}
-          # mode=min (not max): cache only the final layers needed for future
-          # builds, not every intermediate layer. max bloats the gha cache across
-          # the multi-image matrix and triggers transient "cache entry no longer
-          # exists" evictions mid-build (which failed the cli image at 49m).
-          cache-to:   type=gha,mode=min,scope=${{ matrix.image }}
+          # No GHA build cache: the `type=gha` exporter hits the GitHub Actions
+          # cache backend, which returns `not_found` on export ("failed to solve:
+          # not_found") across the parallel multi-image matrix — a cache-service
+          # issue, not scope collision (per-image scope did not help; it whipsawed
+          # to a different image each run). The images build + push fine; only the
+          # cache export failed, and it was caching nothing anyway. Dropped for
+          # reliability — builds are slower (no cross-run layer reuse) but green.
 
   package-msi:
     name: Build Windows MSI
