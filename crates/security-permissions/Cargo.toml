@@ -45,12 +45,12 @@ aws-lc = ["dep:aws-lc-rs", "rustls-webpki/aws-lc-rs", "zerodds-security-pki/aws-
 wolfcrypt = ["dep:wolfcrypt-compat", "rustls-webpki/ring", "zerodds-security-pki/wolfcrypt", "zerodds-security-crypto/wolfcrypt", "std"]
 
 [dependencies]
-zerodds-security = { version = "1.0.0-rc.5", path = "../security" }
+zerodds-security = { version = "1.0.0-rc.6", path = "../security" }
 # DelegationLink + Sign/Verify + Chain. Backend selected by our features above.
-zerodds-security-pki = { version = "1.0.0-rc.5", path = "../security-pki", default-features = false }
+zerodds-security-pki = { version = "1.0.0-rc.6", path = "../security-pki", default-features = false }
 # The PSK profile bundle allows creating PSK-Crypto + PSK-Auth + PSK-Access
 # together from one caller path. Backend selected by our features above.
-zerodds-security-crypto = { version = "1.0.0-rc.5", path = "../security-crypto", default-features = false }
+zerodds-security-crypto = { version = "1.0.0-rc.6", path = "../security-crypto", default-features = false }
 # Read-only XML parser. Apache-2.0 / MIT. Pure Rust, lightweight.
 roxmltree = { workspace = true }
 # PKCS#7/CMS SignedData parser (RFC 5652). Apache-2.0 / MIT.

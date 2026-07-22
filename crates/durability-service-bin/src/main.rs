@@ -22,6 +22,8 @@ use zerodds_durability_store::{Contract, DurabilityStore};
 use zerodds_durability_store_file::FileStore;
 #[cfg(feature = "lakehouse")]
 use zerodds_durability_store_lakehouse::LakehouseStore;
+#[cfg(feature = "postgres")]
+use zerodds_durability_store_postgres::PostgresStore;
 use zerodds_durability_store_sqlite::SqliteStore;
 
 const USAGE: &str = "\
@@ -33,10 +35,13 @@ USAGE:
 
 OPTIONS:
   --domain N        DDS domain id (required). One daemon per domain.
-  --store KIND      Cold-store adapter: sqlite (default) | file | lakehouse.
+  --store KIND      Cold-store adapter: sqlite (default) | file | lakehouse | postgres.
                     lakehouse (DuckDB) is opt-in: build with --features lakehouse.
+                    postgres is opt-in: build with --features postgres.
   --path PATH       Store location. sqlite/lakehouse: a db file (omit = in-memory,
                     NOT durable across restart). file: a directory (required).
+                    postgres: a libpq connection string (required), e.g.
+                    postgres://zerodds@db/zerodds.
   --auto            Auto-serve every topic whose writers declare TRANSIENT or
                     PERSISTENT durability (no application-side code needed).
   --topic NAME      Explicitly serve a topic (repeatable). Combine with --auto
@@ -136,6 +141,20 @@ fn build_store(args: &Args, contract: Contract) -> Result<Arc<dyn DurabilityStor
                     .to_string(),
             );
         }
+        #[cfg(feature = "postgres")]
+        "postgres" => {
+            let url = args
+                .path
+                .as_ref()
+                .ok_or_else(|| "postgres store requires --path CONNECTION_STRING".to_string())?;
+            Arc::new(PostgresStore::connect(url, contract).map_err(|e| e.to_string())?)
+        }
+        #[cfg(not(feature = "postgres"))]
+        "postgres" => {
+            return Err("the 'postgres' backend is not compiled into this binary — \
+                 rebuild with `--features postgres`"
+                .to_string());
+        }
         "file" => {
             let p = args
                 .path
@@ -143,7 +162,11 @@ fn build_store(args: &Args, contract: Contract) -> Result<Arc<dyn DurabilityStor
                 .ok_or_else(|| "file store requires --path DIRECTORY".to_string())?;
             Arc::new(FileStore::open(p, contract).map_err(|e| e.to_string())?)
         }
-        other => return Err(format!("unknown --store '{other}' (sqlite|file|lakehouse)")),
+        other => {
+            return Err(format!(
+                "unknown --store '{other}' (sqlite|file|lakehouse|postgres)"
+            ));
+        }
     };
     Ok(store)
 }

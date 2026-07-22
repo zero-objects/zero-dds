@@ -270,6 +270,8 @@ mod tests {
             transform,
             loop_guard: true,
             preserve_source_timestamp: false,
+            max_samples_per_second: None,
+            tenant: None,
         }
     }
 

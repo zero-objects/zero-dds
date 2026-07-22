@@ -36,14 +36,14 @@ safety = [
 ]
 
 [dependencies]
-zerodds-foundation = { version = "1.0.0-rc.5", path = "../foundation", default-features = false }
-zerodds-cdr = { version = "1.0.0-rc.5", path = "../cdr", default-features = false }
-zerodds-types = { version = "1.0.0-rc.5", path = "../types", default-features = false }
-zerodds-qos = { version = "1.0.0-rc.5", path = "../qos", default-features = false }
-zerodds-rtps = { version = "1.0.0-rc.5", path = "../rtps", default-features = false }
-zerodds-discovery = { version = "1.0.0-rc.5", path = "../discovery", default-features = false }
-zerodds-transport = { version = "1.0.0-rc.5", path = "../transport", default-features = false }
-zerodds-transport-udp = { version = "1.0.0-rc.5", path = "../transport-udp", default-features = false }
-zerodds-security = { version = "1.0.0-rc.5", path = "../security", default-features = false }
-zerodds-xrce-client = { version = "1.0.0-rc.5", path = "../xrce-client", default-features = false }
-zerodds-sys = { version = "1.0.0-rc.5", path = "../sys", default-features = false }
+zerodds-foundation = { version = "1.0.0-rc.6", path = "../foundation", default-features = false }
+zerodds-cdr = { version = "1.0.0-rc.6", path = "../cdr", default-features = false }
+zerodds-types = { version = "1.0.0-rc.6", path = "../types", default-features = false }
+zerodds-qos = { version = "1.0.0-rc.6", path = "../qos", default-features = false }
+zerodds-rtps = { version = "1.0.0-rc.6", path = "../rtps", default-features = false }
+zerodds-discovery = { version = "1.0.0-rc.6", path = "../discovery", default-features = false }
+zerodds-transport = { version = "1.0.0-rc.6", path = "../transport", default-features = false }
+zerodds-transport-udp = { version = "1.0.0-rc.6", path = "../transport-udp", default-features = false }
+zerodds-security = { version = "1.0.0-rc.6", path = "../security", default-features = false }
+zerodds-xrce-client = { version = "1.0.0-rc.6", path = "../xrce-client", default-features = false }
+zerodds-sys = { version = "1.0.0-rc.6", path = "../sys", default-features = false }

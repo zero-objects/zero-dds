@@ -40,7 +40,7 @@ pub struct SampleSelector {
 pub enum FilterExpression {
     /// Single comparison.
     Comparison {
-        /// Field-Pfad (z.B. `position.x`).
+        /// Field path (e.g. `position.x`).
         field: String,
         /// Comparison operator.
         op: CompareOp,

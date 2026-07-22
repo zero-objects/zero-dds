@@ -1745,15 +1745,19 @@ pub enum ZeroDdsDeliveryMode {
     /// In-memory form in ZeroDDS's own SHM slot — same-host, ZeroDDS-only,
     /// no wire (no serialization).
     RawSameHost = 1,
-    /// In-memory form via the iceoryx2 bridge — same-host, cross-stack. Not yet
-    /// wired on this path (`zerodds-delivery-modes-1.0` §11).
+    /// In-memory form via the iceoryx2 bridge — same-host, cross-stack. Wired
+    /// behind the `delivery-iceoryx` build feature; the commit-time copy into
+    /// the iceoryx slot is the remaining zero-copy refinement
+    /// (`zerodds-delivery-modes-1.0` §11).
     Iceoryx = 2,
 }
 
 /// Sets the delivery mode of a runtime-path DataWriter (the handle the ROS-2
 /// RMW bridge uses). `0`=Portable (default, interop-safe), `1`=RawSameHost
-/// (same-host, no wire). `2`=Iceoryx is not yet wired → `Unsupported`. Other
-/// values → `BadParameter`.
+/// (same-host, no wire). `2`=Iceoryx routes over the iceoryx2 bridge and is
+/// opt-in: it requires building with the `delivery-iceoryx` feature and returns
+/// `Unsupported` when that feature is not compiled in. Other values →
+/// `BadParameter`.
 ///
 /// # Safety
 /// `writer` from `zerodds_writer_create`.

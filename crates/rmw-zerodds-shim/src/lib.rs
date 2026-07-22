@@ -2029,7 +2029,7 @@ pub unsafe extern "C" fn rmw_zerodds_create_client(
             1, // services are reliable
         )
     };
-    // SAFETY: NULL-tolerante FFI; Cleanup-Pfad below.
+    // SAFETY: NULL-tolerant FFI; cleanup path below.
     let reader = unsafe {
         zerodds::zerodds_reader_create(
             ctx.runtime as *mut zerodds::ZeroDdsRuntime,
@@ -2235,7 +2235,7 @@ pub unsafe extern "C" fn rmw_zerodds_create_service(
         Ok(s) => s,
         Err(_) => return ptr::null_mut(),
     };
-    // SAFETY: NULL-tolerante FFI-Calls.
+    // SAFETY: NULL-tolerant FFI calls.
     let reader = unsafe {
         zerodds::zerodds_reader_create(
             ctx.runtime as *mut zerodds::ZeroDdsRuntime,
@@ -2244,7 +2244,7 @@ pub unsafe extern "C" fn rmw_zerodds_create_service(
             1,
         )
     };
-    // SAFETY: NULL-tolerante FFI-Calls.
+    // SAFETY: NULL-tolerant FFI calls.
     let writer = unsafe {
         zerodds::zerodds_writer_create(
             ctx.runtime as *mut zerodds::ZeroDdsRuntime,
@@ -3043,7 +3043,7 @@ mod tests {
     #[test]
     fn type_hash_null_args_rejected() {
         let mut h = [0u8; 32];
-        // SAFETY: ein Null-Arg pruefen.
+        // SAFETY: check for a null arg.
         let r1 = unsafe { rmw_zerodds_compute_type_hash(ptr::null(), h.as_mut_ptr()) };
         assert_eq!(r1, RMW_RET_INVALID_ARGUMENT);
         let s = std::ffi::CString::new("x").unwrap();

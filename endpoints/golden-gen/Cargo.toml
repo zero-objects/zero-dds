@@ -1,0 +1,23 @@
+[package]
+name = "zerodds-endpoint-golden"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Generates XCDR2 golden byte vectors (LE + BE) from the ZeroDDS Rust core, so the native endpoint SDKs (ADR 0013) can be proven byte-identical."
+publish = false
+
+[package.metadata.dist]
+dist = false
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "zerodds-endpoint-golden"
+path = "src/main.rs"
+
+[dependencies]
+zerodds-cdr = { version = "1.0.0-rc.6", path = "../../crates/cdr", default-features = false, features = ["std"] }
+zerodds-xrce = { version = "1.0.0-rc.6", path = "../../crates/xrce" }

@@ -922,8 +922,8 @@ typedef struct zerodds_ZeroDdsDomainParticipantFactoryQos {
 /**
  * `DomainParticipantListener` — Spec §2.2.4.2.1.
  *
- * Alle Felder sind optional (NULL-Pointer = Callback ignoriert).
- * `user_data` wird unveraendert an jeden Callback gereicht.
+ * All fields are optional (a NULL pointer means the callback is ignored).
+ * `user_data` is passed unchanged to every callback.
  */
 typedef struct zerodds_ZeroDdsDomainParticipantListener {
   /**
@@ -949,7 +949,7 @@ typedef struct zerodds_ZeroDdsPublisherListener {
    */
   void *user_data;
   /**
-   * Aggregator-Pfad: alle Writer-Status-Bubble-Ups.
+   * Aggregator path: all writer-status bubble-ups.
    */
   void (*on_offered_deadline_missed)(void*, struct zerodds_ZeroDdsDataWriter*);
   /**
@@ -1859,8 +1859,10 @@ int zerodds_writer_discard_loan(struct zerodds_ZeroDdsWriter *_writer, uint8_t *
 /**
  * Sets the delivery mode of a runtime-path DataWriter (the handle the ROS-2
  * RMW bridge uses). `0`=Portable (default, interop-safe), `1`=RawSameHost
- * (same-host, no wire). `2`=Iceoryx is not yet wired → `Unsupported`. Other
- * values → `BadParameter`.
+ * (same-host, no wire). `2`=Iceoryx routes over the iceoryx2 bridge and is
+ * opt-in: it requires building with the `delivery-iceoryx` feature and returns
+ * `Unsupported` when that feature is not compiled in. Other values →
+ * `BadParameter`.
  *
  * # Safety
  * `writer` from `zerodds_writer_create`.
@@ -2825,7 +2827,7 @@ int zerodds_dr_set_listener(struct zerodds_ZeroDdsDataReader *dr,
                             uint32_t status_mask);
 
 /**
- * `dp_get_listener` — liefert den zuletzt gesetzten Pointer oder NULL.
+ * `dp_get_listener` — returns the last pointer that was set, or NULL.
  *
  * # Safety
  * `p` valide.
@@ -3410,7 +3412,9 @@ int zerodds_dw_enable_shm_loan(struct zerodds_ZeroDdsDataWriter *dw,
 /**
  * Sets the delivery mode of a DCPS DataWriter (`zerodds-delivery-modes-1.0`
  * §3/§4): `0`=Portable (default, interop-safe), `1`=RawSameHost (same-host,
- * no wire). `2`=Iceoryx is not yet wired → `Unsupported`. Other values →
+ * no wire). `2`=Iceoryx routes over the iceoryx2 bridge and is opt-in: it
+ * requires building with the `delivery-iceoryx` feature and returns
+ * `Unsupported` when that feature is not compiled in. Other values →
  * `BadParameter`.
  *
  * # Safety

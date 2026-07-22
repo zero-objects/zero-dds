@@ -1,0 +1,169 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 ZeroDDS Contributors
+//
+// The subset of the ROS 2 common-interfaces .msg definitions that the
+// SpatialDDS <-> ROS 2 semantic mapping targets, transcribed to OMG IDL.
+// Field order + types match the upstream ROS 2 `rolling` .msg files 1:1
+// (builtin_interfaces, std_msgs, geometry_msgs, tf2_msgs, sensor_msgs,
+// vision_msgs, geographic_msgs), so the generated types carry the ROS 2 wire
+// layout. Generated through ZeroDDS' own IDL->Rust codegen at build time — not
+// hand-written.
+
+module builtin_interfaces {
+  module msg {
+    struct Time {
+      int32 sec;
+      uint32 nanosec;
+    };
+  };
+};
+
+module std_msgs {
+  module msg {
+    struct Header {
+      builtin_interfaces::msg::Time stamp;
+      string frame_id;
+    };
+  };
+};
+
+module geometry_msgs {
+  module msg {
+    struct Point {
+      double x;
+      double y;
+      double z;
+    };
+
+    struct Vector3 {
+      double x;
+      double y;
+      double z;
+    };
+
+    struct Quaternion {
+      double x;
+      double y;
+      double z;
+      double w;
+    };
+
+    struct Pose {
+      Point position;
+      Quaternion orientation;
+    };
+
+    struct PoseStamped {
+      std_msgs::msg::Header header;
+      Pose pose;
+    };
+
+    struct PoseWithCovariance {
+      Pose pose;
+      double covariance[36];
+    };
+
+    struct Transform {
+      Vector3 translation;
+      Quaternion rotation;
+    };
+
+    struct TransformStamped {
+      std_msgs::msg::Header header;
+      string child_frame_id;
+      Transform transform;
+    };
+  };
+};
+
+module tf2_msgs {
+  module msg {
+    struct TFMessage {
+      sequence<geometry_msgs::msg::TransformStamped> transforms;
+    };
+  };
+};
+
+module sensor_msgs {
+  module msg {
+    struct Imu {
+      std_msgs::msg::Header header;
+      geometry_msgs::msg::Quaternion orientation;
+      double orientation_covariance[9];
+      geometry_msgs::msg::Vector3 angular_velocity;
+      double angular_velocity_covariance[9];
+      geometry_msgs::msg::Vector3 linear_acceleration;
+      double linear_acceleration_covariance[9];
+    };
+
+    struct PointField {
+      string name;
+      uint32 offset;
+      uint8 datatype;
+      uint32 count;
+    };
+
+    struct PointCloud2 {
+      std_msgs::msg::Header header;
+      uint32 height;
+      uint32 width;
+      sequence<PointField> fields;
+      boolean is_bigendian;
+      uint32 point_step;
+      uint32 row_step;
+      sequence<uint8> data;
+      boolean is_dense;
+    };
+  };
+};
+
+module vision_msgs {
+  module msg {
+    struct ObjectHypothesis {
+      string class_id;
+      double score;
+    };
+
+    struct ObjectHypothesisWithPose {
+      ObjectHypothesis hypothesis;
+      geometry_msgs::msg::PoseWithCovariance pose;
+    };
+
+    struct BoundingBox3D {
+      geometry_msgs::msg::Pose center;
+      geometry_msgs::msg::Vector3 size;
+    };
+
+    struct Detection3D {
+      std_msgs::msg::Header header;
+      sequence<ObjectHypothesisWithPose> results;
+      BoundingBox3D bbox;
+      string id;
+    };
+
+    struct Detection3DArray {
+      std_msgs::msg::Header header;
+      sequence<Detection3D> detections;
+    };
+  };
+};
+
+module geographic_msgs {
+  module msg {
+    struct GeoPoint {
+      double latitude;
+      double longitude;
+      double altitude;
+    };
+
+    struct GeoPose {
+      GeoPoint position;
+      geometry_msgs::msg::Quaternion orientation;
+    };
+
+    struct GeoPoseStamped {
+      std_msgs::msg::Header header;
+      GeoPose pose;
+    };
+  };
+};

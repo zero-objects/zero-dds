@@ -1,0 +1,23 @@
+[package]
+name = "zerodds-xrce-agent-demo"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Live E2E receiver for the native endpoint SDKs (ADR 0013): binds UDP, decodes an XRCE WRITE_DATA message from a C/native endpoint, and reads back the sample."
+publish = false
+
+[package.metadata.dist]
+dist = false
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "zerodds-xrce-agent-demo"
+path = "src/main.rs"
+
+[dependencies]
+zerodds-xrce = { version = "1.0.0-rc.6", path = "../../crates/xrce" }
+zerodds-cdr = { version = "1.0.0-rc.6", path = "../../crates/cdr", default-features = false, features = ["std"] }

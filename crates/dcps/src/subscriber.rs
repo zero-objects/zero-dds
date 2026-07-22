@@ -1441,6 +1441,7 @@ impl<T: DdsType> DataReader<T> {
                 representation: 0,
                 big_endian: false,
                 source_timestamp: None,
+                source_sequence_number: -1,
             });
         }
         // Listener notify outside the inbox lock to avoid re-entrancy.

@@ -8,7 +8,53 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
 
 ## [Unreleased]
 
-Reserved for changes after the `1.0.0-rc.5` workspace tag.
+Reserved for changes after the `1.0.0-rc.6` workspace tag.
+
+## [1.0.0-rc.6] — 2026-07-22
+
+Native-reach + hardening release. 93 commits over rc.5.
+
+### Added
+
+- Native endpoint SDKs (ADR 0013): no-Rust DDS-XRCE endpoints in C89 / C++98 /
+  pure-Python / Java-8 for constrained, legacy and big-endian platforms a full
+  Rust stack cannot reach. One wire truth — every encoder byte-identical to the
+  Rust core (verified native x86-64 and big-endian PowerPC), `wire-fixed`
+  codegen (C/Python/Java) + `wire-variable` reflective codec (C/Python/Java,
+  C++ via C-reuse), full extensibility (final/appendable/mutable), XRCE
+  (`WRITE_DATA`/`DATA`/`HEARTBEAT`/`ACKNACK`) + serial (Annex-C HDLC) framing, a
+  single frame-hook integration point, and a live-UDP end-to-end path against a
+  real `zerodds-xrce` agent. Runnable C/Python/Java publish + receive examples.
+- SpatialDDS 1.6 profile (`zerodds-spatial-dds`) — every published module run
+  through ZeroDDS' own IDL→Rust codegen, XCDR-native; SpatialDDS↔ROS 2 semantic
+  mapping (`zerodds-spatial-ros2`).
+- PostgreSQL durability cold adapter (`zerodds-durability-store-postgres`),
+  sqlite-identical semantics, optional TimescaleDB hypertable; 10k-sensor load.
+- Routing-Service: preserve_source_timestamp, per-route token-bucket throttle +
+  drop metric, tenant-scoped ACL, RS↔RS chaining.
+- Durability-Service: source-identity dedup (a restart no longer duplicates a
+  writer's history).
+- Opt-in multicast-locator allowlist (fail-closed); per-topic security overhead
+  measurements; iceoryx delivery selector (doc + CI gate).
+
+### Changed
+
+- rmw multi-distro CI gate is now required (humble/jazzy); docker `cargo chef`
+  images carry libclang.
+
+### Fixed
+
+- `durability-store-lakehouse`: O2 P5 source-identity parity — the feature-gated
+  (libduckdb) cold adapter now carries `source_guid`/`source_sequence` like the
+  sqlite/postgres/file adapters (schema + migration + insert + read).
+
+### Verification
+
+- All CI gates green: fmt, clippy `--all-features`, `cargo-deny`, `zerodds-lint`,
+  build (x86_64 + aarch64 + no-std), test, coverage, compliance, ts-node,
+  python-tests, tsn-live, sphinx-docs, windows-smoke. Native endpoints
+  byte-identical native x86-64 + PowerPC-BE + live-UDP E2E; SpatialDDS 12/12 +
+  ROS 2 mapping 7/7; PostgreSQL 8/8 (live PG 17 + TimescaleDB); routing 31/0.
 
 ## [1.0.0-rc.5] — 2026-07-08
 

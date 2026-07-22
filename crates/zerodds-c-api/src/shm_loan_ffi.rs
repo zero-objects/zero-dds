@@ -651,7 +651,9 @@ pub unsafe extern "C" fn zerodds_dw_enable_shm_loan(
 
 /// Sets the delivery mode of a DCPS DataWriter (`zerodds-delivery-modes-1.0`
 /// §3/§4): `0`=Portable (default, interop-safe), `1`=RawSameHost (same-host,
-/// no wire). `2`=Iceoryx is not yet wired → `Unsupported`. Other values →
+/// no wire). `2`=Iceoryx routes over the iceoryx2 bridge and is opt-in: it
+/// requires building with the `delivery-iceoryx` feature and returns
+/// `Unsupported` when that feature is not compiled in. Other values →
 /// `BadParameter`.
 ///
 /// # Safety

@@ -48,24 +48,24 @@ cross-vendor-tests = ["std"]
 dds-runtime = ["std", "dep:zerodds-dcps", "dep:zerodds-rtps", "dep:zerodds-qos"]
 
 [dependencies]
-zerodds-http2 = { version = "1.0.0-rc.5", path = "../http2" }
-zerodds-hpack = { version = "1.0.0-rc.5", path = "../hpack" }
+zerodds-http2 = { version = "1.0.0-rc.6", path = "../http2" }
+zerodds-hpack = { version = "1.0.0-rc.6", path = "../hpack" }
 # Bridge security substrate (bridge spec §7.1 TLS via rustls = HTTP/2 ALPN,
 # §7.2 auth modes, §7.3 topic ACL).
-zerodds-bridge-security = { version = "1.0.0-rc.5", path = "../bridge-security", optional = true }
+zerodds-bridge-security = { version = "1.0.0-rc.6", path = "../bridge-security", optional = true }
 rustls = { workspace = true, optional = true }
 # §7.1 PEM loader for the ALPN-`h2` builder (the foundation loader exposes
 # only a high-level builder; ALPN patching requires raw PEM reading).
 rustls-pemfile = { workspace = true, optional = true }
 # Cross-cutting daemon observability: Prometheus + OTLP + shutdown + QoS mapper.
-zerodds-monitor = { version = "1.0.0-rc.5", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
-zerodds-observability-otlp = { version = "1.0.0-rc.5", path = "../observability-otlp", optional = true }
-zerodds-qos = { version = "1.0.0-rc.5", path = "../qos", optional = true, default-features = false, features = ["alloc"] }
+zerodds-monitor = { version = "1.0.0-rc.6", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
+zerodds-observability-otlp = { version = "1.0.0-rc.6", path = "../observability-otlp", optional = true }
+zerodds-qos = { version = "1.0.0-rc.6", path = "../qos", optional = true, default-features = false, features = ["alloc"] }
 signal-hook = { workspace = true, optional = true }
 # §4.2 L2 — real DDS side (feature `dds-runtime`). DCPS runtime for the
 # opaque-bytes ingress writer + egress reader; RTPS for GuidPrefix/EntityId.
-zerodds-dcps = { version = "1.0.0-rc.5", path = "../dcps", optional = true, default-features = false, features = ["std"] }
-zerodds-rtps = { version = "1.0.0-rc.5", path = "../rtps", optional = true, default-features = false, features = ["std"] }
+zerodds-dcps = { version = "1.0.0-rc.6", path = "../dcps", optional = true, default-features = false, features = ["std"] }
+zerodds-rtps = { version = "1.0.0-rc.6", path = "../rtps", optional = true, default-features = false, features = ["std"] }
 
 [dev-dependencies]
 # Self-signed certs for §7.1 TLS tests in `tests/security_e2e.rs`.

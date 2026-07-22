@@ -251,7 +251,7 @@ pub struct QualifiedName {
     pub name: String,
 }
 
-/// Spec §8.2.2 (LocalizedText, mutable + optional Felder).
+/// Spec §8.2.2 (LocalizedText, mutable + optional fields).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocalizedText {
     /// `@id(1) @optional string locale`.

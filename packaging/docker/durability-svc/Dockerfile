@@ -5,7 +5,7 @@
 # builder needs cmake + a C++ toolchain, and the runtime needs libstdc++6.
 FROM rust:1.88-bookworm AS chef
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        cmake build-essential \
+        cmake build-essential clang libclang-dev \
     && rm -rf /var/lib/apt/lists/* \
     && cargo install cargo-chef --version 0.1.77 --locked
 WORKDIR /build

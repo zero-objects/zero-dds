@@ -1,0 +1,6 @@
+// @mutable with member-IDs — matches golden-gen encode_mutable.
+@mutable struct MutableM {
+  @id(10) unsigned long x;
+  @id(20) string s;
+  @id(30) unsigned short k;
+};

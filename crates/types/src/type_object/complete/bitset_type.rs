@@ -29,7 +29,7 @@ pub struct CompleteBitsetType {
     pub bitset_flags: BitsetTypeFlag,
     /// Detail.
     pub detail: CompleteTypeDetail,
-    /// Felder.
+    /// Fields.
     pub field_seq: Vec<CompleteBitfield>,
 }
 

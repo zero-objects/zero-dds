@@ -44,7 +44,13 @@ fn parse_native(root: Node) -> Result<RouterConfig> {
     if routes.is_empty() {
         return Err(cfg_err("<zerodds_routing> has no <route> children"));
     }
-    Ok(RouterConfig { name, routes })
+    // XML router configs do not carry an access-control list — the ACL is a
+    // JSON-config feature (O1). XML routes run unrestricted.
+    Ok(RouterConfig {
+        name,
+        routes,
+        access_control: None,
+    })
 }
 
 fn parse_native_route(rn: Node) -> Result<Route> {
@@ -73,6 +79,10 @@ fn parse_native_route(rn: Node) -> Result<Route> {
         transform: None,
         loop_guard: bool_attr(rn, "loop_guard", true),
         preserve_source_timestamp: bool_attr(rn, "preserve_source_timestamp", false),
+        max_samples_per_second: rn
+            .attribute("max_samples_per_second")
+            .and_then(|s| s.parse::<u32>().ok()),
+        tenant: rn.attribute("tenant").map(str::to_string),
     })
 }
 
@@ -200,7 +210,13 @@ fn parse_rti_service(svc: Node, default_name: &str) -> Result<RouterConfig> {
     if routes.is_empty() {
         return Err(cfg_err("RTI config produced no routes"));
     }
-    Ok(RouterConfig { name, routes })
+    // XML router configs do not carry an access-control list — the ACL is a
+    // JSON-config feature (O1). XML routes run unrestricted.
+    Ok(RouterConfig {
+        name,
+        routes,
+        access_control: None,
+    })
 }
 
 fn parse_rti_topic_route(
@@ -222,6 +238,8 @@ fn parse_rti_topic_route(
         transform: None,
         loop_guard: true,
         preserve_source_timestamp: false,
+        max_samples_per_second: None,
+        tenant: None,
     })
 }
 

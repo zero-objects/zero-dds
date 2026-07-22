@@ -1,0 +1,24 @@
+[package]
+name = "zerodds-spatial-ros2"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "SpatialDDS <-> ROS 2 semantic mapping: converts the ZeroDDS SpatialDDS profile types to/from the ROS 2 common-interfaces messages (geometry_msgs/sensor_msgs/vision_msgs/tf2_msgs/geographic_msgs), with rmw-compatible topic + type naming."
+repository = "https://github.com/zero-objects/zero-dds"
+homepage = "https://zerodds.org"
+keywords = ["dds", "ros2", "spatial", "robotics", "rmw"]
+categories = ["network-programming"]
+publish = true
+
+[lints]
+workspace = true
+
+[dependencies]
+zerodds-cdr = { version = "1.0.0-rc.6", path = "../cdr", default-features = false, features = ["std"] }
+zerodds-spatial-dds = { version = "1.0.0-rc.6", path = "../spatial-dds" }
+
+[build-dependencies]
+zerodds-idl = { version = "1.0.0-rc.6", path = "../idl" }
+zerodds-idl-rust = { version = "1.0.0-rc.6", path = "../idl-rust" }

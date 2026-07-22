@@ -26,4 +26,4 @@ std = ["alloc"]
 alloc = []
 
 [dependencies]
-zerodds-corba-ccm = { version = "1.0.0-rc.5", path = "../corba-ccm" }
+zerodds-corba-ccm = { version = "1.0.0-rc.6", path = "../corba-ccm" }

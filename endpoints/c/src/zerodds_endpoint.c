@@ -1,0 +1,212 @@
+/* SPDX-License-Identifier: Apache-2.0
+ * Copyright 2026 ZeroDDS Contributors */
+
+#include "zerodds_endpoint.h"
+
+int zdw_endpoint_send(const zdw_transport *t, const unsigned char *frame, size_t len)
+{
+    if (t == 0 || t->deliver == 0) {
+        return ZDW_T_ERROR;
+    }
+    return t->deliver(t->ctx, frame, len);
+}
+
+int zdw_endpoint_recv(const zdw_transport *t, unsigned char *buf, size_t cap, size_t *len)
+{
+    if (t == 0 || t->receive == 0) {
+        return ZDW_T_ERROR;
+    }
+    return t->receive(t->ctx, buf, cap, len);
+}
+
+/* WRITE_DATA submessage id (spec §8.3.5.8) + flags = E_LITTLE_ENDIAN(0x01) |
+ * DataFormat::Sample(0b001) << 1 = 0x03. */
+#define XRCE_SM_WRITE_DATA 0x07
+#define XRCE_SM_DATA       0x09  /* agent -> client */
+#define XRCE_WRITE_FLAGS   0x03
+
+size_t zdw_xrce_write_frame(unsigned char *out, size_t cap,
+                            unsigned char session, unsigned char stream,
+                            unsigned int seq, const unsigned char *sample,
+                            size_t sample_len)
+{
+    size_t n = 0;
+    /* 4-byte message header + 4-byte submessage header + body. */
+    if (8u + sample_len > cap || sample_len > 0xFFFFu) {
+        return 0;
+    }
+    out[n++] = session;
+    out[n++] = stream;
+    out[n++] = (unsigned char)(seq & 0xffu);        /* sequence_nr LE */
+    out[n++] = (unsigned char)((seq >> 8) & 0xffu);
+    out[n++] = XRCE_SM_WRITE_DATA;
+    out[n++] = XRCE_WRITE_FLAGS;
+    out[n++] = (unsigned char)(sample_len & 0xffu); /* submessage_length LE */
+    out[n++] = (unsigned char)((sample_len >> 8) & 0xffu);
+    {
+        size_t i;
+        for (i = 0; i < sample_len; i++) {
+            out[n++] = sample[i];
+        }
+    }
+    return n;
+}
+
+int zdw_xrce_read_frame(const unsigned char *frame, size_t len,
+                        const unsigned char **body, size_t *body_len)
+{
+    unsigned int session;
+    unsigned int sm_len;
+    if (len < 8u) {
+        return ZDW_T_ERROR;
+    }
+    session = frame[0];
+    if (session < 0x80u) {
+        return ZDW_T_ERROR; /* client-key sessions not handled here */
+    }
+    /* WRITE_DATA (client->agent, id 7) or DATA (agent->client, id 9): both
+     * carry the sample body right after the 8-byte header. */
+    if (frame[4] != XRCE_SM_WRITE_DATA && frame[4] != XRCE_SM_DATA) {
+        return ZDW_T_ERROR;
+    }
+    sm_len = (unsigned int)frame[6] | ((unsigned int)frame[7] << 8);
+    if ((size_t)sm_len + 8u > len) {
+        return ZDW_T_ERROR;
+    }
+    *body = frame + 8;
+    *body_len = (size_t)sm_len;
+    return ZDW_T_OK;
+}
+
+#define XRCE_FLAG   0x7E
+#define XRCE_ESC    0x7D
+#define XRCE_STUFF  0x20
+
+unsigned int zdw_crc16_ccitt_false(const unsigned char *data, size_t n)
+{
+    unsigned int crc = 0xFFFFu;
+    size_t i;
+    int k;
+    for (i = 0; i < n; i++) {
+        crc ^= (unsigned int)data[i] << 8;
+        for (k = 0; k < 8; k++) {
+            if ((crc & 0x8000u) != 0u) {
+                crc = ((crc << 1) ^ 0x1021u) & 0xFFFFu;
+            } else {
+                crc = (crc << 1) & 0xFFFFu;
+            }
+        }
+    }
+    return crc & 0xFFFFu;
+}
+
+static size_t stuff_into(unsigned char *out, size_t pos, size_t cap,
+                         const unsigned char *data, size_t n, int *ok)
+{
+    size_t i;
+    for (i = 0; i < n; i++) {
+        unsigned char b = data[i];
+        if (b == XRCE_FLAG || b == XRCE_ESC) {
+            if (pos + 2u > cap) { *ok = 0; return pos; }
+            out[pos++] = XRCE_ESC;
+            out[pos++] = (unsigned char)(b ^ XRCE_STUFF);
+        } else {
+            if (pos + 1u > cap) { *ok = 0; return pos; }
+            out[pos++] = b;
+        }
+    }
+    return pos;
+}
+
+size_t zdw_serial_frame(unsigned char *out, size_t cap,
+                        const unsigned char *payload, size_t n)
+{
+    unsigned int crc = zdw_crc16_ccitt_false(payload, n);
+    unsigned char crcb[2];
+    size_t pos = 0;
+    int ok = 1;
+    crcb[0] = (unsigned char)((crc >> 8) & 0xFFu); /* CRC big-endian */
+    crcb[1] = (unsigned char)(crc & 0xFFu);
+    if (cap < 1u) { return 0; }
+    out[pos++] = XRCE_FLAG;
+    pos = stuff_into(out, pos, cap, payload, n, &ok);
+    pos = stuff_into(out, pos, cap, crcb, 2, &ok);
+    if (!ok || pos + 1u > cap) { return 0; }
+    out[pos++] = XRCE_FLAG;
+    return pos;
+}
+
+int zdw_serial_deframe(const unsigned char *in, size_t len,
+                       unsigned char *out, size_t cap, size_t *out_len)
+{
+    size_t i = 0, o = 0;
+    unsigned int crc;
+    /* skip a leading flag */
+    if (len >= 1u && in[0] == XRCE_FLAG) {
+        i = 1;
+    }
+    while (i < len && in[i] != XRCE_FLAG) {
+        unsigned char b = in[i];
+        if (b == XRCE_ESC) {
+            i++;
+            if (i >= len) { return ZDW_T_ERROR; }
+            b = (unsigned char)(in[i] ^ XRCE_STUFF);
+        }
+        if (o >= cap) { return ZDW_T_ERROR; }
+        out[o++] = b;
+        i++;
+    }
+    if (o < 2u) { return ZDW_T_ERROR; }
+    /* verify + strip the trailing CRC (big-endian) */
+    crc = zdw_crc16_ccitt_false(out, o - 2u);
+    if (out[o - 2u] != (unsigned char)((crc >> 8) & 0xFFu)
+        || out[o - 1u] != (unsigned char)(crc & 0xFFu)) {
+        return ZDW_T_ERROR;
+    }
+    *out_len = o - 2u;
+    return ZDW_T_OK;
+}
+
+#define XRCE_SM_ACKNACK   0x0A
+#define XRCE_SM_HEARTBEAT 0x0B
+
+size_t zdw_xrce_acknack_frame(unsigned char *out, size_t cap,
+                              unsigned char session, unsigned char stream,
+                              unsigned int seq, int first_unacked,
+                              unsigned char nack_lo, unsigned char nack_hi,
+                              unsigned char payload_stream)
+{
+    size_t n = 0;
+    if (cap < 13u) { /* 4 header + 4 submsg header + 5 body */
+        return 0;
+    }
+    out[n++] = session;
+    out[n++] = stream;
+    out[n++] = (unsigned char)(seq & 0xffu);
+    out[n++] = (unsigned char)((seq >> 8) & 0xffu);
+    out[n++] = XRCE_SM_ACKNACK;
+    out[n++] = XRCE_WRITE_FLAGS & 0x01; /* FLAG_E_LITTLE_ENDIAN only (0x01) */
+    out[n++] = 5;                       /* submessage_length LE = 5 */
+    out[n++] = 0;
+    out[n++] = (unsigned char)(first_unacked & 0xff);        /* i16 LE */
+    out[n++] = (unsigned char)((first_unacked >> 8) & 0xff);
+    out[n++] = nack_lo;
+    out[n++] = nack_hi;
+    out[n++] = payload_stream;
+    return n;
+}
+
+int zdw_xrce_heartbeat_read(const unsigned char *frame, size_t len,
+                            int *first, int *last, unsigned char *stream)
+{
+    if (len < 13u) {
+        return ZDW_T_ERROR;
+    }
+    if (frame[4] != XRCE_SM_HEARTBEAT) {
+        return ZDW_T_ERROR;
+    }
+    *first = (int)(short)((unsigned int)frame[8] | ((unsigned int)frame[9] << 8));
+    *last = (int)(short)((unsigned int)frame[10] | ((unsigned int)frame[11] << 8));
+    *stream = frame[12];
+    return ZDW_T_OK;
+}

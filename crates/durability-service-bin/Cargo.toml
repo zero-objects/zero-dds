@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
-description = "Standalone ZeroDDS Durability-Service daemon binary (zerodds-durability-svc): one process per domain, pluggable store adapter (sqlite/file/lakehouse), auto-discovery of TRANSIENT/PERSISTENT topics."
+description = "Standalone ZeroDDS Durability-Service daemon binary (zerodds-durability-svc): one process per domain, pluggable store adapter (sqlite/file/lakehouse/postgres), auto-discovery of TRANSIENT/PERSISTENT topics."
 repository = "https://github.com/zero-objects/zero-dds"
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-durability-service-bin"
@@ -40,15 +40,24 @@ lakehouse = [
     "dep:zerodds-durability-store-lakehouse",
     "zerodds-durability-store-lakehouse/duckdb",
 ]
+# `postgres` is the OPT-IN PostgreSQL cold backend (shared long-term tier for
+# large fleets). Off by default so a default daemon stays lean; build with
+# `--features postgres`. Add `postgres-timescaledb` for hypertable partitioning.
+postgres = ["dep:zerodds-durability-store-postgres"]
+postgres-timescaledb = [
+    "postgres",
+    "zerodds-durability-store-postgres/timescaledb",
+]
 
 [dependencies]
-zerodds-durability-service = { version = "1.0.0-rc.5", path = "../durability-service" }
-zerodds-durability-store = { version = "1.0.0-rc.5", path = "../durability-store" }
-zerodds-durability-store-sqlite = { version = "1.0.0-rc.5", path = "../durability-store-sqlite" }
-zerodds-durability-store-file = { version = "1.0.0-rc.5", path = "../durability-store-file" }
-zerodds-durability-store-lakehouse = { version = "1.0.0-rc.5", path = "../durability-store-lakehouse", optional = true }
+zerodds-durability-service = { version = "1.0.0-rc.6", path = "../durability-service" }
+zerodds-durability-store = { version = "1.0.0-rc.6", path = "../durability-store" }
+zerodds-durability-store-sqlite = { version = "1.0.0-rc.6", path = "../durability-store-sqlite" }
+zerodds-durability-store-file = { version = "1.0.0-rc.6", path = "../durability-store-file" }
+zerodds-durability-store-lakehouse = { version = "1.0.0-rc.6", path = "../durability-store-lakehouse", optional = true }
+zerodds-durability-store-postgres = { version = "1.0.0-rc.6", path = "../durability-store-postgres", optional = true }
 ctrlc = { workspace = true }
 
 [dev-dependencies]
-zerodds-dcps = { version = "1.0.0-rc.5", path = "../dcps" }
-zerodds-qos = { version = "1.0.0-rc.5", path = "../qos" }
+zerodds-dcps = { version = "1.0.0-rc.6", path = "../dcps" }
+zerodds-qos = { version = "1.0.0-rc.6", path = "../qos" }

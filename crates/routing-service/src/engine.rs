@@ -55,20 +55,6 @@ impl Router {
     /// shape for a filtering/transforming route.
     pub fn start_with_types(config: &RouterConfig, shapes: TypeRegistry) -> Result<Self> {
         config.validate()?;
-        // Reject unsupported options before creating any DDS state.
-        for route in &config.routes {
-            if route.preserve_source_timestamp {
-                // Honest constraint, not a silent no-op: the user byte path does
-                // not surface the source timestamp, so the router cannot
-                // reproduce it. See the crate docs §Limitations.
-                return Err(RoutingError::Config(format!(
-                    "route '{}': preserve_source_timestamp is not yet supported (the runtime \
-                     user byte-path does not propagate the source timestamp); remove the flag or \
-                     wire source-timestamp support into UserSample first",
-                    route.name
-                )));
-            }
-        }
         let factory = DomainParticipantFactory::instance();
         let mut router = Self {
             name: config.name.clone(),
@@ -185,6 +171,8 @@ impl Router {
             keyed: route.output.keyed,
             processor,
             metrics: Arc::new(metrics),
+            preserve_source_timestamp: route.preserve_source_timestamp,
+            max_samples_per_second: route.max_samples_per_second,
         })?;
         self.sessions.insert(route.name.clone(), session);
         Ok(())

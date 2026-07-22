@@ -19,41 +19,40 @@
 //!     void (*on_offered_deadline_missed)(void* user_data, /* args */);
 //!     void (*on_publication_matched)(void* user_data, /* args */);
 //!     /* ... */
-//!     void* user_data;  // Opaker Caller-Pointer.
+//!     void* user_data;  // Opaque caller pointer.
 //! } zerodds_DataWriterListener;
 //!
 //! zerodds_dw_set_listener(dw, &my_listener, status_mask);
 //! ```
 //!
-//! Bei C++/C#/Java-Bindings wrappt jede Sprache diese vtable in
-//! ihre native Listener-Class — siehe `crates/cpp/include/dds/pub/
-//! DataWriterListener.hpp` etc.
+//! For the C++/C#/Java bindings each language wraps this vtable in its native
+//! listener class — see `crates/cpp/include/dds/pub/DataWriterListener.hpp` etc.
 //!
-//! ### Status-Mask
+//! ### Status mask
 //!
-//! Die `status_mask` filtert welche Callbacks aktiv sind (Spec
-//! §2.2.4.2.1). Bits gemass `dds::core::status::StatusKind`.
+//! `status_mask` filters which callbacks are active (Spec §2.2.4.2.1). Bits per
+//! `dds::core::status::StatusKind`.
 //!
 //! ### Threading
 //!
-//! Callbacks werden vom Runtime-Worker-Thread (UDP-RX) gefeuert.
-//! Caller-Code muss thread-safe sein.
+//! Callbacks are fired from the runtime worker thread (UDP-RX). Caller code
+//! must be thread-safe.
 //!
 //! ### Lifetime
 //!
-//! Der Listener-Pointer bleibt im Besitz des Callers — FFI hat den
-//! Pointer nur weak. Caller muss `set_listener(NULL)` rufen bevor
-//! die Listener-Struktur aus dem Scope geht.
+//! The listener pointer stays owned by the caller — the FFI holds it only
+//! weakly. The caller must call `set_listener(NULL)` before the listener struct
+//! goes out of scope.
 //!
-//! ### Spec-Mapping
+//! ### Spec mapping
 //!
-//! | DDS-Spec Listener (§2.2.4) | C-FFI Funktions-Pointer | Status-Bit |
+//! | DDS-Spec Listener (§2.2.4) | C-FFI function pointer | Status bit |
 //! |----------------------------|--------------------------|------------|
 //! | `on_offered_deadline_missed` | DataWriterListener::on_offered_deadline_missed | OFFERED_DEADLINE_MISSED |
 //! | `on_publication_matched` | DataWriterListener::on_publication_matched | PUBLICATION_MATCHED |
 //! | `on_data_available` | DataReaderListener::on_data_available | DATA_AVAILABLE |
 //! | `on_subscription_matched` | DataReaderListener::on_subscription_matched | SUBSCRIPTION_MATCHED |
-//! | ... (10 mehr) | ... | ... |
+//! | ... (10 more) | ... | ... |
 
 use core::ffi::c_int;
 use std::collections::BTreeMap;
@@ -71,8 +70,8 @@ use crate::entities::{
 
 /// `DomainParticipantListener` — Spec §2.2.4.2.1.
 ///
-/// Alle Felder sind optional (NULL-Pointer = Callback ignoriert).
-/// `user_data` wird unveraendert an jeden Callback gereicht.
+/// All fields are optional (a NULL pointer means the callback is ignored).
+/// `user_data` is passed unchanged to every callback.
 #[repr(C)]
 #[derive(Default)]
 pub struct ZeroDdsDomainParticipantListener {
@@ -99,7 +98,7 @@ unsafe impl Sync for ZeroDdsDomainParticipantListener {}
 pub struct ZeroDdsPublisherListener {
     /// Caller-State.
     pub user_data: *mut core::ffi::c_void,
-    /// Aggregator-Pfad: alle Writer-Status-Bubble-Ups.
+    /// Aggregator path: all writer-status bubble-ups.
     pub on_offered_deadline_missed:
         Option<extern "C" fn(*mut core::ffi::c_void, *mut ZeroDdsDataWriter)>,
     /// Liveliness lost.
@@ -248,8 +247,8 @@ unsafe impl Sync for ZeroDdsDataReaderListener {}
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
-/// Pro DataWriter/Reader-Pointer: zuletzt gesehene Counter-Snapshots
-/// pro Status-Kind. Delta-Detection im poll_listeners-Pfad nutzt das.
+/// Per DataWriter/Reader pointer: the last-seen counter snapshots per
+/// status kind. The poll_listeners delta-detection path uses this.
 #[derive(Debug, Default, Clone, Copy)]
 struct WriterCounters {
     matched_count: usize,
@@ -484,11 +483,11 @@ pub unsafe extern "C" fn zerodds_dr_set_listener(
 }
 
 // ============================================================================
-// `*_get_listener` Pendants — RC1: liefern den letzten gesetzten Pointer
-// (Caller-owned, Lifetime-Verantwortung beim Caller).
+// `*_get_listener` counterparts — RC1: return the last pointer that was
+// set (caller-owned; the caller is responsible for its lifetime).
 // ============================================================================
 
-/// `dp_get_listener` — liefert den zuletzt gesetzten Pointer oder NULL.
+/// `dp_get_listener` — returns the last pointer that was set, or NULL.
 ///
 /// # Safety
 /// `p` valide.

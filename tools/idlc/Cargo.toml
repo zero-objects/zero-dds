@@ -33,14 +33,14 @@ name = "zerodds-idlc"
 path = "src/main.rs"
 
 [dependencies]
-zerodds-idl = { version = "1.0.0-rc.5", path = "../../crates/idl" }
-zerodds-idl-cpp = { version = "1.0.0-rc.5", path = "../../crates/idl-cpp" }
-zerodds-idl-csharp = { version = "1.0.0-rc.5", path = "../../crates/idl-csharp" }
-zerodds-idl-java = { version = "1.0.0-rc.5", path = "../../crates/idl-java" }
-zerodds-idl-python = { version = "1.0.0-rc.5", path = "../../crates/idl-python" }
-zerodds-idl-rust = { version = "1.0.0-rc.5", path = "../../crates/idl-rust" }
-zerodds-idl-ts = { version = "1.0.0-rc.5", path = "../../crates/idl-ts" }
-zerodds-corba-rust = { version = "1.0.0-rc.5", path = "../../crates/corba-rust" }
+zerodds-idl = { version = "1.0.0-rc.6", path = "../../crates/idl" }
+zerodds-idl-cpp = { version = "1.0.0-rc.6", path = "../../crates/idl-cpp" }
+zerodds-idl-csharp = { version = "1.0.0-rc.6", path = "../../crates/idl-csharp" }
+zerodds-idl-java = { version = "1.0.0-rc.6", path = "../../crates/idl-java" }
+zerodds-idl-python = { version = "1.0.0-rc.6", path = "../../crates/idl-python" }
+zerodds-idl-rust = { version = "1.0.0-rc.6", path = "../../crates/idl-rust" }
+zerodds-idl-ts = { version = "1.0.0-rc.6", path = "../../crates/idl-ts" }
+zerodds-corba-rust = { version = "1.0.0-rc.6", path = "../../crates/corba-rust" }
 
 [dev-dependencies]
 tempfile = "3"

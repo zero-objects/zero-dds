@@ -374,6 +374,7 @@ fn write_user_sample_pooled(
     payload: &[u8],
     now: Duration,
     encap: &[u8; 4],
+    source_ts_override: Option<zerodds_rtps::header_extension::HeTimestamp>,
 ) -> Result<Vec<zerodds_rtps::message_builder::OutboundDatagram>> {
     let mut frame = zerodds_foundation::PoolBuffer::<SMALL_FRAME_CAP>::new();
     frame
@@ -394,10 +395,13 @@ fn write_user_sample_pooled(
     // `heartbeat_period` ms, default 100 ms); we no longer attach `_now`
     // to `last_heartbeat`, because we emit nothing.
     let _ = now;
-    // RTPS-F1: attach the wall-clock source timestamp so the peer can populate
+    // RTPS-F1: attach the source timestamp so the peer can populate
     // SampleInfo.source_timestamp + honour DESTINATION_ORDER = BY_SOURCE_TIMESTAMP
-    // (DDSI-RTPS §8.7.3). The writer prepends an INFO_TS before the DATA.
-    let source_ts = crate::time::time_to_he_timestamp(crate::time::get_current_time());
+    // (DDSI-RTPS §8.7.3). The writer prepends an INFO_TS before the DATA. A
+    // routing service that preserves the input's source timestamp passes it as
+    // the override; otherwise the writer stamps the current wall clock.
+    let source_ts = source_ts_override
+        .unwrap_or_else(|| crate::time::time_to_he_timestamp(crate::time::get_current_time()));
     writer
         .write_stamped(frame.as_slice(), Some(source_ts))
         .map_err(|_| DdsError::WireError {
@@ -611,6 +615,19 @@ pub struct RuntimeConfig {
     /// Interface address for the multicast join. Default 0.0.0.0 (the
     /// kernel picks the default interface).
     pub multicast_interface: Ipv4Addr,
+
+    /// Opt-in multicast allowlist (IPv4 groups). When non-empty, ZeroDDS joins
+    /// only multicast groups on this list — any other group, including a
+    /// `spdp_multicast_group` not on the list, is refused at participant
+    /// creation. Empty = no restriction (default).
+    ///
+    /// Defense-in-depth: announced multicast locators are already never used as
+    /// send targets (they are dropped when a reader proxy is built, see
+    /// `ReaderProxy::new(.., Vec::new(), ..)` on the SEDP match path), so ZeroDDS
+    /// only ever touches its own `spdp_multicast_group`. This allowlist turns
+    /// that implicit code property into an enforced, auditable config.
+    /// Env: `ZERODDS_MULTICAST_ALLOWLIST` (comma-separated IPv4).
+    pub multicast_allowlist: Vec<Ipv4Addr>,
 
     /// C1: whether SPDP beacons are sent via multicast. Default `true`
     /// (spec behavior). `false` (env `ZERODDS_NO_MULTICAST`) → pure
@@ -1129,6 +1146,15 @@ impl Default for RuntimeConfig {
                 .ok()
                 .and_then(|s| s.parse::<Ipv4Addr>().ok())
                 .unwrap_or(Ipv4Addr::UNSPECIFIED),
+            // Opt-in multicast allowlist. Empty (unset) = no restriction.
+            multicast_allowlist: std::env::var("ZERODDS_MULTICAST_ALLOWLIST")
+                .ok()
+                .map(|s| {
+                    s.split(',')
+                        .filter_map(|t| t.trim().parse::<Ipv4Addr>().ok())
+                        .collect()
+                })
+                .unwrap_or_default(),
             // Multicast send on by default; `ZERODDS_NO_MULTICAST` (any
             // non-empty value) turns it off → pure unicast discovery.
             spdp_multicast_send: std::env::var("ZERODDS_NO_MULTICAST")
@@ -1198,6 +1224,14 @@ impl Default for RuntimeConfig {
 }
 
 impl RuntimeConfig {
+    /// Whether `group` may be joined/used for multicast under this config. An
+    /// empty [`Self::multicast_allowlist`] allows every group (the opt-in is
+    /// off); a non-empty list allows only its members.
+    #[must_use]
+    pub fn multicast_allowed(&self, group: Ipv4Addr) -> bool {
+        self.multicast_allowlist.is_empty() || self.multicast_allowlist.contains(&group)
+    }
+
     /// Apply a [`SecurityBundle`](zerodds_security_runtime::SecurityBundle):
     /// wires its security-event logger into [`Self::security_logger`] and, if
     /// the bundle carries a [`SecurityProfile`](zerodds_security_runtime::SecurityProfile),
@@ -2119,6 +2153,13 @@ pub enum UserSample {
         /// `DESTINATION_ORDER = BY_SOURCE_TIMESTAMP` decision. `None` ⇒ the
         /// reader uses reception order.
         source_timestamp: Option<zerodds_rtps::header_extension::HeTimestamp>,
+        /// Source sequence number — the emitting writer's RTPS
+        /// `CacheChange.sequence_number` (DDSI-RTPS §8.3.5.4). Together with
+        /// `writer_guid` this is the globally-unique source identity of the
+        /// sample, which a durability service uses to dedup a writer's history
+        /// against its live stream (O2 P5). `SEQUENCENUMBER_UNKNOWN` (`-1`) when
+        /// the delivery path has no source sequence (e.g. raw test injection).
+        source_sequence_number: i64,
     },
     /// Lifecycle marker (dispose / unregister) — the reader sets
     /// InstanceState accordingly.
@@ -2825,6 +2866,15 @@ impl DcpsRuntime {
                 what: "domain_id too large for SPDP port mapping",
             }
         })?;
+        // Enforce the opt-in multicast allowlist: the SPDP group is the only
+        // multicast ZeroDDS joins, so if the operator set an allowlist that
+        // does not include it, refuse rather than silently touching a group
+        // they excluded.
+        if !config.multicast_allowed(config.spdp_multicast_group) {
+            return Err(DdsError::BadParameter {
+                what: "spdp_multicast_group is not in multicast_allowlist",
+            });
+        }
         let spdp_mc = UdpTransport::bind_multicast_v4(
             config.spdp_multicast_group,
             spdp_port,
@@ -4957,6 +5007,10 @@ impl DcpsRuntime {
                             // Durability replay: original source timestamp not
                             // retained in the store today → reception order.
                             source_timestamp: None,
+                            // Intra-runtime TransientLocal replay: the retained
+                            // entry does not keep the writer's original RTPS
+                            // sequence → no source sequence to forward.
+                            source_sequence_number: -1,
                         };
                         let _ = sender.send(sample);
                         wake_async_waker(&waker);
@@ -5117,6 +5171,10 @@ impl DcpsRuntime {
                     // Intra-runtime same-process delivery bypasses the INFO_TS
                     // wire path → reception order.
                     source_timestamp: None,
+                    // Intra-runtime handoff has no RTPS sequence (the SN is only
+                    // assigned on the wire path); a same-process durability
+                    // service cannot dedup by it. Wire-delivered samples do.
+                    source_sequence_number: -1,
                 };
                 let _ = sender.send(sample);
                 wake_async_waker(&waker);
@@ -5868,7 +5926,25 @@ impl DcpsRuntime {
     /// # Errors
     /// As `write_user_sample`.
     pub fn write_user_sample_borrowed(&self, eid: EntityId, payload: &[u8]) -> Result<()> {
-        self.write_user_sample_keyed(eid, payload, [0u8; 16])
+        self.write_user_sample_keyed(eid, payload, [0u8; 16], None)
+    }
+
+    /// Like [`write_user_sample_borrowed`] but stamps the sample with an
+    /// explicit source timestamp instead of the current wall clock. A routing
+    /// service uses this to preserve the input sample's source timestamp on the
+    /// forwarded output (so `DESTINATION_ORDER = BY_SOURCE_TIMESTAMP` stays
+    /// correct end-to-end). `source_ts` is the `HeTimestamp` carried on the
+    /// input `UserSample::Alive`.
+    ///
+    /// # Errors
+    /// As [`write_user_sample_borrowed`].
+    pub fn write_user_sample_stamped(
+        &self,
+        eid: EntityId,
+        payload: &[u8],
+        source_ts: zerodds_rtps::header_extension::HeTimestamp,
+    ) -> Result<()> {
+        self.write_user_sample_keyed(eid, payload, [0u8; 16], Some(source_ts))
     }
 
     /// Like [`write_user_sample_borrowed`] but with an explicit 16-byte instance
@@ -5886,6 +5962,7 @@ impl DcpsRuntime {
         eid: EntityId,
         payload: &[u8],
         key_hash: [u8; 16],
+        source_ts_override: Option<zerodds_rtps::header_extension::HeTimestamp>,
     ) -> Result<()> {
         let _phase_guard = if phase_timing_enabled() {
             Some(PhaseTimer {
@@ -5980,7 +6057,13 @@ impl DcpsRuntime {
             // `DataWriter::write` (publisher.rs) with the **raw** payload —
             // here only the HistoryCache filling + wire send.
             let dgs = if total <= SMALL_FRAME_CAP {
-                write_user_sample_pooled(&mut slot.writer, payload, now, &encap)?
+                write_user_sample_pooled(
+                    &mut slot.writer,
+                    payload,
+                    now,
+                    &encap,
+                    source_ts_override,
+                )?
             } else {
                 let mut framed = Vec::with_capacity(total);
                 framed.extend_from_slice(&encap);
@@ -6829,6 +6912,7 @@ impl DcpsRuntime {
                 representation: 0,
                 big_endian: false,
                 source_timestamp: None,
+                source_sequence_number: -1,
             })
             .is_ok();
         if sent {
@@ -8731,6 +8815,10 @@ fn delivered_to_user_sample(
                 representation,
                 big_endian,
                 source_timestamp: sample.source_timestamp,
+                // O2 P5: the wire path carries the writer's RTPS sequence number
+                // straight off the DeliveredSample, so a durability service can
+                // dedup this writer's history against its live stream.
+                source_sequence_number: sample.sequence_number.0,
             })
         }
         ChangeKind::NotAliveDisposed
@@ -12298,6 +12386,36 @@ mod tests {
     }
 
     #[test]
+    fn multicast_allowlist_empty_permits_all() {
+        let cfg = RuntimeConfig::default();
+        assert!(cfg.multicast_allowlist.is_empty());
+        assert!(cfg.multicast_allowed(Ipv4Addr::new(239, 255, 0, 1)));
+        assert!(cfg.multicast_allowed(Ipv4Addr::new(239, 1, 2, 3)));
+    }
+
+    #[test]
+    fn multicast_allowlist_restricts_to_members() {
+        let cfg = RuntimeConfig {
+            multicast_allowlist: vec![Ipv4Addr::new(239, 255, 0, 1)],
+            ..RuntimeConfig::default()
+        };
+        assert!(cfg.multicast_allowed(Ipv4Addr::new(239, 255, 0, 1)));
+        assert!(!cfg.multicast_allowed(Ipv4Addr::new(239, 9, 9, 9)));
+    }
+
+    #[test]
+    fn start_refuses_spdp_group_outside_allowlist() {
+        // Opt-in allowlist that excludes the default SPDP group (239.255.0.1)
+        // → start must refuse before it touches any multicast socket.
+        let cfg = RuntimeConfig {
+            multicast_allowlist: vec![Ipv4Addr::new(239, 1, 1, 1)],
+            ..RuntimeConfig::default()
+        };
+        let res = DcpsRuntime::start(43, GuidPrefix::from_bytes([9; 12]), cfg);
+        assert!(matches!(res, Err(DdsError::BadParameter { .. })));
+    }
+
+    #[test]
     fn spdp_announces_standard_bits_by_default() {
         // Default config (without security): standard bits + WLP bits 10/11
         // + TypeLookup bits 12/13 must be announced along;
@@ -12604,7 +12722,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn two_runtimes_e2e_user_data_match_and_transfer() {
-        // E2E smoke: kompletter Pfad
+        // E2E smoke: full path
         //   Runtime-A register_user_writer(topic, type)
         //   Runtime-B register_user_reader(topic, type)
         //   SEDP match, writer add_reader_proxy, reader add_writer_proxy
@@ -14762,7 +14880,7 @@ mod tests {
             for dg in dgs {
                 let parsed = zerodds_rtps::datagram::decode_datagram(&dg.bytes).unwrap();
                 let is_vol = parsed.submessages.iter().any(|sub| {
-                    // Klartext-Pfad (unprotected): DATA an den VolatileSecure-Reader.
+                    // Cleartext path (unprotected): DATA to the VolatileSecure reader.
                     matches!(sub, zerodds_rtps::datagram::ParsedSubmessage::Data(d)
                         if d.reader_id == EntityId::BUILTIN_PARTICIPANT_VOLATILE_MESSAGE_SECURE_READER)
                     // Cross-vendor path (protected): the volatile crypto-token DATA
@@ -15341,7 +15459,8 @@ mod tests {
             .expect("reader");
 
         let key = [0xAB_u8; 16];
-        rt.write_user_sample_keyed(w, b"alive", key).expect("write");
+        rt.write_user_sample_keyed(w, b"alive", key, None)
+            .expect("write");
         // First the alive sample.
         let first = rx
             .recv_timeout(core::time::Duration::from_millis(200))

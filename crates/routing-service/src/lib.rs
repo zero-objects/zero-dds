@@ -72,8 +72,8 @@ pub mod transform;
 mod xml;
 
 pub use config::{
-    ContentFilter, Durability, Endpoint, Ownership, QosSpec, RenameRule, Route, RouterConfig,
-    SetConstRule, Transform,
+    AccessControl, AclRule, ContentFilter, Durability, Endpoint, Ownership, QosSpec, RenameRule,
+    Route, RouterConfig, SetConstRule, Transform,
 };
 pub use engine::Router;
 pub use error::{Result, RoutingError};

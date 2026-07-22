@@ -31,6 +31,16 @@ pub struct DurabilitySample {
     pub big_endian: bool,
     /// Source/creation wall-clock timestamp.
     pub created_at: SystemTime,
+    /// GUID of the writer that originally emitted this sample (16 bytes). With
+    /// `source_sequence` this is the globally-unique source identity a
+    /// durability service uses to dedup a writer's history against its live
+    /// stream, and across a service restart (O2 P5). All-zero when unknown.
+    pub source_guid: [u8; 16],
+    /// The source writer's RTPS sequence number for this sample (DDSI-RTPS
+    /// §8.3.5.4). `-1` when the ingest path had no source sequence (intra-runtime
+    /// or pre-P5 stored samples), in which case it does not participate in
+    /// source-identity dedup.
+    pub source_sequence: i64,
 }
 
 /// Pagination cursor: the `(instance_key, sequence)` of the last sample of a

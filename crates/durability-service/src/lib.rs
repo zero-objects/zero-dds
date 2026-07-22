@@ -84,18 +84,17 @@ impl From<zerodds_durability_store::StoreError> for ServiceError {
 /// Result alias.
 pub type Result<T> = core::result::Result<T, ServiceError>;
 
-/// Reader QoS for ingest: receive every LIVE sample reliably. Deliberately
-/// `VOLATILE` (not TransientLocal): an always-on service captures samples live
-/// and stores them durably itself, so it must not also receive a writer's
-/// TransientLocal history on match — that would double-deliver each sample
-/// (history + live) and, lacking the source sequence on the public read API,
-/// the daemon cannot dedup. Trade-off: a service that starts AFTER a writer
-/// published does not back-fetch that writer's history (documented follow-up:
-/// needs per-sample source GUID+sequence on the reader API).
+/// Reader QoS for ingest: receive every sample reliably, **including a matched
+/// writer's TransientLocal history** (O2 P5). A service that starts after a
+/// writer published now back-fetches that writer's history. The history+live
+/// overlap — and a service restart that re-receives the same history — are
+/// deduped by the pump on `(writer_guid, source_sequence_number)`, which
+/// `UserSample::Alive` now carries and the store persists; without that dedup
+/// this had to be `VOLATILE` to avoid double-storing.
 fn ingest_reader_qos() -> DataReaderQos {
     let mut q = DataReaderQos::default();
     q.reliability.kind = ReliabilityKind::Reliable;
-    q.durability.kind = DurabilityKind::Volatile;
+    q.durability.kind = DurabilityKind::TransientLocal;
     q.history.kind = HistoryKind::KeepAll;
     q.resource_limits.max_samples = LENGTH_UNLIMITED;
     q
@@ -305,6 +304,18 @@ impl DurabilityService {
                 // Tracks the last byte order pushed to the replay writer's encap
                 // override, so a BE peer's samples replay with a BE encap header.
                 let mut last_be = false;
+                // Seed the source-identity dedup set from what is already
+                // durable, so a restart's re-received TransientLocal history is
+                // recognised and not re-stored.
+                let mut seen: std::collections::HashSet<([u8; 16], i64)> = store
+                    .replay_for_topic(&topic_owned)
+                    .map(|v| {
+                        v.into_iter()
+                            .filter(|s| s.source_sequence >= 0)
+                            .map(|s| (s.source_guid, s.source_sequence))
+                            .collect()
+                    })
+                    .unwrap_or_default();
                 // Event-driven: block on the reader's channel (no busy-poll),
                 // waking on each sample or the 200ms stop-flag re-check.
                 while !pump_stop.load(Ordering::Relaxed) {
@@ -313,15 +324,32 @@ impl DurabilityService {
                         Err(mpsc::RecvTimeoutError::Timeout) => continue,
                         Err(mpsc::RecvTimeoutError::Disconnected) => break,
                     };
-                    let (payload, representation, big_endian) = match sample {
-                        UserSample::Alive {
-                            payload,
-                            representation,
-                            big_endian,
-                            ..
-                        } => (payload.to_vec(), representation, big_endian),
-                        UserSample::Lifecycle { .. } => continue,
-                    };
+                    let (payload, representation, big_endian, writer_guid, source_seq) =
+                        match sample {
+                            UserSample::Alive {
+                                payload,
+                                representation,
+                                big_endian,
+                                writer_guid,
+                                source_sequence_number,
+                                ..
+                            } => (
+                                payload.to_vec(),
+                                representation,
+                                big_endian,
+                                writer_guid,
+                                source_sequence_number,
+                            ),
+                            UserSample::Lifecycle { .. } => continue,
+                        };
+                    // O2 P5 dedup: a wire-delivered sample carries its source
+                    // identity (writer_guid, source_seq). Skip one already
+                    // stored — this makes a TransientLocal ingest reader safe
+                    // (history+live overlap, and a service restart that
+                    // re-receives a writer's history) without duplicating.
+                    if source_seq >= 0 && !seen.insert((writer_guid, source_seq)) {
+                        continue;
+                    }
                     if representation != last_rep {
                         // UserSample.representation: 0 = XCDR1, 1 = XCDR2 →
                         // data_representation offer id 0 (XCDR) / 2 (XCDR2).
@@ -344,6 +372,8 @@ impl DurabilityService {
                         representation,
                         big_endian,
                         created_at: SystemTime::now(),
+                        source_guid: writer_guid,
+                        source_sequence: source_seq,
                     };
                     if store.store(ds).is_ok() {
                         // Grow the replay writer's history for future late-joiners.
@@ -480,6 +510,10 @@ fn pump(
                 representation: 1,
                 big_endian: false,
                 created_at: SystemTime::now(),
+                // The high-level DataReader<RawBytes> path surfaces no source
+                // identity, so this path does not participate in P5 dedup.
+                source_guid: [0u8; 16],
+                source_sequence: -1,
             };
             if store.store(ds).is_ok() {
                 // Grow the replay writer's history so future late-joiners get it.

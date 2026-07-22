@@ -24,7 +24,7 @@ pub struct RequestHeaders {
 }
 
 impl RequestHeaders {
-    /// Spec §8.3.5 — Required-Felder pruefen.
+    /// Spec §8.3.5 — check required fields.
     ///
     /// # Errors
     /// `Err(MissingHeader::ApiKey)` if `api_key` is missing.

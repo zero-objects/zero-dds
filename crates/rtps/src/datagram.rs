@@ -131,7 +131,7 @@ pub fn decode_datagram(bytes: &[u8]) -> Result<ParsedDatagram, WireError> {
         };
         let body_start = pos + SubmessageHeader::WIRE_SIZE;
         let body_end = if octets == 0 {
-            // Last-submessage marker: bis Ende des Datagrams.
+            // Last-submessage marker: to the end of the datagram.
             bytes.len()
         } else {
             body_start + octets as usize
@@ -750,7 +750,7 @@ mod tests {
         assert!(matches!(res, Err(WireError::ValueOutOfRange { .. })));
     }
 
-    // ---- §9.4.2.11.2 Must-Understand-Bit Reject-Pfad ----
+    // ---- §9.4.2.11.2 Must-Understand-Bit reject path ----
 
     #[test]
     fn decode_rejects_data_with_unknown_must_understand_pid_in_inline_qos() {

@@ -61,14 +61,14 @@ wolfcrypt = [
 ]
 
 [dependencies]
-zerodds-qos = { version = "1.0.0-rc.5", path = "../qos" }
-zerodds-rtps = { version = "1.0.0-rc.5", path = "../rtps", default-features = false, features = ["alloc"] }
-zerodds-security = { version = "1.0.0-rc.5", path = "../security" }
-zerodds-security-crypto = { version = "1.0.0-rc.5", path = "../security-crypto", default-features = false }
-zerodds-security-permissions = { version = "1.0.0-rc.5", path = "../security-permissions", default-features = false }
+zerodds-qos = { version = "1.0.0-rc.6", path = "../qos" }
+zerodds-rtps = { version = "1.0.0-rc.6", path = "../rtps", default-features = false, features = ["alloc"] }
+zerodds-security = { version = "1.0.0-rc.6", path = "../security" }
+zerodds-security-crypto = { version = "1.0.0-rc.6", path = "../security-crypto", default-features = false }
+zerodds-security-permissions = { version = "1.0.0-rc.6", path = "../security-permissions", default-features = false }
 # DelegationChain im PeerCapabilities-Cache + Wire-Codec.
-zerodds-security-pki = { version = "1.0.0-rc.5", path = "../security-pki", default-features = false }
-zerodds-security-rtps = { version = "1.0.0-rc.5", path = "../security-rtps" }
+zerodds-security-pki = { version = "1.0.0-rc.6", path = "../security-pki", default-features = false }
+zerodds-security-rtps = { version = "1.0.0-rc.6", path = "../security-rtps" }
 
 [dev-dependencies]
 zerodds-discovery = { path = "../discovery" }

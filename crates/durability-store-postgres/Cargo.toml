@@ -1,0 +1,35 @@
+[package]
+name = "zerodds-durability-store-postgres"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "PostgreSQL cold adapter for the ZeroDDS Durability-Service (ADR 0009): the shared/long-term PERSISTENT tier for large fleets, with optional TimescaleDB hypertable partitioning. Implements zerodds-durability-store::DurabilityStore."
+repository = "https://github.com/zero-objects/zero-dds"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-durability-store-postgres"
+readme = "README.md"
+keywords = ["dds", "durability", "persistence", "postgres"]
+categories = ["network-programming", "database"]
+publish = true
+
+[features]
+# Partition the samples table as a TimescaleDB hypertable on `created_nanos`.
+# Requires the timescaledb extension in the target database. Off by default —
+# plain PostgreSQL needs no extension.
+timescaledb = []
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+zerodds-durability-store = { version = "1.0.0-rc.6", path = "../durability-store" }
+zerodds-qos = { version = "1.0.0-rc.6", path = "../qos" }
+postgres = { workspace = true }
+
+[dev-dependencies]
+zerodds-qos = { version = "1.0.0-rc.6", path = "../qos" }

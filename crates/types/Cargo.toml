@@ -26,10 +26,10 @@ default = ["std"]
 std = ["alloc"]
 alloc = []
 [dependencies]
-zerodds-cdr = { version = "1.0.0-rc.5", path = "../cdr", default-features = false, features = ["alloc"] }
+zerodds-cdr = { version = "1.0.0-rc.6", path = "../cdr", default-features = false, features = ["alloc"] }
 # MD5 is spec-conformant for EquivalenceHash + NameHash (XTypes §7.3.1.2.1,
 # §7.3.4.5). Foundation provides a pure-Rust no_std MD5.
-zerodds-foundation = { version = "1.0.0-rc.5", path = "../foundation", default-features = false, features = ["alloc"] }
+zerodds-foundation = { version = "1.0.0-rc.6", path = "../foundation", default-features = false, features = ["alloc"] }
 
 [dev-dependencies]
 proptest = { workspace = true }

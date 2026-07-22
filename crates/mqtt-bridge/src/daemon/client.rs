@@ -203,7 +203,7 @@ impl MqttClient {
         Ok(me)
     }
 
-    /// Plain-TCP-Connect — Backward-Compat-Pfad.
+    /// Plain-TCP connect — backward-compat path.
     ///
     /// # Errors
     /// Siehe [`Self::connect_secure`].

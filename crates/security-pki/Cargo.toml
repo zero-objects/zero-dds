@@ -45,7 +45,7 @@ aws-lc = ["dep:aws-lc-rs", "rustls-webpki/aws-lc-rs", "zerodds-security-keyexcha
 wolfcrypt = ["dep:wolfcrypt-compat", "rustls-webpki/ring", "zerodds-security-keyexchange/wolfcrypt", "std"]
 
 [dependencies]
-zerodds-security = { version = "1.0.0-rc.5", path = "../security" }
+zerodds-security = { version = "1.0.0-rc.6", path = "../security" }
 # X.509 cert DER + trust-anchor types + PEM parser (integrated since 1.9,
 # RUSTSEC-2025-0134 — rustls-pemfile is unmaintained for this). Pure Rust,
 # no-std-capable. Apache-2.0 / ISC / MIT.
@@ -54,7 +54,7 @@ rustls-pki-types = { workspace = true }
 rustls-webpki = { workspace = true }
 # X25519/P-256 ephemeral DH for the handshake secret. Backend selected by our
 # features above (so a FIPS build pulls no ring through it).
-zerodds-security-keyexchange = { version = "1.0.0-rc.5", path = "../security-keyexchange", default-features = false }
+zerodds-security-keyexchange = { version = "1.0.0-rc.6", path = "../security-keyexchange", default-features = false }
 # Delegation-link sign/verify (ECDSA-P256/P384, RSA-PSS, Ed25519). Swappable:
 # `ring` (default) or `aws-lc-rs` (FIPS) via the backend features above.
 ring = { workspace = true, optional = true }

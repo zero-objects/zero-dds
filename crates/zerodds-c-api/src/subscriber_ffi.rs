@@ -1382,6 +1382,7 @@ mod tests {
             representation: 1, // XCDR2
             big_endian: true,  // big-endian peer
             source_timestamp: None,
+            source_sequence_number: -1,
         };
         let lifecycle = UserSample::Lifecycle {
             key_hash: [0; 16],
@@ -1616,6 +1617,7 @@ mod tests {
             representation: 1,
             big_endian: false,
             source_timestamp: None,
+            source_sequence_number: -1,
         }
     }
 

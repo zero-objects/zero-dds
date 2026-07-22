@@ -1,0 +1,22 @@
+[package]
+name = "zerodds-endpoint-codegen"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "IDL -> native endpoint SDK codegen (ADR 0013): emits the wire-fixed codec (C89 first) for a struct from the vendored ZeroDDS IDL parser, byte-identical to the Rust core."
+publish = false
+
+[package.metadata.dist]
+dist = false
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "zerodds-endpoint-codegen"
+path = "src/main.rs"
+
+[dependencies]
+zerodds-idl = { version = "1.0.0-rc.6", path = "../../crates/idl" }

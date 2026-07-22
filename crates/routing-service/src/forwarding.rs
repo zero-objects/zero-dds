@@ -53,6 +53,13 @@ pub struct SessionParts {
     pub processor: Option<Box<dyn SampleProcessor>>,
     /// Metrics sink for this route.
     pub metrics: Arc<RouteMetrics>,
+    /// When set, forward each sample with its input source timestamp instead of
+    /// stamping the router's own wall clock, so `BY_SOURCE_TIMESTAMP` ordering
+    /// stays correct through the hop (O1). Taken from `Route.preserve_source_timestamp`.
+    pub preserve_source_timestamp: bool,
+    /// Optional forward rate limit (samples/second) from
+    /// `Route.max_samples_per_second`. `None` = unlimited (O1 throttle).
+    pub max_samples_per_second: Option<u32>,
 }
 
 /// A running forward pump for one route.
@@ -119,10 +126,45 @@ fn status_bits(kind: zerodds_rtps::history_cache::ChangeKind) -> u32 {
     }
 }
 
+/// Single-thread token bucket for the per-route forward rate limit. Refills at
+/// `rate` tokens/second up to a one-second burst; `allow` consumes one token.
+struct TokenBucket {
+    tokens: f64,
+    rate: f64,
+    last: std::time::Instant,
+}
+
+impl TokenBucket {
+    fn new(rate_per_sec: u32) -> Self {
+        let rate = f64::from(rate_per_sec.max(1));
+        Self {
+            tokens: rate,
+            rate,
+            last: std::time::Instant::now(),
+        }
+    }
+
+    fn allow(&mut self) -> bool {
+        let now = std::time::Instant::now();
+        let elapsed = now.duration_since(self.last).as_secs_f64();
+        self.last = now;
+        // Refill, capped at a one-second budget (burst == rate).
+        self.tokens = (self.tokens + elapsed * self.rate).min(self.rate);
+        if self.tokens >= 1.0 {
+            self.tokens -= 1.0;
+            true
+        } else {
+            false
+        }
+    }
+}
+
 fn pump(mut parts: SessionParts, stop: &AtomicBool) {
     // Track the last representation written so the encapsulation override is
     // set only on change (a topic is representation-consistent in practice).
     let mut last_rep: u8 = 255;
+    // O1 throttle: per-route forward rate limit (None = unlimited).
+    let mut bucket = parts.max_samples_per_second.map(TokenBucket::new);
     while !stop.load(Ordering::Relaxed) {
         let sample = match parts.rx.recv_timeout(Duration::from_millis(200)) {
             Ok(s) => s,
@@ -133,20 +175,35 @@ fn pump(mut parts: SessionParts, stop: &AtomicBool) {
             UserSample::Alive {
                 payload,
                 representation,
+                source_timestamp,
                 ..
             } => {
+                // O1 throttle: drop alive samples over the route's rate limit.
+                if let Some(b) = bucket.as_mut() {
+                    if !b.allow() {
+                        parts.metrics.inc_dropped_throttle();
+                        continue;
+                    }
+                }
+                // O1: preserve the input's source timestamp on the output when
+                // the route asks for it; otherwise the writer stamps its own.
+                let fwd_ts = if parts.preserve_source_timestamp {
+                    source_timestamp
+                } else {
+                    None
+                };
                 // Filter / transform, or byte pass-through.
                 if let Some(p) = parts.processor.as_mut() {
                     match p.process(payload.as_slice(), representation) {
                         Some((out, rep)) => {
                             set_rep(&parts, &mut last_rep, rep);
-                            write_alive(&parts, &out);
+                            write_alive(&parts, &out, fwd_ts);
                         }
                         None => parts.metrics.inc_dropped_filter(),
                     }
                 } else {
                     set_rep(&parts, &mut last_rep, representation);
-                    write_alive(&parts, payload.as_slice());
+                    write_alive(&parts, payload.as_slice(), fwd_ts);
                 }
             }
             UserSample::Lifecycle { key_hash, kind } => {
@@ -180,14 +237,49 @@ fn set_rep(parts: &SessionParts, last_rep: &mut u8, rep: u8) {
     }
 }
 
-fn write_alive(parts: &SessionParts, body: &[u8]) {
-    if parts
-        .output_rt
-        .write_user_sample_borrowed(parts.writer_eid, body)
-        .is_ok()
-    {
+fn write_alive(
+    parts: &SessionParts,
+    body: &[u8],
+    source_ts: Option<zerodds_rtps::header_extension::HeTimestamp>,
+) {
+    let res = match source_ts {
+        Some(ts) => parts
+            .output_rt
+            .write_user_sample_stamped(parts.writer_eid, body, ts),
+        None => parts
+            .output_rt
+            .write_user_sample_borrowed(parts.writer_eid, body),
+    };
+    if res.is_ok() {
         parts.metrics.inc_forwarded();
     } else {
         parts.metrics.inc_errors();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TokenBucket;
+
+    #[test]
+    fn token_bucket_allows_burst_then_throttles() {
+        let mut b = TokenBucket::new(2);
+        // A fresh bucket holds a one-second burst = `rate` tokens.
+        assert!(b.allow());
+        assert!(b.allow());
+        // The third within the same instant is over budget (~0 refill).
+        assert!(!b.allow());
+    }
+
+    #[test]
+    fn token_bucket_refills_over_time() {
+        let mut b = TokenBucket::new(100);
+        for _ in 0..100 {
+            assert!(b.allow());
+        }
+        assert!(!b.allow());
+        std::thread::sleep(std::time::Duration::from_millis(50));
+        // ~50 ms at 100/s ≈ 5 tokens refilled.
+        assert!(b.allow());
     }
 }

@@ -32,6 +32,8 @@ fn sample(topic: &str, inst: u8, seq: u64) -> DurabilitySample {
         representation: 1,
         big_endian: false,
         created_at: SystemTime::UNIX_EPOCH + Duration::from_secs(seq),
+        source_guid: [inst; 16],
+        source_sequence: seq as i64,
     }
 }
 
@@ -46,6 +48,19 @@ fn tmp_db(tag: &str) -> std::path::PathBuf {
         std::thread::current().id()
     ));
     p
+}
+
+#[test]
+fn source_identity_persists_through_sqlite() {
+    // O2 P5: the durable backend must round-trip the writer GUID + source
+    // sequence so a restarted service dedups its re-received history.
+    let store = SqliteStore::open_in_memory(keep_all()).unwrap();
+    store.set_contract("T", keep_all()).unwrap();
+    store.store(sample("T", 5, 99)).unwrap();
+    let got = store.replay_for_topic("T").unwrap();
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0].source_guid, [5u8; 16]);
+    assert_eq!(got[0].source_sequence, 99);
 }
 
 #[test]

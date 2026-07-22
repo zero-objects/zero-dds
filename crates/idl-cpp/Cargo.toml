@@ -26,8 +26,8 @@ default = ["std"]
 std = []
 
 [dependencies]
-zerodds-idl = { version = "1.0.0-rc.5", path = "../idl" }
-zerodds-rpc = { version = "1.0.0-rc.5", path = "../rpc", default-features = false, features = ["alloc"] }
+zerodds-idl = { version = "1.0.0-rc.6", path = "../idl" }
+zerodds-rpc = { version = "1.0.0-rc.6", path = "../rpc", default-features = false, features = ["alloc"] }
 
 [dev-dependencies]
 tempfile = "3"

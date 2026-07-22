@@ -3,6 +3,13 @@
 # Spec: zerodds-deployment-1.0.md §5.2.
 # Image: zerodds/ws-bridged:1.0
 FROM rust:1.88-bookworm AS chef
+# iceoryx2-pal-posix (pulled into the workspace recipe via the
+# iceoryx2-oracle-consumer tool) runs bindgen in its build script, which needs
+# libclang. The slim rust image doesn't ship it — GH-hosted runners do, which is
+# why this only bites inside the container. cargo-chef cook builds the full
+# recipe, so libclang must be present here even though no shipped bin uses it.
+RUN apt-get update && apt-get install -y --no-install-recommends clang libclang-dev \
+    && rm -rf /var/lib/apt/lists/*
 RUN cargo install cargo-chef --version 0.1.77 --locked
 WORKDIR /build
 

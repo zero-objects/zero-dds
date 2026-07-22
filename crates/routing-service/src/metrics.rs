@@ -19,6 +19,8 @@ pub const SAMPLES_DROPPED_FILTER_TOTAL: &str = "dds_router_samples_dropped_filte
 pub const LIFECYCLE_FORWARDED_TOTAL: &str = "dds_router_lifecycle_forwarded_total";
 /// `dds_router_forward_errors_total` — output write/lifecycle failures.
 pub const FORWARD_ERRORS_TOTAL: &str = "dds_router_forward_errors_total";
+/// `dds_router_samples_dropped_throttle_total` — dropped by the rate limit.
+pub const SAMPLES_DROPPED_THROTTLE_TOTAL: &str = "dds_router_samples_dropped_throttle_total";
 
 /// Counters for one route. Cloneable handle (the counters are `Arc`).
 #[derive(Clone)]
@@ -26,6 +28,7 @@ pub struct RouteMetrics {
     forwarded: Arc<Counter>,
     dropped_loop: Arc<Counter>,
     dropped_filter: Arc<Counter>,
+    dropped_throttle: Arc<Counter>,
     lifecycle: Arc<Counter>,
     errors: Arc<Counter>,
 }
@@ -53,11 +56,16 @@ impl RouteMetrics {
             "Instance lifecycle events forwarded by the router.",
         );
         reg.set_help(FORWARD_ERRORS_TOTAL, "Router output write failures.");
+        reg.set_help(
+            SAMPLES_DROPPED_THROTTLE_TOTAL,
+            "Samples dropped by the router rate limit.",
+        );
         let lbl = || Labels::new().with("route", route.to_string());
         Self {
             forwarded: reg.counter(SAMPLES_FORWARDED_TOTAL, lbl()),
             dropped_loop: reg.counter(SAMPLES_DROPPED_LOOP_TOTAL, lbl()),
             dropped_filter: reg.counter(SAMPLES_DROPPED_FILTER_TOTAL, lbl()),
+            dropped_throttle: reg.counter(SAMPLES_DROPPED_THROTTLE_TOTAL, lbl()),
             lifecycle: reg.counter(LIFECYCLE_FORWARDED_TOTAL, lbl()),
             errors: reg.counter(FORWARD_ERRORS_TOTAL, lbl()),
         }
@@ -75,6 +83,10 @@ impl RouteMetrics {
     pub fn inc_dropped_filter(&self) {
         self.dropped_filter.inc();
     }
+    /// Increments throttle-dropped.
+    pub fn inc_dropped_throttle(&self) {
+        self.dropped_throttle.inc();
+    }
     /// Increments lifecycle-forwarded.
     pub fn inc_lifecycle(&self) {
         self.lifecycle.inc();
@@ -91,6 +103,7 @@ impl RouteMetrics {
             forwarded: self.forwarded.get(),
             dropped_loop: self.dropped_loop.get(),
             dropped_filter: self.dropped_filter.get(),
+            dropped_throttle: self.dropped_throttle.get(),
             lifecycle: self.lifecycle.get(),
             errors: self.errors.get(),
         }
@@ -106,6 +119,8 @@ pub struct RouteMetricsSnapshot {
     pub dropped_loop: u64,
     /// Dropped by the content filter.
     pub dropped_filter: u64,
+    /// Dropped by the rate limit.
+    pub dropped_throttle: u64,
     /// Lifecycle events forwarded.
     pub lifecycle: u64,
     /// Output errors.

@@ -39,6 +39,8 @@ fn sample(topic: &str, inst: u8, seq: u64) -> DurabilitySample {
         representation: 1,
         big_endian: false,
         created_at: SystemTime::UNIX_EPOCH + Duration::from_secs(seq),
+        source_guid: [0u8; 16],
+        source_sequence: -1,
     }
 }
 

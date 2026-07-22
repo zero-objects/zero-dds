@@ -44,20 +44,20 @@ daemon = [
 cross-vendor-tests = ["daemon"]
 
 [dependencies]
-zerodds-dcps = { version = "1.0.0-rc.5", path = "../dcps", optional = true, default-features = false, features = ["std"] }
-zerodds-rtps = { version = "1.0.0-rc.5", path = "../rtps", optional = true, default-features = false, features = ["std"] }
-zerodds-qos = { version = "1.0.0-rc.5", path = "../qos", optional = true, default-features = false, features = ["alloc"] }
-zerodds-types = { version = "1.0.0-rc.5", path = "../types", optional = true, default-features = false, features = ["alloc"] }
+zerodds-dcps = { version = "1.0.0-rc.6", path = "../dcps", optional = true, default-features = false, features = ["std"] }
+zerodds-rtps = { version = "1.0.0-rc.6", path = "../rtps", optional = true, default-features = false, features = ["std"] }
+zerodds-qos = { version = "1.0.0-rc.6", path = "../qos", optional = true, default-features = false, features = ["alloc"] }
+zerodds-types = { version = "1.0.0-rc.6", path = "../types", optional = true, default-features = false, features = ["alloc"] }
 # Cross-cutting daemon observability: §8.2 Prometheus + §8.3 OTLP spans +
 # §9.2 graceful shutdown. Per-daemon wireup (no workspace edit);
 # all three are enclosed by the `daemon` feature gate so that the
 # `no_std` library layer stays intact.
-zerodds-monitor = { version = "1.0.0-rc.5", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
-zerodds-observability-otlp = { version = "1.0.0-rc.5", path = "../observability-otlp", optional = true }
+zerodds-monitor = { version = "1.0.0-rc.6", path = "../monitor", optional = true, default-features = false, features = ["std", "prometheus-server"] }
+zerodds-observability-otlp = { version = "1.0.0-rc.6", path = "../observability-otlp", optional = true }
 signal-hook = { workspace = true, optional = true }
 # Bridge security substrate (bridge spec §7.1 TLS, §7.2 auth modes,
 # §7.3 topic ACL). Per-crate dep, no workspace edit.
-zerodds-bridge-security = { version = "1.0.0-rc.5", path = "../bridge-security", optional = true }
+zerodds-bridge-security = { version = "1.0.0-rc.6", path = "../bridge-security", optional = true }
 # rustls directly for ServerConnection wrapping around TcpStream in the
 # accept loop. `bridge-security` exports the config; the wireup
 # uses rustls::ServerConnection + Stream<'a>.

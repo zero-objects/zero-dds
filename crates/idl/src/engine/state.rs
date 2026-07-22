@@ -214,10 +214,10 @@ mod tests {
         let item = EarleyItem::new(ProductionId(0), 0, 5);
         let advanced = item.advance();
         assert_eq!(advanced.dot, 1);
-        // Andere Felder unveraendert.
+        // Other fields unchanged.
         assert_eq!(advanced.origin, 5);
         assert_eq!(advanced.production, ProductionId(0));
-        // Original unveraendert.
+        // Original unchanged.
         assert_eq!(item.dot, 0);
     }
 

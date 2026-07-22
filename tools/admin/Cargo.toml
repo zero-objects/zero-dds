@@ -22,10 +22,10 @@ name = "zerodds-admin"
 path = "src/main.rs"
 
 [dependencies]
-zerodds-xml = { version = "1.0.0-rc.5", path = "../../crates/xml" }
-zerodds-qos = { version = "1.0.0-rc.5", path = "../../crates/qos" }
-zerodds-cli-common = { version = "1.0.0-rc.5", path = "../cli-common" }
-zerodds-dcps = { version = "1.0.0-rc.5", path = "../../crates/dcps" }
-zerodds-discovery = { version = "1.0.0-rc.5", path = "../../crates/discovery" }
+zerodds-xml = { version = "1.0.0-rc.6", path = "../../crates/xml" }
+zerodds-qos = { version = "1.0.0-rc.6", path = "../../crates/qos" }
+zerodds-cli-common = { version = "1.0.0-rc.6", path = "../cli-common" }
+zerodds-dcps = { version = "1.0.0-rc.6", path = "../../crates/dcps" }
+zerodds-discovery = { version = "1.0.0-rc.6", path = "../../crates/discovery" }
 
 [dev-dependencies]

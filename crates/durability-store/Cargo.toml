@@ -21,7 +21,7 @@ workspace = true
 path = "src/lib.rs"
 
 [dependencies]
-zerodds-qos = { version = "1.0.0-rc.5", path = "../qos" }
+zerodds-qos = { version = "1.0.0-rc.6", path = "../qos" }
 
 [dev-dependencies]
-zerodds-qos = { version = "1.0.0-rc.5", path = "../qos" }
+zerodds-qos = { version = "1.0.0-rc.6", path = "../qos" }

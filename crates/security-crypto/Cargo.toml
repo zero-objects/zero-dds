@@ -41,7 +41,7 @@ aws-lc = ["dep:aws-lc-rs", "std"]
 wolfcrypt = ["dep:wolfcrypt-compat", "std"]
 
 [dependencies]
-zerodds-security = { version = "1.0.0-rc.5", path = "../security" }
+zerodds-security = { version = "1.0.0-rc.6", path = "../security" }
 # AEAD + HMAC primitives. ISC. Already pulled transitively by
 # `zerodds-security-pki` (rustls-webpki) — no additional footprint.
 # Optional: the default `ring-backend` feature selects it; `aws-lc` swaps it out.
@@ -55,4 +55,11 @@ wolfcrypt-compat = { package = "wolfcrypt-ring-compat", version = "1", optional 
 # by the `aws-lc` feature.
 aws-lc-rs = { version = "1", optional = true }
 # Hook points for zerodds-monitor-1.1 §2.5. Optional.
-zerodds-monitor = { version = "1.0.0-rc.5", path = "../monitor", optional = true, default-features = false, features = ["std"] }
+zerodds-monitor = { version = "1.0.0-rc.6", path = "../monitor", optional = true, default-features = false, features = ["std"] }
+
+[dev-dependencies]
+criterion = { workspace = true }
+
+[[bench]]
+name = "crypto_overhead"
+harness = false

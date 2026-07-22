@@ -156,7 +156,7 @@ impl std::error::Error for NodeIdError {}
 /// namespace_uri + server_index.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExpandedNodeId {
-    /// Inherited Felder.
+    /// Inherited fields.
     pub node_id: NodeId,
     /// Namespace-URI (Spec: string).
     pub namespace_uri: String,

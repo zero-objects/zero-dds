@@ -1010,8 +1010,8 @@ fn parse_opensplice_pragma(args: &str, file: &str, line: usize) -> Option<OpenSp
     if let Some(rest) = trimmed.strip_prefix("DCPS_DATA_KEY") {
         let payload = strip_optional_quotes(rest.trim());
         // Zwei akzeptierte Formen:
-        //   "Type.field"            — Punkt-Trenner (Legacy)
-        //   "Type field1 field2..."  — OpenDDS-Space-Form (1..n Felder)
+        //   "Type.field"            — dot separator (legacy)
+        //   "Type field1 field2..."  — OpenDDS space form (1..n fields)
         let (type_name, fields): (String, Vec<String>) = if let Some(dot) = payload.find('.') {
             let ty = payload[..dot].trim().to_string();
             let f = payload[dot + 1..].trim().to_string();

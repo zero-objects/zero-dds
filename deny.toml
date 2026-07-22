@@ -233,6 +233,25 @@ skip = [
     # duplicate is transitive with no direct workspace lever. Only visible when a
     # build activates both backends (e.g. --all-features on the public mirror).
     { crate = "untrusted" },
+
+    # ----- rc.6 transitive wave: RustCrypto 0.11-era via postgres -----
+    # tokio-postgres -> postgres-protocol pins the newer RustCrypto line
+    # (digest 0.11 / block-buffer 0.12 / crypto-common 0.2 / const-oid 0.10 /
+    # hmac 0.13 / sha2 + cpufeatures 0.3) while the rest of the workspace stays
+    # on the 0.10 line. Introduced by zerodds-durability-store-postgres (O11);
+    # transitive, no direct workspace lever. Clean up when postgres-protocol
+    # and the RustCrypto ecosystem converge.
+    { crate = "block-buffer" },
+    { crate = "const-oid" },
+    { crate = "cpufeatures" },
+    { crate = "crypto-common" },
+    { crate = "digest" },
+    { crate = "hmac" },
+    { crate = "sha2" },
+    # fallible-iterator 0.2 (postgres-protocol) vs 0.3 (tokio-postgres stack).
+    { crate = "fallible-iterator" },
+    # wasi 0.11 vs 0.14 — getrandom backend split (parallels the getrandom skew).
+    { crate = "wasi" },
 ]
 # Verbotene Crates. Ergaenzt durch Clippy disallowed-types in Safe-Crates.
 deny = [

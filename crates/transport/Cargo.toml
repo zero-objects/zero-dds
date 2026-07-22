@@ -26,6 +26,6 @@ default = ["std"]
 std = ["alloc"]
 alloc = []
 [dependencies]
-zerodds-rtps = { version = "1.0.0-rc.5", path = "../rtps", default-features = false }
+zerodds-rtps = { version = "1.0.0-rc.6", path = "../rtps", default-features = false }
 
 [dev-dependencies]

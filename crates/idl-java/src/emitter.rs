@@ -311,7 +311,7 @@ fn emit_struct_file(
         PlacementKind::BeginDeclaration,
     )?;
 
-    // Felder.
+    // Fields.
     for m in &s.members {
         emit_member_field(&mut body, m, &ind)?;
     }

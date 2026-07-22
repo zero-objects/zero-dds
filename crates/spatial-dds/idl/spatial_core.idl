@@ -1,0 +1,1022 @@
+// SPDX-License-Identifier: MIT
+// SpatialDDS 1.6 — vendored from OpenArCloud/SpatialDDS-spec (idl/v1.6),
+// types.idl + core.idl + discovery.idl combined (#includes resolved inline).
+// Upstream: https://github.com/OpenArCloud/SpatialDDS-spec
+
+module builtin {
+  @extensibility(APPENDABLE) struct Time {
+    int32 sec;
+    uint32 nanosec;
+  };
+};
+
+module spatial {
+  module common {
+    typedef double BBox2D[4];
+    typedef double Vec3[3];
+    typedef double Mat3x3[9];
+    typedef double Mat6x6[36];
+    typedef double Mat12x12[144];
+    typedef double QuaternionXYZW[4];
+
+    enum CovarianceType {
+      @value(0) COV_NONE,
+      @value(3) COV_POS3,
+      @value(6) COV_POSE6,
+      @value(9) COV_ROT3,
+      @value(12) COV_POSE6_TWIST6
+    };
+
+    enum CoordConvention {
+      @value(0) ENU,
+      @value(1) CV,
+      @value(2) GRAPHICS,
+      @value(3) UNITY_LH,
+      @value(4) NED,
+      @value(5) OTHER
+    };
+
+    @extensibility(APPENDABLE) struct FrameRef {
+      string uuid;
+      string fqn;
+      boolean has_coord_convention;
+      CoordConvention coord_convention;
+    };
+
+    @extensibility(APPENDABLE) struct MetaKV {
+      string ns;
+      string json;
+    };
+
+    @extensibility(APPENDABLE) struct AssetRef {
+      string uri;
+      string media_type;
+      string hash;
+      sequence<MetaKV, 16> meta;
+    };
+  };
+
+  module core {
+    typedef builtin::Time Time;
+
+    @extensibility(APPENDABLE) struct PoseSE3 {
+      spatial::common::Vec3 t;
+      spatial::common::QuaternionXYZW q;
+    };
+
+    @extensibility(APPENDABLE) struct BlobRef {
+      string blob_id;
+      string role;
+      string checksum;
+    };
+
+    @extensibility(APPENDABLE) struct Aabb3 {
+      spatial::common::Vec3 min_xyz;
+      spatial::common::Vec3 max_xyz;
+    };
+
+    typedef spatial::common::FrameRef FrameRef;
+
+    @extensibility(APPENDABLE) union CovMatrix switch (spatial::common::CovarianceType) {
+      case spatial::common::COV_NONE: uint8 none;
+      case spatial::common::COV_POS3: spatial::common::Mat3x3 pos;
+      case spatial::common::COV_POSE6: spatial::common::Mat6x6 pose;
+      case spatial::common::COV_ROT3: spatial::common::Mat3x3 rot;
+      case spatial::common::COV_POSE6_TWIST6: spatial::common::Mat12x12 pose_twist;
+    };
+
+    @extensibility(APPENDABLE) struct FramedPose {
+      PoseSE3 pose;
+      FrameRef frame_ref;
+      CovMatrix cov;
+      Time stamp;
+    };
+
+    enum GeoFrameKind {
+      @value(0) ECEF,
+      @value(1) ENU,
+      @value(2) NED
+    };
+
+    @extensibility(APPENDABLE) struct GeoPose {
+      double lat_deg;
+      double lon_deg;
+      double alt_m;
+      spatial::common::QuaternionXYZW q;
+      GeoFrameKind frame_kind;
+      FrameRef frame_ref;
+      Time stamp;
+      CovMatrix cov;
+    };
+
+    @extensibility(APPENDABLE) struct TileKey {
+          @key uint32 x;     // tile coordinate (quadtree/3D grid)
+          @key uint32 y;
+          @key uint32 z;     // use 0 for 2D schemes
+          @key uint8  level; // LOD level
+        };
+
+    @extensibility(APPENDABLE) struct FrameTransform {
+      @key string transform_id;
+      FrameRef parent_ref;
+      FrameRef child_ref;
+      PoseSE3 T_parent_child;
+      Time stamp;
+      CovMatrix cov;
+    };
+  };
+
+  module disco {
+    typedef builtin::Time Time;
+    typedef spatial::core::Aabb3 Aabb3;
+    typedef spatial::core::FrameRef FrameRef;
+    typedef spatial::core::PoseSE3 PoseSE3;
+    typedef string SpatialUri;
+
+    @extensibility(APPENDABLE) struct ProfileSupport {
+      string name;
+      uint32 major;
+      uint32 min_minor;
+      uint32 max_minor;
+      boolean preferred;
+    };
+
+    @extensibility(APPENDABLE) struct FeatureFlag {
+      string name;
+    };
+
+    @extensibility(APPENDABLE) struct Capabilities {
+      sequence<ProfileSupport, 64> supported_profiles;
+      sequence<string, 32>         preferred_profiles;
+      sequence<FeatureFlag, 64>    features;
+    };
+
+    @extensibility(APPENDABLE) struct TopicMeta {
+      string name;
+      string type;
+      string version;
+      string qos_profile;
+      float target_rate_hz;
+      uint32 max_chunk_bytes;
+    };
+
+    enum ServiceKind {
+      @value(0) VPS,
+      @value(1) MAPPING,
+      @value(2) RELOCAL,
+      @value(3) SEMANTICS,
+      @value(4) STORAGE,
+      @value(5) CONTENT,
+      @value(6) ANCHOR_REGISTRY,
+      @value(7) OTHER
+    };
+
+    @extensibility(APPENDABLE) struct KV {
+      string key;
+      string value;
+    };
+
+    @extensibility(APPENDABLE) struct CoverageElement {
+      string type;
+      boolean has_crs;
+      string  crs;
+      boolean has_bbox;
+      spatial::common::BBox2D bbox;
+      boolean has_aabb;
+      Aabb3  aabb;
+      boolean global;
+      boolean has_frame_ref;
+      FrameRef frame_ref;
+      boolean has_coverage_window;
+      Time    coverage_window_start;
+      Time    coverage_window_end;
+    };
+
+    @extensibility(APPENDABLE) struct ValidityWindow {
+      Time   from;
+      uint32 seconds;
+    };
+
+    @extensibility(APPENDABLE) struct Transform {
+      FrameRef from;
+      FrameRef to;
+      PoseSE3 pose;
+      Time    stamp;
+      boolean has_validity;
+      ValidityWindow validity;
+    };
+
+    @extensibility(APPENDABLE) struct Announce {
+      @key string service_id;
+      string name;
+      ServiceKind kind;
+      string version;
+      string org;
+      sequence<KV,32> hints;
+      Capabilities caps;
+      sequence<TopicMeta,128> topics;
+      sequence<CoverageElement,16> coverage;
+      FrameRef coverage_frame_ref;
+      boolean has_coverage_eval_time;
+      Time    coverage_eval_time;
+      sequence<Transform,8> transforms;
+      SpatialUri manifest_uri;
+      string auth_hint;
+      Time stamp;
+      uint32 ttl_sec;
+    };
+
+    @extensibility(APPENDABLE) struct Depart {
+      @key string service_id;
+      Time stamp;
+    };
+  };
+
+  module anchors {
+    typedef builtin::Time Time;
+    typedef spatial::core::GeoPose GeoPose;
+    typedef spatial::core::FrameRef FrameRef;
+
+    @extensibility(APPENDABLE) struct AnchorEntry {
+      @key string anchor_id;
+      string name;
+      GeoPose geopose;
+      double confidence;
+      sequence<string,8> tags;
+      Time stamp;
+      string checksum;
+    };
+
+    @extensibility(APPENDABLE) struct AnchorSet {
+      @key string set_id;
+      string title;
+      string provider_id;
+      FrameRef map_frame;
+      string version;
+      sequence<string,16> tags;
+      double center_lat; double center_lon; double radius_m;
+      sequence<AnchorEntry,256> anchors;
+      Time stamp;
+      string checksum;
+    };
+
+    enum AnchorOp {
+      @value(0) ADD,
+      @value(1) UPDATE,
+      @value(2) REMOVE
+    };
+
+    @extensibility(APPENDABLE) struct AnchorDelta {
+      @key string set_id;
+      AnchorOp op;
+      AnchorEntry entry;
+      uint64 revision;
+      Time stamp;
+      string post_checksum;
+    };
+  };
+
+  module sensing {
+    module common {
+      const uint32 SZ_TINY   = 64;
+      const uint32 SZ_SMALL  = 256;
+      const uint32 SZ_MEDIUM = 2048;
+      const uint32 SZ_LARGE  = 8192;
+      const uint32 SZ_XL     = 32768;
+
+      typedef builtin::Time    Time;
+      typedef spatial::core::PoseSE3 PoseSE3;
+      typedef spatial::core::BlobRef BlobRef;
+      typedef spatial::common::FrameRef FrameRef;
+
+      enum AxisEncoding { @value(0) AXIS_CENTERS, @value(1) AXIS_LINSPACE };
+
+      @extensibility(APPENDABLE) struct Linspace { double start; double step; uint32 count; };
+
+      @extensibility(APPENDABLE) union AxisSpec switch (AxisEncoding) {
+        case AXIS_CENTERS:  sequence<double, 65535> centers;
+        case AXIS_LINSPACE: Linspace lin;
+      };
+
+      @extensibility(APPENDABLE) struct Axis { string name; string unit; AxisSpec spec; };
+
+      @extensibility(APPENDABLE) struct ROI {
+        boolean has_range; float range_min; float range_max;
+        boolean has_azimuth; float az_min; float az_max;
+        boolean has_elevation; float el_min; float el_max;
+        boolean has_doppler; float dop_min; float dop_max;
+        boolean has_image_roi; int32 u_min; int32 v_min; int32 u_max; int32 v_max;
+        boolean global;
+      };
+
+      enum Codec {
+        @value(0) CODEC_NONE, @value(1) LZ4, @value(2) ZSTD, @value(3) GZIP,
+        @value(10) DRACO, @value(20) JPEG, @value(21) H264, @value(22) H265,
+        @value(23) AV1, @value(40) FP8Q, @value(41) FP4Q, @value(42) AE_V1
+      };
+
+      enum PayloadKind {
+        @value(0) DENSE_TILES, @value(1) SPARSE_COO, @value(2) LATENT,
+        @value(10) BLOB_GEOMETRY, @value(11) BLOB_RASTER
+      };
+
+      enum SampleType {
+        @value(0) U8_MAG, @value(1) F16_MAG, @value(2) CF16, @value(3) CF32, @value(4) MAGPHASE_S8
+      };
+
+      @extensibility(APPENDABLE) struct StreamMeta {
+        @key string stream_id; FrameRef frame_ref; PoseSE3 T_bus_sensor;
+        double nominal_rate_hz; string schema_version;
+      };
+
+      @extensibility(APPENDABLE) struct FrameHeader {
+        @key string stream_id; uint64 frame_seq; Time t_start; Time t_end;
+        boolean has_sensor_pose; PoseSE3 sensor_pose; sequence<BlobRef, SZ_SMALL> blobs;
+      };
+
+      enum Health { @value(0) OK, @value(1) DEGRADED, @value(2) ERROR };
+
+      @extensibility(APPENDABLE) struct FrameQuality {
+        boolean has_snr_db; float snr_db; float percent_valid; Health health; string note;
+      };
+      @extensibility(APPENDABLE) struct ROIRequest {
+        @key string stream_id; uint64 request_id; Time t_start; Time t_end; ROI roi;
+        boolean wants_payload_kind; PayloadKind desired_payload_kind;
+        boolean wants_codec; Codec desired_codec;
+        boolean wants_sample_type; SampleType desired_sample_type; int32 max_bytes;
+      };
+      @extensibility(APPENDABLE) struct ROIReply {
+        @key string stream_id; uint64 request_id;
+        sequence<spatial::sensing::common::FrameHeader, 64> frames;
+      };
+    };
+
+    module vision {
+      typedef builtin::Time Time;
+      typedef spatial::sensing::common::Codec Codec;
+
+      enum CamModel { @value(0) PINHOLE, @value(1) FISHEYE_EQUIDISTANT, @value(2) KB_4, @value(3) OMNI };
+      enum Distortion { @value(0) NONE, @value(1) RADTAN, @value(2) KANNALA_BRANDT };
+      enum PixFormat {
+        @value(0) UNKNOWN, @value(1) YUV420, @value(2) RGB8, @value(3) BGR8, @value(4) RGBA8,
+        @value(5) DEPTH16, @value(10) RAW10, @value(12) RAW12, @value(16) RAW16
+      };
+      enum ColorSpace { @value(0) SRGB, @value(1) REC709, @value(2) REC2020, @value(10) LINEAR };
+
+      @extensibility(APPENDABLE) struct CamIntrinsics {
+        CamModel model; uint16 width; uint16 height;
+        float fx; float fy; float cx; float cy;
+        Distortion dist; sequence<float,16> dist_params;
+        float shutter_us; float readout_us;
+        PixFormat pix; ColorSpace color; string calib_version;
+      };
+
+      @extensibility(APPENDABLE) struct Keypoint2D { float u; float v; float score; };
+
+      @extensibility(APPENDABLE) struct Track2D {
+        uint64 id; sequence<Keypoint2D, spatial::sensing::common::SZ_LARGE> trail;
+      };
+
+      @extensibility(APPENDABLE) struct VisionDetections {
+        @key string stream_id; uint64 frame_seq; Time stamp;
+        sequence<Keypoint2D, spatial::sensing::common::SZ_LARGE> keypoints;
+        sequence<Track2D, spatial::sensing::common::SZ_MEDIUM> tracks;
+      };
+    };
+    module lidar {
+    
+      // Module identifier for discovery and schema registration
+      const string MODULE_ID = "spatial.sensing.lidar/1.5";
+    
+      // Reuse Core + Sensing Common
+      typedef builtin::Time                      Time;
+      typedef spatial::core::PoseSE3                   PoseSE3;
+      typedef spatial::core::BlobRef                   BlobRef;
+      typedef spatial::common::FrameRef               FrameRef;
+    
+      typedef spatial::sensing::common::Codec          Codec;
+      typedef spatial::sensing::common::PayloadKind    PayloadKind; // use BLOB_GEOMETRY for clouds
+      typedef spatial::sensing::common::SampleType     SampleType;  // optional for per-point extras
+      typedef spatial::sensing::common::Axis           Axis;
+      typedef spatial::sensing::common::ROI            ROI;
+      typedef spatial::sensing::common::StreamMeta     StreamMeta;
+      typedef spatial::sensing::common::FrameHeader    FrameHeader;
+      typedef spatial::sensing::common::FrameQuality   FrameQuality;
+      typedef spatial::sensing::common::ROIRequest     ROIRequest;
+      typedef spatial::sensing::common::ROIReply       ROIReply;
+    
+      // ROI bounds follow Sensing Common presence flags.
+      // Axis samples are encoded via the Sensing Common union (AXIS_CENTERS or AXIS_LINSPACE).
+    
+      // Device + data model
+      enum LidarType {
+        @value(0) SPINNING_2D,
+        @value(1) MULTI_BEAM_3D,
+        @value(2) SOLID_STATE
+      };
+      enum CloudEncoding {
+        @value(0)   PCD,
+        @value(1)   PLY,
+        @value(2)   LAS,
+        @value(3)   LAZ,
+        @value(4)   BIN_INTERLEAVED,   // raw interleaved binary (fields by PointLayout)
+        @value(10)  GLTF_DRACO,
+        @value(20)  MPEG_PCC,
+        @value(255) CUSTOM_BIN
+      };
+      enum PointLayout { // intensity, ring, normal
+        @value(0) XYZ_I,
+        @value(1) XYZ_I_R,
+        @value(2) XYZ_I_R_N,
+        @value(3) XYZ_I_R_T,      // with per-point relative timestamp
+        @value(4) XYZ_I_R_T_N     // with per-point timestamp + normals
+      };
+    
+      // Static description — RELIABLE + TRANSIENT_LOCAL (late joiners receive the latest meta)
+      @extensibility(APPENDABLE) struct LidarMeta {
+        @key string stream_id;
+        StreamMeta base;                  // frame_ref, T_bus_sensor, nominal_rate_hz
+        LidarType     type;
+        uint16        n_rings;            // 0 if N/A
+        boolean       has_range_limits;
+        float         min_range_m;        // valid when has_range_limits == true
+        float         max_range_m;
+        boolean       has_horiz_fov;
+        float         horiz_fov_deg_min;  // valid when has_horiz_fov == true
+        float         horiz_fov_deg_max;
+        boolean       has_vert_fov;
+        float         vert_fov_deg_min;   // valid when has_vert_fov == true
+        float         vert_fov_deg_max;
+    
+        // Sensor wavelength (informative; for eye-safety and atmospheric classification)
+        boolean       has_wavelength;
+        float         wavelength_nm;      // valid when has_wavelength == true; e.g., 865, 905, 1550
+    
+        // Default payload for frames (clouds ride as blobs)
+        CloudEncoding encoding;           // PCD/PLY/LAS/LAZ/etc.
+        Codec         codec;              // ZSTD/LZ4/DRACO/…
+        PointLayout   layout;             // expected fields when decoded
+        string schema_version;            // MUST be "spatial.sensing.lidar/1.5"
+      };
+    
+      // Per-frame index — BEST_EFFORT + KEEP_LAST=1 (large payloads referenced via blobs)
+      @extensibility(APPENDABLE) struct LidarFrame {
+        @key string stream_id;
+        uint64 frame_seq;
+    
+        FrameHeader  hdr;                 // t_start/t_end, optional sensor_pose, blobs[]
+        CloudEncoding encoding;           // may override meta
+        Codec         codec;              // may override meta
+        PointLayout   layout;             // may override meta
+        boolean       has_per_point_timestamps; // true when blob contains per-point t
+    
+        // Optional quick hints (for health/telemetry)
+        boolean      has_average_range_m;
+        float        average_range_m;     // valid when has_average_range_m == true
+        boolean      has_percent_valid;
+        float        percent_valid;       // valid when has_percent_valid == true (0..100)
+        boolean      has_quality;
+        FrameQuality quality;             // valid when has_quality == true
+      };
+    
+      // Lightweight derivative for immediate fusion/tracking (optional)
+      @extensibility(APPENDABLE) struct LidarDetection {
+        spatial::common::Vec3 xyz_m;
+        float  intensity;
+        uint16 ring;
+        float  quality;                   // 0..1
+      };
+    
+      // Detections topic — BEST_EFFORT
+      @extensibility(APPENDABLE) struct LidarDetectionSet {
+        @key string stream_id;
+        uint64 frame_seq;
+        FrameRef frame_ref;               // coordinate frame of xyz_m
+        sequence<LidarDetection, spatial::sensing::common::SZ_SMALL> dets;
+        Time   stamp;
+      };
+    
+    };
+    module rad {
+    
+      // Module identifier for discovery and schema registration
+      const string MODULE_ID = "spatial.sensing.rad/1.5";
+    
+      // Reuse Core + Sensing Common types
+      typedef builtin::Time                          Time;
+      typedef spatial::core::PoseSE3                 PoseSE3;
+      typedef spatial::core::BlobRef                 BlobRef;
+      typedef spatial::common::FrameRef              FrameRef;
+    
+      typedef spatial::sensing::common::Codec        Codec;
+      typedef spatial::sensing::common::StreamMeta   StreamMeta;
+      typedef spatial::sensing::common::FrameHeader  FrameHeader;
+      typedef spatial::sensing::common::FrameQuality FrameQuality;
+      typedef spatial::sensing::common::Axis         Axis;
+      typedef spatial::sensing::common::SampleType   SampleType;
+      typedef spatial::sensing::common::PayloadKind  PayloadKind;
+      typedef spatial::sensing::common::ROI          ROI;
+      typedef spatial::sensing::common::ROIRequest   ROIRequest;
+      typedef spatial::sensing::common::ROIReply     ROIReply;
+    
+      // ---- Radar sensor type ----
+      enum RadSensorType {
+        @value(0) SHORT_RANGE,       // e.g., corner/parking radar, ~30m
+        @value(1) MEDIUM_RANGE,      // e.g., blind-spot, ~80m
+        @value(2) LONG_RANGE,        // e.g., forward-facing, ~200m+
+        @value(3) IMAGING_4D,        // 4D imaging radar (range/az/el/doppler)
+        @value(4) SAR,               // synthetic aperture radar
+        @value(255) OTHER
+      };
+    
+      // ---- Dynamic property per detection ----
+      enum RadDynProp {
+        @value(0) UNKNOWN,
+        @value(1) MOVING,
+        @value(2) STATIONARY,
+        @value(3) ONCOMING,
+        @value(4) CROSSING_LEFT,
+        @value(5) CROSSING_RIGHT,
+        @value(6) STOPPED            // was moving, now stationary
+      };
+    
+      // ---- Static sensor description ----
+      // RELIABLE + TRANSIENT_LOCAL (late joiners receive the latest meta)
+      @extensibility(APPENDABLE) struct RadSensorMeta {
+        @key string stream_id;               // stable id for this radar stream
+        StreamMeta base;                     // frame_ref, T_bus_sensor, nominal_rate_hz
+    
+        RadSensorType sensor_type;           // range class of this radar
+    
+        // Detection-space limits (from sensor datasheet)
+        boolean has_range_limits;
+        float   min_range_m;                 // valid when has_range_limits == true
+        float   max_range_m;
+    
+        boolean has_azimuth_fov;
+        float   az_fov_min_deg;              // valid when has_azimuth_fov == true
+        float   az_fov_max_deg;
+    
+        boolean has_elevation_fov;
+        float   el_fov_min_deg;              // valid when has_elevation_fov == true
+        float   el_fov_max_deg;
+    
+        boolean has_velocity_limits;
+        float   v_min_mps;                   // valid when has_velocity_limits == true
+        float   v_max_mps;                   // max unambiguous radial velocity
+    
+        // Max detections per frame (informative hint for subscriber allocation)
+        uint32  max_detections_per_frame;
+    
+        // Processing chain description (informative)
+        string  proc_chain;                  // e.g., "CFAR -> clustering -> tracking"
+    
+        string  schema_version;              // MUST be "spatial.sensing.rad/1.5"
+      };
+    
+      // ---- Per-detection data ----
+      @extensibility(APPENDABLE) struct RadDetection {
+        // Position in sensor frame (meters)
+        spatial::common::Vec3 xyz_m;
+    
+        // Velocity: Cartesian vector preferred; scalar radial as fallback.
+        // Producers SHOULD populate velocity_xyz when available.
+        // When only radial velocity is known, set has_velocity_xyz = false
+        // and use v_r_mps.
+        boolean has_velocity_xyz;
+        spatial::common::Vec3 velocity_xyz;  // m/s in frame_ref (valid when has_velocity_xyz == true)
+    
+        boolean has_v_r_mps;
+        double  v_r_mps;                     // scalar radial velocity (valid when has_v_r_mps == true)
+    
+        // Ego-motion compensated velocity (optional)
+        boolean has_velocity_comp_xyz;
+        spatial::common::Vec3 velocity_comp_xyz; // ego-compensated, m/s (valid when has_velocity_comp_xyz == true)
+    
+        // Radar cross-section in physical units
+        boolean has_rcs_dbm2;
+        float   rcs_dbm2;                    // dBm^2 (valid when has_rcs_dbm2 == true)
+    
+        // Generic intensity / magnitude (0..1 normalized, for renderers)
+        float   intensity;
+    
+        // Per-detection quality / confidence (0..1)
+        float   quality;
+    
+        // Dynamic property classification
+        boolean has_dyn_prop;
+        RadDynProp dyn_prop;                 // valid when has_dyn_prop == true
+    
+        // Per-detection position uncertainty (optional)
+        boolean has_pos_rms;
+        float   x_rms_m;                     // valid when has_pos_rms == true
+        float   y_rms_m;
+        float   z_rms_m;
+    
+        // Per-detection velocity uncertainty (optional)
+        boolean has_vel_rms;
+        float   vx_rms_mps;                  // valid when has_vel_rms == true
+        float   vy_rms_mps;
+        float   vz_rms_mps;
+    
+        // Ambiguity state (radar-specific; 0 = unambiguous)
+        boolean has_ambig_state;
+        uint8   ambig_state;                 // valid when has_ambig_state == true
+    
+        // False alarm probability hint (0 = high confidence, higher = less certain)
+        boolean has_false_alarm_prob;
+        float   false_alarm_prob;            // valid when has_false_alarm_prob == true
+    
+        // Optional tracking ID assigned by the radar firmware
+        boolean has_sensor_track_id;
+        uint32  sensor_track_id;             // valid when has_sensor_track_id == true
+      };
+    
+      // ---- Detection set (per-frame batch) ----
+      // BEST_EFFORT + KEEP_LAST=1
+      @extensibility(APPENDABLE) struct RadDetectionSet {
+        @key string stream_id;
+        uint64 frame_seq;
+        FrameRef frame_ref;                  // coordinate frame of xyz_m
+    
+        sequence<RadDetection, spatial::sensing::common::SZ_XL> dets;
+    
+        Time   stamp;
+        string source_id;
+        uint64 seq;
+    
+        // Processing provenance
+        string proc_chain;                   // e.g., "ARS408-CFAR" or "OS-CFAR->cluster"
+    
+        // Frame-level quality
+        boolean has_quality;
+        FrameQuality quality;                // valid when has_quality == true
+      };
+    
+      // ==============================================================
+      // RAD TENSOR TYPES (for raw/processed radar cubes)
+      // ==============================================================
+    
+      // Layout of the RAD tensor - axis ordering convention
+      enum RadTensorLayout {
+        @value(0)   RA_D,             // [range, azimuth, doppler]
+        @value(1)   R_AZ_EL_D,        // [range, azimuth, elevation, doppler]
+        @value(2)   CH_FAST_SLOW,     // [channel/Rx, fast_time, slow_time] - raw FMCW
+        @value(3)   CH_R_D,           // [channel, range, doppler] - post range-doppler FFT
+        @value(255) CUSTOM            // axes[] defines the order explicitly
+      };
+    
+      // Static tensor description - RELIABLE + TRANSIENT_LOCAL
+      // Publishes once; late joiners receive current state.
+      @extensibility(APPENDABLE) struct RadTensorMeta {
+        @key string stream_id;                 // stable id for this radar tensor stream
+        StreamMeta base;                       // frame_ref, T_bus_sensor, nominal_rate_hz
+    
+        RadSensorType sensor_type;             // reuse existing enum (SHORT_RANGE, IMAGING_4D, etc.)
+    
+        // Tensor shape description
+        RadTensorLayout layout;                // axis ordering convention
+        sequence<Axis, 8> axes;                // axis definitions (range/az/el/doppler/channel/time)
+    
+        SampleType voxel_type;                 // pre-compression sample type (e.g., CF32)
+        string physical_meaning;               // e.g., "raw FMCW I/Q", "post 3D-FFT complex baseband"
+    
+        // Antenna configuration (informative, for MIMO systems)
+        boolean has_antenna_config;
+        uint16  num_tx;                        // valid when has_antenna_config == true
+        uint16  num_rx;                        // valid when has_antenna_config == true
+        uint16  num_virtual_channels;          // num_tx * num_rx (informative)
+    
+        // Waveform parameters (informative)
+        boolean has_waveform_params;
+        float   bandwidth_hz;                  // valid when has_waveform_params == true
+        float   center_freq_hz;                // valid when has_waveform_params == true
+        float   chirp_duration_s;              // valid when has_waveform_params == true
+        uint32  samples_per_chirp;             // valid when has_waveform_params == true
+        uint32  chirps_per_frame;              // valid when has_waveform_params == true
+    
+        // Default payload settings for frames
+        PayloadKind payload_kind;              // DENSE_TILES, SPARSE_COO, or LATENT
+        Codec       codec;                     // LZ4, ZSTD, CODEC_NONE, etc.
+        boolean     has_quant_scale;
+        float       quant_scale;               // valid when has_quant_scale == true
+        uint32      tile_size[4];              // for DENSE_TILES; unused dims = 1
+    
+        string  schema_version;                // MUST be "spatial.sensing.rad/1.5"
+      };
+    
+      // Per-frame tensor index - BEST_EFFORT + KEEP_LAST=1
+      // Heavy payload referenced via FrameHeader.blobs[]
+      @extensibility(APPENDABLE) struct RadTensorFrame {
+        @key string stream_id;
+        uint64 frame_seq;
+    
+        FrameHeader hdr;                       // t_start/t_end, optional sensor_pose, blobs[]
+    
+        // Per-frame overrides (may differ from RadTensorMeta defaults)
+        PayloadKind payload_kind;
+        Codec       codec;
+        SampleType  voxel_type_after_decode;   // post-decode type (e.g., CF32 -> MAG_F16)
+        boolean     has_quant_scale;
+        float       quant_scale;               // valid when has_quant_scale == true
+    
+        FrameQuality quality;                  // SNR/valid%/health note
+        string proc_chain;                     // e.g., "raw", "FFT3D->hann", "FFT3D->OS-CFAR"
+      };
+    
+    };
+  };
+
+  module semantics {
+  
+      const string MODULE_ID = "spatial.semantics/1.5";
+  
+      typedef builtin::Time Time;
+      typedef spatial::core::TileKey TileKey;
+      typedef spatial::common::FrameRef FrameRef;
+  
+      // 2D detections per keyframe (image space)
+      @extensibility(APPENDABLE) struct Detection2D {
+        @key string det_id;       // unique per publisher
+        string node_id;           // keyframe id
+        string camera_id;         // camera
+        string class_id;          // ontology label
+        float  score;             // [0..1]
+        spatial::common::BBox2D bbox; // [u_min,v_min,u_max,v_max] (px)
+        boolean has_mask;         // if a pixel mask exists
+        string  mask_blob_id;     // BlobChunk ref (role="mask")
+        Time   stamp;
+        string source_id;
+      };
+  
+      @extensibility(APPENDABLE) struct Detection2DSet {
+        @key string set_id;                 // batch id (e.g., node_id + seq)
+        string node_id;
+        string camera_id;
+        sequence<Detection2D, spatial::sensing::common::SZ_SMALL> dets;    // ≤256
+        Time   stamp;
+        string source_id;
+      };
+  
+      // 3D detections in world/local frame (scene space)
+      @extensibility(APPENDABLE) struct Detection3D {
+        @key string det_id;
+        FrameRef frame_ref;        // e.g., "map" (pose known elsewhere)
+        boolean has_tile;
+        TileKey tile_key;          // valid when has_tile = true
+  
+        string class_id;           // semantic label
+        float  score;              // [0..1]
+  
+        // Oriented bounding box in frame_ref
+        spatial::common::Vec3 center;      // m
+        spatial::common::Vec3 size;        // (width, height, depth) in meters; see Size Convention
+        spatial::common::QuaternionXYZW q; // orientation (x,y,z,w) in GeoPose order
+  
+        // Uncertainty (optional)
+        boolean has_covariance;
+        spatial::common::Mat3x3 cov_pos; // 3x3 position covariance (row-major)
+        spatial::common::Mat3x3 cov_rot; // 3x3 rotation covariance (row-major)
+  
+        // Optional instance tracking
+        boolean has_track_id;
+        string  track_id;
+  
+        Time   stamp;
+        string source_id;
+  
+        // Optional attribute key-value pairs
+        boolean has_attributes;
+        sequence<spatial::common::MetaKV, 8> attributes; // valid when has_attributes == true
+  
+        // Occlusion / visibility (0.0 = fully occluded, 1.0 = fully visible)
+        boolean has_visibility;
+        float   visibility;                // valid when has_visibility == true
+  
+        // Evidence counts
+        boolean has_num_pts;
+        uint32  num_lidar_pts;             // valid when has_num_pts == true
+        uint32  num_radar_pts;             // valid when has_num_pts == true
+      };
+  
+      @extensibility(APPENDABLE) struct Detection3DSet {
+        @key string set_id;                 // batch id
+        FrameRef frame_ref;                 // common frame for the set
+        boolean has_tile;
+        TileKey tile_key;                   // valid when has_tile = true
+        sequence<Detection3D, spatial::sensing::common::SZ_SMALL> dets;    // ≤256
+        Time   stamp;
+        string source_id;
+      };
+  
+    };
+  module slam_frontend {
+  
+      const string MODULE_ID = "spatial.slam_frontend/1.5";
+  
+      // Reuse core: Time, etc.
+      typedef builtin::Time Time;
+      typedef spatial::common::FrameRef FrameRef;
+  
+      // Camera calibration
+      enum DistortionModelKind {
+        @value(0) NONE,
+        @value(1) RADTAN,
+        @value(2) EQUIDISTANT,
+        @value(3) KANNALA_BRANDT
+      };
+  
+      @extensibility(APPENDABLE) struct CameraInfo {
+        @key string camera_id;
+        uint32 width;  uint32 height;   // pixels
+        double fx; double fy;           // focal (px)
+        double cx; double cy;           // principal point (px)
+        DistortionModelKind dist_kind;
+        sequence<double, 8> dist;       // model params (bounded)
+        FrameRef frame_ref;             // camera frame
+        Time   stamp;                   // calib time (or 0 if static)
+      };
+  
+      // 2D features & descriptors per keyframe
+      @extensibility(APPENDABLE) struct Feature2D {
+        double u; double v;     // pixel coords
+        float  scale;           // px
+        float  angle;           // rad [0,2π)
+        float  score;           // detector response
+      };
+  
+      @extensibility(APPENDABLE) struct KeyframeFeatures {
+        @key string node_id;                  // keyframe id
+        string camera_id;
+        string desc_type;                     // "ORB32","BRISK64","SPT256Q",...
+        uint32 desc_len;                      // bytes per descriptor
+        boolean row_major;                    // layout hint
+        sequence<Feature2D, 4096> keypoints;  // ≤4096
+        sequence<uint8, 1048576> descriptors; // ≤1 MiB packed bytes
+        Time   stamp;
+        string source_id;
+        uint64 seq;
+      };
+  
+      // Optional cross-frame matches
+      @extensibility(APPENDABLE) struct FeatureMatch {
+        string node_id_a;  uint32 idx_a;
+        string node_id_b;  uint32 idx_b;
+        float  score;      // similarity or distance
+      };
+  
+      @extensibility(APPENDABLE) struct MatchSet {
+        @key string match_id;                // e.g., "kf_12<->kf_18"
+        sequence<FeatureMatch, 8192> matches;
+        Time   stamp;
+        string source_id;
+      };
+  
+      // Sparse 3D landmarks & tracks (optional)
+      @extensibility(APPENDABLE) struct Landmark {
+        @key string lm_id;
+        string map_id;
+        spatial::common::Vec3 p;
+        boolean has_cov;
+        spatial::common::Mat3x3  cov;        // 3x3 pos covariance (row-major)
+        sequence<uint8, 4096> desc;          // descriptor bytes
+        string desc_type;
+        Time   stamp;
+        string source_id;
+        uint64 seq;
+      };
+  
+      @extensibility(APPENDABLE) struct TrackObs {
+        string node_id;                      // observing keyframe
+        double u; double v;                  // pixel coords
+      };
+  
+      @extensibility(APPENDABLE) struct Tracklet {
+        @key string track_id;
+        boolean has_lm_id;                   // true when lm_id is populated
+        string  lm_id;                       // link to Landmark when present
+        sequence<TrackObs, 64> obs;          // ≤64 obs
+        string source_id;
+        Time   stamp;
+      };
+  
+    };
+  module vio {
+  
+      const string MODULE_ID = "spatial.vio/1.5";
+  
+      typedef builtin::Time Time;
+      typedef spatial::common::FrameRef FrameRef;
+  
+      // IMU calibration
+      @extensibility(APPENDABLE) struct ImuInfo {
+        @key string imu_id;
+        FrameRef frame_ref;
+        double accel_noise_density;    // (m/s^2)/√Hz
+        double gyro_noise_density;     // (rad/s)/√Hz
+        double accel_random_walk;      // (m/s^3)/√Hz
+        double gyro_random_walk;       // (rad/s^2)/√Hz
+        Time   stamp;
+      };
+  
+      // Raw IMU sample
+      @extensibility(APPENDABLE) struct ImuSample {
+        @key string imu_id;
+        spatial::common::Vec3 accel;   // m/s^2
+        spatial::common::Vec3 gyro;    // rad/s
+        Time   stamp;
+        string source_id;
+        uint64 seq;
+      };
+  
+      // Magnetometer
+      @extensibility(APPENDABLE) struct MagnetometerSample {
+        @key string mag_id;
+        spatial::common::Vec3 mag;     // microtesla
+        Time   stamp;
+        FrameRef frame_ref;
+        string source_id;
+        uint64 seq;
+      };
+  
+      // Convenience raw 9-DoF bundle
+      @extensibility(APPENDABLE) struct SensorFusionSample {
+        @key string fusion_id;         // e.g., device id
+        spatial::common::Vec3 accel;   // m/s^2
+        spatial::common::Vec3 gyro;    // rad/s
+        spatial::common::Vec3 mag;     // microtesla
+        Time   stamp;
+        FrameRef frame_ref;
+        string source_id;
+        uint64 seq;
+      };
+  
+      // Fused state (orientation ± position)
+      enum FusionMode {
+        @value(0) ORIENTATION_3DOF,
+        @value(1) ORIENTATION_6DOF,
+        @value(2) POSE_6DOF
+      };
+      enum FusionSourceKind {
+        @value(0) EKF,
+        @value(1) AHRS,
+        @value(2) VIO_FUSED,
+        @value(3) IMU_ONLY,
+        @value(4) MAG_AIDED,
+        @value(5) AR_PLATFORM
+      };
+  
+      @extensibility(APPENDABLE) struct FusedState {
+        @key string fusion_id;
+        FusionMode       mode;
+        FusionSourceKind source_kind;
+  
+        spatial::common::QuaternionXYZW q; // quaternion (x,y,z,w) in GeoPose order
+        boolean has_position;
+        spatial::common::Vec3 t;       // meters, in frame_ref
+  
+        boolean has_gravity;
+        spatial::common::Vec3  gravity;    // m/s^2
+        boolean has_lin_accel;
+        spatial::common::Vec3  lin_accel;  // m/s^2
+        boolean has_gyro_bias;
+        spatial::common::Vec3  gyro_bias;  // rad/s
+        boolean has_accel_bias;
+        spatial::common::Vec3  accel_bias; // m/s^2
+  
+        boolean has_cov_orient;
+        spatial::common::Mat3x3  cov_orient; // 3x3 covariance
+        boolean has_cov_pos;
+        spatial::common::Mat3x3  cov_pos;    // 3x3 covariance
+  
+        Time   stamp;
+        FrameRef frame_ref;
+        string source_id;
+        uint64 seq;
+        double quality;                // 0..1
+      };
+  
+    };
+  module argeo {
+  
+      const string MODULE_ID = "spatial.argeo/1.5";
+  
+      typedef builtin::Time Time;
+      typedef spatial::core::PoseSE3 PoseSE3;
+      typedef spatial::core::FramedPose FramedPose;
+      typedef spatial::core::GeoPose GeoPose;
+      typedef spatial::common::FrameRef FrameRef;
+  
+      @extensibility(APPENDABLE) struct NodeGeo {
+        string map_id;
+        @key string node_id;      // same id as core::Node
+        sequence<FramedPose, 8> poses;
+        boolean has_geopose;
+        GeoPose geopose;          // corresponding global pose (WGS84/ECEF/ENU/NED)
+        string  source_id;
+        uint64  seq;
+        uint64  graph_epoch;
+      };
+  
+    };
+};

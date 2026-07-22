@@ -1,0 +1,15 @@
+// SPDX-License-Identifier: Apache-2.0
+// The SensorReading type — identical shape to the hand-written
+// endpoints/c/test/sample_sensor.*. Fed to endpoints/codegen to prove the
+// generated C89 codec is byte-identical to the hand-written one and to the
+// Rust core (ADR 0013 wire-fixed).
+@final
+struct SensorReading {
+  unsigned long id;
+  unsigned short kind;
+  octet flags;
+  float value;
+  unsigned long long stamp;
+  string label;
+  sequence<octet> raw;
+};

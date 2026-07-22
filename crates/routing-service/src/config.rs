@@ -26,6 +26,60 @@ pub struct RouterConfig {
     pub name: String,
     /// Routes managed by this router.
     pub routes: Vec<Route>,
+    /// Optional access-control list (O1). When present, every route's input and
+    /// output endpoint must be permitted by a matching [`AclRule`] (scoped by
+    /// the route's `tenant`), else the config is rejected. Absent = no
+    /// restriction (opt-in, so existing configs are unaffected).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub access_control: Option<AccessControl>,
+}
+
+/// Access-control list for a router: a set of allow rules. A route endpoint is
+/// permitted iff at least one rule matches its tenant, domain, and topic.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AccessControl {
+    /// Allow rules; a route needs a match for both its input and output.
+    pub allow: Vec<AclRule>,
+}
+
+/// One allow rule. `tenant`/`domain` are exact; `topics` are `*`/`?` globs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AclRule {
+    /// Tenant this rule applies to. `None` = applies to any tenant (and to
+    /// routes with no tenant).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tenant: Option<String>,
+    /// DDS domain id the rule permits.
+    pub domain: i32,
+    /// Permitted topic-name globs (`*` any run, `?` one char). `["*"]` = any.
+    pub topics: Vec<String>,
+}
+
+impl AccessControl {
+    /// Whether an endpoint on `domain`/`topic` for `tenant` is permitted.
+    #[must_use]
+    pub fn permits(&self, tenant: Option<&str>, domain: i32, topic: &str) -> bool {
+        self.allow.iter().any(|r| {
+            (r.tenant.is_none() || r.tenant.as_deref() == tenant)
+                && r.domain == domain
+                && r.topics.iter().any(|g| glob_match(g, topic))
+        })
+    }
+}
+
+/// Minimal `*`/`?` glob match (`*` = any run incl. empty, `?` = one char).
+#[must_use]
+pub fn glob_match(pattern: &str, text: &str) -> bool {
+    /// zerodds-lint: recursion-depth 256 (glob backtracking; bounded by pattern + text length)
+    fn m(p: &[u8], t: &[u8]) -> bool {
+        match p.first() {
+            None => t.is_empty(),
+            Some(b'*') => m(&p[1..], t) || (!t.is_empty() && m(p, &t[1..])),
+            Some(b'?') => !t.is_empty() && m(&p[1..], &t[1..]),
+            Some(&c) => t.first() == Some(&c) && m(&p[1..], &t[1..]),
+        }
+    }
+    m(pattern.as_bytes(), text.as_bytes())
 }
 
 fn default_router_name() -> String {
@@ -66,6 +120,17 @@ pub struct Route {
     /// instead of stamping the forward time. Default `false` (forward time).
     #[serde(default)]
     pub preserve_source_timestamp: bool,
+    /// Optional forward rate limit in samples per second (O1 throttle). When
+    /// set, the route forwards at most this many alive samples per second and
+    /// drops the excess (counted in `dds_router_samples_dropped_throttle_total`);
+    /// a short burst up to one second's budget is allowed. `None` = unlimited.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_samples_per_second: Option<u32>,
+    /// Tenant this route belongs to (O1 multi-tenancy). Used to scope the
+    /// access-control rules that must permit this route's endpoints. `None` =
+    /// no tenant (matched by rules with no tenant).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tenant: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -264,6 +329,20 @@ impl RouterConfig {
                     r.name
                 )));
             }
+            // O1 access control: when an ACL is present, both endpoints must be
+            // permitted for this route's tenant.
+            if let Some(acl) = &self.access_control {
+                let t = r.tenant.as_deref();
+                for (side, ep) in [("input", &r.input), ("output", &r.output)] {
+                    if !acl.permits(t, ep.domain, &ep.topic) {
+                        return Err(RoutingError::Config(format!(
+                            "route '{}': {side} endpoint (tenant {:?}, domain {}, topic '{}') \
+                             is not permitted by the access-control list",
+                            r.name, t, ep.domain, ep.topic
+                        )));
+                    }
+                }
+            }
         }
         Ok(())
     }
@@ -332,6 +411,8 @@ mod tests {
             transform: None,
             loop_guard: true,
             preserve_source_timestamp: false,
+            max_samples_per_second: None,
+            tenant: None,
         }
     }
 
@@ -340,8 +421,82 @@ mod tests {
         let c = RouterConfig {
             name: "r".into(),
             routes: vec![route("a", 0, 1)],
+            access_control: None,
         };
         assert!(c.validate().is_ok());
+    }
+
+    #[test]
+    fn glob_match_star_and_question() {
+        assert!(glob_match("*", "anything"));
+        assert!(glob_match("Sensor*", "SensorTemp"));
+        assert!(glob_match("Sensor?", "SensorA"));
+        assert!(!glob_match("Sensor?", "SensorAB"));
+        assert!(glob_match("A*C", "ABC"));
+        assert!(!glob_match("A*C", "ABD"));
+    }
+
+    #[test]
+    fn acl_rejects_endpoint_outside_allowlist() {
+        // route a: input domain 0, output domain 1 (topic "T").
+        let acl = AccessControl {
+            allow: vec![AclRule {
+                tenant: None,
+                domain: 0,
+                topics: vec!["*".into()],
+            }],
+        };
+        let c = RouterConfig {
+            name: "r".into(),
+            routes: vec![route("a", 0, 1)],
+            access_control: Some(acl),
+        };
+        // output domain 1 is not in the ACL → rejected.
+        assert!(c.validate().is_err());
+    }
+
+    #[test]
+    fn acl_accepts_when_both_endpoints_permitted() {
+        let acl = AccessControl {
+            allow: vec![
+                AclRule {
+                    tenant: None,
+                    domain: 0,
+                    topics: vec!["*".into()],
+                },
+                AclRule {
+                    tenant: None,
+                    domain: 1,
+                    topics: vec!["T".into()],
+                },
+            ],
+        };
+        let c = RouterConfig {
+            name: "r".into(),
+            routes: vec![route("a", 0, 1)],
+            access_control: Some(acl),
+        };
+        assert!(c.validate().is_ok());
+    }
+
+    #[test]
+    fn acl_scopes_rules_by_tenant() {
+        let mut r = route("a", 0, 1);
+        r.tenant = Some("acme".into());
+        let acl = AccessControl {
+            allow: vec![AclRule {
+                tenant: Some("other".into()),
+                domain: 0,
+                topics: vec!["*".into()],
+            }],
+        };
+        let c = RouterConfig {
+            name: "r".into(),
+            routes: vec![r],
+            access_control: Some(acl),
+        };
+        // The rule is for tenant "other"; the route is tenant "acme" → rejected.
+        assert!(c.validate().is_err());
     }
 
     #[test]
@@ -349,6 +504,7 @@ mod tests {
         let c = RouterConfig {
             name: "r".into(),
             routes: vec![route("a", 0, 1), route("a", 1, 2)],
+            access_control: None,
         };
         assert!(c.validate().is_err());
     }
@@ -360,6 +516,7 @@ mod tests {
         let c = RouterConfig {
             name: "r".into(),
             routes: vec![r],
+            access_control: None,
         };
         assert!(c.validate().is_err());
     }
@@ -371,6 +528,7 @@ mod tests {
         let c = RouterConfig {
             name: "r".into(),
             routes: vec![r],
+            access_control: None,
         };
         assert!(c.validate().is_err());
     }
@@ -380,6 +538,7 @@ mod tests {
         let c = RouterConfig {
             name: "r".into(),
             routes: vec![route("a", 0, 1)],
+            access_control: None,
         };
         let js = c.to_json().unwrap();
         let back = RouterConfig::from_json(&js).unwrap();

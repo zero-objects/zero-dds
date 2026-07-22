@@ -15,7 +15,7 @@ pub type HoldingType = u8;
 /// CommonBitfield.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CommonBitfield {
-    /// Startposition.
+    /// Start position.
     pub position: u16,
     /// Flags.
     pub flags: BitfieldFlag,
@@ -30,7 +30,7 @@ pub struct CommonBitfield {
 pub struct MinimalBitfield {
     /// Common.
     pub common: CommonBitfield,
-    /// Hash des Namens.
+    /// Hash of the name.
     pub name_hash: NameHash,
 }
 
@@ -66,7 +66,7 @@ impl MinimalBitfield {
 pub struct MinimalBitsetType {
     /// Flags.
     pub bitset_flags: BitsetTypeFlag,
-    /// Felder.
+    /// Fields.
     pub field_seq: Vec<MinimalBitfield>,
 }
 

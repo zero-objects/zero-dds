@@ -193,6 +193,9 @@ fn push_into<T: DdsType>(
         representation: 0,
         big_endian: false,
         source_timestamp: None,
+        // Built-in-topic samples are not user data — a durability service does
+        // not ingest them, so there is no source sequence to carry.
+        source_sequence_number: -1,
     });
     Ok(())
 }

@@ -1,0 +1,24 @@
+[package]
+name = "zerodds-spatial-dds"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "SpatialDDS 1.6 profile for ZeroDDS: the vendored OpenArCloud SpatialDDS IDL generated to Rust DDS types via ZeroDDS' own IDL codegen, plus multi-operator topic namespacing."
+repository = "https://github.com/zero-objects/zero-dds"
+homepage = "https://zerodds.org"
+keywords = ["dds", "spatial", "robotics", "geopose"]
+categories = ["network-programming"]
+publish = true
+
+[lints]
+workspace = true
+
+[dependencies]
+zerodds-cdr = { version = "1.0.0-rc.6", path = "../cdr", default-features = false, features = ["std"] }
+zerodds-types = { version = "1.0.0-rc.6", path = "../types", default-features = false, features = ["alloc"] }
+
+[build-dependencies]
+zerodds-idl = { version = "1.0.0-rc.6", path = "../idl" }
+zerodds-idl-rust = { version = "1.0.0-rc.6", path = "../idl-rust" }

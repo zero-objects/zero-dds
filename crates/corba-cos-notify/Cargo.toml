@@ -27,4 +27,4 @@ alloc = ["zerodds-cdr/alloc"]
 
 [dependencies]
 # StructuredEvent values (Property.value / remainder_of_body) are CORBA `any`.
-zerodds-cdr = { version = "1.0.0-rc.5", path = "../cdr", default-features = false }
+zerodds-cdr = { version = "1.0.0-rc.6", path = "../cdr", default-features = false }

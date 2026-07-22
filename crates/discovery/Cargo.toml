@@ -29,17 +29,17 @@ alloc = []
 metrics = ["std", "dep:zerodds-monitor"]
 
 [dependencies]
-zerodds-rtps = { version = "1.0.0-rc.5", path = "../rtps", default-features = false, features = ["alloc"] }
-zerodds-types = { version = "1.0.0-rc.5", path = "../types", default-features = false, features = ["alloc"] }
-zerodds-qos = { version = "1.0.0-rc.5", path = "../qos", default-features = false, features = ["alloc"] }
-zerodds-cdr = { version = "1.0.0-rc.5", path = "../cdr", default-features = false, features = ["alloc"] }
+zerodds-rtps = { version = "1.0.0-rc.6", path = "../rtps", default-features = false, features = ["alloc"] }
+zerodds-types = { version = "1.0.0-rc.6", path = "../types", default-features = false, features = ["alloc"] }
+zerodds-qos = { version = "1.0.0-rc.6", path = "../qos", default-features = false, features = ["alloc"] }
+zerodds-cdr = { version = "1.0.0-rc.6", path = "../cdr", default-features = false, features = ["alloc"] }
 # C3.4-c: security builtin-endpoint slots (DCPSParticipantStatelessMessage +
 # DCPSParticipantVolatileMessageSecure). We reimplement the CDR
 # encapsulation wrap inline (codec.rs) so that no Cargo cycle arises with
 # `zerodds-security-runtime` (which uses `zerodds-discovery` as a dev-dep).
-zerodds-security = { version = "1.0.0-rc.5", path = "../security", default-features = false, features = ["alloc"] }
+zerodds-security = { version = "1.0.0-rc.6", path = "../security", default-features = false, features = ["alloc"] }
 # Hook points for zerodds-monitor-1.1 §2.4. Optional.
-zerodds-monitor = { version = "1.0.0-rc.5", path = "../monitor", optional = true, default-features = false, features = ["std"] }
+zerodds-monitor = { version = "1.0.0-rc.6", path = "../monitor", optional = true, default-features = false, features = ["std"] }
 
 [dev-dependencies]
 zerodds-transport = { path = "../transport" }

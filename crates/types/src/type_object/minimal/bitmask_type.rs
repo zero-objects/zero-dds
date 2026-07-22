@@ -50,7 +50,7 @@ impl MinimalBitflag {
 pub struct MinimalBitmaskType {
     /// Flags.
     pub bitmask_flags: BitmaskTypeFlag,
-    /// Bit-Breite (Header).
+    /// Bit width (header).
     pub bit_bound: u16,
     /// Flag list.
     pub flag_seq: Vec<MinimalBitflag>,

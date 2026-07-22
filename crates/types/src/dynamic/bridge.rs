@@ -147,7 +147,7 @@ impl DynamicType {
     }
 
     /// XTypes §7.3.4.4 — `T[N]` → `CompleteArrayType`.
-    /// `bound_seq` traegt alle Array-Dimensionen.
+    /// `bound_seq` carries all array dimensions.
     fn to_complete_array(&self) -> Result<CompleteArrayType, DynamicError> {
         use crate::type_object::common::{
             AppliedBuiltinTypeAnnotations, CompleteTypeDetail, OptionalAppliedAnnotationSeq,
@@ -176,7 +176,7 @@ impl DynamicType {
     }
 
     /// XTypes §7.3.4.4 — `map<K, V>` → `CompleteMapType`.
-    /// `element_type` traegt den Value-, `key_element_type` den Key-Typ.
+    /// `element_type` carries the value type, `key_element_type` the key type.
     fn to_complete_map(&self) -> Result<CompleteMapType, DynamicError> {
         use crate::type_object::common::{
             AppliedBuiltinTypeAnnotations, CompleteTypeDetail, OptionalAppliedAnnotationSeq,
@@ -320,10 +320,10 @@ impl DynamicType {
         })
     }
 
-    /// Spec §7.3.4.4 — Bitset: ein `CompleteBitfield` je Member, mit
-    /// Bit-Startposition (`MemberDescriptor.id`), Breite
-    /// (`MemberDescriptor.bit_bound`) und Holding-Type (TypeKind-Byte des
-    /// Member-Typs, der ein primitiver Integer-Typ sein muss).
+    /// Spec §7.3.4.4 — Bitset: one `CompleteBitfield` per member, with the
+    /// bit start position (`MemberDescriptor.id`), width
+    /// (`MemberDescriptor.bit_bound`) and holding type (the TypeKind byte of
+    /// the member type, which must be a primitive integer type).
     fn to_complete_bitset(&self) -> Result<CompleteBitsetType, DynamicError> {
         use crate::type_object::common::{
             AppliedBuiltinMemberAnnotations, AppliedBuiltinTypeAnnotations, CompleteMemberDetail,
@@ -380,9 +380,9 @@ impl DynamicType {
         })
     }
 
-    /// Spec §7.3.4.4 — Annotation: ein `CompleteAnnotationParameter` je
-    /// Member (Parameter), mit Member-Id, Parameter-Typ, Name und dem
-    /// (opaque als UTF-8-Bytes abgelegten) Default-Value aus
+    /// Spec §7.3.4.4 — Annotation: one `CompleteAnnotationParameter` per
+    /// member (parameter), with the member id, parameter type, name and the
+    /// default value (stored opaquely as UTF-8 bytes) from
     /// `MemberDescriptor.default_value`.
     fn to_complete_annotation(&self) -> Result<CompleteAnnotationType, DynamicError> {
         use crate::type_object::common::{

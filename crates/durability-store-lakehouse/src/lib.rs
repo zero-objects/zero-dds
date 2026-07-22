@@ -55,6 +55,8 @@ CREATE TABLE IF NOT EXISTS samples (
     payload       BLOB    NOT NULL,
     representation TINYINT NOT NULL DEFAULT 1,
     big_endian    TINYINT NOT NULL DEFAULT 0,
+    source_guid   BLOB    NOT NULL DEFAULT ''::BLOB,
+    source_sequence BIGINT NOT NULL DEFAULT -1,
     PRIMARY KEY (topic, instance, sequence)
 );
 CREATE TABLE IF NOT EXISTS unregistered (
@@ -108,6 +110,14 @@ impl LakehouseStore {
     fn init(conn: Connection, default_contract: Contract) -> Result<Self> {
         conn.execute_batch(SCHEMA)
             .map_err(|e| backend("schema", e))?;
+        // O2 P5 migration: add the source-identity columns to a pre-P5 `samples`
+        // table (new DBs already have them from SCHEMA). DuckDB's
+        // `ADD COLUMN IF NOT EXISTS` is idempotent, so this is safe to re-run.
+        conn.execute_batch(
+            "ALTER TABLE samples ADD COLUMN IF NOT EXISTS source_guid BLOB NOT NULL DEFAULT ''::BLOB; \
+             ALTER TABLE samples ADD COLUMN IF NOT EXISTS source_sequence BIGINT NOT NULL DEFAULT -1;",
+        )
+        .map_err(|e| backend("migrate p5", e))?;
         Ok(Self {
             conn: Mutex::new(conn),
             contracts: Mutex::new(BTreeMap::new()),
@@ -230,8 +240,8 @@ impl DurabilityStore for LakehouseStore {
         }
 
         conn.execute(
-            "INSERT OR REPLACE INTO samples(topic, instance, sequence, created_nanos, payload, representation, big_endian) \
-             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT OR REPLACE INTO samples(topic, instance, sequence, created_nanos, payload, representation, big_endian, source_guid, source_sequence) \
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             params![
                 sample.topic,
                 inst,
@@ -239,7 +249,9 @@ impl DurabilityStore for LakehouseStore {
                 nanos_of(sample.created_at),
                 sample.payload,
                 i32::from(sample.representation),
-                i32::from(sample.big_endian)
+                i32::from(sample.big_endian),
+                sample.source_guid.to_vec(),
+                sample.source_sequence
             ],
         )
         .map_err(|e| backend("insert", e))?;
@@ -266,7 +278,7 @@ impl DurabilityStore for LakehouseStore {
         let conn = self.lock_conn()?;
         let limit = selector.limit.unwrap_or(DEFAULT_PAGE);
         let mut sql = String::from(
-            "SELECT instance, sequence, created_nanos, payload, representation, big_endian \
+            "SELECT instance, sequence, created_nanos, payload, representation, big_endian, source_guid, source_sequence \
              FROM samples WHERE topic = ?",
         );
         let mut binds: Vec<Box<dyn duckdb::ToSql>> = vec![Box::new(topic.to_string())];
@@ -308,6 +320,11 @@ impl DurabilityStore for LakehouseStore {
                 if inst.len() == 16 {
                     key.copy_from_slice(&inst);
                 }
+                let sg: Vec<u8> = r.get(6)?;
+                let mut source_guid = [0u8; 16];
+                if sg.len() == 16 {
+                    source_guid.copy_from_slice(&sg);
+                }
                 Ok(DurabilitySample {
                     topic: topic_owned.clone(),
                     instance_key: key,
@@ -316,6 +333,8 @@ impl DurabilityStore for LakehouseStore {
                     payload: r.get(3)?,
                     representation: r.get::<_, i32>(4)? as u8,
                     big_endian: r.get::<_, i32>(5)? != 0,
+                    source_guid,
+                    source_sequence: r.get::<_, i64>(7)?,
                 })
             })
             .map_err(|e| backend("query_map", e))?;

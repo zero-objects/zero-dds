@@ -37,9 +37,9 @@ default = []
 duckdb = ["dep:duckdb"]
 
 [dependencies]
-zerodds-durability-store = { version = "1.0.0-rc.5", path = "../durability-store" }
-zerodds-qos = { version = "1.0.0-rc.5", path = "../qos" }
+zerodds-durability-store = { version = "1.0.0-rc.6", path = "../durability-store" }
+zerodds-qos = { version = "1.0.0-rc.6", path = "../qos" }
 duckdb = { workspace = true, optional = true }
 
 [dev-dependencies]
-zerodds-qos = { version = "1.0.0-rc.5", path = "../qos" }
+zerodds-qos = { version = "1.0.0-rc.6", path = "../qos" }

@@ -17,4 +17,4 @@ name = "qos-matrix"
 path = "src/main.rs"
 
 [dependencies]
-zerodds-qos = { version = "1.0.0-rc.5", path = "../../crates/qos" }
+zerodds-qos = { version = "1.0.0-rc.6", path = "../../crates/qos" }

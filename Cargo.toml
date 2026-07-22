@@ -112,10 +112,16 @@ members = [
     "crates/durability-store",
     "crates/durability-store-file",
     "crates/durability-store-sqlite",
+    "crates/durability-store-postgres",
     "crates/durability-store-lakehouse",
     "crates/durability-service",
     "crates/durability-service-bin",
     "crates/routing-service",
+    "crates/spatial-dds",
+    "crates/spatial-ros2",
+    "endpoints/golden-gen",
+    "endpoints/codegen",
+    "endpoints/xrce-agent-demo",
     "crates/rpc",
     "crates/security",
     "crates/security-pki",
@@ -194,7 +200,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "1.0.0-rc.5"
+version = "1.0.0-rc.6"
 edition = "2024"
 rust-version = "1.88"
 license = "Apache-2.0"
@@ -310,6 +316,11 @@ aes = { version = "0.8", default-features = false }
 # sqlite (WAL) cold adapter for the Durability-Service (ADR 0009). `bundled`
 # compiles sqlite3 from source — no system libsqlite dependency on any target.
 rusqlite = { version = "0.32", features = ["bundled"] }
+# PostgreSQL cold adapter (ADR 0009, O11): the sync rust-postgres client — a
+# blocking API over its own internal runtime, so it fits the synchronous
+# `DurabilityStore` trait with no tokio in our code. Optional TimescaleDB
+# hypertable partitioning behind the adapter's own `timescaledb` feature.
+postgres = { version = "0.19" }
 # DuckDB lakehouse cold adapter (ADR 0009): in-process SQL (House) + Parquet
 # export (Lake). Links the *system* libduckdb (v1.5.3 — must match the duckdb
 # crate's expected ABI; installed in ci/Dockerfile.rust and on dev hosts) via

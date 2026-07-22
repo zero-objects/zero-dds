@@ -34,7 +34,23 @@ fn sample(topic: &str, inst: u8, seq: u64, bytes: usize) -> DurabilitySample {
         representation: 1,
         big_endian: false,
         created_at: SystemTime::UNIX_EPOCH + Duration::from_secs(seq),
+        source_guid: [inst; 16],
+        source_sequence: seq as i64,
     }
+}
+
+#[test]
+fn source_identity_round_trips_through_replay() {
+    // O2 P5: the store must persist and return the per-sample source identity
+    // (writer GUID + source sequence) so a durability service can dedup a
+    // writer's history against its live stream across a restart.
+    let store = InMemoryStore::default();
+    store.set_contract("T", Contract::default()).unwrap();
+    store.store(sample("T", 7, 42, 8)).unwrap();
+    let got = store.replay_for_topic("T").unwrap();
+    assert_eq!(got.len(), 1);
+    assert_eq!(got[0].source_guid, [7u8; 16]);
+    assert_eq!(got[0].source_sequence, 42);
 }
 
 #[test]

@@ -36,7 +36,10 @@ use zerodds_qos::policies::history::HistoryKind;
 
 // On-disk per-sample header: [8B created_at_nanos LE][1B representation]
 // [1B big_endian] then the payload body.
-const HEADER_LEN: usize = 10;
+// [8B created_at_nanos LE][1B representation][1B big_endian][16B source_guid]
+// [8B source_sequence LE]. The source-identity tail (O2 P5) extended the header
+// from 10 to 34 bytes; pre-P5 files are not read back (pre-1.0 format break).
+const HEADER_LEN: usize = 34;
 const DEFAULT_PAGE: usize = 1024;
 
 /// File-per-sample durability store rooted at a directory.
@@ -160,6 +163,9 @@ impl FileStore {
             return None;
         }
         let nanos = u64::from_le_bytes(raw[..8].try_into().ok()?);
+        let mut source_guid = [0u8; 16];
+        source_guid.copy_from_slice(&raw[10..26]);
+        let source_sequence = i64::from_le_bytes(raw[26..34].try_into().ok()?);
         Some(DurabilitySample {
             topic: topic.to_string(),
             instance_key: key,
@@ -168,6 +174,8 @@ impl FileStore {
             representation: raw[8],
             big_endian: raw[9] != 0,
             created_at: time_of(nanos),
+            source_guid,
+            source_sequence,
         })
     }
 
@@ -241,6 +249,8 @@ impl DurabilityStore for FileStore {
         buf.extend_from_slice(&nanos_of(sample.created_at).to_le_bytes());
         buf.push(sample.representation);
         buf.push(u8::from(sample.big_endian));
+        buf.extend_from_slice(&sample.source_guid);
+        buf.extend_from_slice(&sample.source_sequence.to_le_bytes());
         buf.extend_from_slice(&sample.payload);
         let path = inst_dir.join(format!("{}.bin", sample.sequence));
         std::fs::write(&path, &buf).map_err(|e| backend("write sample", e))?;

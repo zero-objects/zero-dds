@@ -443,9 +443,9 @@ pub struct MemberDescriptor {
     pub is_shared: bool,
     /// `default:` branch for a union.
     pub is_default_label: bool,
-    /// Bitfield-Breite in Bits (1..=64) — nur fuer `Bitset`-Felder belegt;
-    /// `id` traegt dabei die Bit-Startposition. Wird vom DynamicType →
-    /// TypeObject-Bridge (XTypes §7.3.4.4 CompleteBitfield) ausgewertet.
+    /// Bitfield width in bits (1..=64) — set only for `Bitset` fields;
+    /// `id` then carries the bit start position. Evaluated by the DynamicType →
+    /// TypeObject bridge (XTypes §7.3.4.4 CompleteBitfield).
     pub bit_bound: Option<u8>,
 }
 

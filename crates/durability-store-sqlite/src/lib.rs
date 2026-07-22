@@ -42,6 +42,8 @@ CREATE TABLE IF NOT EXISTS samples (
     payload       BLOB    NOT NULL,
     representation INTEGER NOT NULL DEFAULT 1,
     big_endian    INTEGER NOT NULL DEFAULT 0,
+    source_guid   BLOB    NOT NULL DEFAULT x'00000000000000000000000000000000',
+    source_sequence INTEGER NOT NULL DEFAULT -1,
     PRIMARY KEY (topic, instance, sequence)
 ) WITHOUT ROWID;
 CREATE INDEX IF NOT EXISTS idx_samples_topic ON samples(topic, instance, sequence);
@@ -100,6 +102,21 @@ impl SqliteStore {
             .map_err(|e| backend("pragma synchronous", e))?;
         conn.execute_batch(SCHEMA)
             .map_err(|e| backend("schema", e))?;
+        // O2 P5 migration: add the source-identity columns to a pre-P5 `samples`
+        // table. New DBs already have them from SCHEMA; on an existing DB the
+        // ALTER succeeds once and then returns "duplicate column name", which is
+        // the benign already-migrated case — ignore only that.
+        for stmt in [
+            "ALTER TABLE samples ADD COLUMN source_guid BLOB NOT NULL \
+             DEFAULT x'00000000000000000000000000000000'",
+            "ALTER TABLE samples ADD COLUMN source_sequence INTEGER NOT NULL DEFAULT -1",
+        ] {
+            if let Err(e) = conn.execute(stmt, []) {
+                if !e.to_string().contains("duplicate column name") {
+                    return Err(backend("migrate p5", e));
+                }
+            }
+        }
         Ok(Self {
             conn: Mutex::new(conn),
             contracts: Mutex::new(BTreeMap::new()),
@@ -198,8 +215,8 @@ impl DurabilityStore for SqliteStore {
         }
 
         conn.execute(
-            "INSERT OR REPLACE INTO samples(topic,instance,sequence,created_nanos,payload,representation,big_endian) \
-             VALUES (?1,?2,?3,?4,?5,?6,?7)",
+            "INSERT OR REPLACE INTO samples(topic,instance,sequence,created_nanos,payload,representation,big_endian,source_guid,source_sequence) \
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
             params![
                 sample.topic,
                 inst,
@@ -207,7 +224,9 @@ impl DurabilityStore for SqliteStore {
                 nanos_of(sample.created_at),
                 sample.payload,
                 i64::from(sample.representation),
-                i64::from(sample.big_endian)
+                i64::from(sample.big_endian),
+                sample.source_guid.to_vec(),
+                sample.source_sequence
             ],
         )
         .map_err(|e| backend("insert", e))?;
@@ -230,7 +249,7 @@ impl DurabilityStore for SqliteStore {
         let limit = selector.limit.unwrap_or(DEFAULT_PAGE);
         // Build a dynamic WHERE with bound params (fetch limit+1 to detect more).
         let mut sql = String::from(
-            "SELECT instance,sequence,created_nanos,payload,representation,big_endian \
+            "SELECT instance,sequence,created_nanos,payload,representation,big_endian,source_guid,source_sequence \
              FROM samples WHERE topic=?1",
         );
         let mut binds: Vec<Box<dyn rusqlite::ToSql>> = vec![Box::new(topic.to_string())];
@@ -279,6 +298,11 @@ impl DurabilityStore for SqliteStore {
                 if inst.len() == 16 {
                     key.copy_from_slice(&inst);
                 }
+                let sg: Vec<u8> = r.get(6)?;
+                let mut source_guid = [0u8; 16];
+                if sg.len() == 16 {
+                    source_guid.copy_from_slice(&sg);
+                }
                 Ok(DurabilitySample {
                     topic: topic_owned.clone(),
                     instance_key: key,
@@ -287,6 +311,8 @@ impl DurabilityStore for SqliteStore {
                     payload: r.get(3)?,
                     representation: r.get::<_, i64>(4)? as u8,
                     big_endian: r.get::<_, i64>(5)? != 0,
+                    source_guid,
+                    source_sequence: r.get::<_, i64>(7)?,
                 })
             })
             .map_err(|e| backend("query_map", e))?;

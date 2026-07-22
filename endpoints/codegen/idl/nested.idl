@@ -1,0 +1,8 @@
+// @appendable nested + sequence<struct> — matches golden-gen encode_nested.
+@appendable struct Inner { unsigned short a; unsigned long b; };
+@appendable struct Outer {
+  unsigned long id;
+  Inner one;
+  sequence<Inner> many;
+  string label;
+};

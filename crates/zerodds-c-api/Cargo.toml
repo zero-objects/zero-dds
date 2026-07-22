@@ -56,16 +56,16 @@ fips = ["security", "zerodds-dcps/fips", "zerodds-security-runtime/fips"]
 wolfcrypt = ["security", "zerodds-dcps/wolfcrypt", "zerodds-security-runtime/wolfcrypt"]
 
 [dependencies]
-zerodds-cdr = { version = "1.0.0-rc.5", path = "../cdr", features = ["alloc", "std"] }
-zerodds-dcps = { version = "1.0.0-rc.5", path = "../dcps" }
-zerodds-qos = { version = "1.0.0-rc.5", path = "../qos" }
-zerodds-rtps = { version = "1.0.0-rc.5", path = "../rtps" }
-zerodds-sql-filter = { version = "1.0.0-rc.5", path = "../sql-filter" }
-zerodds-types = { version = "1.0.0-rc.5", path = "../types" }
+zerodds-cdr = { version = "1.0.0-rc.6", path = "../cdr", features = ["alloc", "std"] }
+zerodds-dcps = { version = "1.0.0-rc.6", path = "../dcps" }
+zerodds-qos = { version = "1.0.0-rc.6", path = "../qos" }
+zerodds-rtps = { version = "1.0.0-rc.6", path = "../rtps" }
+zerodds-sql-filter = { version = "1.0.0-rc.6", path = "../sql-filter" }
+zerodds-types = { version = "1.0.0-rc.6", path = "../types" }
 # Active only under the `security` feature — otherwise NOT compiled.
-zerodds-security-runtime = { version = "1.0.0-rc.5", path = "../security-runtime", optional = true }
+zerodds-security-runtime = { version = "1.0.0-rc.6", path = "../security-runtime", optional = true }
 # Active only under the `flatdata-loan` feature — zero-copy SHM slot loan.
-zerodds-flatdata = { version = "1.0.0-rc.5", path = "../flatdata", optional = true, default-features = false, features = ["std", "posix-mmap"] }
+zerodds-flatdata = { version = "1.0.0-rc.6", path = "../flatdata", optional = true, default-features = false, features = ["std", "posix-mmap"] }
 
 [build-dependencies]
 # 0.29+ understands `#[unsafe(no_mangle)]` (Rust 2024 syntax).
