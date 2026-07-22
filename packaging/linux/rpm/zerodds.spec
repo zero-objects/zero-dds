@@ -121,7 +121,7 @@ Spec: zerodds-deployment-1.0 §2.3. DDS-to-DDS forwarding daemon
 %autosetup -n zerodds-%{version}-rc.1
 
 %build
-cargo build --release --workspace --exclude zerodds-durability-store-lakehouse --exclude zerodds-durability-service-bin --exclude iceoryx2-oracle-consumer
+cargo build --release --workspace --exclude zerodds-durability-store-lakehouse --exclude zerodds-durability-service-bin --exclude iceoryx2-oracle-consumer --exclude zerodds-endpoint-codegen --exclude zerodds-endpoint-golden --exclude zerodds-xrce-agent-demo
 
 %install
 install -d %{buildroot}%{_bindir}

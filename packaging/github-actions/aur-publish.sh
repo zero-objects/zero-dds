@@ -175,7 +175,7 @@ prepare() {
 
 build() {
     cd "${SOURCE_DIR}"
-    cargo build --frozen --release --workspace --exclude zerodds-durability-store-lakehouse --exclude zerodds-durability-service-bin
+    cargo build --frozen --release --workspace --exclude zerodds-durability-store-lakehouse --exclude zerodds-durability-service-bin --exclude zerodds-endpoint-codegen --exclude zerodds-endpoint-golden --exclude zerodds-xrce-agent-demo
 }
 
 package() {
