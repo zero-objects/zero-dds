@@ -19,7 +19,7 @@ Production-grade pure-Rust implementation of the **OMG Data Distribution
 Service** with bindings for C, C++, C#, Java, Python, TypeScript and
 Flutter, plus seven protocol bridges and a complete CORBA/CCM stack.
 
-> **Status:** `1.0.0-rc.3.1` Release Candidate. 122 crates published on
+> **Status:** `1.0.0-rc.6` Release Candidate. 125 crates published on
 > crates.io, all bridge layers conformance-verified against Cyclone DDS,
 > RabbitMQ, mosquitto, omniORB and gRPC reflection.
 
@@ -71,10 +71,10 @@ sudo apt install zerodds-cli                 # Debian/Ubuntu (.deb)
 sudo dnf install zerodds-cli                 # RHEL/Fedora (.rpm)
 
 # Or via Docker (one image per tool/bridge)
-docker pull ghcr.io/zero-objects/zerodds-cli:1.0.0-rc.3
+docker pull ghcr.io/zero-objects/zerodds-cli:1.0.0-rc.6
 ```
 
-Hello world publisher (compiles + runs against the published `1.0.0-rc.3.1`
+Hello world publisher (compiles + runs against the published `1.0.0-rc.6`
 crate — see [`examples/`](https://github.com/zero-objects/zerodds-examples)):
 
 ```rust
