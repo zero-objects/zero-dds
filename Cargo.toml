@@ -8,6 +8,7 @@ members = [
     "crates/cdr",
     "crates/cdr-derive",
     "crates/types",
+    "crates/proto",
     "crates/qos",
     "crates/rtps",
     "crates/discovery",

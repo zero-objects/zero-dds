@@ -150,6 +150,10 @@ pub use dds_type::{
     DdsType, DdsTypeRow, DecodeError, EncodeError, Extensibility, ExtensibilityKind, RawBytes,
 };
 pub use entity::{Entity, EntityState, StatusCondition, StatusMask, immutable_if_enabled};
+/// The SQL-filter field value type ([`DdsType::field_value`] / content-filtered
+/// topics). Re-exported so `#[derive(DdsType)]` can emit `field_value` without
+/// the user crate depending on `zerodds-sql-filter` directly.
+pub use zerodds_sql_filter::Value as FilterValue;
 
 pub use coherent_set::{CoherentScope, CoherentSetMarker, GroupAccessScope};
 #[cfg(feature = "std")]

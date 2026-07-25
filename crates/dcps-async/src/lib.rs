@@ -47,7 +47,9 @@ mod writer;
 pub use factory::AsyncDomainParticipantFactory;
 pub use participant::AsyncDomainParticipant;
 pub use publisher::AsyncPublisher;
-pub use reader::{AsyncDataReader, DataAvailableStream, PublicationMatchedStream, SampleStream};
+pub use reader::{
+    AsyncDataReader, DataAvailableStream, PublicationMatchedStream, SampleInfoStream, SampleStream,
+};
 pub use subscriber::AsyncSubscriber;
 pub use writer::AsyncDataWriter;
 

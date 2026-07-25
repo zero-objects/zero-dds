@@ -78,15 +78,21 @@ Implementation:
 
 ### §2.2.1 AsyncDataReader::take_stream
 - **Anforderung:** `fn take_stream() -> impl Stream<Item = Sample<T>> + Send`.
-- **Repo:** `crates/dcps-async/src/reader.rs::take_stream` + `SampleStream`
-- **Tests:** kompiliert + builder-Test (smoke)
-- **Status:** done — Stream nutzt den nativen Reader-Slot-Waker (`register_user_reader_waker`, Wake bei Sample-Arrival, kein Polling); im Offline-Mode dient detached-thread-Sleep als Fallback (Spec §3.3).
+- **Repo:** `crates/dcps-async/src/reader.rs::take_stream` (`Item = T`, ergonomisch) + `take_stream_with_info` (`SampleInfoStream`, `Item = Sample<T>` — der Spec-Wortlaut).
+- **Tests:** `tests/smoke.rs` (builder) + example `rust-async-showcase` (`take_stream_with_info_yields_sample_info`).
+- **Status:** done — Stream nutzt den nativen Reader-Slot-Waker (`register_user_reader_waker`, Wake bei Sample-Arrival, kein Polling); im Offline-Mode dient detached-thread-Sleep als Fallback (Spec §3.3). SampleInfo-Variante liefert `Sample<T>`.
 
 ### §2.2.2 AsyncDataReader::take
 - **Anforderung:** `async fn take(timeout) -> Result<Vec<Sample<T>>>`.
-- **Repo:** `crates/dcps-async/src/reader.rs::take`
-- **Tests:** `tests/smoke.rs::reader_take_returns_empty_after_timeout`
-- **Status:** done
+- **Repo:** `crates/dcps-async/src/reader.rs::take` (`Vec<T>`) + `take_with_info` / `read_with_info` (`Vec<Sample<T>>`) + `read` (non-consuming).
+- **Tests:** `tests/smoke.rs::reader_take_returns_empty_after_timeout`; example `take_with_info_carries_sample_info`, `read_is_non_consuming`.
+- **Status:** done — `take`/`read` liefern `T` (ergonomisch); `take_with_info`/`read_with_info` liefern `Sample<T>` mit voller SampleInfo (Spec-Wortlaut).
+
+### §2.2.4a Content-Filtered-Reader (Erweiterung)
+- **Anforderung:** async-Pendant zu ContentFilteredTopic / DataReader::with_filter (DDS 1.4 §2.2.2.5.4) — in der Original-Spec §2.2 nicht gelistet, aber für Vollständigkeit ergänzt.
+- **Repo:** `AsyncSubscriber::create_datareader_filtered` (Closure) + `AsyncDomainParticipant::create_contentfilteredtopic` + `AsyncSubscriber::create_datareader_cft` (SQL, via `DdsTypeRow`). Voraussetzung: `#[derive(DdsType)]` generiert `field_value` (crates/cdr-derive), sonst matcht der SQL-Filter nichts.
+- **Tests:** example `rust-async-showcase` (`filtered_reader_delivers_only_matching`, `sql_content_filtered_reader_delivers_only_matching`).
+- **Status:** done.
 
 ### §2.2.3 AsyncDataReader::wait_for_matched_publication
 - **Anforderung:** dito wait_for_matched_subscription.
@@ -194,15 +200,15 @@ Implementation:
 
 ### §9.2 take_stream Throughput
 - **Anforderung:** Kein Sample-Verlust durch Polling-Latenz; 100 % Sample-Rate.
-- **Repo:** —
-- **Tests:** —
-- **Status:** open — Bench für take_stream-Throughput offen.
+- **Repo:** `crates/dcps-async/tests/throughput.rs`.
+- **Tests:** `take_stream_delivers_all_samples_no_loss` — Reliable+KeepAll-Writer publiziert N=500, Reader drainiert `take_stream`, MUSS 100 % surfacen. ~70k samples/s auf codepit.
+- **Status:** done — No-Loss-Invariante asserted, Throughput gemessen (codepit-verifiziert).
 
 ### §9.3 Allokation pro write()
 - **Anforderung:** 0 Heap-Allokationen extra gegen sync.
-- **Repo:** —
-- **Tests:** —
-- **Status:** open — dhat-rs-Bench offen.
+- **Repo:** `crates/dcps-async/tests/alloc.rs` (dhat global-allocator).
+- **Tests:** `async_write_adds_no_extra_heap_vs_sync` — dhat vergleicht per-write-Allokationen sync vs async (offline); async ≤ sync. Nach Entfernen des per-write `sample.clone()`: 9.03 blocks/write, **0 extra** (vorher +1).
+- **Status:** done — Ziel erreicht (codepit-verifiziert); der Bench deckte den überflüssigen Klon auf, der jetzt entfernt ist.
 
 ## §10 Decisions
 

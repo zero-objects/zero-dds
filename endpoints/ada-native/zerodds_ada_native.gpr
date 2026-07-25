@@ -1,0 +1,25 @@
+-- SPDX-License-Identifier: Apache-2.0
+-- Copyright 2026 ZeroDDS Contributors
+--
+--  Pure-Ada endpoint SDK -- Stage 2 (ADR 0013). No C, no FFI: a self-contained
+--  Ada XCDR wire-core, byte-identical to the Rust core.
+
+project Zerodds_Ada_Native is
+
+   for Languages use ("Ada");
+   for Source_Dirs use ("src", "test");
+   for Object_Dir use "build";
+   for Exec_Dir use "build";
+   for Main use
+     ("test_native_identity.adb", "test_native_roundtrip.adb",
+      "test_native_framing.adb", "test_native_reflect.adb");
+
+   package Compiler is
+      for Default_Switches ("Ada") use ("-g", "-O2", "-gnat2022", "-gnatwa");
+   end Compiler;
+
+   package Binder is
+      for Default_Switches ("Ada") use ("-Es");
+   end Binder;
+
+end Zerodds_Ada_Native;

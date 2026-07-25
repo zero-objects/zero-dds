@@ -2,8 +2,12 @@
 // Copyright 2026 ZeroDDS Contributors
 //! AsyncDomainParticipant — newtype around the sync variant.
 
+use alloc::string::String;
+use alloc::vec::Vec;
+
 use zerodds_dcps::{
-    DdsType, DomainParticipant, PublisherQos, Result, SubscriberQos, Topic, TopicQos,
+    ContentFilteredTopic, DdsType, DomainParticipant, PublisherQos, Result, SubscriberQos, Topic,
+    TopicQos,
 };
 
 use crate::{AsyncPublisher, AsyncSubscriber};
@@ -33,6 +37,29 @@ impl AsyncDomainParticipant {
     /// As `DomainParticipant::create_topic`.
     pub fn create_topic<T: DdsType>(&self, name: &str, qos: TopicQos) -> Result<Topic<T>> {
         self.inner.create_topic::<T>(name, qos)
+    }
+
+    /// Creates a content-filtered topic (SQL subset, DDS 1.4 §2.2.2.2.1.13). Use
+    /// it with [`crate::AsyncSubscriber::create_datareader_cft`] for a filtered
+    /// async reader. `filter_parameters` replace `%0`, `%1`, ... in the
+    /// expression.
+    ///
+    /// # Errors
+    /// As `DomainParticipant::create_contentfilteredtopic` (empty name /
+    /// expression, parse error, missing `%N` parameter).
+    pub fn create_contentfilteredtopic<T: DdsType>(
+        &self,
+        name: &str,
+        related_topic: &Topic<T>,
+        filter_expression: &str,
+        filter_parameters: Vec<String>,
+    ) -> Result<ContentFilteredTopic<T>> {
+        self.inner.create_contentfilteredtopic::<T>(
+            name,
+            related_topic,
+            filter_expression,
+            filter_parameters,
+        )
     }
 
     /// Creates a publisher.

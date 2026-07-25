@@ -1,0 +1,29 @@
+-- SPDX-License-Identifier: Apache-2.0
+-- Copyright 2026 ZeroDDS Contributors
+--
+--  Ada Stage 1 endpoint SDK (ADR 0013): thin Ada bindings over the C89
+--  wire-core (endpoints/c). gprbuild compiles both the Ada sources and the C
+--  wire-core into the byte-identity and UDP-loopback test executables.
+
+project Zerodds_Ada is
+
+   for Languages use ("Ada", "C");
+   for Source_Dirs use ("src", "test", "../c/src", "../c/include");
+   for Object_Dir use "build";
+   for Exec_Dir use "build";
+   for Main use ("test_byte_identity.adb", "test_udp_loopback.adb");
+
+   --  The C endpoint/reflect units are not needed by Stage 1; only the
+   --  wire-core primitives are bound.
+   for Excluded_Source_Files use ("zerodds_endpoint.c", "zerodds_reflect.c");
+
+   package Compiler is
+      for Default_Switches ("Ada") use ("-g", "-O2", "-gnat2022", "-gnatwa");
+      for Default_Switches ("C") use ("-std=c89", "-pedantic", "-O2");
+   end Compiler;
+
+   package Binder is
+      for Default_Switches ("Ada") use ("-Es");
+   end Binder;
+
+end Zerodds_Ada;

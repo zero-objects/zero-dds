@@ -9,7 +9,7 @@ use core::task::{Context, Poll};
 use core::time::Duration;
 
 use futures_core::Stream;
-use zerodds_dcps::{DataReader, DataReaderQos, DdsType, Result};
+use zerodds_dcps::{DataReader, DataReaderQos, DdsType, Result, Sample};
 
 /// Async wrapper around `DataReader<T>`.
 pub struct AsyncDataReader<T: DdsType + Send + Sync + 'static> {
@@ -65,6 +65,79 @@ impl<T: DdsType + Send + Sync + 'static> AsyncDataReader<T> {
                 return Ok(Vec::new());
             }
             crate::yield_for(Duration::from_millis(10)).await;
+        }
+    }
+
+    /// Non-consuming counterpart of [`Self::take`]: resolves with the samples
+    /// currently in the reader (marking them `READ`, spec §2.2.2.5.3.4) without
+    /// removing them, or an empty `Vec` on timeout.
+    ///
+    /// # Errors
+    /// Wire/decode errors, same as sync `read`.
+    pub async fn read(&self, timeout: Duration) -> Result<Vec<T>> {
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            let samples = self.inner.read()?;
+            if !samples.is_empty() {
+                return Ok(samples);
+            }
+            if std::time::Instant::now() >= deadline {
+                return Ok(Vec::new());
+            }
+            crate::yield_for(Duration::from_millis(10)).await;
+        }
+    }
+
+    /// Like [`Self::take`] but returns each sample with its [`SampleInfo`]
+    /// (`Sample<T>`, spec §2.2 — source timestamp, instance/view/sample state,
+    /// `valid_data`, generation counts).
+    ///
+    /// [`SampleInfo`]: zerodds_dcps::SampleInfo
+    ///
+    /// # Errors
+    /// Wire/decode errors, same as sync `take_with_info`.
+    pub async fn take_with_info(&self, timeout: Duration) -> Result<Vec<Sample<T>>> {
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            let samples = self.inner.take_with_info()?;
+            if !samples.is_empty() {
+                return Ok(samples);
+            }
+            if std::time::Instant::now() >= deadline {
+                return Ok(Vec::new());
+            }
+            crate::yield_for(Duration::from_millis(10)).await;
+        }
+    }
+
+    /// Non-consuming [`Self::take_with_info`]: samples with full `SampleInfo`,
+    /// left in the reader (marked `READ`).
+    ///
+    /// # Errors
+    /// Wire/decode errors, same as sync `read_with_info`.
+    pub async fn read_with_info(&self, timeout: Duration) -> Result<Vec<Sample<T>>> {
+        let deadline = std::time::Instant::now() + timeout;
+        loop {
+            let samples = self.inner.read_with_info()?;
+            if !samples.is_empty() {
+                return Ok(samples);
+            }
+            if std::time::Instant::now() >= deadline {
+                return Ok(Vec::new());
+            }
+            crate::yield_for(Duration::from_millis(10)).await;
+        }
+    }
+
+    /// Like [`Self::take_stream`] but yields `Sample<T>` (data + `SampleInfo`) —
+    /// the `Stream<Item = Sample<T>>` of spec §2.2.
+    #[must_use]
+    pub fn take_stream_with_info(&self) -> SampleInfoStream<T> {
+        SampleInfoStream {
+            reader: Arc::clone(&self.inner),
+            buffered: Vec::new(),
+            poll_interval: Duration::from_millis(5),
+            sleep_until: None,
         }
     }
 
@@ -336,6 +409,58 @@ impl<T: DdsType + Send + Sync + 'static> Stream for SampleStream<T> {
                     std::thread::sleep(interval);
                     waker.wake();
                 });
+                Poll::Pending
+            }
+            Err(_) => Poll::Ready(None),
+        }
+    }
+}
+
+/// Stream over reader samples **with** their [`SampleInfo`] (`Sample<T>`). Like
+/// [`SampleStream`] but preserves the per-sample metadata. Ends when the reader
+/// is dropped.
+///
+/// [`SampleInfo`]: zerodds_dcps::SampleInfo
+pub struct SampleInfoStream<T: DdsType + Send + Sync + 'static> {
+    reader: Arc<DataReader<T>>,
+    buffered: Vec<Sample<T>>,
+    poll_interval: Duration,
+    sleep_until: Option<std::time::Instant>,
+}
+
+impl<T: DdsType + Send + Sync + 'static> Unpin for SampleInfoStream<T> {}
+
+impl<T: DdsType + Send + Sync + 'static> Stream for SampleInfoStream<T> {
+    type Item = Sample<T>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Sample<T>>> {
+        let this = self.get_mut();
+
+        if !this.buffered.is_empty() {
+            return Poll::Ready(Some(this.buffered.remove(0)));
+        }
+
+        if let Some(deadline) = this.sleep_until {
+            if std::time::Instant::now() < deadline {
+                schedule_wake(cx, deadline);
+                return Poll::Pending;
+            }
+            this.sleep_until = None;
+        }
+
+        match this.reader.take_with_info() {
+            Ok(mut samples) if !samples.is_empty() => {
+                let first = samples.remove(0);
+                this.buffered = samples;
+                Poll::Ready(Some(first))
+            }
+            Ok(_) => {
+                if let Some((rt, eid)) = this.reader.runtime_handle() {
+                    rt.register_user_reader_waker(eid, Some(cx.waker().clone()));
+                    return Poll::Pending;
+                }
+                this.sleep_until = Some(std::time::Instant::now() + this.poll_interval);
+                schedule_wake_in(cx, this.poll_interval);
                 Poll::Pending
             }
             Err(_) => Poll::Ready(None),

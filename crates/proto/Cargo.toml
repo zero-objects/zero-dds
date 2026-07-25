@@ -1,0 +1,30 @@
+[package]
+name = "zerodds-proto"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Protocol Buffers type reuse for DDS: FileDescriptorSet -> XTypes DynamicType, so a .proto data model rides the DDS-native XCDR wire. Pure-Rust no_std + alloc."
+repository = "https://github.com/zero-objects/zero-dds"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-proto"
+readme = "README.md"
+keywords = ["dds", "protobuf", "xtypes", "schema", "no-std"]
+categories = ["network-programming", "data-structures", "no-std"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+safety = []
+default = ["std"]
+std = ["alloc", "zerodds-types/std"]
+alloc = ["zerodds-types/alloc"]
+
+[dependencies]
+zerodds-types = { version = "1.0.0-rc.6", path = "../types", default-features = false, features = ["alloc"] }

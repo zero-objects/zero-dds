@@ -102,6 +102,19 @@ fn expand(ast: &DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
         }
     });
 
+    // §2.2.2.3.3 content-filter support: map each scalar field to a
+    // `FilterValue` so SQL filter expressions (ContentFilteredTopic /
+    // QueryCondition) can read it by name. Non-scalar fields are skipped
+    // (field_value returns None -> not filterable).
+    let field_value_arms = fields.iter().filter_map(|f| {
+        let ident = f.ident.as_ref()?;
+        let name_str = ident.to_string();
+        let value_expr = filter_value_expr(&f.ty, ident)?;
+        Some(quote! {
+            #name_str => ::core::option::Option::Some(#value_expr),
+        })
+    });
+
     let key_holder_method = if is_keyed {
         quote! {
             fn encode_key_holder_be(
@@ -160,10 +173,42 @@ fn expand(ast: &DeriveInput) -> syn::Result<proc_macro2::TokenStream> {
             }
 
             #key_holder_method
+
+            fn field_value(&self, path: &str)
+                -> ::core::option::Option<::zerodds_dcps::FilterValue>
+            {
+                match path {
+                    #( #field_value_arms )*
+                    _ => ::core::option::Option::None,
+                }
+            }
         }
     };
 
     Ok(expanded)
+}
+
+/// The `FilterValue` constructor for a scalar field type, or `None` for a type
+/// that is not filterable (nested struct, sequence, ...).
+fn filter_value_expr(ty: &syn::Type, ident: &syn::Ident) -> Option<proc_macro2::TokenStream> {
+    let syn::Type::Path(tp) = ty else {
+        return None;
+    };
+    let leaf = tp.path.segments.last()?.ident.to_string();
+    let expr = match leaf.as_str() {
+        "i8" | "i16" | "i32" | "i64" | "u8" | "u16" | "u32" | "u64" => {
+            quote! { ::zerodds_dcps::FilterValue::Int(self.#ident as i64) }
+        }
+        "f32" | "f64" => {
+            quote! { ::zerodds_dcps::FilterValue::Float(self.#ident as f64) }
+        }
+        "bool" => quote! { ::zerodds_dcps::FilterValue::Bool(self.#ident) },
+        "String" => {
+            quote! { ::zerodds_dcps::FilterValue::String(self.#ident.clone()) }
+        }
+        _ => return None,
+    };
+    Some(expr)
 }
 
 #[derive(Default)]

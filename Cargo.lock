@@ -7761,6 +7761,8 @@ name = "zerodds-dcps-async"
 version = "1.0.0-rc.6"
 dependencies = [
  "criterion",
+ "dhat",
+ "futures",
  "futures-core",
  "proptest",
  "tokio",
@@ -8172,6 +8174,13 @@ dependencies = [
  "ring",
  "zerodds-monitor",
  "zerodds-security-crypto",
+]
+
+[[package]]
+name = "zerodds-proto"
+version = "1.0.0-rc.6"
+dependencies = [
+ "zerodds-types",
 ]
 
 [[package]]

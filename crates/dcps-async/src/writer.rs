@@ -48,10 +48,7 @@ impl<T: DdsType + Send + Sync + 'static> AsyncDataWriter<T> {
     /// In the sync path a `Condvar::wait_timeout` would block here —
     /// the async path uses a yield-retry loop without a
     /// thread block.
-    pub async fn write(&self, sample: &T) -> Result<()>
-    where
-        T: Clone,
-    {
+    pub async fn write(&self, sample: &T) -> Result<()> {
         let max_block = self.inner.qos().reliability.max_blocking_time;
         let max_block_nanos = max_block.to_nanos();
         // INFINITE → our retry loop still has a safety cap
@@ -68,9 +65,8 @@ impl<T: DdsType + Send + Sync + 'static> AsyncDataWriter<T> {
             Some(std::time::Instant::now() + core::time::Duration::new(secs, nanos))
         };
 
-        let s = sample.clone();
         loop {
-            match self.inner.write(&s) {
+            match self.inner.write(sample) {
                 Ok(()) => return Ok(()),
                 Err(zerodds_dcps::DdsError::OutOfResources { .. }) => {
                     // Wait for a drain.

@@ -941,6 +941,14 @@ impl<T: DdsType> DataReader<T> {
     /// # Errors
     /// Same as `take`.
     pub fn read(&self) -> Result<Vec<T>> {
+        // Live mode: stage any samples already delivered on the mpsc into the
+        // inbox first, so read() (non-consuming) reflects all arrived data.
+        // They stay in the inbox until take() drains them — without this, live
+        // samples sit in the mpsc unseen by read() (and by
+        // `data_available_stream`, which polls read()).
+        #[cfg(feature = "std")]
+        self.stage_pending_rx();
+
         let raw = {
             let inbox = self
                 .inbox
@@ -1325,6 +1333,51 @@ impl<T: DdsType> DataReader<T> {
     /// # Errors
     /// [`DdsError::Timeout`] if nothing arrives within the time window.
     #[cfg(feature = "std")]
+    /// Non-blocking drain of all currently-available mpsc samples into the
+    /// staging inbox (live mode only). Alive samples are staged; lifecycle
+    /// events are applied to the tracker. Used by `read()` so a non-consuming
+    /// read reflects data that has already been delivered on the channel.
+    #[cfg(feature = "std")]
+    fn stage_pending_rx(&self) {
+        let Some(rx_mu) = self.rx.as_ref() else {
+            return;
+        };
+        let Ok(rx) = rx_mu.lock() else {
+            return;
+        };
+        loop {
+            match rx.try_recv() {
+                Ok(sample @ crate::runtime::UserSample::Alive { .. }) => {
+                    if let Ok(mut inbox) = self.inbox.lock() {
+                        inbox.push(sample);
+                    }
+                }
+                Ok(crate::runtime::UserSample::Lifecycle { key_hash, kind }) => {
+                    let lc_kind = match kind {
+                        zerodds_rtps::history_cache::ChangeKind::NotAliveDisposed
+                        | zerodds_rtps::history_cache::ChangeKind::NotAliveDisposedUnregistered => {
+                            crate::sample_info::InstanceStateKind::NotAliveDisposed
+                        }
+                        zerodds_rtps::history_cache::ChangeKind::NotAliveUnregistered => {
+                            crate::sample_info::InstanceStateKind::NotAliveNoWriters
+                        }
+                        _ => crate::sample_info::InstanceStateKind::Alive,
+                    };
+                    let mut holder_bytes = Vec::with_capacity(16);
+                    holder_bytes.extend_from_slice(&key_hash);
+                    let _ = self.__push_lifecycle(key_hash, holder_bytes, lc_kind);
+                }
+                Err(_) => break, // Empty or Disconnected
+            }
+        }
+    }
+
+    /// Blocks up to `timeout` for at least one sample to be available, staging
+    /// one delivered mpsc sample into the inbox (live mode). Returns
+    /// `Timeout` if none arrives. Offline mode: `Ok` iff the inbox is non-empty.
+    ///
+    /// # Errors
+    /// `Timeout` on no data; `PreconditionNotMet` if an internal lock is poisoned.
     pub fn wait_for_data(&self, timeout: core::time::Duration) -> Result<()> {
         let Some(rx_mu) = self.rx.as_ref() else {
             // Offline mode: if the inbox already has something, OK,
