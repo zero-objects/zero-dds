@@ -98,6 +98,47 @@ fn main() {
 A full publish→subscribe roundtrip (two participants over UDP) and 14 further
 chapters in [`examples/tutorials/dds-chat/`](examples/tutorials/dds-chat/).
 
+## Quickstart CMake
+
+```cmake
+cmake_minimum_required(VERSION 3.16 FATAL_ERROR)
+
+project(
+  MyProject
+  LANGUAGES C CXX
+)
+
+set(CMAKE_CXX_STANDARD 17) # Tested also with CMAKE_CXX_STANDARD == 23
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+include(FetchContent)
+FetchContent_Declare(
+  zerodds
+  GIT_REPOSITORY https://github.com/zero-objects/zero-dds.git
+  GIT_TAG        main # Or any other branch/tag
+)
+FetchContent_MakeAvailable(zerodds)
+
+add_executable(${PROJECT_NAME} main.cpp)
+target_link_libraries(${PROJECT_NAME} PUBLIC
+    zerodds::zerodds-c    # C API
+    zerodds::zerodds-cpp  # CPP API (links to zerodds-c, thus the upper one is optional)
+)
+
+# Copy *.dll into target binary folder to allow direct execution
+if(WIN32 AND BUILD_SHARED_LIBS)
+    add_custom_command(
+        TARGET ${PROJECT_NAME}
+        POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different 
+            $<TARGET_RUNTIME_DLLS:${PROJECT_NAME}>
+            $<TARGET_FILE_DIR:${PROJECT_NAME}>
+    )
+endif()
+
+```
+
 ## Architecture
 
 Nine layers, ~95 crates, single Cargo workspace:
