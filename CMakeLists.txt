@@ -32,7 +32,11 @@ endif()
 set(ZERODDS_C_LIBRARY_NAME ${ZERODDS_LIBRARY_PREFIX}${PROJECT_NAME})
 
 # Use the build type to know the folder in which the library will be built
-string(TOLOWER ${CMAKE_BUILD_TYPE} ZERODDS_BUILD_TYPE)
+if(${CMAKE_BUILD_TYPE} STREQUAL "Release" OR ${CMAKE_BUILD_TYPE} STREQUAL "Debug")
+    string(TOLOWER ${CMAKE_BUILD_TYPE} ZERODDS_BUILD_TYPE)
+else()
+    set(ZERODDS_BUILD_TYPE "release")
+endif()
 
 set(ZERODDS_CMAKE_LIBRARY_TYPE "STATIC")
 if(BUILD_SHARED_LIBS)
@@ -53,8 +57,10 @@ set(ZERODDS_C_HEADERS "${ZERODDS_C_INCLUDE_DIR}/zerodds.h"
                       "${ZERODDS_C_INCLUDE_DIR}/zerodds_xcdr2.h"
 )
 
-# Set build flag for cargo given the build type
-set(ZERODDS_CARGO_BUILD_FLAG "--${ZERODDS_BUILD_TYPE}")
+# Set build flag for cargo only if building in Release
+if(${ZERODDS_BUILD_TYPE} STREQUAL "release")
+    set(ZERODDS_CARGO_BUILD_FLAG "--${ZERODDS_BUILD_TYPE}")
+endif()
 
 # Add a custom target to call cargo for generating the library
 add_custom_target(${PROJECT_NAME}_rust ALL
@@ -89,7 +95,7 @@ set_target_properties(
              IMPORTED_IMPLIB ${ZERODDS_LIBRARY_OUTPUT}.${ZERODDS_STATIC_LIBRARY_EXTENSION}
 )
 
-target_include_directories(${PROJECT_NAME}-c INTERFACE 
+target_include_directories(${PROJECT_NAME}-c INTERFACE
   "${ZERODDS_C_INCLUDE_DIR}"
 )
 
@@ -98,6 +104,10 @@ if(BUILD_ZERODDS_CPP)
   add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/crates/cpp")
 endif()
 
+# Export zerodds_idlc_generate function
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/zerodds_idlc_generate.cmake")
+
+# Configure Install target
 if(ZERODDS_BUILD_INSTALL)
   include(CMakePackageConfigHelpers)
 
