@@ -9,7 +9,7 @@ cmake_minimum_required(VERSION 3.21 FATAL_ERROR)
 #   )
 #
 #   - BACKEND: is the backend used for generating source code
-#   - OUT_VAR: is the variable name that will be set to the files extension
+#   - OUT_VAR: is the variable name that will be set containing the files extension
 # cmake-format: on
 function(zerodds_idlc_extensions_from_backend BACKEND OUT_VAR)
     # List of available extensions used in following regex, final semicolon is added only to
@@ -31,46 +31,45 @@ endfunction()
 #   zerodds_idlc_generate( LIBRARY_NAME <generated_idl_library_name>
 #                          IDL_FILES <list_of_idl_files>
 #                          GENERATOR_BACKEND <cpp|c|rust|csharp|java|python|ts>
+#                          [OUTPUT_DIR <destination_folder>]
+#                          [BASE_DIR <subfolder_of_idl>]
 #                          [IDL_INCLUDE_DIRS <list_of_folders_to_search_for_idl>]
 #                          [LIBRARY_NAMESPACE <namespace added to LIBRARY_NAME>]
-#                          [OUTPUT_DIR <destination_folder>]
-#                          [INCLUDE_DIR <subfolder_of_OUTPUT_DIR>]
 #                          [GENERATOR_FLAGS <list_of_flags_for_generator>]
 #   )
 #
+# - LIBRARY_NAME: name of the library that will be created by CMake
+# - IDL_FILES: list of IDL files that will be compiled and associated to LIBRARY_NAME
+# - GENERATOR_BACKEND: which kind of generator to use when compiling IDL sources
+# - OUTPUT_DIR: folder in which compiled IDL files will be put, and also folder to which the
+#               library will have access thanks to target_include_directory directive.
+#               Default: `${CMAKE_CURRENT_BINARY_DIR}/zerodds/idl`
+# - BASE_DIR: subfolder beloning to IDL_FILES since which the directory tree will be preserved, thus
+#             organization of compiled IDL files will be unchanged in OUTPUT_DIR folder
+# - IDL_INCLUDE_DIRS: directories in which to search IDL files addressed by #include directive
+#                     during IDL parsing
+# - LIBRARY_NAMESPACE: namespace for the generated library. Default is `zerodds-idlc`
+# - GENERATOR_FLAGS: further generator flags not handled directly by CMake that will
+#                    be forwarded to zerodds-idlc
 # cmake-format: on
 function(zerodds_idlc_generate LIBRARY_NAME)
     include(CMakeParseArguments)
 
     set(_options "")
-    set(_singleargs OUTPUT_DIR INCLUDE_DIR LIBRARY_NAMESPACE GENERATOR_BACKEND)
+    set(_singleargs OUTPUT_DIR LIBRARY_NAMESPACE GENERATOR_BACKEND BASE_DIR)
     set(_multiargs IDL_FILES GENERATOR_FLAGS IDL_INCLUDE_DIRS)
     cmake_parse_arguments(PARSE_ARGV 1 "" "${_options}" "${_singleargs}" "${_multiargs}")
-
-    # If no include dir is given, expose the output one
-    if(NOT ${_INCLUDE_DIR})
-        set(_INCLUDE_DIR ${_OUTPUT_DIR})
-    endif()
 
     # If output dir is not given, use the project binary one followed by include/zerodds/idl
     # thus allowing #include<zerodds/idl/*.idl>
     if(NOT _OUTPUT_DIR)
-        set(_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/include/zerodds/idl")
-        set(_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/include/")
+        set(_OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/zerodds/idl")
     endif()
-
-    # Library type: due to generator only providing C and CPP headers, the library can only be
-    # an INTERFACE one
-    set(LIBRARY_TYPE INTERFACE)
 
     # Check GENERATOR_BACKEND validity: only `cpp` and `c` can be used for generating linkable
     # CMake libraries, in all other cases an OBJECT library will be created
     if(NOT _GENERATOR_BACKEND)
         message(FATAL_ERROR "GENERATOR_BACKEND is a compulsory flag")
-    endif()
-    if(_GENERATOR_BACKEND AND (NOT _GENERATOR_BACKEND STREQUAL "cpp" AND NOT _GENERATOR_BACKEND STREQUAL "c"))
-        message(WARNING "Selected generator backend `${_GENERATOR_BACKEND}` will result in OBJECT library")
-        set(LIBRARY_TYPE OBJECT)
     endif()
 
     # If zerodds-idlc target is not defined, call cargo to build it
@@ -108,32 +107,37 @@ function(zerodds_idlc_generate LIBRARY_NAME)
     # Get compiled IDL files extension
     zerodds_idlc_extensions_from_backend(${_GENERATOR_BACKEND} EXPECTED_GENERATED_EXTENSIONS)
 
-    # Set extra include path for IDL include resolution
-    if(_IDL_INCLUDE_DIRS)
-        set(IDLC_INCLUDE_DIRS_FLAG "-I ${_IDL_INCLUDE_DIRS}")
-    endif()
-
-    # Define and populate expected output of generation
+    # Generate compiled .idl files
     set(EXPECTED_GENERATED_SOURCES)
     foreach(extension IN LISTS EXPECTED_GENERATED_EXTENSIONS)
         foreach(idl_source IN LISTS _IDL_FILES)
-            
-            get_filename_component(idl_file ${idl_source} NAME)
-            get_filename_component(idl_file_path ${idl_source} DIRECTORY)
-            string(REPLACE ".idl" ${extension} EXPECTED_SOURCE ${idl_file})
-            list(APPEND EXPECTED_GENERATED_SOURCES ${_OUTPUT_DIR}/${EXPECTED_SOURCE})
+            get_filename_component(idl_filename ${idl_source} NAME)
+            get_filename_component(idl_directory_tree ${idl_source} DIRECTORY)
+
+            string(REPLACE "${_BASE_DIR}" "" expected_directory ${idl_directory_tree})
+            string(REPLACE ".idl" ${extension} expected_filename ${idl_filename})
+
+            set(EXPECTED_SOURCE_FILEPATH ${_OUTPUT_DIR}/${expected_directory}/${expected_filename})
 
             add_custom_command(
-                OUTPUT ${_OUTPUT_DIR}/${EXPECTED_SOURCE}
-                COMMAND zerodds::zerodds-idlc "generate" ${idl_source} "--${_GENERATOR_BACKEND}" "--output" "${_OUTPUT_DIR}" "${IDLC_INCLUDE_DIRS_FLAG}"
+                OUTPUT ${EXPECTED_SOURCE_FILEPATH}
+                COMMAND zerodds::zerodds-idlc "generate" ${idl_source} 
+                                              "--${_GENERATOR_BACKEND}"
+                                              "--output" "${_OUTPUT_DIR}/${expected_directory}"
+                                              $<$<BOOL:${IDLC_INCLUDE_DIRS_FLAG}>:"-I ${_IDL_INCLUDE_DIRS}">
+                                              "${GENERATOR_FLAGS}"
                 DEPENDS ${idl_source}
             )
 
+            # update variable that will be feeded to library
+            list(APPEND EXPECTED_GENERATED_SOURCES ${EXPECTED_SOURCE_FILEPATH})
         endforeach()
     endforeach()
 
     # Generate the library and link it to the correct CMake target and directories
-    add_library(${LIBRARY_NAME} ${LIBRARY_TYPE} ${EXPECTED_GENERATED_SOURCES})
+    # Library can be only of INTERFACE type because in C and C++ the generator outputs
+    # only headers, and in other languages the outputs cannot be compiled
+    add_library(${LIBRARY_NAME} INTERFACE ${EXPECTED_GENERATED_SOURCES})
 
     if(${_GENERATOR_BACKEND} STREQUAL "c" OR ${_GENERATOR_BACKEND} STREQUAL "cpp")
         set_target_properties(${LIBRARY_NAME} PROPERTIES
@@ -143,7 +147,7 @@ function(zerodds_idlc_generate LIBRARY_NAME)
             $<$<STREQUAL:"${_GENERATOR_BACKEND}","c">: zerodds::zerodds-c>
             $<$<STREQUAL:"${_GENERATOR_BACKEND}","cpp">: zerodds::zerodds-cpp>
         )
-        target_include_directories(${LIBRARY_NAME} INTERFACE ${_INCLUDE_DIR})
+        target_include_directories(${LIBRARY_NAME} INTERFACE ${_OUTPUT_DIR})
     endif()
 
     # Expose the library with the given namespace if specified
