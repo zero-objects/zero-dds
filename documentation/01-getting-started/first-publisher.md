@@ -101,7 +101,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         liveliness: LivelinessQosPolicy::default(),
         ownership: OwnershipKind::Shared,
         partition: vec![],
-        // Aggiunti:
         user_data: vec![],
         topic_data: vec![],
         group_data: vec![],
