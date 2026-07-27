@@ -120,10 +120,21 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(zerodds)
 
+set(IDL_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/idl/test.idl)
+
+zerodds_idlc_generate(TestIdl
+  IDL_FILES ${IDL_SOURCES}
+  GENERATOR_BACKEND "cpp"
+  OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/include
+  BASE_DIR ${CMAKE_CURRENT_SOURCE_DIR}/idl
+  LIBRARY_NAMESPACE MyNamespace
+)
+
 add_executable(${PROJECT_NAME} main.cpp)
 target_link_libraries(${PROJECT_NAME} PUBLIC
     zerodds::zerodds-c    # C API
     zerodds::zerodds-cpp  # CPP API (links to zerodds-c, thus the upper one is optional)
+    MyNamespace::TestIdl  # Links compiled IDL files
 )
 
 # Copy *.dll into target binary folder to allow direct execution
