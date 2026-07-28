@@ -20,6 +20,7 @@ Edit `Cargo.toml`:
 zerodds-dcps = { git = "https://github.com/zero-objects/zero-dds.git" }
 zerodds-rtps = { git = "https://github.com/zero-objects/zero-dds.git" }
 zerodds-qos  = { git = "https://github.com/zero-objects/zero-dds.git" }
+zerodds-types = { git = "https://github.com/zero-objects/zero-dds.git" }
 ```
 
 (For now we depend on the lower-level crates directly; the
@@ -30,20 +31,18 @@ high-level `zerodds` re-export crate is in progress.)
 `src/bin/pub.rs`:
 
 ```rust
-use std::time::Duration;
 use std::thread::sleep;
+use std::time::Duration;
 
-use zerodds_dcps::runtime::{
-    DcpsRuntime, RuntimeConfig, UserWriterConfig,
-};
+use zerodds_dcps::runtime::{DcpsRuntime, RuntimeConfig, UserWriterConfig};
 use zerodds_qos::{
-    DurabilityKind, OwnershipKind, DeadlineQosPolicy,
-    LifespanQosPolicy, LivelinessQosPolicy,
+    DeadlineQosPolicy, DurabilityKind, LifespanQosPolicy, LivelinessQosPolicy, OwnershipKind,
 };
 use zerodds_rtps::wire_types::GuidPrefix;
+use zerodds_types::{PrimitiveKind, TypeIdentifier};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let domain_id = 0;
+    let domain_id = 1;
     let prefix = GuidPrefix::from_bytes([0x01; 12]);
     let rt = DcpsRuntime::start(domain_id, prefix, RuntimeConfig::default())?;
 
@@ -58,6 +57,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ownership: OwnershipKind::Shared,
         ownership_strength: 0,
         partition: vec![],
+        user_data: vec![],
+        topic_data: vec![],
+        group_data: vec![],
+        type_identifier: TypeIdentifier::Primitive(PrimitiveKind::UInt8),
+        data_representation_offer: None,
     })?;
 
     for i in 0u32..10 {
@@ -78,17 +82,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ```rust
 use std::time::Duration;
 
-use zerodds_dcps::runtime::{
-    DcpsRuntime, RuntimeConfig, UserReaderConfig,
-};
-use zerodds_qos::{
-    DurabilityKind, OwnershipKind, DeadlineQosPolicy,
-    LivelinessQosPolicy,
-};
+use zerodds_dcps::runtime::{DcpsRuntime, RuntimeConfig, UserReaderConfig, UserSample};
+use zerodds_qos::{DeadlineQosPolicy, DurabilityKind, LivelinessQosPolicy, OwnershipKind};
 use zerodds_rtps::wire_types::GuidPrefix;
+use zerodds_types::{PrimitiveKind, TypeIdentifier, qos::TypeConsistencyEnforcement};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let domain_id = 0;
+    let domain_id = 1;
     let prefix = GuidPrefix::from_bytes([0x02; 12]);
     let rt = DcpsRuntime::start(domain_id, prefix, RuntimeConfig::default())?;
 
@@ -101,15 +101,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         liveliness: LivelinessQosPolicy::default(),
         ownership: OwnershipKind::Shared,
         partition: vec![],
+        user_data: vec![],
+        topic_data: vec![],
+        group_data: vec![],
+        type_identifier: TypeIdentifier::Primitive(PrimitiveKind::UInt8),
+        type_consistency: TypeConsistencyEnforcement::default(),
+        data_representation_offer: None,
     })?;
 
     let deadline = std::time::Instant::now() + Duration::from_secs(15);
     while std::time::Instant::now() < deadline {
         match rx.recv_timeout(Duration::from_millis(500)) {
-            Ok(bytes) => {
-                println!("sub: got {}", String::from_utf8_lossy(&bytes));
+            Ok(UserSample::Alive { payload, .. }) => {
+                println!("sub: got {}", String::from_utf8_lossy(payload.as_ref()));
             }
-            Err(_) => {} // timeout — continue
+
+            Ok(UserSample::Lifecycle { key_hash, kind }) => {
+                println!("lifecycle: {:?} {:?}", kind, key_hash);
+            }
+
+            Err(_) => {}
         }
     }
     rt.shutdown();
@@ -131,11 +142,11 @@ cargo run --bin pub
 
 Expected output:
 
-```
+```text
 sub: got hello 0
 sub: got hello 1
 sub: got hello 2
-…
+...
 ```
 
 ## Cross-host
