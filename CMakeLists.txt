@@ -69,6 +69,7 @@ add_custom_target(${PROJECT_NAME}_rust ALL
                       "--package" "zerodds-c-api" "${ZERODDS_CARGO_BUILD_FLAG}"
                       "--crate-type" $<IF:$<BOOL:${BUILD_SHARED_LIBS}>,"cdylib","staticlib">
                       "--target-dir" "${CMAKE_CURRENT_BINARY_DIR}"
+  BYPRODUCTS ${ZERODDS_LIBRARY_OUTPUT}
   DEPENDS ${ZERODDS_C_HEADERS} # CMake will re-run the command whenever the files change
 )
 
@@ -84,15 +85,12 @@ endif()
 # Manually specify the dependency between ZERODDS target and the fake one to ensure compiler will not invert the order
 add_dependencies(${PROJECT_NAME}-c ${PROJECT_NAME}_rust)
 
-# Change imported library location to the built one
-set(ZERODDS_LIBRARY_IMPORTED_LOCATION ${ZERODDS_LIBRARY_OUTPUT})
-
 # Set imported target library location and implib.
 # On Windows if the library is static then both properties
 # must be the same .lib file. On Linux the 'IMPORTED_IMPLIB' will be ignored
 set_target_properties(
   ${PROJECT_NAME}-c
-  PROPERTIES IMPORTED_LOCATION ${ZERODDS_LIBRARY_IMPORTED_LOCATION}
+  PROPERTIES IMPORTED_LOCATION ${ZERODDS_LIBRARY_OUTPUT}
              IMPORTED_IMPLIB ${ZERODDS_LIBRARY_OUTPUT}.${ZERODDS_STATIC_LIBRARY_EXTENSION}
 )
 
