@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 project(zerodds-cpp
     VERSION 1.0.0
-    DESCRIPTION "ZERODDS CXX bindings" 
+    DESCRIPTION "ZERODDS CXX bindings"
     LANGUAGES CXX
 )
 
@@ -14,7 +14,7 @@ option(BUILD_EXAMPLES "Build examples" ON)
 option(BUILD_TESTS "Build tests" ON)
 
 # Interface library being header-only
-set(ZERODDS_CXX_HEADERS 
+set(ZERODDS_CXX_HEADERS
     "${CMAKE_CURRENT_SOURCE_DIR}/include/dds/core/cond/Condition.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/include/dds/core/policy/CorePolicy.hpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/include/dds/core/Exception.hpp"
@@ -48,16 +48,18 @@ target_include_directories(zerodds-cpp
         $<INSTALL_INTERFACE:include>
 )
 
-target_link_libraries(zerodds-cpp INTERFACE zerodds::zerodds-c)
+target_link_libraries(zerodds-cpp INTERFACE zerodds::zerodds-c
+                                            $<$<BOOL:${WIN32}>:userenv>
+)
 
 # Examples
 if(BUILD_EXAMPLES)
     add_executable(cpp_smoke ${CMAKE_CURRENT_SOURCE_DIR}/examples/cpp_smoke.cpp)
-    target_link_libraries(cpp_smoke PRIVATE zerodds-cpp)
+    target_link_libraries(cpp_smoke PRIVATE zerodds::zerodds-cpp)
 endif()
 
 # Tests
 if(BUILD_TESTS)
     add_executable(smoke_dds_psm ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_dds_psm.cpp)
-    target_link_libraries(smoke_dds_psm PRIVATE zerodds-cpp)
+    target_link_libraries(smoke_dds_psm PRIVATE zerodds::zerodds-cpp)
 endif()
