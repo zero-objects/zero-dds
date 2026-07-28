@@ -163,3 +163,11 @@ rustls-pki-types = { workspace = true }
 # lock granularity (e.g. "dcps_udp_match") so that not all tests
 # have to serialize globally.
 serial_test = "3"
+# documentation/04-idl/idlc-handbook.md build.rs+include! fence drift check
+# (documentation_snippets_compile.rs): parses the same IDL through the exact
+# library the `zerodds-idlc generate --rust` CLI subcommand wraps, so a
+# codegen API change is caught without shelling out to a prebuilt binary.
+zerodds-idl = { path = "../idl" }
+zerodds-idl-rust = { path = "../idl-rust" }
+# documentation/06-operations/monitoring.md metrics::gauge! fragment.
+metrics = "0.24"

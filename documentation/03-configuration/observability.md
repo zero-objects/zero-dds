@@ -55,6 +55,10 @@ let cfg = RuntimeConfig {
 let rt = DcpsRuntime::start(0, prefix, cfg)?;
 ```
 
+> ▶ Runnable example: [`observability-stderr-sink`](https://github.com/zero-objects/zero-dds-snippets/tree/master/observability-stderr-sink)
+> (starts a real `DcpsRuntime` with this exact config and registers a
+> writer + reader, so the JSON lines below actually print).
+
 stderr output:
 
 ```json
@@ -85,22 +89,40 @@ The trait is `Send + Sync`, so wrap in `Arc<dyn Sink>` and inject.
 
 ## Layer 3: OTel bridge
 
-`crates/observability-otlp` (work-in-progress) wraps the Sink
-trait into OTLP-HTTP-JSON shipping to an OTel collector. When
-released:
+`crates/observability-otlp` (`zerodds-observability-otlp`) ships
+`OtlpExporter` — an OTLP/HTTP/JSON exporter for
+`zerodds_foundation::tracing::{Span, Histogram}` and
+`zerodds_foundation::observability::Event`. It does **not**
+implement `Sink` (spans/histograms need more than `record(&Event)`
+can carry), so it is wired up manually rather than through
+`RuntimeConfig.observability`: buffer spans/histograms/events with
+`add_span` / `add_histogram` / `add_event`, then `flush()` — on a
+periodic background thread for production use (see
+`spawn_otlp_flush_loop` in any bridge daemon, e.g.
+`crates/mqtt-bridge/src/daemon/runtime_common.rs`).
 
 ```rust
-use zerodds_observability_otlp::OtlpHttpSink;
+use zerodds_observability_otlp::{OtlpConfig, OtlpExporter};
 
-let cfg = RuntimeConfig {
-    observability: Arc::new(OtlpHttpSink::new("http://otelcol:4318/v1/traces")?),
-    ..Default::default()
+let cfg = OtlpConfig {
+    host: "otelcol".into(),
+    port: 4318,
+    ..OtlpConfig::default()
 };
+let exporter = OtlpExporter::new(cfg);
+
+exporter.add_event(event); // zerodds_foundation::observability::Event
+exporter.flush()?; // POSTs the batch to /v1/traces, /v1/metrics, /v1/logs
 ```
+
+> ▶ Runnable example: [`rust-audit-otlp`](https://github.com/zero-objects/zero-dds-snippets/tree/master/rust-audit-otlp)
+> (constructs this exact `OtlpConfig`/`OtlpExporter` and calls `flush()`).
 
 The collector then forwards to Jaeger / Tempo / Datadog / any OTel
 backend. See the OTLP spec at
-<https://opentelemetry.io/docs/specs/otlp/>.
+<https://opentelemetry.io/docs/specs/otlp/>, and
+`crates/observability-otlp/examples/jaeger_talker.rs` for a full
+runnable example against a local Jaeger stack.
 
 ## Layer 4: traceability tooling
 

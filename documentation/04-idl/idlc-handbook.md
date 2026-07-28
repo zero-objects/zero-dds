@@ -12,17 +12,22 @@ integration end to end; for the resulting on-the-wire byte form see
 ## 1 What is `zerodds-idlc`?
 
 `zerodds-idlc` is the OMG IDL 4.2 compiler that turns `.idl` schema
-files into language stubs (Rust, C, C++, C#, Java, Python, TypeScript)
-plus the matching XCDR1 / XCDR2 encoder / decoder and `KeyHash`
-implementation. It is the single source of truth for cross-language
-type compatibility: a Rust publisher and a Java subscriber see the
-same wire bytes for the same schema because both compile the same
-`.idl` through the same compiler.
+files into language stubs across 17 codegen backends (Rust, C, C++,
+C#, Java, Python, TypeScript, Go, Ada, Zig, Nim, D, Elixir, OCaml,
+Julia, Lua, Swift) plus the matching XCDR1 / XCDR2 encoder / decoder
+and `KeyHash` implementation. It is the single source of truth for
+cross-language type compatibility: a Rust publisher and a Java
+subscriber see the same wire bytes for the same schema because both
+compile the same `.idl` through the same compiler.
 
 Internally `zerodds-idlc` is a thin CLI on top of the `zerodds-idl`
 parser crate (Earley engine + grammar deltas) and the per-language
 emitter crates (`zerodds-idl-rust`, `zerodds-idl-cpp`,
-`zerodds-idl-csharp`, `zerodds-idl-java`, `zerodds-idl-ts`).
+`zerodds-idl-csharp`, `zerodds-idl-java`, `zerodds-idl-ts`,
+`zerodds-idl-python`, `zerodds-idl-go`, `zerodds-idl-ada`,
+`zerodds-idl-zig`, `zerodds-idl-nim`, `zerodds-idl-d`,
+`zerodds-idl-elixir`, `zerodds-idl-ocaml`, `zerodds-idl-julia`,
+`zerodds-idl-lua`, `zerodds-idl-swift`).
 
 ---
 
@@ -127,14 +132,24 @@ Backend selectors — repeatable, combine to emit several at once:
 | `--java` | Java files (`<pkg>/<Type>.java`) |
 | `--python` | Python module (`<base>.py`) |
 | `--ts` | TypeScript module per DDS-TS 1.0 (`<base>.ts`) |
-| `--all` | All seven backends in one invocation |
+| `--go` | Go module (`<base>.go`) |
+| `--ada` | Ada package spec/body (`<base>.ads`/`.adb`) |
+| `--zig` | Zig module (`<base>.zig`) |
+| `--nim` | Nim module (`<base>.nim`) |
+| `--d` | D module (`<base>.d`) |
+| `--elixir` | Elixir module (`<base>.ex`) |
+| `--ocaml` | OCaml module (`<base>.ml`) |
+| `--julia` | Julia module (`<base>.jl`) |
+| `--lua` | Lua module (`<base>.lua`) |
+| `--swift` | Swift module (`<base>.swift`) |
+| `--all` | All 17 backends in one invocation |
 
 Options:
 
 | Flag | Description |
 |---|---|
 | `-o`, `--output <dir>` | Output directory |
-| `--out-<lang> <dir>` | Per-backend output override (`<lang>` = `rust`/`c`/`cpp`/`csharp`/`java`/`python`/`ts`); overrides `-o` for that backend |
+| `--out-<lang> <dir>` | Per-backend output override (`<lang>` = `rust`/`c`/`cpp`/`csharp`/`java`/`python`/`ts`/`go`/`ada`/`zig`/`nim`/`d`/`elixir`/`ocaml`/`julia`/`lua`/`swift`); overrides `-o` for that backend |
 | `--corba` | Additionally emit CORBA service code (with `--cpp`/`--csharp`/`--java`/`--rust`) |
 | `--rti` | Accept the RTI Connext grammar delta while parsing |
 | `--opendds`, `--cyclone` | Vendor-intent markers (vendor `#pragma`s are honoured regardless) |
@@ -387,6 +402,10 @@ fn main() {
         }
         println!("cargo:rerun-if-changed={}", path.display());
 
+        let out_file = std::path::Path::new(&out_dir)
+            .join(path.file_stem().unwrap())
+            .with_extension("rs");
+
         let status = Command::new("zerodds-idlc")
             .arg("generate")
             .arg(&path)
@@ -397,15 +416,46 @@ fn main() {
             .expect("failed to run zerodds-idlc");
         assert!(status.success(),
             "zerodds-idlc failed for {}", path.display());
+
+        // The generated file carries file-level `#![allow(...)]` inner
+        // attributes (it is meant to stand alone as its own module file).
+        // `include!`, below, splices those tokens into the *including*
+        // file rather than a fresh one, and an inner attribute is only
+        // legal at the very start of the file it textually ends up in —
+        // so strip them here and re-apply the same allows as outer
+        // attributes on the `include!` call site instead (see `lib.rs`).
+        let generated = std::fs::read_to_string(&out_file).unwrap();
+        let stripped: String = generated
+            .lines()
+            .filter(|l| !l.trim_start().starts_with("#!["))
+            .collect::<Vec<_>>()
+            .join("\n");
+        std::fs::write(&out_file, stripped).unwrap();
     }
 }
 ```
 
-In `lib.rs`, include the generated module (`Robot.idl` → `Robot.rs`):
+In `lib.rs`, include the generated module (`Robot.idl` → `Robot.rs`) with
+the equivalent outer attributes re-applied (see the `build.rs` comment
+above):
 
 ```rust
-include!(concat!(env!("OUT_DIR"), "/Robot.rs"));
+#[allow(
+    clippy::too_many_lines,
+    clippy::useless_conversion,
+    unused_imports,
+    non_snake_case
+)]
+mod robot {
+    include!(concat!(env!("OUT_DIR"), "/Robot.rs"));
+}
+pub use robot::Robot;
 ```
+
+> ▶ Runnable example: [`idlc-buildrs`](https://github.com/zero-objects/zero-dds-snippets/tree/master/idlc-buildrs)
+> (both fences above, verbatim — `build.rs` runs the real `zerodds-idlc`
+> CLI, `lib.rs`/`main.rs` `include!` and round-trip the generated
+> `Robot::Pose`).
 
 This pattern is the same as `tonic-build` / `prost-build`. For
 projects that prefer a build-script-free workflow, commit the
@@ -656,6 +706,16 @@ counts (sensor packets, telemetry).
 | `--java` | `<package>/<Type>.java` (+ `TypeObjects.java`) | `pom.xml` |
 | `--python` | `<base>.py` | `pyproject.toml` |
 | `--ts` | `<base>.ts` | `package.json`, `tsconfig.json` |
+| `--go` | `<base>.go` | see [`idl-go.md`](../../docs/idl-go.md) |
+| `--ada` | `<base>.ads`/`.adb` | see [`idl-ada.md`](../../docs/idl-ada.md) |
+| `--zig` | `<base>.zig` | see [`idl-zig.md`](../../docs/idl-zig.md) |
+| `--nim` | `<base>.nim` | see [`idl-nim.md`](../../docs/idl-nim.md) |
+| `--d` | `<base>.d` | see [`idl-d.md`](../../docs/idl-d.md) |
+| `--elixir` | `<base>.ex` | see [`idl-elixir.md`](../../docs/idl-elixir.md) |
+| `--ocaml` | `<base>.ml` | see [`idl-ocaml.md`](../../docs/idl-ocaml.md) |
+| `--julia` | `<base>.jl` | see [`idl-julia.md`](../../docs/idl-julia.md) |
+| `--lua` | `<base>.lua` | see [`idl-lua.md`](../../docs/idl-lua.md) |
+| `--swift` | `<base>.swift` | see [`idl-swift.md`](../../docs/idl-swift.md) |
 
 `<base>` is the input file stem (`Robot.idl` → `Robot`). All paths are
 relative to the backend's output directory (`--out-<lang>` if given,
