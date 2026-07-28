@@ -114,7 +114,9 @@ function(zerodds_idlc_generate LIBRARY_NAME)
             get_filename_component(idl_filename ${idl_source} NAME)
             get_filename_component(idl_directory_tree ${idl_source} DIRECTORY)
 
-            string(REPLACE "${_BASE_DIR}" "" expected_directory ${idl_directory_tree})
+            if(_BASE_DIR)
+                string(REPLACE "${_BASE_DIR}" "" expected_directory ${idl_directory_tree})
+            endif()
             string(REPLACE ".idl" ${extension} expected_filename ${idl_filename})
 
             set(EXPECTED_SOURCE_FILEPATH ${_OUTPUT_DIR}/${expected_directory}/${expected_filename})
