@@ -1,6 +1,31 @@
 cmake_minimum_required(VERSION 3.16 FATAL_ERROR)
+
+set(ZERODDS_PROJECT_VERSION "")
+
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/cargo.toml")
+  message(WARNING "Unable to find 'cargo.toml' in current directory: project version UNKNOWN")
+else()
+  file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/cargo.toml" ZERODDS_CARGO_TOML)
+  set(ZERODDS_SEARCHING_FOR_VERSION OFF)
+  foreach(line IN LISTS ZERODDS_CARGO_TOML)
+    # Search in cargo.toml for the pattern 'major[.minor][.patch][.tweak]'
+    if(ZERODDS_SEARCHING_FOR_VERSION AND "${line}" MATCHES "version[\r\n\t ]*=[\r\n\t ]*\"?([0-9]*([\.][0-9]+)?([\.][0-9]+)?([\.][0-9]+)?)\"?")
+      set(ZERODDS_PROJECT_VERSION ${CMAKE_MATCH_1})
+      break()
+    endif()
+
+    if(${line} MATCHES "workspace.package")
+      set(ZERODDS_SEARCHING_FOR_VERSION ON)
+    endif()
+  endforeach()
+endif()
+
+if(NOT ZERODDS_PROJECT_VERSION)
+  message(WARNING "Unable to read rust library version")
+endif()
+
 project(zerodds
-    VERSION 1.0.0
+    VERSION ${ZERODDS_PROJECT_VERSION}
     DESCRIPTION "ZERO-DDS C C++ bindings"
     LANGUAGES C CXX
 )
