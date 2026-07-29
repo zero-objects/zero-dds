@@ -58,7 +58,6 @@ path = "src/lib.rs"
 zerodds-cdr = {{ path = "{root}/crates/cdr" }}
 zerodds-dcps = {{ path = "{root}/crates/dcps" }}
 zerodds-types = {{ path = "{root}/crates/types" }}
-zerodds-sql-filter = {{ path = "{root}/crates/sql-filter" }}
 "#,
         root = workspace_root.display()
     );
@@ -222,7 +221,7 @@ fn wire_field_value_filter_paths() {
             };
         "#,
         r#"
-            use zerodds_sql_filter::Value;
+            use zerodds_dcps::FilterValue as Value;
             let r = SensorReading {
                 sensor_id: 42,
                 value: 3.14,
@@ -504,6 +503,136 @@ fn wire_fixed_member_golden_bytes() {
             assert_eq!(buf, vec![0x07,0,0,0, 0x07,0,0,0, 0x01,0x23,0x4c], "Fa fixed golden");
             let back = m::Fa::decode(&buf).expect("decode");
             assert_eq!(back.qty.to_string_repr(), "1234");
+        "#,
+    );
+}
+
+/// Regression #22 (SEVERE finding, end to end): before the decode-bound fix,
+/// a generated `decode` only checked the wire buffer's remaining bytes
+/// (`zerodds_cdr` composite decoders) — never the IDL-declared bound N — so
+/// a `string<8>` field would happily decode an arbitrarily large
+/// well-formed payload (XTypes 1.3 §7.4.3 requires the bound enforced on
+/// BOTH sides; untrusted-input DoS vector). This forges exactly such a
+/// payload through the raw `CdrEncode` path (no bound awareness, mirroring
+/// a foreign/adversarial sender that does not honor the receiver's IDL) and
+/// confirms `CdrDecode::decode` now rejects it via `DecodeError::BoundExceeded`
+/// instead of silently accepting it. Also exercises `@optional` bounded
+/// members (the encode-bound half of #22) roundtripping normally within
+/// bound, and a bounded sequence rejected on decode the same way.
+#[test]
+#[ignore = "requires cargo offline + path-deps"]
+fn wire_decode_rejects_over_bound_values() {
+    run_wire_test(
+        "decode_bound",
+        r#"struct S { string<8> label; sequence<long,4> vals; @optional string<4> tag; };"#,
+        r#"
+            use zerodds_cdr::{BufferReader, BufferWriter, CdrDecode, CdrEncode, Endianness};
+
+            // `S` implements both `DdsType` (encode/decode over `Vec<u8>`)
+            // and the raw `CdrEncode`/`CdrDecode` (over `BufferWriter`/
+            // `BufferReader`) — both are in scope here, so every call below
+            // must be fully qualified (E0034 otherwise).
+
+            // Within-bound roundtrip must still work (no false positives).
+            let ok = S { label: "short".to_string(), vals: vec![1, 2], tag: Some("ok".to_string()) };
+            let mut buf = Vec::new();
+            <S as DdsType>::encode(&ok, &mut buf).expect("within-bound encode");
+            let back = <S as DdsType>::decode(&buf).expect("within-bound decode");
+            assert_eq!(back, ok);
+
+            // Forge a well-formed appendable payload whose `label` content
+            // exceeds the IDL bound (8) — well within the remaining buffer.
+            let over_bound = "this-is-way-over-eight-chars".to_string();
+            let mut w = BufferWriter::new(Endianness::Little).xcdr2();
+            zerodds_cdr::struct_enc::encode_appendable(&mut w, |w2| {
+                <_ as CdrEncode>::encode(&over_bound, w2)?;
+                <_ as CdrEncode>::encode(&::std::vec::Vec::<i32>::new(), w2)?;
+                <_ as CdrEncode>::encode(&::core::option::Option::<String>::None, w2)?;
+                Ok(())
+            }).unwrap();
+            let bytes = w.into_bytes();
+
+            let mut r = BufferReader::new(&bytes, Endianness::Little).xcdr2();
+            let err = <S as CdrDecode>::decode(&mut r)
+                .expect_err("decode must reject a wire value exceeding the IDL bound, not just check the remaining buffer");
+            match err {
+                zerodds_cdr::DecodeError::BoundExceeded { actual, bound, .. } => {
+                    assert_eq!(bound, 8, "must report the IDL bound (8), not the buffer size");
+                    assert_eq!(actual, over_bound.len());
+                }
+                other => panic!("expected DecodeError::BoundExceeded, got {other:?}"),
+            }
+
+            // Same for a bounded SEQUENCE exceeding its bound (4).
+            let mut w2buf = BufferWriter::new(Endianness::Little).xcdr2();
+            zerodds_cdr::struct_enc::encode_appendable(&mut w2buf, |w2| {
+                <_ as CdrEncode>::encode(&"ok".to_string(), w2)?;
+                <_ as CdrEncode>::encode(&vec![1i32, 2, 3, 4, 5, 6], w2)?;
+                <_ as CdrEncode>::encode(&::core::option::Option::<String>::None, w2)?;
+                Ok(())
+            }).unwrap();
+            let bytes2 = w2buf.into_bytes();
+            let mut r2 = BufferReader::new(&bytes2, Endianness::Little).xcdr2();
+            let err2 = <S as CdrDecode>::decode(&mut r2)
+                .expect_err("decode must reject an over-bound sequence too");
+            match err2 {
+                zerodds_cdr::DecodeError::BoundExceeded { bound, .. } => assert_eq!(bound, 4),
+                other => panic!("expected DecodeError::BoundExceeded, got {other:?}"),
+            }
+        "#,
+    );
+}
+
+/// B1 follow-up (array-of-bounded-element gap, disclosed but NOT fixed by
+/// #22): `sequence<octet,4> arr[3]` is an array declarator whose element
+/// type (`sequence<octet,4>`) is bounded. Because the element is a `Vec<u8>`
+/// (not `Copy`), decode goes through `emit_manual_array_decode` rather than
+/// the simple-declarator path that `emit_field_decode_with_optional` bound-
+/// checks directly — before this fix that manual per-element decode never
+/// consulted the IDL bound at all, so a well-formed-but-oversized element
+/// inside the array decoded silently. Forges such a payload via the raw
+/// `CdrEncode` blanket impl for `[Vec<u8>; 3]` (no bound awareness, same
+/// adversarial-sender shape as `wire_decode_rejects_over_bound_values`) and
+/// confirms decode now rejects it with `DecodeError::BoundExceeded`
+/// reporting the IDL bound (4), not the buffer size. Also proves the
+/// within-bound roundtrip is unaffected (byte-golden, no regression).
+#[test]
+#[ignore = "requires cargo offline + path-deps"]
+fn wire_decode_rejects_over_bound_array_element() {
+    run_wire_test(
+        "decode_bound_array_elem",
+        r#"struct A { sequence<octet,4> arr[3]; };"#,
+        r#"
+            use zerodds_cdr::{BufferReader, BufferWriter, CdrDecode, CdrEncode, Endianness};
+
+            // Within-bound roundtrip must still work (no false positives).
+            let ok = A { arr: [vec![1, 2], vec![], vec![3, 4, 5, 6]] };
+            let mut buf = Vec::new();
+            <A as DdsType>::encode(&ok, &mut buf).expect("within-bound encode");
+            let back = <A as DdsType>::decode(&buf).expect("within-bound decode");
+            assert_eq!(back, ok);
+
+            // Forge a well-formed appendable payload whose array holds an
+            // element (5 octets) exceeding the IDL bound (4) — well within
+            // the remaining buffer, so only an IDL-bound check catches it.
+            let over_bound: [Vec<u8>; 3] = [vec![1, 2], vec![9, 9, 9, 9, 9], vec![3]];
+            let mut w = BufferWriter::new(Endianness::Little).xcdr2();
+            zerodds_cdr::struct_enc::encode_appendable(&mut w, |w2| {
+                <_ as CdrEncode>::encode(&over_bound, w2)?;
+                Ok(())
+            }).unwrap();
+            let bytes = w.into_bytes();
+
+            let mut r = BufferReader::new(&bytes, Endianness::Little).xcdr2();
+            let err = <A as CdrDecode>::decode(&mut r)
+                .expect_err("decode must reject an over-bound array element, not just check the remaining buffer");
+            match err {
+                zerodds_cdr::DecodeError::BoundExceeded { actual, bound, .. } => {
+                    assert_eq!(bound, 4, "must report the IDL bound (4), not the buffer size");
+                    assert_eq!(actual, 5);
+                }
+                other => panic!("expected DecodeError::BoundExceeded, got {other:?}"),
+            }
         "#,
     );
 }

@@ -57,6 +57,7 @@ fn make_pub_data(data_rep: Vec<i16>) -> PublicationBuiltinTopicData {
         liveliness: zerodds_qos::LivelinessQosPolicy::default(),
         deadline: zerodds_qos::DeadlineQosPolicy::default(),
         lifespan: zerodds_qos::LifespanQosPolicy::default(),
+        presentation: zerodds_qos::PresentationQosPolicy::default(),
         partition: Vec::new(),
         user_data: Vec::new(),
         topic_data: Vec::new(),

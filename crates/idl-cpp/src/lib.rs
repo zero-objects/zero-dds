@@ -58,6 +58,7 @@
 
 pub(crate) mod amqp;
 pub(crate) mod bitset;
+pub mod c_keywords;
 pub mod c_mode;
 pub(crate) mod corba_traits;
 pub mod dcps;

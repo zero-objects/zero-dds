@@ -153,6 +153,7 @@ pub unsafe extern "C" fn zerodds_sub_create_datareader(
             // QB-cluster: plumb PARTITION from the Subscriber/reader QoS onto the
             // endpoint config so `partitions_overlap` (DDS 1.4 §2.2.3.10) gates
             // matching. Previously hardcoded empty.
+            presentation: Default::default(),
             partition: qos.partition.names.clone(),
             user_data: qos.user_data.value.clone(),
             topic_data: qos.topic_data.value.clone(),

@@ -1,6 +1,5 @@
 ---
 source: crates/idl-rust/tests/snapshot_codegen.rs
-assertion_line: 58
 expression: run(idl)
 ---
 // SPDX-License-Identifier: Apache-2.0
@@ -33,7 +32,7 @@ pub struct AllPrimitives {
 impl zerodds_dcps::DdsType for AllPrimitives {
     const TYPE_NAME: &'static str = "AllPrimitives";
     const EXTENSIBILITY: zerodds_dcps::Extensibility = zerodds_dcps::Extensibility::Appendable;
-    const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0xe4, 0xd2, 0xdb, 0x59, 0x2f, 0x47, 0xaa, 0xf5, 0xee, 0x40, 0x2b, 0x97, 0xb9, 0x52]));
+    const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0x79, 0xb9, 0xdc, 0x40, 0x4f, 0xdd, 0xd3, 0xa3, 0xcc, 0x96, 0x96, 0xd0, 0x5e, 0x6f]));
 
     fn encode(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
         let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little).xcdr2();
@@ -159,21 +158,21 @@ impl zerodds_dcps::DdsType for AllPrimitives {
         <Self as zerodds_cdr::CdrDecode>::decode(&mut reader).map_err(::core::convert::Into::into)
     }
 
-    fn field_value(&self, path: &str) -> ::core::option::Option<zerodds_sql_filter::Value> {
+    fn field_value(&self, path: &str) -> ::core::option::Option<zerodds_dcps::FilterValue> {
         match path {
-            "i8" => ::core::option::Option::Some(zerodds_sql_filter::Value::Int(self.i8 as i64)),
-            "u8" => ::core::option::Option::Some(zerodds_sql_filter::Value::Int(self.u8 as i64)),
-            "s" => ::core::option::Option::Some(zerodds_sql_filter::Value::Int(self.s as i64)),
-            "us" => ::core::option::Option::Some(zerodds_sql_filter::Value::Int(self.us as i64)),
-            "l" => ::core::option::Option::Some(zerodds_sql_filter::Value::Int(self.l as i64)),
-            "ul" => ::core::option::Option::Some(zerodds_sql_filter::Value::Int(self.ul as i64)),
-            "ll" => ::core::option::Option::Some(zerodds_sql_filter::Value::Int(self.ll as i64)),
-            "ull" => ::core::option::Option::Some(zerodds_sql_filter::Value::Int(self.ull as i64)),
-            "f" => ::core::option::Option::Some(zerodds_sql_filter::Value::Float(self.f as f64)),
-            "d" => ::core::option::Option::Some(zerodds_sql_filter::Value::Float(self.d)),
-            "b" => ::core::option::Option::Some(zerodds_sql_filter::Value::Bool(self.b)),
-            "o" => ::core::option::Option::Some(zerodds_sql_filter::Value::Int(self.o as i64)),
-            "c" => ::core::option::Option::Some(zerodds_sql_filter::Value::Int(self.c as i64)),
+            "i8" => ::core::option::Option::Some(zerodds_dcps::FilterValue::Int(self.i8 as i64)),
+            "u8" => ::core::option::Option::Some(zerodds_dcps::FilterValue::Int(self.u8 as i64)),
+            "s" => ::core::option::Option::Some(zerodds_dcps::FilterValue::Int(self.s as i64)),
+            "us" => ::core::option::Option::Some(zerodds_dcps::FilterValue::Int(self.us as i64)),
+            "l" => ::core::option::Option::Some(zerodds_dcps::FilterValue::Int(self.l as i64)),
+            "ul" => ::core::option::Option::Some(zerodds_dcps::FilterValue::Int(self.ul as i64)),
+            "ll" => ::core::option::Option::Some(zerodds_dcps::FilterValue::Int(self.ll as i64)),
+            "ull" => ::core::option::Option::Some(zerodds_dcps::FilterValue::Int(self.ull as i64)),
+            "f" => ::core::option::Option::Some(zerodds_dcps::FilterValue::Float(self.f as f64)),
+            "d" => ::core::option::Option::Some(zerodds_dcps::FilterValue::Float(self.d)),
+            "b" => ::core::option::Option::Some(zerodds_dcps::FilterValue::Bool(self.b)),
+            "o" => ::core::option::Option::Some(zerodds_dcps::FilterValue::Int(self.o as i64)),
+            "c" => ::core::option::Option::Some(zerodds_dcps::FilterValue::Int(self.c as i64)),
             _ => ::core::option::Option::None,
         }
     }

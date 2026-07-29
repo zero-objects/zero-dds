@@ -172,7 +172,13 @@ fn emit_union_match_encode(
         // Bounded-collection enforcement on the active arm (DDS-XTypes §7.4.3),
         // shared with the struct path. `__v` is the matched `&<arm-type>`.
         let mut checks = String::new();
-        crate::struct_emit::emit_bound_checks_decl(&mut checks, &c.type_spec, &c.declarator, "__v");
+        crate::struct_emit::emit_bound_checks_decl(
+            &mut checks,
+            &c.type_spec,
+            &c.declarator,
+            "__v",
+            false,
+        );
         if !checks.is_empty() {
             out.push_str(&format!("{indent}        {checks}\n"));
         }

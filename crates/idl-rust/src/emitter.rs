@@ -16,10 +16,9 @@ pub struct RustGenOptions {
     /// Header comment placed at the top of the generated file. Included verbatim.
     pub header_comment: Option<String>,
     /// CDR-only mode for the CORBA/GIOP path: omits the `DdsType` impl
-    /// (XCDR2 + `field_value`) that pulls in `zerodds_dcps`/`zerodds_types`/
-    /// `zerodds_sql_filter`. Only type declarations and classic
-    /// `CdrEncode`/`CdrDecode` remain — the sole wire representation
-    /// for CORBA requests/replies (CDR §15.3).
+    /// (XCDR2 + `field_value`) that pulls in `zerodds_dcps`/`zerodds_types`.
+    /// Only type declarations and classic `CdrEncode`/`CdrDecode` remain —
+    /// the sole wire representation for CORBA requests/replies (CDR §15.3).
     pub cdr_only: bool,
 }
 
@@ -37,6 +36,13 @@ pub fn generate_rust_module(spec: &Specification, opts: &RustGenOptions) -> Resu
     // Record struct/enum/typedef names so `field_value` resolves scoped fields
     // (struct → forward, enum → int, typedef-to-primitive → leaf).
     crate::type_map::register_types_for_field_value(spec);
+    // #24: build the full-spec named-type index ("Path A",
+    // `zerodds_idl::semantics::build_type_registry`) once, so
+    // `TYPE_IDENTIFIER` codegen ("Path B", `type_identifier.rs`) can
+    // resolve typedef/enum/sequence/map/nested-struct member types
+    // instead of nulling the whole struct's identity on the first
+    // non-primitive/non-string member.
+    crate::type_identifier::register_spec(spec);
     let mut out = String::new();
     out.push_str("// SPDX-License-Identifier: Apache-2.0\n");
     if let Some(c) = &opts.header_comment {
@@ -74,6 +80,10 @@ pub fn generate_rust_module(spec: &Specification, opts: &RustGenOptions) -> Resu
 /// `Unsupported` for IDL constructs outside the DataType scope.
 pub fn append_data_types(out: &mut String, spec: &Specification, cdr_only: bool) -> Result<()> {
     crate::type_map::register_types_for_field_value(spec);
+    // #24: see `generate_rust_module` — same full-spec registry build,
+    // needed here too since this entry point (used by `zerodds-corba-rust`)
+    // also reaches `struct_emit`'s TYPE_IDENTIFIER codegen.
+    crate::type_identifier::register_spec(spec);
     let mut path: Vec<String> = Vec::new();
     for def in &spec.definitions {
         emit_definition(out, def, &mut path, cdr_only)?;
@@ -161,6 +171,11 @@ fn emit_type_decl(out: &mut String, td: &TypeDecl, path: &[String], cdr_only: bo
             use zerodds_idl::ast::types::StructDcl;
             match struct_dcl {
                 StructDcl::Def(s) => {
+                    // #24: the struct's module-path scope, for
+                    // TYPE_IDENTIFIER member resolution (innermost-scope-
+                    // first IDL name lookup) inside `struct_emit`'s call
+                    // into `type_identifier::struct_type_identifier_expr`.
+                    crate::type_identifier::set_current_scope(path);
                     crate::struct_emit::emit_struct_with_mode(out, s, path, cdr_only)?;
                     out.push('\n');
                 }

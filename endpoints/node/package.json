@@ -1,0 +1,7 @@
+{
+  "name": "zerodds-endpoint",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Native pure-Node ZeroDDS endpoint SDK (ADR 0013)",
+  "main": "zerodds.js"
+}

@@ -1714,3 +1714,40 @@ fn v_map_dheader_aligned_after_bitbound_enum() {
         ],
     );
 }
+
+// ---------------------------------------------------------------------------
+// V-keyhash-array-of-struct — a `@key` member of ARRAY-of-struct type must
+// expand each element to its own `@key` subset, flat-concatenated with NO
+// DHEADER (XTypes 1.3 §7.6.8). REGRESSION GATE for the `is_struct_key`
+// declarator-kind gate that previously routed this shape to
+// `emit_plain_member_encode`'s DHEADER-wrapped, whole-struct-per-element
+// array encoder — wrong KeyHash by both framing and over-inclusion.
+// ---------------------------------------------------------------------------
+#[test]
+fn v_keyhash_array_of_struct_key_byte_exact() {
+    let idl = "@final struct Inner { @key long x; long ignored; };\n\
+               @final struct Outer { @key Inner arr[2]; long tail; };";
+    let body = r#"    ::Outer s;
+    s.arr()[0].x(1); s.arr()[0].ignored(99);
+    s.arr()[1].x(2); s.arr()[1].ignored(88);
+    s.tail(7);
+    auto __h = ::dds::topic::topic_type_support<::Outer>::key_hash(s);
+    __buf.assign(__h.begin(), __h.end());
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-keyhash-array-of-struct, no C++ compiler");
+        return;
+    };
+    // KeyHash is BE (RTPS §9.6.3.8 / XTypes §7.6.8): arr[0].x=1, arr[1].x=2,
+    // 4 bytes each, `ignored`/`tail` excluded -> 8-byte holder, zero-padded
+    // to 16 (XTypes 1.3 §7.6.8.4: holder <= 16 octets -> zero-pad).
+    assert_bytes(
+        "V-keyhash-array-of-struct",
+        &bytes,
+        &[
+            0x00, 0x00, 0x00, 0x01, // arr[0].x = 1 (BE)
+            0x00, 0x00, 0x00, 0x02, // arr[1].x = 2 (BE)
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // zero-pad to 16
+        ],
+    );
+}

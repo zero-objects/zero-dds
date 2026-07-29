@@ -127,3 +127,46 @@ def heartbeat_read(frame):
         return v - 0x10000 if v & 0x8000 else v
 
     return (i16(b[8], b[9]), i16(b[10], b[11]), b[12])
+
+
+# --- transport + sync client (stdlib, 2.7/3.x) -------------------------------
+#
+# A transport is any object with deliver(frame) and receive()->frame|None. The
+# async reader (asyncio, Python 3) lives in example_async.py, so this module
+# stays import-clean on 2.7.
+
+
+class MemTransport(object):
+    """In-memory FIFO transport for tests + examples."""
+
+    def __init__(self):
+        self._q = []
+
+    def deliver(self, frame):
+        self._q.append(bytes(frame))
+
+    def receive(self):
+        return self._q.pop(0) if self._q else None
+
+
+class Client(object):
+    """Sync endpoint: frames an XCDR sample and delivers it; polls one back."""
+
+    def __init__(self, transport, session=XRCE_SESSION_NOKEY,
+                 stream=XRCE_STREAM_BEST_EFFORT):
+        self.transport = transport
+        self.session = session
+        self.stream = stream
+        self.seq = 1
+
+    def write(self, sample):
+        frame = xrce_write_frame(self.session, self.stream, self.seq, sample)
+        self.seq = (self.seq + 1) & 0xFFFF
+        self.transport.deliver(frame)
+
+    def poll(self):
+        """One non-blocking receive: the sample body, or None."""
+        frame = self.transport.receive()
+        if frame is None:
+            return None
+        return xrce_read_frame(frame)

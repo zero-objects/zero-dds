@@ -1,6 +1,5 @@
 ---
 source: crates/idl-rust/tests/snapshot_codegen.rs
-assertion_line: 320
 expression: run(idl)
 ---
 // SPDX-License-Identifier: Apache-2.0
@@ -23,7 +22,7 @@ impl zerodds_dcps::DdsType for Inner {
     const TYPE_NAME: &'static str = "Inner";
     const EXTENSIBILITY: zerodds_dcps::Extensibility = zerodds_dcps::Extensibility::Appendable;
     const IS_NESTED: bool = true;
-    const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0xb0, 0x11, 0x15, 0xec, 0xda, 0x90, 0x9a, 0x5f, 0x86, 0xa3, 0x42, 0xf3, 0x1a, 0x35]));
+    const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0xaf, 0x0f, 0xe0, 0x16, 0x1a, 0x33, 0x6b, 0xf1, 0x4a, 0xaf, 0x7a, 0xd3, 0x50, 0x91]));
 
     fn encode(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
         let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little).xcdr2();
@@ -83,10 +82,10 @@ impl zerodds_dcps::DdsType for Inner {
         <Self as zerodds_cdr::CdrDecode>::decode(&mut reader).map_err(::core::convert::Into::into)
     }
 
-    fn field_value(&self, path: &str) -> ::core::option::Option<zerodds_sql_filter::Value> {
+    fn field_value(&self, path: &str) -> ::core::option::Option<zerodds_dcps::FilterValue> {
         match path {
-            "x" => ::core::option::Option::Some(zerodds_sql_filter::Value::Int(self.x as i64)),
-            "y" => ::core::option::Option::Some(zerodds_sql_filter::Value::Int(self.y as i64)),
+            "x" => ::core::option::Option::Some(zerodds_dcps::FilterValue::Int(self.x as i64)),
+            "y" => ::core::option::Option::Some(zerodds_dcps::FilterValue::Int(self.y as i64)),
             _ => ::core::option::Option::None,
         }
     }

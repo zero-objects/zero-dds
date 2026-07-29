@@ -802,6 +802,17 @@ mod tcp {
     use std::net::TcpStream;
     use std::string::ToString;
 
+    /// Hard cap on a single UACP message read off the wire (16 MiB).
+    ///
+    /// TCP is a stream transport, so the peer-announced `MessageSize`
+    /// (a `u32`, up to ~4 GiB) cannot be checked against "bytes
+    /// remaining" the way an in-memory buffer decode can — there is no
+    /// bound until the cap below is applied. Mirrors the established
+    /// `crates/transport-tcp/src/framing.rs::MAX_FRAME_SIZE` DoS-cap
+    /// pattern: reject before allocating, so a malicious/misbehaving
+    /// peer cannot force a multi-GB allocation from an 8-byte header.
+    const MAX_UACP_MESSAGE_SIZE: usize = 16 * 1024 * 1024;
+
     fn read_message(stream: &mut TcpStream) -> Result<Vec<u8>, ClientError> {
         let mut header = [0u8; 8];
         stream
@@ -811,6 +822,11 @@ mod tcp {
         if size < 8 {
             return Err(ClientError::Protocol(
                 "UACP MessageSize below header length",
+            ));
+        }
+        if size > MAX_UACP_MESSAGE_SIZE {
+            return Err(ClientError::Protocol(
+                "UACP MessageSize exceeds MAX_UACP_MESSAGE_SIZE",
             ));
         }
         let mut rest = vec![0u8; size - 8];
@@ -875,6 +891,64 @@ mod tcp {
                     .map_err(|e| ClientError::Io(e.to_string()))?,
                 None => return Ok(()), // CloseSecureChannel
             }
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use std::net::TcpListener;
+
+        // -------------------------------------------------------------
+        // Buffer-cap hardening — a peer-announced UACP `MessageSize`
+        // that exceeds `MAX_UACP_MESSAGE_SIZE` must be rejected cleanly
+        // (no multi-GB allocation attempt, no hang) right after the
+        // 8-byte header is read. Mirrors the established
+        // `crates/transport-tcp/src/framing.rs::MAX_FRAME_SIZE` guard.
+        // -------------------------------------------------------------
+
+        #[test]
+        fn read_message_rejects_oversized_message_size_cleanly() {
+            let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+            let addr = listener.local_addr().expect("local_addr");
+            let handle = std::thread::spawn(move || {
+                let mut stream = TcpStream::connect(addr).expect("connect");
+                let mut header = [0u8; 8];
+                header[0..4].copy_from_slice(b"MSGF");
+                // Announce a message far beyond MAX_UACP_MESSAGE_SIZE; no
+                // body bytes follow — the reader must reject before ever
+                // attempting to read/allocate the body.
+                header[4..8].copy_from_slice(&u32::MAX.to_le_bytes());
+                stream.write_all(&header).expect("write header");
+            });
+            let (mut accepted, _) = listener.accept().expect("accept");
+            let res = read_message(&mut accepted);
+            assert!(
+                matches!(res, Err(ClientError::Protocol(_))),
+                "expected clean Protocol rejection, got {res:?}"
+            );
+            handle.join().expect("writer thread");
+        }
+
+        #[test]
+        fn read_message_roundtrip_within_bound() {
+            let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+            let addr = listener.local_addr().expect("local_addr");
+            let body = [1u8, 2, 3, 4, 5, 6, 7, 8];
+            let handle = std::thread::spawn(move || {
+                let mut stream = TcpStream::connect(addr).expect("connect");
+                let mut header = [0u8; 8];
+                header[0..4].copy_from_slice(b"MSGF");
+                let size = 8 + body.len() as u32;
+                header[4..8].copy_from_slice(&size.to_le_bytes());
+                stream.write_all(&header).expect("write header");
+                stream.write_all(&body).expect("write body");
+            });
+            let (mut accepted, _) = listener.accept().expect("accept");
+            let msg = read_message(&mut accepted).expect("read_message");
+            assert_eq!(&msg[0..4], b"MSGF");
+            assert_eq!(&msg[8..], &body);
+            handle.join().expect("writer thread");
         }
     }
 }

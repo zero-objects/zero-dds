@@ -265,6 +265,7 @@ fn writer_cfg(topic: &str) -> UserWriterConfig {
         liveliness: zerodds_qos::LivelinessQosPolicy::default(),
         ownership: zerodds_qos::OwnershipKind::Shared,
         ownership_strength: 0,
+        presentation: Default::default(),
         partition: Vec::new(),
         user_data: Vec::new(),
         topic_data: Vec::new(),

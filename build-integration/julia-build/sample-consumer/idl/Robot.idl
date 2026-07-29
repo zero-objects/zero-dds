@@ -1,0 +1,7 @@
+@appendable
+struct Pose {
+    string<32> robot_id;
+    double x;
+    double y;
+    double theta;
+};

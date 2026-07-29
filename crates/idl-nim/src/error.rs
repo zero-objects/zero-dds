@@ -1,0 +1,26 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 ZeroDDS Contributors
+
+//! Error family for the Nim code generator.
+
+use std::fmt;
+
+/// Convenience result alias for the Nim backend.
+pub type Result<T> = core::result::Result<T, IdlNimError>;
+
+/// Errors raised while emitting Nim source from an IDL AST.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum IdlNimError {
+    /// A construct the Nim backend does not (yet) emit.
+    Unsupported(String),
+}
+
+impl fmt::Display for IdlNimError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Unsupported(what) => write!(f, "unsupported by the Nim backend: {what}"),
+        }
+    }
+}
+
+impl std::error::Error for IdlNimError {}

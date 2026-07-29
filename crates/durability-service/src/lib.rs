@@ -538,6 +538,7 @@ fn user_reader_cfg(topic_name: &str, type_name: &str) -> UserReaderConfig {
             ..Default::default()
         },
         ownership: OwnershipKind::Shared,
+        presentation: Default::default(),
         partition: Vec::new(),
         user_data: Vec::new(),
         topic_data: Vec::new(),
@@ -571,6 +572,7 @@ fn user_writer_cfg(topic_name: &str, type_name: &str) -> UserWriterConfig {
         },
         ownership: OwnershipKind::Shared,
         ownership_strength: 0,
+        presentation: Default::default(),
         partition: Vec::new(),
         user_data: Vec::new(),
         topic_data: Vec::new(),

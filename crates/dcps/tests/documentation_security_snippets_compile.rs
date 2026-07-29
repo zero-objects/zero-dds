@@ -7,17 +7,17 @@
 //! `cargo test --workspace` job) rather than gating that whole file, the
 //! way `website_snippets_compile.rs` does.
 //!
-//! **CI status: this file does NOT currently run in any pipeline job.**
-//! No `.gitlab-ci.yml` job passes `--features security` (or
-//! `--all-features`) to `cargo test` — same gap `website_snippets_compile.rs`
-//! already has (see that file's doc-comment / the commit that introduced
-//! `documentation_snippets_compile.rs`, d3cf0200). This file is therefore
-//! validated locally (`cargo test -p zerodds-dcps --features security
-//! --test documentation_security_snippets_compile`) but not yet by CI.
-//! Closing that gap (adding a `--features security` cargo-test step to the
-//! `test:` job, mirroring the existing `--features same-host-shm` /
-//! `--features delivery-iceoryx` steps) is a follow-up, not done here —
-//! flagged rather than silently left as a second dead gate.
+//! **CI status: wired.** The `test:` job in `.gitlab-ci.yml` runs
+//! `cargo test -p zerodds-dcps --features security --test
+//! documentation_security_snippets_compile -- --test-threads=1` (D.3,
+//! mirroring the existing `--features same-host-shm` / `--features
+//! delivery-iceoryx` steps). Before that step existed, no
+//! `.gitlab-ci.yml` job passed `--features security` (or `--all-features`)
+//! to `cargo test`, so this file compiled + ran nowhere — the same gap
+//! `website_snippets_compile.rs` had (see that file's doc-comment / the
+//! commit that introduced `documentation_snippets_compile.rs`, d3cf0200).
+//! Local run: `cargo test -p zerodds-dcps --features security --test
+//! documentation_security_snippets_compile`.
 //!
 //! Convention otherwise identical to `documentation_snippets_compile.rs`:
 //! one function per fence, doc-commented with the exact `documentation/**`

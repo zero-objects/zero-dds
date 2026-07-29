@@ -259,6 +259,7 @@ mod bridge_dds {
             },
             ownership: OwnershipKind::Shared,
             ownership_strength: 0,
+            presentation: Default::default(),
             partition: Vec::new(),
             user_data: Vec::new(),
             topic_data: Vec::new(),
@@ -280,6 +281,7 @@ mod bridge_dds {
                 ..Default::default()
             },
             ownership: OwnershipKind::Shared,
+            presentation: Default::default(),
             partition: Vec::new(),
             user_data: Vec::new(),
             topic_data: Vec::new(),

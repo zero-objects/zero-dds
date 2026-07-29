@@ -698,8 +698,20 @@ fn lower_named(
 
 /// `map_type_spec` with resolution of scoped references via the `NameMap`.
 ///
+/// Public (beyond this module's own [`build_type_registry`] pipeline) so
+/// codegen backends with access to the full [`Specification`]'s resolved
+/// [`NameMap`] can compute a spec-complete `TypeIdentifier` for an
+/// individual member — e.g. `idl-rust`'s `TYPE_IDENTIFIER` codegen
+/// (F-TYPES-3 / #24), which otherwise falls back to a lossy
+/// primitive/string-only subset for typedef/enum/sequence/map/nested-struct
+/// members.
+///
 /// zerodds-lint: recursion-depth 64 (parser/AST walk; bounded by IDL nesting)
-fn map_type_spec_resolved(
+///
+/// # Errors
+/// `UnresolvedScoped` if `ts` (or a nested element/key/value) references a
+/// named type not present in `names`; `UnsupportedTypeSpec` for `fixed`/`any`.
+pub fn map_type_spec_resolved(
     ts: &TypeSpec,
     scope: &[alloc::string::String],
     names: &NameMap,
@@ -1082,8 +1094,19 @@ fn lower_alias_minimal(
     Ok(TypeObjectBuilder::alias(name.to_string(), target).build_minimal())
 }
 
-/// Builds a `PlainArray` `TypeIdentifier` from element + dimensions.
-fn make_array_ti(element: TypeIdentifier, sizes: &[ConstExpr]) -> Result<TypeIdentifier, MapError> {
+/// Builds a `PlainArray` `TypeIdentifier` from element + dimensions
+/// (XTypes 1.3 §7.3.4.6, TK_ARRAY). Public so codegen backends can wrap a
+/// codegen-time-resolved element `TypeIdentifier` for an array declarator
+/// (`T name[N][M]`) instead of discarding the dimensions — see
+/// [`map_type_spec_resolved`].
+///
+/// # Errors
+/// `UnsupportedTypeSpec` if a dimension does not evaluate to a
+/// non-negative integer.
+pub fn make_array_ti(
+    element: TypeIdentifier,
+    sizes: &[ConstExpr],
+) -> Result<TypeIdentifier, MapError> {
     let mut dims = alloc::vec::Vec::with_capacity(sizes.len());
     for s in sizes {
         dims.push(eval_const_u32(s)?);

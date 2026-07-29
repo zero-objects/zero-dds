@@ -1,0 +1,42 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RootNamespace>ZeroddsIdlcSample</RootNamespace>
+  </PropertyGroup>
+
+  <!-- The build-step integration under test. -->
+  <Import Project="../targets/ZeroDDS.Idlc.targets" />
+
+  <ItemGroup>
+    <ZeroddsIdl Include="idl/Robot.idl" />
+  </ItemGroup>
+
+  <!--
+    Generated C# is not self-contained the way the Rust/Java/Swift/D/Nim/
+    Julia/Lua/Ada backends are (each of those embeds its own wire-format
+    prelude in the generated file). It needs two separate runtime pieces,
+    neither of which any .csproj in the repo referenced before this
+    sample (confirmed by grepping the whole tree for both file names) —
+    a real build-integration gap this sample closes, not a codegen bug:
+
+      1. ZeroDDS.Cdr (Xcdr2Writer/Reader, EndianMode, ...) — a real
+         .csproj, referenced the same way
+         crates/cs/Examples/TopicTypedSmoke.csproj does.
+      2. crates/idl-csharp/runtime/Omg.Types.cs (ITopicType<>,
+         ExtensibilityAttribute, KeyAttribute, ISequence<T>, ...) — a
+         bare .cs file "shipped alongside generated sources" per its own
+         header comment, with no .csproj of its own and, before this
+         sample, zero `Compile Include` references anywhere in the tree
+         (a repo-wide grep for the file name across all .csproj files
+         was empty).
+  -->
+  <ItemGroup>
+    <ProjectReference Include="../../../crates/cs/csharp/ZeroDDS.Cdr/ZeroDDS.Cdr.csproj" />
+    <Compile Include="../../../crates/idl-csharp/runtime/Omg.Types.cs" Link="Omg.Types.cs" />
+  </ItemGroup>
+
+</Project>

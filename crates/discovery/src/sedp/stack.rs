@@ -760,6 +760,7 @@ mod tests {
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
             lifespan: zerodds_qos::LifespanQosPolicy::default(),
+            presentation: zerodds_qos::PresentationQosPolicy::default(),
             partition: alloc::vec::Vec::new(),
             user_data: alloc::vec::Vec::new(),
             topic_data: alloc::vec::Vec::new(),

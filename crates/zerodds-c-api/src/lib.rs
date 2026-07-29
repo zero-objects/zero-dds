@@ -662,6 +662,7 @@ pub unsafe extern "C" fn zerodds_writer_create(
         },
         ownership: OwnershipKind::Shared,
         ownership_strength: 0,
+        presentation: Default::default(),
         partition: Vec::new(),
         user_data: Vec::new(),
         topic_data: Vec::new(),
@@ -726,6 +727,7 @@ pub unsafe extern "C" fn zerodds_writer_create_kind(
         },
         ownership: OwnershipKind::Shared,
         ownership_strength: 0,
+        presentation: Default::default(),
         partition: Vec::new(),
         user_data: Vec::new(),
         topic_data: Vec::new(),
@@ -1036,6 +1038,7 @@ pub unsafe extern "C" fn zerodds_reader_create(
             ..Default::default()
         },
         ownership: OwnershipKind::Shared,
+        presentation: Default::default(),
         partition: Vec::new(),
         user_data: Vec::new(),
         topic_data: Vec::new(),
@@ -1098,6 +1101,7 @@ pub unsafe extern "C" fn zerodds_reader_create_kind(
             ..Default::default()
         },
         ownership: OwnershipKind::Shared,
+        presentation: Default::default(),
         partition: Vec::new(),
         user_data: Vec::new(),
         topic_data: Vec::new(),

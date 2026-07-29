@@ -953,3 +953,49 @@ public class Main {
 "#,
     );
 }
+
+const TYPEDEF_OF_STRUCT_KEY_IDL: &str = r#"
+module conf {
+  struct Inner { @key long x; long ignored; };
+  typedef Inner InnerAlias;
+  struct Outer { @key InnerAlias i; long tail; };
+};
+"#;
+
+// KeyHash correctness regression: a `@key` member whose type is a TYPEDEF
+// alias of a struct (not the struct directly) — previously fell through to
+// the generic (non-key) encoder, writing the WHOLE nested struct (including
+// `ignored`, XCDR2-framed as a struct payload prefixed by a DHEADER of its
+// own byte length, e.g. `[len=8][x=7][ignored=99]`) into the KeyHash, instead
+// of just the aliased struct's own `@key` subset (here: `x` alone).
+// Byte-exact per XTypes 1.3 §7.6.8.4: BE holder <=16 octets -> zero-padded.
+#[test]
+fn keyhash_byte_exact_typedef_of_struct_dealiases_to_own_key_subset() {
+    run_roundtrip(
+        TYPEDEF_OF_STRUCT_KEY_IDL,
+        r#"package conf;
+import java.util.Arrays;
+public class Main {
+  public static void main(String[] a) {
+    Inner i = new Inner(); i.setX(7); i.setIgnored(99);
+    Outer o = new Outer(); o.setI(new InnerAlias(i)); o.setTail(5);
+    byte[] h = OuterTypeSupport.INSTANCE.keyHash(o);
+    byte[] expected = new byte[]{0,0,0,7, 0,0,0,0,0,0,0,0,0,0,0,0};
+    if (!Arrays.equals(h, expected)) {
+      System.err.println("keyHash=" + Arrays.toString(h) + " expected=" + Arrays.toString(expected));
+      System.exit(1);
+    }
+    // A `tail`- or `ignored`-only change must NOT move the KeyHash (proves
+    // those non-key bytes are excluded, not just coincidentally equal).
+    Inner i2 = new Inner(); i2.setX(7); i2.setIgnored(42);
+    Outer o2 = new Outer(); o2.setI(new InnerAlias(i2)); o2.setTail(999);
+    byte[] h2 = OuterTypeSupport.INSTANCE.keyHash(o2);
+    if (!Arrays.equals(h, h2)) {
+      System.err.println("keyHash moved on non-key change: " + Arrays.toString(h2));
+      System.exit(1);
+    }
+  }
+}
+"#,
+    );
+}

@@ -313,6 +313,7 @@ impl Publisher {
                     liveliness: qos.liveliness,
                     ownership: qos.ownership.kind,
                     ownership_strength: qos.ownership_strength.value,
+                    presentation: qos.presentation,
                     partition: qos.partition.names.clone(),
                     user_data: qos.user_data.value.clone(),
                     topic_data: qos.topic_data.value.clone(),

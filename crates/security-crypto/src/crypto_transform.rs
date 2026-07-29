@@ -240,6 +240,14 @@ impl CryptoFooter {
         let n_buf: [u8; 4] = bytes[16..20].try_into().map_err(|_| "footer count")?;
         let n = u32::from_be_bytes(n_buf) as usize;
         let mut pos = 20;
+        // Each receiver-specific MAC needs exactly 20 bytes (4-byte key
+        // id + 16-byte tag). Reject before `Vec::with_capacity` — mirrors
+        // `crates/cdr/src/composite.rs`'s `len > reader.remaining()`
+        // guard — so a wire-announced count that cannot possibly fit
+        // the bytes remaining cannot force an oversized allocation.
+        if n > bytes.len().saturating_sub(pos) / 20 {
+            return Err("receiver-specific MAC count exceeds remaining bytes");
+        }
         let mut receiver_specific_macs = Vec::with_capacity(n);
         for _ in 0..n {
             if bytes.len() < pos + 20 {
@@ -403,6 +411,23 @@ mod tests {
     #[test]
     fn footer_short_buffer_rejected() {
         assert!(CryptoFooter::from_bytes(&[0; 10]).is_err());
+    }
+
+    // -------------------------------------------------------------
+    // Buffer-cap hardening — a wire-announced receiver-count that
+    // cannot possibly fit the bytes actually present must be rejected
+    // cleanly (no OOM, no panic) before `Vec::with_capacity` runs.
+    // Mirrors the established `len > reader.remaining()` guard in
+    // crates/cdr/src/composite.rs.
+    // -------------------------------------------------------------
+
+    #[test]
+    fn footer_rejects_oversized_receiver_count_cleanly() {
+        let mut bytes = alloc::vec![0u8; 20];
+        bytes[16..20].copy_from_slice(&1_000_000_000u32.to_be_bytes());
+        // No receiver-specific MAC bytes follow.
+        let res = CryptoFooter::from_bytes(&bytes);
+        assert!(res.is_err(), "expected clean rejection, got {res:?}");
     }
 
     #[test]

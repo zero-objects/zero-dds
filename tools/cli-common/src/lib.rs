@@ -168,6 +168,7 @@ pub fn raw_reader_config_typed(topic: &str, type_name: &str) -> UserReaderConfig
         deadline: DeadlineQosPolicy::default(),
         liveliness: LivelinessQosPolicy::default(),
         ownership: OwnershipKind::Shared,
+        presentation: Default::default(),
         partition: Vec::new(),
         user_data: Vec::new(),
         topic_data: Vec::new(),

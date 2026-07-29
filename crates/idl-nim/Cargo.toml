@@ -1,0 +1,24 @@
+[package]
+name = "zerodds-idl-nim"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "OMG IDL4 → Nim code generator for ZeroDDS (byte-identical XCDR2 wire, native pure-Nim endpoint mapping)."
+repository = "https://github.com/zero-objects/zero-dds"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-idl-nim"
+readme = "README.md"
+keywords = ["dds", "idl", "nim", "codegen", "xtypes"]
+categories = ["development-tools", "network-programming"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+zerodds-idl = { version = "1.0.0-rc.6", path = "../idl" }

@@ -170,6 +170,21 @@ L1-L4 gegen [`zerodds-xcdr2-bindings-conformance-1.0`](zerodds-xcdr2-bindings-co
 `crates/ts-node/examples/topic-typed-smoke.ts` ist Referenz-Smoke
 (generierter `PointTypeSupport` + Pub/Sub-Loop).
 
+Lauffähige Deep-Examples (sync + async, Sensor-Telemetrie
+`Reading { id, value, label }`). Der TS-Wire ist identisch mit dem JS-Wire; die
+runnable Endpoint-Proof liegt im Node-Endpoint (`endpoints/node`, dieselbe
+Byte-Form, in CI `endpoints-node`):
+
+- Sync: [`endpoints/node/example_sync.js`](../../endpoints/node/example_sync.js)
+  — Poll-Loop, voller Feld-Decode.
+- Async: [`endpoints/node/example_async.js`](../../endpoints/node/example_async.js)
+  — async-Iterator (`for await`).
+- Quickstart: [`endpoints/node/QUICKSTART.md`](../../endpoints/node/QUICKSTART.md).
+
+Die getypte TS-Runtime (`@zerodds/cdr`, `crates/ts-node/src/cdr/{writer,reader}.ts`)
+trägt dieselbe Wire; ein separater `endpoints/ts`-Tree wäre eine vierte Kopie
+derselben Byte-Form und wird bewusst nicht dupliziert.
+
 ## §11 Errata + Open-Questions
 
 - **§11.1 `Number` Praezision**: int32/uint32 passen in 53-bit Mantisse.

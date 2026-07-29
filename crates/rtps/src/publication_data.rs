@@ -42,6 +42,11 @@ pub use zerodds_qos::ReliabilityKind;
 /// under the historical alias `ReliabilityQos`.
 pub use zerodds_qos::ReliabilityQosPolicy as ReliabilityQos;
 
+/// Presentation QoS value: access_scope + coherent_access + ordered_access.
+///
+/// Canonical in [`zerodds_qos::PresentationQosPolicy`]; RTPS re-exportiert.
+pub use zerodds_qos::PresentationQosPolicy;
+
 /// `DataRepresentationId` — XTypes 1.3 §7.6.3.1.1 + RTPS 2.5 PID 0x0073.
 ///
 /// Per spec: 16-bit signed integer; values 0..2 are normatively
@@ -187,6 +192,11 @@ pub struct PublicationBuiltinTopicData {
     pub deadline: zerodds_qos::DeadlineQosPolicy,
     /// Lifespan QoS (spec §2.2.3.16) — writer-only.
     pub lifespan: zerodds_qos::LifespanQosPolicy,
+    /// Presentation QoS (spec §2.2.3.6, PID 0x0021). Publisher/Subscriber-group
+    /// scope, inherited by every contained writer/reader. Default
+    /// `PresentationQosPolicy::default()` (INSTANCE scope, no coherent/ordered
+    /// access) when the peer does not send the PID (legacy vendors).
+    pub presentation: PresentationQosPolicy,
     /// Partition QoS (spec §2.2.3.13). Empty list = "default partition" ("").
     pub partition: Vec<String>,
     /// UserData QoS (spec §2.2.3.1) — opaque sequence<octet>,
@@ -349,6 +359,20 @@ impl PublicationBuiltinTopicData {
             pid::LIFESPAN,
             encode_duration_le(self.lifespan.duration).to_vec(),
         ));
+
+        // PRESENTATION: 4 byte access_scope + 1 byte coherent + 1 byte
+        // ordered + 2 byte padding = 8 byte (spec §2.2.3.6 / PID 0x0021).
+        // Always emitted (like RELIABILITY/DURABILITY) so a strict peer
+        // (e.g. RTI) can SEDP-match on it.
+        {
+            let mut w = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little);
+            self.presentation
+                .encode_into(&mut w)
+                .map_err(|_| WireError::ValueOutOfRange {
+                    message: "presentation encoding failed",
+                })?;
+            params.push(Parameter::new(pid::PRESENTATION, w.into_bytes()));
+        }
 
         // PARTITION: only if non-empty — an empty list = default (= "").
         if !self.partition.is_empty() {
@@ -598,6 +622,23 @@ impl PublicationBuiltinTopicData {
             .map(|duration| zerodds_qos::LifespanQosPolicy { duration })
             .unwrap_or_default();
 
+        // PRESENTATION (PID 0x0021): default INSTANCE/no-coherent/no-ordered
+        // if the peer does not send it (legacy vendor without PRESENTATION
+        // on the wire, or LE/BE mismatch on the padding bytes — decode
+        // failure falls back to the spec default, never a hard error).
+        let presentation = pl
+            .find(pid::PRESENTATION)
+            .and_then(|p| {
+                let endianness = if little_endian {
+                    zerodds_cdr::Endianness::Little
+                } else {
+                    zerodds_cdr::Endianness::Big
+                };
+                let mut r = zerodds_cdr::BufferReader::new(&p.value, endianness);
+                PresentationQosPolicy::decode_from(&mut r).ok()
+            })
+            .unwrap_or_default();
+
         let partition = pl
             .find(pid::PARTITION)
             .and_then(|p| decode_partition(&p.value, little_endian))
@@ -690,6 +731,7 @@ impl PublicationBuiltinTopicData {
             liveliness,
             deadline,
             lifespan,
+            presentation,
             partition,
             user_data,
             topic_data,
@@ -1047,6 +1089,7 @@ mod tests {
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
             lifespan: zerodds_qos::LifespanQosPolicy::default(),
+            presentation: PresentationQosPolicy::default(),
             partition: alloc::vec::Vec::new(),
             user_data: alloc::vec::Vec::new(),
             topic_data: alloc::vec::Vec::new(),

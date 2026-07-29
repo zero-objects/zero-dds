@@ -173,6 +173,15 @@ int main(void) {
 }
 ```
 
+Lauffähige Deep-Examples (sync + async, Sensor-Telemetrie
+`Reading { id, value, label }`, über den `zdw`-Wire-Core byte-identisch):
+
+- Sync: [`endpoints/c/examples/example_sync.c`](../../endpoints/c/examples/example_sync.c)
+  — C89-Poll-Loop über eine In-Memory-FIFO, voller Feld-Decode.
+- Async: [`endpoints/c/examples/example_async.c`](../../endpoints/c/examples/example_async.c)
+  — der C11-Event-Reactor (`zdw_async_reader` + `on_sample`-Callback).
+- Quickstart: [`endpoints/c/QUICKSTART.md`](../../endpoints/c/QUICKSTART.md).
+
 ## §9 Errata + Edge-Cases
 
 - **§9.1 const-Strings**: `MyType_t.text` ist `char*` (mutable);

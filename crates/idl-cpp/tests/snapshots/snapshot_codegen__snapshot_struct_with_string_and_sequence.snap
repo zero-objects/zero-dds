@@ -147,6 +147,7 @@ inline ::Bag topic_type_support<::Bag>::decode(const uint8_t* zd_buf, size_t zd_
             ::dds::topic::xcdr2::skip_pad_from_origin(zd_pos, zd_origin, 4);
             const auto zd_seq_dh = ::dds::topic::xcdr2::dheader_read_r(zd_buf, zd_pos, zd_len, zd_be, zd_repr); (void)zd_seq_dh;
             auto zd_cnt = ::dds::topic::xcdr2::read_le_origin<uint32_t>(zd_buf, zd_pos, zd_len, zd_origin, zd_max_align, zd_be);
+            if (zd_cnt > 16) throw std::length_error("decoded sequence length exceeds its IDL bound (16)");
             std::vector<std::string> zd_seq;
             zd_seq.reserve(zd_cnt);
             for (uint32_t zd_i = 0; zd_i < zd_cnt; ++zd_i) {

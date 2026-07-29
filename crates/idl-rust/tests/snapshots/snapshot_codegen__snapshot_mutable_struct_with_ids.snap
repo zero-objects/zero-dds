@@ -1,6 +1,5 @@
 ---
 source: crates/idl-rust/tests/snapshot_codegen.rs
-assertion_line: 186
 expression: run(idl)
 ---
 // SPDX-License-Identifier: Apache-2.0
@@ -22,7 +21,7 @@ pub struct UserPrefs {
 impl zerodds_dcps::DdsType for UserPrefs {
     const TYPE_NAME: &'static str = "UserPrefs";
     const EXTENSIBILITY: zerodds_dcps::Extensibility = zerodds_dcps::Extensibility::Mutable;
-    const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0x0c, 0x14, 0x8f, 0xe5, 0xaf, 0x73, 0xa2, 0x4f, 0x14, 0x0a, 0xa6, 0x56, 0x76, 0x1b]));
+    const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0x06, 0xa6, 0xf5, 0xb0, 0x0c, 0xb6, 0x73, 0x07, 0xe1, 0x0c, 0xd5, 0x85, 0xb9, 0xa3]));
 
     fn encode(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
         let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little).xcdr2();
@@ -138,10 +137,10 @@ impl zerodds_dcps::DdsType for UserPrefs {
         <Self as zerodds_cdr::CdrDecode>::decode(&mut reader).map_err(::core::convert::Into::into)
     }
 
-    fn field_value(&self, path: &str) -> ::core::option::Option<zerodds_sql_filter::Value> {
+    fn field_value(&self, path: &str) -> ::core::option::Option<zerodds_dcps::FilterValue> {
         match path {
-            "name" => ::core::option::Option::Some(zerodds_sql_filter::Value::String(self.name.clone())),
-            "age" => ::core::option::Option::Some(zerodds_sql_filter::Value::Int(self.age as i64)),
+            "name" => ::core::option::Option::Some(zerodds_dcps::FilterValue::String(self.name.clone())),
+            "age" => ::core::option::Option::Some(zerodds_dcps::FilterValue::Int(self.age as i64)),
             _ => ::core::option::Option::None,
         }
     }

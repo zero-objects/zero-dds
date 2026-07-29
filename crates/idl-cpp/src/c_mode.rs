@@ -88,11 +88,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use zerodds_idl::ast::{
     Annotation, AnnotationParams, BitmaskDecl, BitsetDecl, Case, CaseLabel, ConstExpr,
     ConstrTypeDecl, Declarator, Definition, EnumDef, FloatingType, IntegerType, LiteralKind,
-    ModuleDef, PrimitiveType, ScopedName, Specification, StructDcl, StructDef, SwitchTypeSpec,
-    TypeDecl, TypeSpec, UnionDcl, UnionDef,
+    Member, ModuleDef, PrimitiveType, ScopedName, Specification, StructDcl, StructDef,
+    SwitchTypeSpec, TypeDecl, TypeSpec, UnionDcl, UnionDef,
 };
 use zerodds_idl::semantics::const_eval::{Symbol, SymbolTable, evaluate, evaluate_positive_int};
 
+use crate::c_keywords::escape_c_ident;
 use crate::error::CppGenError;
 
 /// Codegen-scoped type registry for the C backend (Bug C scope widening).
@@ -921,13 +922,17 @@ impl<'a> Ctx<'a> {
                 // typedef-to-array alias contributes leading dims (#43).
                 let dims = effective_array_dims(self.reg, &member.type_spec, decl)?;
                 if dims.is_empty() {
-                    let _ = writeln!(self.out, "    {c_type} {field};", field = m_name.text);
+                    let _ = writeln!(
+                        self.out,
+                        "    {c_type} {field};",
+                        field = escape_c_ident(&m_name.text)
+                    );
                 } else {
                     let suffix: String = dims.iter().map(|n| format!("[{n}]")).collect();
                     let _ = writeln!(
                         self.out,
                         "    {c_type} {field}{suffix};",
-                        field = m_name.text
+                        field = escape_c_ident(&m_name.text)
                     );
                 }
                 // @optional: a presence companion flag (Bug C2: no longer
@@ -936,7 +941,7 @@ impl<'a> Ctx<'a> {
                     let _ = writeln!(
                         self.out,
                         "    uint8_t {field}_present;",
-                        field = m_name.text
+                        field = escape_c_ident(&m_name.text)
                     );
                 }
             }
@@ -1242,7 +1247,7 @@ impl<'a> Ctx<'a> {
         self.emit_free_body(&c_name, def);
         // ---- key_hash body ----
         if has_key {
-            self.emit_key_hash_body(&c_name, def);
+            self.emit_key_hash_body(&c_name, def)?;
         }
         Ok(())
     }
@@ -1355,7 +1360,7 @@ impl<'a> Ctx<'a> {
         for member in &def.members {
             let optional = is_optional(&member.annotations);
             for decl in &member.declarators {
-                let f = &decl.name().text;
+                let f = escape_c_ident(&decl.name().text);
                 let dims = effective_array_dims(self.reg, &member.type_spec, decl)?;
                 if optional {
                     // XCDR2 non-mutable optional: a boolean presence flag, then
@@ -1816,7 +1821,7 @@ impl<'a> Ctx<'a> {
         for member in &ndef.members {
             let optional = is_optional(&member.annotations);
             for decl in &member.declarators {
-                let f = &decl.name().text;
+                let f = escape_c_ident(&decl.name().text);
                 let dims = effective_array_dims(self.reg, &member.type_spec, decl)?;
                 if optional {
                     // Plain-CDR2 optional (XTypes §7.4.3): a boolean presence
@@ -1988,7 +1993,7 @@ impl<'a> Ctx<'a> {
                 .collect::<Result<_, _>>()?;
             let optional = is_optional(&member.annotations);
             for (decl, dims) in member.declarators.iter().zip(dims_per_decl.iter()) {
-                let f = format!("{base}{}", decl.name().text);
+                let f = format!("{base}{}", escape_c_ident(&decl.name().text));
                 let f = f.as_str();
                 // Bug XV-mut: pick the COMPACT length code (XTypes 1.3 §7.4.3.4.2)
                 // mirroring the Rust reference (`mutable_member_length_code`):
@@ -2062,7 +2067,7 @@ impl<'a> Ctx<'a> {
                 .collect::<Result<_, _>>()?;
             let optional = is_optional(&member.annotations);
             for (decl, dims) in member.declarators.iter().zip(dims_per_decl.iter()) {
-                let fname = decl.name().text.clone();
+                let fname = escape_c_ident(&decl.name().text);
                 let f = format!("s->{fname}");
                 if optional {
                     // PL_CDR1 optional: present -> emit the parameter; absent ->
@@ -2131,7 +2136,7 @@ impl<'a> Ctx<'a> {
                 .collect::<Result<_, _>>()?;
             let optional = is_optional(&member.annotations);
             for (decl, dims) in member.declarators.iter().zip(dims_per_decl.iter()) {
-                let fname = decl.name().text.clone();
+                let fname = escape_c_ident(&decl.name().text);
                 let f = format!("s->{fname}");
                 let _ = writeln!(self.out, "        case {id}u: {{");
                 // Redirect the cursor to the parameter body (origin 0).
@@ -2287,7 +2292,7 @@ impl<'a> Ctx<'a> {
         for member in &def.members {
             let optional = is_optional(&member.annotations);
             for decl in &member.declarators {
-                let f = &decl.name().text;
+                let f = escape_c_ident(&decl.name().text);
                 let dims = effective_array_dims(self.reg, &member.type_spec, decl)?;
                 if optional {
                     let _ = writeln!(self.out, "    {{");
@@ -2373,16 +2378,39 @@ impl<'a> Ctx<'a> {
             }
             TypeSpec::String(st) => {
                 if st.wide {
-                    return self.emit_wstring_read(var);
+                    return self.emit_wstring_read(var, st.bound.as_ref());
                 }
                 let _ = writeln!(
                     self.out,
                     "    if (zerodds_xcdr2_c_read_string(buf, len, &pos, &({var}), zd_be) != 0) return -7;"
                 );
+                // B1 follow-up (#22 decode-side parity): mirror the encode-side
+                // bound check (emit_member_write above) — XTypes 1.3 §7.4.3
+                // requires the IDL bound enforced on decode too, not just the
+                // wire-format validation zerodds_xcdr2_c_read_string already
+                // does. -14: bounded collection decoded value exceeds its IDL
+                // bound (distinct from the generic -7 read-failure code).
+                //
+                // Moderate fix (deep review of #22 decode-bounds-cross-backend):
+                // `zerodds_xcdr2_c_read_string` is a shared runtime helper
+                // that already `malloc`s the string before returning it —
+                // unlike `emit_wstring_read`/`emit_sequence_read`/
+                // `emit_map_read` below, which read the wire length first and
+                // check the bound BEFORE allocating, this string path has no
+                // length available before calling the helper. Rather than
+                // change the shared header (used by every other C-mode read
+                // path), `free({var})` before rejecting — a rejected decode
+                // must not leak the allocation the helper already made.
+                if let Some(n) = self.eval_bound(st.bound.as_ref()) {
+                    let _ = writeln!(
+                        self.out,
+                        "    if (({var}) != NULL && strlen({var}) > {n}u) {{ free({var}); ({var}) = NULL; return -14; }}"
+                    );
+                }
                 Ok(())
             }
-            TypeSpec::Sequence(seq) => self.emit_sequence_read(var, &seq.elem),
-            TypeSpec::Map(m) => self.emit_map_read(var, &m.key, &m.value),
+            TypeSpec::Sequence(seq) => self.emit_sequence_read(var, &seq.elem, seq.bound.as_ref()),
+            TypeSpec::Map(m) => self.emit_map_read(var, &m.key, &m.value, m.bound.as_ref()),
             TypeSpec::Scoped(sc) => {
                 let last = scoped_last(sc).ok_or_else(|| unsupported("empty scoped name"))?;
                 if self.reg.enums.contains_key(&last) {
@@ -2586,7 +2614,7 @@ impl<'a> Ctx<'a> {
         for member in &ndef.members {
             let optional = is_optional(&member.annotations);
             for decl in &member.declarators {
-                let f = &decl.name().text;
+                let f = escape_c_ident(&decl.name().text);
                 let dims = effective_array_dims(self.reg, &member.type_spec, decl)?;
                 if optional {
                     let _ = writeln!(self.out, "    {{");
@@ -2617,7 +2645,11 @@ impl<'a> Ctx<'a> {
     }
 
     /// Read an XCDR2 wstring into a freshly-malloc'd NUL-terminated `uint16_t*`.
-    fn emit_wstring_read(&mut self, var: &str) -> Result<(), CppGenError> {
+    fn emit_wstring_read(
+        &mut self,
+        var: &str,
+        bound: Option<&ConstExpr>,
+    ) -> Result<(), CppGenError> {
         let _ = writeln!(self.out, "    {{");
         let _ = writeln!(self.out, "        uint32_t ws_bytes = 0;");
         let _ = writeln!(
@@ -2625,6 +2657,11 @@ impl<'a> Ctx<'a> {
             "        if (zerodds_xcdr2_c_read_u32(buf, len, &pos, &ws_bytes, zd_be) != 0) return -7;"
         );
         let _ = writeln!(self.out, "        uint32_t ws_n = ws_bytes / 2u;");
+        // B1 follow-up (#22 decode-side parity): mirror the encode-side bound
+        // check (emit_wstring_write above) — XTypes 1.3 §7.4.3.
+        if let Some(n) = self.eval_bound(bound) {
+            let _ = writeln!(self.out, "        if (ws_n > {n}u) return -14;");
+        }
         let _ = writeln!(
             self.out,
             "        uint16_t* ws_p = (uint16_t*)malloc(((size_t)ws_n + 1) * sizeof(uint16_t));"
@@ -2647,6 +2684,7 @@ impl<'a> Ctx<'a> {
         var: &str,
         key: &TypeSpec,
         value: &TypeSpec,
+        bound: Option<&ConstExpr>,
     ) -> Result<(), CppGenError> {
         let kc = c_type_for(self.reg, key)?;
         let vc = c_type_for(self.reg, value)?;
@@ -2672,6 +2710,11 @@ impl<'a> Ctx<'a> {
             self.out,
             "        if (zerodds_xcdr2_c_read_u32(buf, len, &pos, &map_len, zd_be) != 0) return -7;"
         );
+        // B1 follow-up (#22 decode-side parity): mirror the encode-side bound
+        // check (emit_map_write above) — XTypes 1.3 §7.4.3.
+        if let Some(n) = self.eval_bound(bound) {
+            let _ = writeln!(self.out, "        if (map_len > {n}u) return -14;");
+        }
         let _ = writeln!(self.out, "        ({var}).len = map_len;");
         let _ = writeln!(
             self.out,
@@ -2785,7 +2828,12 @@ impl<'a> Ctx<'a> {
         Err(unsupported("non-integer union case label (C backend)"))
     }
 
-    fn emit_sequence_read(&mut self, var: &str, elem: &TypeSpec) -> Result<(), CppGenError> {
+    fn emit_sequence_read(
+        &mut self,
+        var: &str,
+        elem: &TypeSpec,
+        bound: Option<&ConstExpr>,
+    ) -> Result<(), CppGenError> {
         let _ = writeln!(self.out, "    {{");
         // XCDR2 §7.4.3.5: for non-primitive elements, a DHEADER (uint32 before
         // [count + elements]) is present — skip it. enum→int32 is primitive.
@@ -2804,6 +2852,11 @@ impl<'a> Ctx<'a> {
             self.out,
             "        if (zerodds_xcdr2_c_read_u32(buf, len, &pos, &seq_len, zd_be) != 0) return -7;"
         );
+        // B1 follow-up (#22 decode-side parity): mirror the encode-side bound
+        // check (emit_sequence_write above) — XTypes 1.3 §7.4.3.
+        if let Some(n) = self.eval_bound(bound) {
+            let _ = writeln!(self.out, "        if (seq_len > {n}u) return -14;");
+        }
         let elem_c = c_type_for(self.reg, elem)?;
         let _ = writeln!(self.out, "        ({var}).len = seq_len;");
         let _ = writeln!(
@@ -2871,7 +2924,7 @@ impl<'a> Ctx<'a> {
             let id = id_annotation(&member.annotations).unwrap_or(auto_id);
             auto_id = id + 1;
             for decl in &member.declarators {
-                let f = format!("{base}{}", decl.name().text);
+                let f = format!("{base}{}", escape_c_ident(&decl.name().text));
                 let dims = effective_array_dims(self.reg, &member.type_spec, decl)?;
                 let _ = writeln!(self.out, "        case {id}: {{");
                 self.emit_array_or_scalar_read(&f, &member.type_spec, &dims)?;
@@ -2895,7 +2948,7 @@ impl<'a> Ctx<'a> {
         for member in &def.members {
             let resolved = resolve_alias(self.reg, &member.type_spec);
             for decl in &member.declarators {
-                let f = &decl.name().text;
+                let f = escape_c_ident(&decl.name().text);
                 let dims =
                     effective_array_dims(self.reg, &member.type_spec, decl).unwrap_or_default();
                 if dims.is_empty() {
@@ -2969,7 +3022,7 @@ impl<'a> Ctx<'a> {
         }
     }
 
-    fn emit_key_hash_body(&mut self, c_name: &str, def: &StructDef) {
+    fn emit_key_hash_body(&mut self, c_name: &str, def: &StructDef) -> Result<(), CppGenError> {
         // Spec §7.6.8: collects  members in PlainCdr2BeKeyHolder, then
         // either zero-pad or MD5. We use the XCDR2 C helpers.
         let _ = writeln!(
@@ -2983,31 +3036,26 @@ impl<'a> Ctx<'a> {
         let _ = writeln!(self.out, "    uint8_t* kh_buf = NULL;");
         let _ = writeln!(self.out, "    size_t kh_len = 0;");
         let _ = writeln!(self.out, "    size_t kh_cap = 0;");
-        for member in &def.members {
-            if !is_key(&member.annotations) {
-                continue;
-            }
+        // XTypes 1.3 §7.6.8.3.1.b: KeyHolder members in ascending member-id
+        // order (explicit `@id(N)`, else positional index among the `@key`
+        // members) — NOT declaration order.
+        let key_members: Vec<&Member> = def.members.iter().filter(|m| is_key(&m.annotations)).collect();
+        for member in sort_members_by_id(&key_members) {
             for decl in &member.declarators {
-                let f = &decl.name().text;
-                match &member.type_spec {
-                    TypeSpec::Primitive(p) => {
-                        let helper = match primitive_helper(*p) {
-                            Ok(h) => h,
-                            Err(_) => continue,
-                        };
-                        let _ = writeln!(
-                            self.out,
-                            "    if (zerodds_xcdr2_c_kh_write_{helper}(&kh_buf, &kh_len, &kh_cap, s->{f}) != 0) {{ free(kh_buf); return -1; }}"
-                        );
-                    }
-                    TypeSpec::String(_) => {
-                        let _ = writeln!(
-                            self.out,
-                            "    if (zerodds_xcdr2_c_kh_write_string(&kh_buf, &kh_len, &kh_cap, s->{f}) != 0) {{ free(kh_buf); return -1; }}"
-                        );
-                    }
-                    _ => {}
+                let f = escape_c_ident(&decl.name().text);
+                if !matches!(decl, Declarator::Simple(_)) {
+                    // A sequence/array-shaped `@key` member: the low-level
+                    // fixed-arity buffer builder used here has no
+                    // variable-length-collection key encoder. Loud codegen
+                    // error, not a silent zero-byte no-op.
+                    return Err(CppGenError::UnsupportedConstruct {
+                        construct: format!(
+                            "array/sequence @key member '{f}' (C mode has no variable-length KeyHolder encoder)"
+                        ),
+                        context: None,
+                    });
                 }
+                self.emit_key_field_write(&member.type_spec, &format!("s->{f}"))?;
             }
         }
         let _ = writeln!(
@@ -3018,6 +3066,103 @@ impl<'a> Ctx<'a> {
         let _ = writeln!(self.out, "    return 0;");
         let _ = writeln!(self.out, "}}");
         let _ = writeln!(self.out);
+        Ok(())
+    }
+
+    /// KeyHash-specific field writer (C mode). Dealiases typedef chains via
+    /// `resolve_alias` (the same helper the general C encoder uses) and, for
+    /// a nested-struct `@key` member, expands to that struct's own `@key`
+    /// subset (or ALL its members if it declares none — XTypes 1.3 §7.6.8),
+    /// in member-id order — replacing the previous unconditional `_ => {}`
+    /// silent no-op, which emitted ZERO key bytes for every non-primitive,
+    /// non-string `@key` shape (typedef, nested struct, enum, sequence,
+    /// array). Enum `@key` is now supported too (narrowed to its
+    /// `@bit_bound` wire width, matching the general C encoder's enum
+    /// convention). Anything the low-level buffer builder genuinely cannot
+    /// express here (union, bitmask/bitset, sequence, map, fixed, any, long
+    /// double) is now a LOUD codegen error instead of silence.
+    /// zerodds-lint: recursion-depth 16
+    fn emit_key_field_write(&mut self, ts: &TypeSpec, access: &str) -> Result<(), CppGenError> {
+        let resolved = resolve_alias(self.reg, ts);
+        match &resolved {
+            TypeSpec::Primitive(p) => {
+                let helper = primitive_helper(*p)?;
+                let _ = writeln!(
+                    self.out,
+                    "    if (zerodds_xcdr2_c_kh_write_{helper}(&kh_buf, &kh_len, &kh_cap, {access}) != 0) {{ free(kh_buf); return -1; }}"
+                );
+                Ok(())
+            }
+            TypeSpec::String(_) => {
+                let _ = writeln!(
+                    self.out,
+                    "    if (zerodds_xcdr2_c_kh_write_string(&kh_buf, &kh_len, &kh_cap, {access}) != 0) {{ free(kh_buf); return -1; }}"
+                );
+                Ok(())
+            }
+            TypeSpec::Scoped(sc) => {
+                let Some(name) = scoped_last(sc) else {
+                    return Err(unsupported("unresolved @key member type (C mode)"));
+                };
+                if let Some((_, sdef)) = self.reg.structs.get(&name).cloned() {
+                    // Nested-struct @key: expand to its own @key subset (or
+                    // ALL members if it declares none), in member-id order —
+                    // XTypes 1.3 §7.6.8, same rule as the outer loop.
+                    let nested_keys: Vec<Member> = sdef
+                        .members
+                        .iter()
+                        .filter(|m| is_key(&m.annotations))
+                        .cloned()
+                        .collect();
+                    let effective: Vec<Member> = if nested_keys.is_empty() {
+                        sdef.members.clone()
+                    } else {
+                        nested_keys
+                    };
+                    let refs: Vec<&Member> = effective.iter().collect();
+                    for m in sort_members_by_id(&refs) {
+                        for decl in &m.declarators {
+                            if !matches!(decl, Declarator::Simple(_)) {
+                                return Err(unsupported(
+                                    "array field inside a nested-struct @key (C mode)",
+                                ));
+                            }
+                            let field = &decl.name().text;
+                            self.emit_key_field_write(&m.type_spec, &format!("{access}.{field}"))?;
+                        }
+                    }
+                    Ok(())
+                } else if let Some(bytes) = self.reg.enum_bytes.get(&name).copied() {
+                    // enum @key: signed wire holder of its @bit_bound width
+                    // (XTypes §7.4.5.1), matching the general C encoder's
+                    // enum-member convention exactly (see the Scoped-enum arm
+                    // of the general member writer).
+                    let line = match bytes {
+                        1 => format!(
+                            "    if (zerodds_xcdr2_c_kh_write_u8(&kh_buf, &kh_len, &kh_cap, (uint8_t)({access})) != 0) {{ free(kh_buf); return -1; }}"
+                        ),
+                        2 => format!(
+                            "    if (zerodds_xcdr2_c_kh_write_u16(&kh_buf, &kh_len, &kh_cap, (uint16_t)({access})) != 0) {{ free(kh_buf); return -1; }}"
+                        ),
+                        _ => format!(
+                            "    if (zerodds_xcdr2_c_kh_write_i32(&kh_buf, &kh_len, &kh_cap, (int32_t)({access})) != 0) {{ free(kh_buf); return -1; }}"
+                        ),
+                    };
+                    let _ = writeln!(self.out, "{line}");
+                    Ok(())
+                } else {
+                    Err(CppGenError::UnsupportedConstruct {
+                        construct: format!(
+                            "@key member type '{name}' (union/bitmask/bitset/unresolved — C mode)"
+                        ),
+                        context: None,
+                    })
+                }
+            }
+            _ => Err(unsupported(
+                "@key member type (sequence/map/fixed/any/long-double — C mode)",
+            )),
+        }
     }
 }
 
@@ -3091,7 +3236,7 @@ fn switch_type_spec(s: &SwitchTypeSpec) -> TypeSpec {
 
 /// The C field name for a union case's member (the case's declarator name).
 fn union_case_field(case: &Case) -> String {
-    case.element.declarator.name().text.clone()
+    escape_c_ident(&case.element.declarator.name().text)
 }
 
 /// Join a scope + name with the given separator (`::` for IDL paths).
@@ -3107,8 +3252,14 @@ fn scope_join(scope: &[String], name: &str, sep: &str) -> String {
 }
 
 fn c_identifier(scope: &[String], name: &str) -> String {
+    // A bare (unscoped) name can literally collide with a C keyword
+    // (`int`, `struct`, `default`, ...) — escape it. A scoped/prefixed
+    // name is a compound token (`Module_Name`) and structurally can
+    // never equal a single bare keyword, so escaping there would be a
+    // no-op; skip it to keep the joined form exactly what earlier golden
+    // tests expect.
     if scope.is_empty() {
-        name.to_string()
+        escape_c_ident(name)
     } else {
         let mut s = scope.join("_");
         s.push('_');
@@ -3406,6 +3557,21 @@ fn struct_has_key(def: &StructDef) -> bool {
     def.members.iter().any(|m| is_key(&m.annotations))
 }
 
+/// Sorts `members` into ascending member-id order (explicit `@id(N)`, else
+/// positional index within `members`) — XTypes 1.3 §7.6.8.3.1.b. Mirrors
+/// `idl-rust`'s `emit_key_holder_be` fallback convention (the index is taken
+/// within the already-filtered `@key` list, not the full struct's member
+/// list — matching the cross-vendor-validated reference).
+fn sort_members_by_id<'a>(members: &[&'a Member]) -> Vec<&'a Member> {
+    let mut ordered: Vec<(u32, &Member)> = members
+        .iter()
+        .enumerate()
+        .map(|(idx, m)| (id_annotation(&m.annotations).unwrap_or(idx as u32), *m))
+        .collect();
+    ordered.sort_by_key(|(id, _)| *id);
+    ordered.into_iter().map(|(_, m)| m).collect()
+}
+
 fn id_annotation(annotations: &[Annotation]) -> Option<u32> {
     for a in annotations {
         let last = a.name.parts.last()?;
@@ -3557,13 +3723,38 @@ fn primitive_helper(p: PrimitiveType) -> Result<&'static str, CppGenError> {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::expect_used)]
+    #![allow(clippy::expect_used, clippy::panic)]
     use super::*;
     use zerodds_idl::config::ParserConfig;
 
     fn gen_c(src: &str) -> String {
         let ast = zerodds_idl::parse(src, &ParserConfig::default()).expect("parse ok");
         generate_c_header(&ast, &CGenOptions::default()).expect("c-gen ok")
+    }
+
+    fn try_gen_c(src: &str) -> Result<String, CppGenError> {
+        let ast = zerodds_idl::parse(src, &ParserConfig::default()).expect("parse ok");
+        generate_c_header(&ast, &CGenOptions::default())
+    }
+
+    /// Isolates a struct's `<c_name>_key_hash` function body, so KeyHash
+    /// assertions don't false-positive against the general encode/decode
+    /// bodies (which legitimately reference the struct's full member set).
+    fn key_hash_body<'a>(h: &'a str, c_name: &str) -> &'a str {
+        // The DEFINITION signature (ends in `{`), not the forward
+        // declaration (ends in `;`) emitted earlier in the header.
+        let marker =
+            format!("static int {c_name}_key_hash(const void* sample, uint8_t out_hash[16]) {{");
+        let body_start = h
+            .find(&marker)
+            .unwrap_or_else(|| panic!("{c_name}_key_hash definition present:\n{h}"))
+            + marker.len()
+            - 1;
+        let body_end = h[body_start..]
+            .find("\n}\n")
+            .map(|i| body_start + i)
+            .unwrap_or(h.len());
+        &h[body_start..body_end]
     }
 
     #[test]
@@ -3609,6 +3800,173 @@ mod tests {
         let h = gen_c("@final struct Sensor { @key long id; double value; };");
         assert!(h.contains(".is_keyed = 1"));
         assert!(h.contains("Sensor_key_hash"));
+    }
+
+    // ---- KeyHash correctness (XTypes 1.3 §7.6.8) — C mode ----
+    //
+    // Previously `emit_key_hash_body`'s per-member match was
+    // `Primitive => ..., String => ..., _ => {}` — an unconditional, silent
+    // no-op for EVERY other `@key` shape (typedef, nested struct, enum,
+    // sequence, array): zero key bytes on the wire, cross-vendor-interop-
+    // breaking. The fix dealiases typedefs, expands nested-struct `@key`
+    // members to their own `@key` subset, supports enum, and turns anything
+    // still unsupported into a loud `CppGenError` instead of silence.
+
+    #[test]
+    fn keyhash_typedef_key_emits_real_bytes_not_silent_skip() {
+        let h = gen_c("typedef long MyId;\n@final struct S { @key MyId id; long val; };");
+        let kh = key_hash_body(&h, "S");
+        assert!(
+            kh.contains("zerodds_xcdr2_c_kh_write_i32(&kh_buf, &kh_len, &kh_cap, s->id)"),
+            "a typedef-aliased @key must dealias to the underlying primitive write:\n{kh}"
+        );
+    }
+
+    #[test]
+    fn keyhash_nested_struct_key_expands_inner_key_members_only() {
+        let h = gen_c(
+            "@final struct Inner { @key long x; long ignored; @key long y; };\n\
+             @final struct Outer { @key Inner i; long z; };",
+        );
+        let kh = key_hash_body(&h, "Outer");
+        assert!(
+            kh.contains("zerodds_xcdr2_c_kh_write_i32(&kh_buf, &kh_len, &kh_cap, s->i.x)")
+                && kh.contains("zerodds_xcdr2_c_kh_write_i32(&kh_buf, &kh_len, &kh_cap, s->i.y)"),
+            "nested-struct @key must expand into the inner struct's own @key members:\n{kh}"
+        );
+        assert!(
+            !kh.contains("s->i.ignored"),
+            "a non-@key inner member must NOT be included when the inner struct has explicit @key members:\n{kh}"
+        );
+    }
+
+    #[test]
+    fn keyhash_nested_struct_without_keys_uses_all_inner_members() {
+        let h = gen_c(
+            "@final struct Pair { long a; long b; };\n\
+             @final struct Holder { @key Pair p; };",
+        );
+        let kh = key_hash_body(&h, "Holder");
+        assert!(
+            kh.contains("s->p.a") && kh.contains("s->p.b"),
+            "a keyless nested struct must key on ALL its members:\n{kh}"
+        );
+    }
+
+    #[test]
+    fn keyhash_typedef_in_nested_struct_key_dealiases() {
+        let h = gen_c(
+            "typedef long MyId;\n\
+             @final struct Inner { @key MyId x; };\n\
+             @final struct Outer { @key Inner i; };",
+        );
+        let kh = key_hash_body(&h, "Outer");
+        assert!(
+            kh.contains("zerodds_xcdr2_c_kh_write_i32(&kh_buf, &kh_len, &kh_cap, s->i.x)"),
+            "a typedef-aliased @key member inside a nested @key struct must dealias:\n{kh}"
+        );
+    }
+
+    #[test]
+    fn keyhash_enum_key_emits_real_bytes_not_silent_skip() {
+        let h = gen_c("enum Color { RED, GREEN, BLUE };\n@final struct S { @key Color c; };");
+        let kh = key_hash_body(&h, "S");
+        assert!(
+            kh.contains("zerodds_xcdr2_c_kh_write_i32(&kh_buf, &kh_len, &kh_cap, (int32_t)(s->c))"),
+            "an enum @key must narrow-cast and write real bytes, not silently skip:\n{kh}"
+        );
+    }
+
+    #[test]
+    fn keyhash_member_id_order_not_declaration_order() {
+        // XTypes 1.3 §7.6.8.3.1.b: KeyHolder members in ascending member-id
+        // order. Declaration order here is a, b; member-id order (via @id)
+        // is b, a.
+        let h = gen_c("@final struct K { @id(1) @key octet a; @id(0) @key long b; };");
+        let kh = key_hash_body(&h, "K");
+        let pos_a = kh.find("s->a").expect("a written");
+        let pos_b = kh.find("s->b").expect("b written");
+        assert!(
+            pos_b < pos_a,
+            "member-id 0 (b) must be written before member-id 1 (a):\n{kh}"
+        );
+    }
+
+    #[test]
+    fn keyhash_sequence_key_is_a_loud_codegen_error_not_silent() {
+        // C mode's low-level fixed-arity buffer builder has no
+        // variable-length-collection KeyHolder encoder — this must be a
+        // loud `CppGenError`, not a silent zero-byte no-op.
+        let err = try_gen_c("@final struct S { @key sequence<long> ids; };")
+            .expect_err("sequence @key must be rejected, not silently accepted");
+        assert!(
+            matches!(err, CppGenError::UnsupportedConstruct { .. }),
+            "expected UnsupportedConstruct, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn keyhash_union_key_is_a_loud_codegen_error_not_silent() {
+        let err = try_gen_c(
+            "union U switch (long) { case 0: long a; };\n\
+             @final struct S { @key U u; };",
+        )
+        .expect_err("union @key must be rejected, not silently accepted");
+        assert!(matches!(err, CppGenError::UnsupportedConstruct { .. }));
+    }
+
+    // ---- #14: reserved-keyword escaping (C mode has no raw-identifier
+    // syntax; the idiomatic escape is a trailing underscore) ----
+
+    #[test]
+    fn struct_field_named_c_keyword_is_escaped() {
+        // "default" and "long" are IDL keywords themselves (not usable as
+        // IDL identifiers at all); "int"/"register"/"static" are plain
+        // legal IDL identifiers that happen to collide with C keywords —
+        // previously this emitted `int32_t int;` etc, invalid C, silently.
+        let h = gen_c("@final struct S { long int; long register; long static; };");
+        assert!(h.contains("int32_t int_;"), "{h}");
+        assert!(h.contains("int32_t register_;"), "{h}");
+        assert!(h.contains("int32_t static_;"), "{h}");
+        assert!(!h.contains("int32_t int;"), "{h}");
+        assert!(!h.contains("int32_t register;"), "{h}");
+        assert!(!h.contains("int32_t static;"), "{h}");
+        // Field access in the codec bodies must use the same escaped name.
+        assert!(h.contains("s->int_"), "{h}");
+        assert!(h.contains("s->register_"), "{h}");
+        assert!(h.contains("s->static_"), "{h}");
+    }
+
+    #[test]
+    fn top_level_type_named_c_keyword_is_escaped() {
+        // `int` is not an IDL keyword (IDL uses `long`/`short`), so it is a
+        // legal top-level IDL struct name — but a bare C typedef named
+        // `int` would be nonsensical/invalid. The unscoped (empty-scope)
+        // c_identifier path must escape it.
+        let h = gen_c("@final struct int { long v; };");
+        assert!(h.contains("typedef struct int__s"), "{h}");
+        assert!(h.contains("int__typesupport"), "{h}");
+        assert!(!h.contains("typedef struct int_s"), "{h}");
+    }
+
+    #[test]
+    fn union_case_field_named_c_keyword_is_escaped() {
+        let h = gen_c("union U switch (long) { case 0: long for; case 1: long while_val; };");
+        assert!(h.contains("for_;") || h.contains("int32_t for_;"), "{h}");
+        assert!(!h.contains(" for;"), "{h}");
+    }
+
+    #[test]
+    fn enum_value_named_c_keyword_stays_compound_and_valid() {
+        // Enumerator constants are always emitted as `{EnumC_name}_{LABEL}`
+        // (module+enum prefixed to stay unique in C's flat namespace), so
+        // they can never collide with a bare C keyword by construction —
+        // no escaping needed/applied here, this just documents +
+        // regression-guards that invariant.
+        let h = gen_c("enum Mode { int, register, static };");
+        assert!(h.contains("Mode_int"), "{h}");
+        assert!(h.contains("Mode_register"), "{h}");
+        assert!(h.contains("Mode_static"), "{h}");
     }
 
     // ---- Bug C: scope widening (no longer rejected) ----

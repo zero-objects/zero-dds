@@ -34,6 +34,37 @@ pub fn scaffold_files(backend: Backend, base: &str) -> Vec<(String, String)> {
             ("package.json".to_string(), package_json(base)),
             ("tsconfig.json".to_string(), tsconfig()),
         ],
+        Backend::Go => vec![("go.mod".to_string(), format!("module {base}\n\ngo 1.21\n"))],
+        Backend::Ada => vec![(
+            format!("{base}.gpr"),
+            format!("project {base} is\nend {base};\n"),
+        )],
+        Backend::Zig => vec![(
+            "build.zig".to_string(),
+            format!("// zig build script for {base}\n"),
+        )],
+        Backend::Nim => vec![(
+            format!("{base}.nimble"),
+            format!("# nimble file for {base}\n"),
+        )],
+        Backend::D => vec![(
+            "dub.json".to_string(),
+            format!("{{ \"name\": \"{}\" }}\n", base.to_lowercase()),
+        )],
+        Backend::Elixir => vec![("mix.exs".to_string(), format!("# mix project for {base}\n"))],
+        Backend::OCaml => vec![(
+            "dune-project".to_string(),
+            format!("(lang dune 3.0)\n; project {base}\n"),
+        )],
+        Backend::Julia => vec![("Project.toml".to_string(), format!("name = \"{base}\"\n"))],
+        Backend::Lua => vec![(
+            format!("{}-dev-1.rockspec", base.to_lowercase()),
+            format!("package = \"{}\"\n", base.to_lowercase()),
+        )],
+        Backend::Swift => vec![(
+            "Package.swift".to_string(),
+            format!("// swift-tools-version:5.9\n// package {base}\n"),
+        )],
     }
 }
 

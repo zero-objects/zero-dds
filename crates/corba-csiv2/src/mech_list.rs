@@ -114,6 +114,16 @@ fn write_octet_seq_seq(w: &mut BufferWriter, items: &[Vec<u8>]) -> Result<(), En
 
 fn read_octet_seq_seq(r: &mut BufferReader<'_>) -> Result<Vec<Vec<u8>>, DecodeError> {
     let n = r.read_u32()? as usize;
+    // Each element needs >= 4 bytes (its own octet-seq length prefix).
+    // Reject before `Vec::with_capacity` — mirrors
+    // `crates/cdr/src/composite.rs`'s `len > reader.remaining()` guard.
+    if n > r.remaining() / 4 {
+        return Err(DecodeError::LengthExceeded {
+            announced: n,
+            remaining: r.remaining(),
+            offset: r.position(),
+        });
+    }
     let mut out = Vec::with_capacity(n);
     for _ in 0..n {
         out.push(read_octet_seq(r)?);
@@ -247,6 +257,19 @@ impl CompoundSecMechList {
     pub fn decode(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         let stateful = r.read_u8()? != 0;
         let n = r.read_u32()? as usize;
+        // Every `CompoundSecMech` needs >= 38 bytes: target_requires(2) +
+        // transport_mech_tag(4) + transport_mech_data length-prefix(4) +
+        // AsContextSec(>=12) + SasContextSec(>=16). Reject before
+        // `Vec::with_capacity` — mirrors `crates/cdr/src/composite.rs`'s
+        // `len > reader.remaining()` guard.
+        const MIN_COMPOUND_SEC_MECH_BYTES: usize = 38;
+        if n > r.remaining() / MIN_COMPOUND_SEC_MECH_BYTES {
+            return Err(DecodeError::LengthExceeded {
+                announced: n,
+                remaining: r.remaining(),
+                offset: r.position(),
+            });
+        }
         let mut mechanism_list = Vec::with_capacity(n);
         for _ in 0..n {
             mechanism_list.push(CompoundSecMech::decode(r)?);
@@ -350,6 +373,48 @@ mod tests {
         let mut r = BufferReader::new(&bytes, Endianness::Little);
         let decoded = CompoundSecMechList::decode(&mut r).expect("decode");
         assert_eq!(original, decoded);
+    }
+
+    // -------------------------------------------------------------
+    // Buffer-cap hardening — a wire-supplied element count must be
+    // rejected cleanly (no OOM, no panic) before `Vec::with_capacity`
+    // runs, when it cannot possibly fit the bytes actually remaining.
+    // Mirrors the established `len > reader.remaining()` guard in
+    // crates/cdr/src/composite.rs.
+    // -------------------------------------------------------------
+
+    #[test]
+    fn octet_seq_seq_rejects_oversized_count() {
+        use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
+        let mut w = BufferWriter::new(Endianness::Little);
+        // Announce a huge element count, but supply no element bytes.
+        w.write_u32(1_000_000_000).expect("write");
+        let bytes = w.into_bytes();
+        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let res = read_octet_seq_seq(&mut r);
+        assert!(
+            matches!(res, Err(DecodeError::LengthExceeded { .. })),
+            "expected clean rejection, got {res:?}"
+        );
+    }
+
+    #[test]
+    fn compound_sec_mech_list_rejects_oversized_count() {
+        use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
+        let mut w = BufferWriter::new(Endianness::Little);
+        w.write_u8(1).expect("write stateful"); // stateful = true
+        // Announce a huge mechanism_list count, but supply no element
+        // bytes. A naive `Vec::with_capacity(n)` (element size well
+        // over 100 bytes) would attempt a many-GB allocation from a
+        // handful of header bytes.
+        w.write_u32(1_000_000_000).expect("write count");
+        let bytes = w.into_bytes();
+        let mut r = BufferReader::new(&bytes, Endianness::Little);
+        let res = CompoundSecMechList::decode(&mut r);
+        assert!(
+            matches!(res, Err(DecodeError::LengthExceeded { .. })),
+            "expected clean rejection, got {res:?}"
+        );
     }
 
     #[test]

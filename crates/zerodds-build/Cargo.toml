@@ -1,0 +1,34 @@
+[package]
+name = "zerodds-build"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "prost-build-style build.rs helper: compiles .idl -> Rust from a Config, sharing zerodds-idlc's full composition pipeline (#include tracking, vendor key-pragmas, default-extensibility, TypeObject lowering) instead of a thinner ad hoc reimplementation."
+repository = "https://github.com/zero-objects/zero-dds"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-build"
+readme = "README.md"
+keywords = ["idl", "dds", "build-dependencies", "codegen", "build-script"]
+categories = ["development-tools::build-utils", "development-tools"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = ["ext-default-appendable"]
+ext-default-appendable = ["zerodds-idl-compose/ext-default-appendable"]
+ext-default-final = ["zerodds-idl-compose/ext-default-final"]
+ext-default-mutable = ["zerodds-idl-compose/ext-default-mutable"]
+
+[dependencies]
+zerodds-idl-compose = { version = "1.0.0-rc.6", path = "../idl-compose", default-features = false }
+zerodds-idl-rust = { version = "1.0.0-rc.6", path = "../idl-rust" }
+
+[dev-dependencies]
+tempfile = "3"

@@ -19,7 +19,7 @@ use alloc::vec::Vec;
 
 use zerodds_opcua_gateway::data_value::{DataValue, Variant};
 
-use crate::binary::{UaReader, decode_builtin_value};
+use crate::binary::{UaReader, check_array_len, decode_builtin_value};
 use crate::config::{DataSetMetaData, DataSetReaderConfig};
 use crate::dynamic::{DynamicField, DynamicValue, decode_raw_dataset, variant_to_dynamic};
 use crate::error::DecodeError;
@@ -259,7 +259,14 @@ fn decode_raw(meta: &DataSetMetaData, bytes: &[u8]) -> Result<Vec<ReceivedField>
                     field: "RawData array",
                 });
             }
-            let mut values = Vec::with_capacity(len as usize);
+            let len = len as usize;
+            // Conservative bound: every built-in value needs >= 1 wire
+            // byte, so a count above the remaining bytes cannot be
+            // genuine. Reject before `Vec::with_capacity` (mirrors
+            // `crates/cdr/src/composite.rs`'s `len > reader.remaining()`
+            // guard).
+            check_array_len(&r, len, 1, "RawData array length exceeds remaining bytes")?;
+            let mut values = Vec::with_capacity(len);
             for _ in 0..len {
                 values.push(decode_builtin_value(&mut r, f.builtin_type)?);
             }

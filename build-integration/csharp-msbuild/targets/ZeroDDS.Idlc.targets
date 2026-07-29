@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  SPDX-License-Identifier: Apache-2.0
+  Copyright 2026 ZeroDDS Contributors
+
+  MSBuild build-step integration for `zerodds-idlc`, mirroring the Rust
+  `zerodds-build` build.rs helper (crates/zerodds-build) and the CMake
+  `zerodds_idlc_generate()` function (cmake/zerodds_idlc_generate.cmake)
+  for the .NET/MSBuild ecosystem.
+
+  Import this file from a consuming .csproj:
+
+    <Import Project="path/to/ZeroDDS.Idlc.targets" />
+
+  and declare inputs as `ZeroddsIdl` items:
+
+    <ItemGroup>
+      <ZeroddsIdl Include="idl/Robot.idl" />
+    </ItemGroup>
+
+  `ZeroddsIdlcGenerate` runs before `CoreCompile` (via `BeforeTargets`),
+  declares `Inputs`/`Outputs` for MSBuild's own incremental-build engine
+  (skips re-running `zerodds-idlc` when no `.idl` is newer than its
+  generated `.cs`, the same guarantee `cargo:rerun-if-changed` gives
+  Cargo and `add_custom_command DEPENDS` gives CMake/Ninja), and adds the
+  generated `.cs` files to `@(Compile)` so they participate in the same
+  build.
+-->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <PropertyGroup>
+    <ZeroddsIdlcExecutable Condition="'$(ZeroddsIdlcExecutable)' == ''">zerodds-idlc</ZeroddsIdlcExecutable>
+    <ZeroddsIdlcBackend Condition="'$(ZeroddsIdlcBackend)' == ''">csharp</ZeroddsIdlcBackend>
+    <ZeroddsIdlcOutputDir Condition="'$(ZeroddsIdlcOutputDir)' == ''">$(IntermediateOutputPath)zerodds-idlc\</ZeroddsIdlcOutputDir>
+  </PropertyGroup>
+
+  <!--
+    One MSBuild Task invocation per .idl file (via Exec + Batching on
+    %(ZeroddsIdl.Identity)) so Inputs/Outputs incrementality is tracked
+    per file, not just for the item group as a whole.
+  -->
+  <Target Name="ZeroddsIdlcGenerate"
+          BeforeTargets="BeforeCompile;CoreCompile"
+          Inputs="@(ZeroddsIdl)"
+          Outputs="@(ZeroddsIdl->'$(ZeroddsIdlcOutputDir)%(Filename).cs')">
+
+    <MakeDir Directories="$(ZeroddsIdlcOutputDir)" Condition="!Exists('$(ZeroddsIdlcOutputDir)')" />
+
+    <Exec Command="&quot;$(ZeroddsIdlcExecutable)&quot; generate &quot;%(ZeroddsIdl.FullPath)&quot; --$(ZeroddsIdlcBackend) -o &quot;$(ZeroddsIdlcOutputDir.TrimEnd('\'))&quot;"
+          Condition="'@(ZeroddsIdl)' != ''"
+          />
+
+    <ItemGroup>
+      <ZeroddsIdlcGenerated Include="$(ZeroddsIdlcOutputDir)%(ZeroddsIdl.Filename).cs" />
+    </ItemGroup>
+  </Target>
+
+  <!--
+    Splice the generated sources into the normal Compile item group.
+    Runs after ZeroddsIdlcGenerate (DependsOnTargets), before CoreCompile
+    consumes @(Compile) (BeforeTargets).
+  -->
+  <Target Name="ZeroddsIdlcAddGeneratedCompileItems"
+          BeforeTargets="CoreCompile"
+          DependsOnTargets="ZeroddsIdlcGenerate">
+    <ItemGroup>
+      <Compile Include="$(ZeroddsIdlcOutputDir)**\*.cs" Exclude="@(Compile)" />
+    </ItemGroup>
+  </Target>
+
+</Project>

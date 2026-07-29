@@ -1,6 +1,5 @@
 ---
 source: crates/idl-rust/tests/snapshot_xcdr2_vectors.rs
-assertion_line: 52
 expression: "gen_default(\"@final struct Greeting { string text; };\")"
 ---
 // SPDX-License-Identifier: Apache-2.0
@@ -21,7 +20,7 @@ pub struct Greeting {
 impl zerodds_dcps::DdsType for Greeting {
     const TYPE_NAME: &'static str = "Greeting";
     const EXTENSIBILITY: zerodds_dcps::Extensibility = zerodds_dcps::Extensibility::Final;
-    const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0xc2, 0x01, 0xa8, 0xbe, 0x77, 0x6d, 0x62, 0x0f, 0xe2, 0x69, 0x94, 0x15, 0xa5, 0xc6]));
+    const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0x6b, 0x5d, 0xd9, 0x03, 0x36, 0x8d, 0xf9, 0xbb, 0x43, 0x31, 0xcb, 0x18, 0x63, 0x38]));
 
     fn encode(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
         let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little).xcdr2();
@@ -65,9 +64,9 @@ impl zerodds_dcps::DdsType for Greeting {
         <Self as zerodds_cdr::CdrDecode>::decode(&mut reader).map_err(::core::convert::Into::into)
     }
 
-    fn field_value(&self, path: &str) -> ::core::option::Option<zerodds_sql_filter::Value> {
+    fn field_value(&self, path: &str) -> ::core::option::Option<zerodds_dcps::FilterValue> {
         match path {
-            "text" => ::core::option::Option::Some(zerodds_sql_filter::Value::String(self.text.clone())),
+            "text" => ::core::option::Option::Some(zerodds_dcps::FilterValue::String(self.text.clone())),
             _ => ::core::option::Option::None,
         }
     }

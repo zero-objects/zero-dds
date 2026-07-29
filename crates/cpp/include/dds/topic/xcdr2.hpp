@@ -328,7 +328,7 @@ inline std::string read_string(const uint8_t* buf, size_t& pos, size_t len) {
 inline std::vector<uint16_t> wstring_to_utf16(const std::wstring& s) {
     std::vector<uint16_t> units;
     units.reserve(s.size());
-    if (sizeof(wchar_t) == 2) {
+    if constexpr (sizeof(wchar_t) == 2) {
         for (wchar_t c : s) {
             units.push_back(static_cast<uint16_t>(c));
         }
@@ -408,7 +408,7 @@ inline std::wstring read_wstring_origin(
         units.push_back(unit);
     }
     std::wstring s;
-    if (sizeof(wchar_t) == 2) {
+    if constexpr (sizeof(wchar_t) == 2) {
         // wchar_t already a UTF-16 unit (Windows): copy verbatim.
         for (uint16_t u : units) {
             s.push_back(static_cast<wchar_t>(u));

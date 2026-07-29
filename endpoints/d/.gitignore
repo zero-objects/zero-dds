@@ -1,0 +1,4 @@
+build/
+*.o
+test_bin
+example_bin

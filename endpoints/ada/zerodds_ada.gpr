@@ -11,7 +11,8 @@ project Zerodds_Ada is
    for Source_Dirs use ("src", "test", "../c/src", "../c/include");
    for Object_Dir use "build";
    for Exec_Dir use "build";
-   for Main use ("test_byte_identity.adb", "test_udp_loopback.adb");
+   for Main use ("test_byte_identity.adb", "test_udp_loopback.adb",
+                 "example_sync.adb", "example_async.adb");
 
    --  The C endpoint/reflect units are not needed by Stage 1; only the
    --  wire-core primitives are bound.

@@ -18,9 +18,28 @@ use crate::types::WireError;
 
 const CHANNEL: u16 = 1;
 
+/// Hard ceiling on a single AMQP frame (16 MiB), used until
+/// `connection.tune` negotiates the broker's actual `frame-max`, and as
+/// an upper clamp on whatever `frame-max` the broker proposes afterward.
+///
+/// TCP is a stream transport: the broker-announced frame `size` (a
+/// `u32`, up to ~4 GiB) cannot be checked against "bytes remaining" the
+/// way an in-memory buffer decode can. AMQP 0-9-1 itself defines
+/// `frame-max` (negotiated in `connection.tune`) for exactly this
+/// purpose, but a malicious/compromised broker could still propose an
+/// unreasonably large value — so this ceiling is enforced on our side
+/// regardless of what the broker claims. Mirrors the established
+/// `crates/transport-tcp/src/framing.rs::MAX_FRAME_SIZE` DoS-cap
+/// pattern: reject before allocating.
+const MAX_AMQP_FRAME_SIZE: usize = 16 * 1024 * 1024;
+
 /// An established AMQP 0.9.1 connection + open channel.
 pub struct Amqp091Client {
     stream: TcpStream,
+    /// Negotiated (and hard-capped) per-frame size ceiling — see
+    /// [`MAX_AMQP_FRAME_SIZE`]. Defaults to that ceiling until
+    /// `connection.tune` narrows it to the broker's actual `frame-max`.
+    frame_max: usize,
 }
 
 impl Amqp091Client {
@@ -40,7 +59,10 @@ impl Amqp091Client {
         stream.set_read_timeout(Some(Duration::from_secs(10)))?;
         stream.set_write_timeout(Some(Duration::from_secs(10)))?;
         stream.set_nodelay(true)?;
-        let mut c = Self { stream };
+        let mut c = Self {
+            stream,
+            frame_max: MAX_AMQP_FRAME_SIZE,
+        };
 
         // Protocol header.
         c.stream.write_all(&PROTOCOL_HEADER)?;
@@ -52,6 +74,11 @@ impl Amqp091Client {
         // connection.tune (server) → connection.tune-ok (client).
         let tune = c.expect_method(id::CONNECTION_TUNE)?;
         let (chan_max, frame_max, _hb) = method::connection_tune_params(&tune).map_err(wire)?;
+        // Adopt the broker's negotiated frame-max, but never above our
+        // own hard ceiling — a malicious/compromised broker proposing
+        // an oversized frame-max must not widen what we're willing to
+        // allocate for a single frame.
+        c.frame_max = (frame_max as usize).min(MAX_AMQP_FRAME_SIZE);
         // Disable heartbeats (0) for the simple synchronous client.
         c.send_method(0, &method::connection_tune_ok(chan_max, frame_max, 0))?;
 
@@ -417,7 +444,15 @@ impl Amqp091Client {
         }
         let (body_size, props) = method::parse_content_header(&header.payload).map_err(wire)?;
         let body_size = body_size as usize;
-        let mut body = Vec::with_capacity(body_size);
+        // `body_size` is the *total* content size, legitimately larger
+        // than a single frame (that's the point of splitting it across
+        // multiple body frames, each individually bounded by
+        // `self.frame_max` in `read_frame`). So this must not reject —
+        // only avoid pre-allocating the whole broker-announced total
+        // upfront; `Vec::with_capacity` is merely a perf hint, and the
+        // loop below grows the buffer safely via `extend_from_slice` as
+        // bytes are actually, verifiably received.
+        let mut body = Vec::with_capacity(body_size.min(self.frame_max));
         while body.len() < body_size {
             let bf = self.read_frame()?;
             if bf.frame_type != FrameType::Body {
@@ -464,6 +499,12 @@ impl Amqp091Client {
             .ok_or_else(|| proto_owned(format!("bad frame type {}", head[0])))?;
         let channel = u16::from_be_bytes([head[1], head[2]]);
         let size = u32::from_be_bytes([head[3], head[4], head[5], head[6]]) as usize;
+        if size > self.frame_max {
+            return Err(proto_owned(format!(
+                "AMQP frame size {size} exceeds the negotiated frame-max ({})",
+                self.frame_max
+            )));
+        }
         let mut payload = vec![0u8; size];
         if size > 0 {
             self.stream.read_exact(&mut payload)?;
@@ -515,4 +556,70 @@ fn proto_owned(msg: String) -> io::Error {
 }
 fn wire(e: WireError) -> io::Error {
     proto_owned(format!("amqp-0-9-1 wire: {e:?}"))
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use std::net::TcpListener;
+
+    // -------------------------------------------------------------
+    // Buffer-cap hardening — a peer-announced frame `size` above the
+    // negotiated (and hard-capped) frame-max must be rejected cleanly
+    // (no ~4 GB allocation attempt) right after the 7-byte header is
+    // read, before the payload is read/allocated. Mirrors the
+    // established `crates/transport-tcp/src/framing.rs::MAX_FRAME_SIZE`
+    // guard. `Amqp091Client` is built directly (bypassing the full
+    // handshake `connect()` drives) since this crate has no mock-broker
+    // test harness — `read_frame` is exercised in isolation instead.
+    // -------------------------------------------------------------
+
+    #[test]
+    fn read_frame_rejects_oversized_size_cleanly() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("local_addr");
+        let handle = std::thread::spawn(move || {
+            let mut stream = TcpStream::connect(addr).expect("connect");
+            let mut head = [0u8; 7];
+            head[0] = FrameType::Method as u8;
+            head[1..3].copy_from_slice(&CHANNEL.to_be_bytes());
+            // Announce a frame far beyond the negotiated frame-max; no
+            // payload bytes follow — read_frame must reject before ever
+            // attempting to read/allocate the payload.
+            head[3..7].copy_from_slice(&u32::MAX.to_be_bytes());
+            stream.write_all(&head).expect("write header");
+        });
+        let (accepted, _) = listener.accept().expect("accept");
+        let mut client = Amqp091Client {
+            stream: accepted,
+            frame_max: MAX_AMQP_FRAME_SIZE,
+        };
+        let res = client.read_frame();
+        assert!(res.is_err(), "expected clean rejection, got {res:?}");
+        handle.join().expect("writer thread");
+    }
+
+    #[test]
+    fn read_frame_within_bound_still_round_trips() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("local_addr");
+        let handle = std::thread::spawn(move || {
+            let mut stream = TcpStream::connect(addr).expect("connect");
+            let frame = Frame {
+                frame_type: FrameType::Method,
+                channel: CHANNEL,
+                payload: vec![1, 2, 3, 4],
+            };
+            stream.write_all(&frame.encode()).expect("write frame");
+        });
+        let (accepted, _) = listener.accept().expect("accept");
+        let mut client = Amqp091Client {
+            stream: accepted,
+            frame_max: MAX_AMQP_FRAME_SIZE,
+        };
+        let frame = client.read_frame().expect("read_frame");
+        assert_eq!(frame.payload, vec![1, 2, 3, 4]);
+        handle.join().expect("writer thread");
+    }
 }

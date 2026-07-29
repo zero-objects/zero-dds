@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2026 ZeroDDS Contributors
 
-//! IDL4 compiler: backends for C, C++, C#, Java, Python, Rust (T7.1).
+//! IDL4 compiler: 17 backends over the `zerodds-idl-*` codegen crates.
 //!
-//! Phase 1: alle sieben Backends verdrahtet — `--c`, `--cpp`, `--rust`,
-//! `--ts`, `--csharp`, `--java`, `--python`.
+//! Alle 17 Backends verdrahtet — `--c`, `--cpp`, `--rust`, `--ts`,
+//! `--csharp`, `--java`, `--python`, `--go`, `--nim`, `--zig`, `--d`,
+//! `--ada`, `--elixir`, `--ocaml`, `--julia`, `--lua`, `--swift`
+//! (`--all` emittiert alle). Jedes Backend ruft `generate_<lang>_module`
+//! seiner Codegen-Crate; identische AST-Quelle, byte-identisch zu den
+//! `zerodds-cdr`-Goldens.
 //!
 //! Preprocessor: `#include`/`#define`/`#ifdef`/`#pragma` werden vor
 //! dem Parsen expandiert (`zerodds-idl::preprocessor`). `-I <dir>`
@@ -30,6 +34,9 @@
 //! zerodds-idlc --csharp -o <dir> <file.idl>        C#-Code in <dir>/<base>.cs
 //! zerodds-idlc --java   -o <dir> <file.idl>        Java-Files in <dir>/<pkg>/
 //! zerodds-idlc --python -o <dir> <file.idl>        Python-Modul in <dir>/<base>.py
+//! zerodds-idlc --go     -o <dir> <file.idl>        Go-Modul in <dir>/<base>.go
+//! zerodds-idlc --<lang> -o <dir> <file.idl>        nim/zig/d/ada/elixir/ocaml/julia/lua/swift analog
+//! zerodds-idlc --all    -o <dir> <file.idl>        alle 17 Backends
 //! zerodds-idlc --cpp    --corba -o <dir> <file.idl>  C++-Header inkl. CORBA-Traits
 //! zerodds-idlc --csharp --corba -o <dir> <file.idl>  C#-Code inkl. CORBA-Traits
 //! zerodds-idlc --java   --corba -o <dir> <file.idl>  Java-Files inkl. CorbaTraits-Klassen
@@ -42,16 +49,13 @@
 //!   0   Erfolg
 //!   1   parse-Fehler (Lex/Recognize/Build)
 //!   2   CLI-Argumente ungueltig oder Datei nicht lesbar
-//!   3   Backend (noch) nicht implementiert oder Codegen-Fehler
+//!   3   Codegen-Fehler (oder `--corba` mit einem Backend ohne CORBA-Traits)
 
 #![allow(clippy::print_stderr, clippy::print_stdout)] // CLI-Tool: I/O auf stdio zulaessig.
 
-mod default_ext;
-mod key_pragmas;
 mod scaffold;
 mod typeobject_emit;
 
-use default_ext::DefaultExt;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use typeobject_emit::TypeObjectBlob;
@@ -60,18 +64,29 @@ use zerodds_corba_rust::{CorbaRustGenOptions, generate_corba_rust_module};
 use zerodds_idl::config::ParserConfig;
 use zerodds_idl::grammar::deltas::RTI_CONNEXT;
 use zerodds_idl::parser::{parse, parse_with_deltas};
-use zerodds_idl::preprocessor::{Include, Preprocessor, ResolveError, Resolver};
+use zerodds_idl::preprocessor::Preprocessor;
+use zerodds_idl_ada::{AdaGenOptions, generate_ada_module};
+use zerodds_idl_compose::{DefaultExt, FsResolver, default_ext, key_pragmas};
 use zerodds_idl_cpp::{
     CGenOptions, CppGenOptions, generate_c_header, generate_cpp_header,
     generate_cpp_header_with_corba_traits,
 };
 use zerodds_idl_csharp::{CsGenOptions, generate_csharp, generate_csharp_with_corba_traits};
+use zerodds_idl_d::{DGenOptions, generate_d_module};
+use zerodds_idl_elixir::{ElixirGenOptions, generate_elixir_module};
+use zerodds_idl_go::{GoGenOptions, generate_go_module};
 use zerodds_idl_java::{
     JavaGenOptions, generate_java_files, generate_java_files_with_corba_traits,
 };
+use zerodds_idl_julia::{JuliaGenOptions, generate_julia_module};
+use zerodds_idl_lua::{LuaGenOptions, generate_lua_module};
+use zerodds_idl_nim::{NimGenOptions, generate_nim_module};
+use zerodds_idl_ocaml::{OcamlGenOptions, generate_ocaml_module};
 use zerodds_idl_python::{PythonGenOptions, generate_python_module};
 use zerodds_idl_rust::{RustGenOptions, generate_rust_module};
+use zerodds_idl_swift::{SwiftGenOptions, generate_swift_module};
 use zerodds_idl_ts::generate_ts_source;
+use zerodds_idl_zig::{ZigGenOptions, generate_zig_module};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
@@ -146,6 +161,16 @@ enum Backend {
     CSharp,
     Java,
     Python,
+    Go,
+    Ada,
+    Zig,
+    Nim,
+    D,
+    Elixir,
+    OCaml,
+    Julia,
+    Lua,
+    Swift,
 }
 
 /// Sub-Command (Handbook §3.3–3.7). Die flache Flag-Form bleibt
@@ -307,6 +332,16 @@ fn backend_flag_suffix(b: Backend) -> &'static str {
         Backend::CSharp => "csharp",
         Backend::Java => "java",
         Backend::Python => "python",
+        Backend::Go => "go",
+        Backend::Ada => "ada",
+        Backend::Zig => "zig",
+        Backend::Nim => "nim",
+        Backend::D => "d",
+        Backend::Elixir => "elixir",
+        Backend::OCaml => "ocaml",
+        Backend::Julia => "julia",
+        Backend::Lua => "lua",
+        Backend::Swift => "swift",
     }
 }
 
@@ -318,8 +353,8 @@ fn out_flag_backend(flag: &str) -> Option<Backend> {
         .find(|b| backend_flag_suffix(*b) == suffix)
 }
 
-/// Alle sieben Backends — fuer `--all`.
-const ALL_BACKENDS: [Backend; 7] = [
+/// Alle neun Backends — fuer `--all`.
+const ALL_BACKENDS: [Backend; 17] = [
     Backend::C,
     Backend::Cpp,
     Backend::Rust,
@@ -327,43 +362,17 @@ const ALL_BACKENDS: [Backend; 7] = [
     Backend::CSharp,
     Backend::Java,
     Backend::Python,
+    Backend::Go,
+    Backend::Ada,
+    Backend::Zig,
+    Backend::Nim,
+    Backend::D,
+    Backend::Elixir,
+    Backend::OCaml,
+    Backend::Julia,
+    Backend::Lua,
+    Backend::Swift,
 ];
-
-/// Filesystem-`Resolver` fuer den IDL-Preprocessor.
-///
-/// `#include "x"` → erst relativ zur einbindenden Datei, dann die
-/// `-I`-Pfade in Reihenfolge. `#include <x>` → nur die `-I`-Pfade.
-struct FsResolver {
-    include_dirs: Vec<PathBuf>,
-}
-
-impl Resolver for FsResolver {
-    fn resolve(&self, requesting_file: &str, include: &Include) -> Result<String, ResolveError> {
-        let name = include.path();
-        let mut candidates: Vec<PathBuf> = Vec::new();
-        // Quoted-Includes: zuerst relativ zur einbindenden Datei.
-        if matches!(include, Include::Quoted(_)) {
-            if let Some(parent) = Path::new(requesting_file).parent() {
-                candidates.push(parent.join(name));
-            }
-        }
-        for dir in &self.include_dirs {
-            candidates.push(dir.join(name));
-        }
-        for cand in &candidates {
-            if let Ok(text) = std::fs::read_to_string(cand) {
-                return Ok(text);
-            }
-        }
-        Err(ResolveError {
-            requested: name.to_string(),
-            message: format!(
-                "include '{name}' not found (searched {} path(s); use -I)",
-                candidates.len()
-            ),
-        })
-    }
-}
 
 /// Fuegt ein Backend hinzu, falls noch nicht in der Liste (idempotent).
 fn push_backend(backends: &mut Vec<Backend>, b: Backend) {
@@ -477,6 +486,16 @@ fn run(args: &[String]) -> Result<(), CliError> {
             "--csharp" => push_backend(&mut opts.backends, Backend::CSharp),
             "--java" => push_backend(&mut opts.backends, Backend::Java),
             "--python" => push_backend(&mut opts.backends, Backend::Python),
+            "--go" => push_backend(&mut opts.backends, Backend::Go),
+            "--ada" => push_backend(&mut opts.backends, Backend::Ada),
+            "--zig" => push_backend(&mut opts.backends, Backend::Zig),
+            "--nim" => push_backend(&mut opts.backends, Backend::Nim),
+            "--d" => push_backend(&mut opts.backends, Backend::D),
+            "--elixir" => push_backend(&mut opts.backends, Backend::Elixir),
+            "--ocaml" => push_backend(&mut opts.backends, Backend::OCaml),
+            "--julia" => push_backend(&mut opts.backends, Backend::Julia),
+            "--lua" => push_backend(&mut opts.backends, Backend::Lua),
+            "--swift" => push_backend(&mut opts.backends, Backend::Swift),
             "--all" => {
                 for b in ALL_BACKENDS {
                     push_backend(&mut opts.backends, b);
@@ -594,9 +613,7 @@ fn run(args: &[String]) -> Result<(), CliError> {
         }
     }
     let pp_input = format!("{prelude}{raw}");
-    let resolver = FsResolver {
-        include_dirs: opts.include_dirs.clone(),
-    };
+    let resolver = FsResolver::new(opts.include_dirs.clone());
     let processed = Preprocessor::new(resolver)
         .process(path, &pp_input)
         .map_err(|e| CliError::Parse(format!("preprocessing failed: {e:?}")))?;
@@ -696,7 +713,7 @@ fn run(args: &[String]) -> Result<(), CliError> {
     };
 
     // Jedes gewaehlte Backend in sein Ziel-Verzeichnis emittieren. Bei
-    // --all sind das alle sieben; Reihenfolge = ALL_BACKENDS. Ziel ist
+    // --all sind das alle 17; Reihenfolge = ALL_BACKENDS. Ziel ist
     // der `--out-<lang>`-Override, sonst das globale `-o`.
     for backend in &opts.backends {
         let suffix = backend_flag_suffix(*backend);
@@ -747,6 +764,16 @@ fn backend_name(b: Backend) -> &'static str {
         Backend::CSharp => "C#",
         Backend::Java => "Java",
         Backend::Python => "Python",
+        Backend::Go => "Go",
+        Backend::Ada => "Ada",
+        Backend::Zig => "Zig",
+        Backend::Nim => "Nim",
+        Backend::D => "D",
+        Backend::Elixir => "Elixir",
+        Backend::OCaml => "OCaml",
+        Backend::Julia => "Julia",
+        Backend::Lua => "Lua",
+        Backend::Swift => "Swift",
     }
 }
 
@@ -868,6 +895,103 @@ fn emit_backend(
             std::fs::write(&out_path, code)
                 .map_err(|e| CliError::Io(format!("cannot write {}: {e}", out_path.display())))?;
         }
+        Backend::Go => {
+            let code = generate_go_module(ast, &GoGenOptions::default())
+                .map_err(|e| CliError::NotImplemented(format!("go codegen failed: {e}")))?;
+            let out_path = out_dir.join(format!("{base}.go"));
+            std::fs::write(&out_path, code)
+                .map_err(|e| CliError::Io(format!("cannot write {}: {e}", out_path.display())))?;
+        }
+        Backend::Ada => {
+            // GNAT maps the unit name to lower-case file names; `base` is the
+            // unit name (mixed-case is fine, GNAT is case-insensitive).
+            let opts_ada = AdaGenOptions {
+                package_name: base.to_string(),
+            };
+            let module = generate_ada_module(ast, &opts_ada)
+                .map_err(|e| CliError::NotImplemented(format!("ada codegen failed: {e}")))?;
+            let lower = base.to_lowercase();
+            for (ext, code) in [("ads", &module.spec), ("adb", &module.body)] {
+                let out_path = out_dir.join(format!("{lower}.{ext}"));
+                std::fs::write(&out_path, code).map_err(|e| {
+                    CliError::Io(format!("cannot write {}: {e}", out_path.display()))
+                })?;
+            }
+        }
+        Backend::Zig => {
+            let code = generate_zig_module(ast, &ZigGenOptions::default())
+                .map_err(|e| CliError::NotImplemented(format!("zig codegen failed: {e}")))?;
+            let out_path = out_dir.join(format!("{base}.zig"));
+            std::fs::write(&out_path, code)
+                .map_err(|e| CliError::Io(format!("cannot write {}: {e}", out_path.display())))?;
+        }
+        Backend::Nim => {
+            let code = generate_nim_module(ast, &NimGenOptions::default())
+                .map_err(|e| CliError::NotImplemented(format!("nim codegen failed: {e}")))?;
+            let out_path = out_dir.join(format!("{base}.nim"));
+            std::fs::write(&out_path, code)
+                .map_err(|e| CliError::Io(format!("cannot write {}: {e}", out_path.display())))?;
+        }
+        Backend::D => {
+            let code = generate_d_module(ast, &DGenOptions::default())
+                .map_err(|e| CliError::NotImplemented(format!("d codegen failed: {e}")))?;
+            let out_path = out_dir.join(format!("{base}.d"));
+            std::fs::write(&out_path, code)
+                .map_err(|e| CliError::Io(format!("cannot write {}: {e}", out_path.display())))?;
+        }
+        Backend::Elixir => {
+            let module = base
+                .split(['.', '_', '-'])
+                .filter(|p| !p.is_empty())
+                .map(|p| {
+                    let mut c = p.chars();
+                    match c.next() {
+                        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+                        None => String::new(),
+                    }
+                })
+                .collect::<String>();
+            let opts_ex = ElixirGenOptions {
+                module_name: if module.is_empty() {
+                    "Zdgen".to_string()
+                } else {
+                    module
+                },
+            };
+            let code = generate_elixir_module(ast, &opts_ex)
+                .map_err(|e| CliError::NotImplemented(format!("elixir codegen failed: {e}")))?;
+            let out_path = out_dir.join(format!("{base}.ex"));
+            std::fs::write(&out_path, code)
+                .map_err(|e| CliError::Io(format!("cannot write {}: {e}", out_path.display())))?;
+        }
+        Backend::OCaml => {
+            let code = generate_ocaml_module(ast, &OcamlGenOptions::default())
+                .map_err(|e| CliError::NotImplemented(format!("ocaml codegen failed: {e}")))?;
+            let out_path = out_dir.join(format!("{base}.ml"));
+            std::fs::write(&out_path, code)
+                .map_err(|e| CliError::Io(format!("cannot write {}: {e}", out_path.display())))?;
+        }
+        Backend::Julia => {
+            let code = generate_julia_module(ast, &JuliaGenOptions::default())
+                .map_err(|e| CliError::NotImplemented(format!("julia codegen failed: {e}")))?;
+            let out_path = out_dir.join(format!("{base}.jl"));
+            std::fs::write(&out_path, code)
+                .map_err(|e| CliError::Io(format!("cannot write {}: {e}", out_path.display())))?;
+        }
+        Backend::Lua => {
+            let code = generate_lua_module(ast, &LuaGenOptions::default())
+                .map_err(|e| CliError::NotImplemented(format!("lua codegen failed: {e}")))?;
+            let out_path = out_dir.join(format!("{base}.lua"));
+            std::fs::write(&out_path, code)
+                .map_err(|e| CliError::Io(format!("cannot write {}: {e}", out_path.display())))?;
+        }
+        Backend::Swift => {
+            let code = generate_swift_module(ast, &SwiftGenOptions::default())
+                .map_err(|e| CliError::NotImplemented(format!("swift codegen failed: {e}")))?;
+            let out_path = out_dir.join(format!("{base}.swift"));
+            std::fs::write(&out_path, code)
+                .map_err(|e| CliError::Io(format!("cannot write {}: {e}", out_path.display())))?;
+        }
     }
 
     // --scaffold: idiomatische Build-Datei je Backend. Bereits
@@ -900,7 +1024,7 @@ fn basename_stem(path: &str) -> Option<String> {
 fn print_help() {
     println!(
         "zerodds-idlc {VERSION}\n\
-         IDL4 compiler (Phase 1: alle sieben Backends)\n\n\
+         IDL4 compiler (alle 17 Backends)\n\n\
          USAGE:\n\
          \x20   zerodds-idlc <COMMAND> <file.idl> [OPTIONS]\n\
          \x20   zerodds-idlc <file.idl> [BACKEND-FLAGS]            (flache Form)\n\n\
@@ -930,7 +1054,7 @@ fn print_help() {
          \x20   --csharp           C#-Code ueber zerodds-idl-csharp\n\
          \x20   --java             Java-Files (Package-Layout) ueber zerodds-idl-java\n\
          \x20   --python           Python-Modul (@idl_struct + @dataclass) ueber zerodds-idl-python\n\
-         \x20   --all              Alle sieben Backends in einem Lauf\n\
+         \x20   --all              Alle 17 Backends in einem Lauf\n\
          \x20   --default-extensibility KIND  Extensibility fuer un-annotierte\n\
          \x20                      Typen: final|appendable|mutable (auch -de)\n\
          \x20   --default-nested true|false   Un-annotierte Typen @nested\n\

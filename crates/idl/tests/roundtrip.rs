@@ -172,6 +172,7 @@ fn normalize_def(def: &Definition) -> Definition {
             definitions: m.definitions.iter().map(normalize_def).collect(),
             annotations: m.annotations.iter().map(normalize_annotation).collect(),
             span: Span::SYNTHETIC,
+            reopen_spans: vec![Span::SYNTHETIC; m.reopen_spans.len()],
         }),
         Definition::Type(t) => Definition::Type(normalize_type_decl(t)),
         Definition::Const(c) => Definition::Const(normalize_const_decl(c)),

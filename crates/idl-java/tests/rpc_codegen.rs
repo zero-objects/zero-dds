@@ -409,9 +409,11 @@ fn module_scoped_service_lands_in_lowercase_package() {
             definitions: vec![Definition::Interface(InterfaceDcl::Def(svc))],
             annotations: Vec::new(),
             span: sp(),
+            reopen_spans: vec![sp()],
         })],
         annotations: Vec::new(),
         span: sp(),
+        reopen_spans: vec![sp()],
     };
     let spec = Specification {
         definitions: vec![Definition::Module(m)],
@@ -508,6 +510,7 @@ fn multi_service_in_one_idl_emits_independent_class_sets() {
         definitions: Vec::new(),
         annotations: Vec::new(),
         span: sp(),
+        reopen_spans: vec![sp()],
     };
 }
 

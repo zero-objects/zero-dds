@@ -609,6 +609,14 @@ fn decode_list(bytes: &[u8], depth: usize) -> Result<(AmqpExtValue, usize), Type
     if bytes.len() < total {
         return Err(TypeError::Truncated);
     }
+    // `count` is a wire-supplied element count (LIST8/LIST32), not yet
+    // validated against the bytes actually available for the body. Reject
+    // before allocating: every element needs >= 1 body byte, so a count
+    // above the available body bytes cannot be genuine (mirrors
+    // `crates/cdr/src/composite.rs`'s `len > reader.remaining()` guard).
+    if count > total.saturating_sub(body_start) {
+        return Err(TypeError::Truncated);
+    }
     let mut items = Vec::with_capacity(count);
     let mut cur = body_start;
     for _ in 0..count {
@@ -678,6 +686,14 @@ fn decode_map(bytes: &[u8], depth: usize) -> Result<(AmqpExtValue, usize), TypeE
         c => return Err(TypeError::UnsupportedFormatCode(c)),
     };
     if bytes.len() < total || count % 2 != 0 {
+        return Err(TypeError::Truncated);
+    }
+    // `count` is a wire-supplied element count (MAP8/MAP32, key+value
+    // together), not yet validated against the bytes actually available
+    // for the body. Reject before allocating: every element needs >= 1
+    // body byte (mirrors `crates/cdr/src/composite.rs`'s
+    // `len > reader.remaining()` guard).
+    if count > total.saturating_sub(body_start) {
         return Err(TypeError::Truncated);
     }
     let mut entries = Vec::with_capacity(count / 2);
@@ -764,6 +780,14 @@ fn decode_array(bytes: &[u8], depth: usize) -> Result<(AmqpExtValue, usize), Typ
         return Err(TypeError::Truncated);
     }
     let constructor_byte = bytes[body_start];
+    // `count` is a wire-supplied element count (ARRAY8/ARRAY32), not yet
+    // validated against the bytes actually available for the body. Reject
+    // before allocating: every element needs >= 1 body byte beyond the
+    // shared constructor (mirrors `crates/cdr/src/composite.rs`'s
+    // `len > reader.remaining()` guard).
+    if count > total.saturating_sub(body_start + 1) {
+        return Err(TypeError::Truncated);
+    }
     // Reconstruct each element by prepending the constructor byte to its
     // payload before passing to decode_at.
     let mut items = Vec::with_capacity(count);
@@ -948,6 +972,75 @@ mod tests {
             current = AmqpExtValue::List(alloc::vec![current]);
         }
         assert!(current.encode().is_err());
+    }
+
+    // -------------------------------------------------------------
+    // Buffer-cap hardening — wire-supplied element counts must be
+    // rejected cleanly (no OOM, no panic) when they cannot possibly
+    // fit the bytes actually present, *before* `Vec::with_capacity`
+    // runs. See crates/cdr/src/composite.rs for the established
+    // `len > reader.remaining()` pattern this mirrors.
+    // -------------------------------------------------------------
+
+    #[test]
+    fn decode_list32_with_huge_count_and_tiny_body_is_rejected_cleanly() {
+        // LIST32 header claiming size=4 (just the count field, no
+        // items) but count = u32::MAX. A naive `Vec::with_capacity(count)`
+        // would attempt a many-GB allocation from a 9-byte packet.
+        let mut bytes = alloc::vec![codes::LIST32];
+        bytes.extend_from_slice(&4u32.to_be_bytes()); // size
+        bytes.extend_from_slice(&u32::MAX.to_be_bytes()); // count
+        let res = AmqpExtValue::decode(&bytes);
+        assert!(
+            matches!(res, Err(TypeError::Truncated)),
+            "expected clean Truncated rejection, got {res:?}"
+        );
+    }
+
+    #[test]
+    fn decode_map32_with_huge_count_and_tiny_body_is_rejected_cleanly() {
+        let mut bytes = alloc::vec![codes::MAP32];
+        bytes.extend_from_slice(&4u32.to_be_bytes()); // size
+        bytes.extend_from_slice(&0xFFFF_FFFEu32.to_be_bytes()); // count (even)
+        let res = AmqpExtValue::decode(&bytes);
+        assert!(
+            matches!(res, Err(TypeError::Truncated)),
+            "expected clean Truncated rejection, got {res:?}"
+        );
+    }
+
+    #[test]
+    fn decode_array32_with_huge_count_and_tiny_body_is_rejected_cleanly() {
+        // ARRAY32 header claiming just enough size for a single
+        // constructor byte, but a u32::MAX element count.
+        let mut bytes = alloc::vec![codes::ARRAY32];
+        bytes.extend_from_slice(&5u32.to_be_bytes()); // size (4 count + 1 constructor)
+        bytes.extend_from_slice(&u32::MAX.to_be_bytes()); // count
+        bytes.push(codes::SMALLUINT); // constructor byte for the (absent) elements
+        let res = AmqpExtValue::decode(&bytes);
+        assert!(
+            matches!(res, Err(TypeError::Truncated)),
+            "expected clean Truncated rejection, got {res:?}"
+        );
+    }
+
+    #[test]
+    fn list_map_array_within_bound_still_round_trip() {
+        // Regression guard: the new bounds check must not reject
+        // legitimately-sized compounds.
+        roundtrip(AmqpExtValue::List(alloc::vec![
+            AmqpExtValue::Int(1),
+            AmqpExtValue::Int(2),
+            AmqpExtValue::Int(3)
+        ]));
+        roundtrip(AmqpExtValue::Map(alloc::vec![(
+            AmqpExtValue::Str("k".to_string()),
+            AmqpExtValue::Int(9)
+        )]));
+        roundtrip(AmqpExtValue::Array(alloc::vec![
+            AmqpExtValue::Short(1),
+            AmqpExtValue::Short(2)
+        ]));
     }
 
     #[test]

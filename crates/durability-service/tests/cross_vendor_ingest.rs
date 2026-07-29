@@ -58,6 +58,7 @@ fn foreign_writer_cfg(topic: &str) -> UserWriterConfig {
         },
         ownership: OwnershipKind::Shared,
         ownership_strength: 0,
+        presentation: Default::default(),
         partition: Vec::new(),
         user_data: Vec::new(),
         topic_data: Vec::new(),
@@ -81,6 +82,7 @@ fn foreign_reader_cfg(topic: &str) -> UserReaderConfig {
             ..Default::default()
         },
         ownership: OwnershipKind::Shared,
+        presentation: Default::default(),
         partition: Vec::new(),
         user_data: Vec::new(),
         topic_data: Vec::new(),

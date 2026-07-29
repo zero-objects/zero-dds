@@ -266,6 +266,12 @@ std::thread_local! {
     static TYPE_REG: core::cell::RefCell<std::collections::BTreeMap<String, ScopedKind>> =
         const { core::cell::RefCell::new(std::collections::BTreeMap::new()) };
 
+    /// Type-name → full `StructDef`, built alongside [`TYPE_REG`]. Lets a
+    /// nested-struct `@key` member (`emit_key_encode_scoped`) recurse into
+    /// the nested struct's own members to build the correct KeyHolder bytes.
+    static STRUCT_REG: core::cell::RefCell<std::collections::BTreeMap<String, StructDef>> =
+        const { core::cell::RefCell::new(std::collections::BTreeMap::new()) };
+
     /// Monotonic counter for array-DHEADER scope variables (`__arrdhN`). The
     /// array recursion depth alone is NOT unique across sibling members (two
     /// array members both open their outer DHEADER at depth 0, declaring
@@ -295,6 +301,8 @@ pub(crate) fn build_type_registry(spec: &Specification) {
                     ConstrTypeDecl::Struct(StructDcl::Def(s)) => {
                         let ext = type_extensibility(&s.annotations);
                         reg.insert(s.name.text.clone(), ScopedKind::Struct { ext });
+                        STRUCT_REG
+                            .with(|r| r.borrow_mut().insert(s.name.text.clone(), s.clone()));
                     }
                     ConstrTypeDecl::Union(UnionDcl::Def(u)) => {
                         reg.insert(u.name.text.clone(), ScopedKind::Union);
@@ -2106,7 +2114,25 @@ fn emit_decode_assign(
     // the single-expression `decode_simple_expr` path.
     if let TypeSpec::String(s) = ts {
         if s.wide {
-            return emit_decode_wstring(out, indent, target, depth);
+            return emit_decode_wstring(out, indent, target, depth, s.bound.as_ref());
+        }
+        // B1 follow-up (#22 decode-side parity): a bounded narrow `string<N>`
+        // cannot ride the single-expression `decode_simple_expr` path (it
+        // has nowhere to insert a bound check) — mirror the encode-side
+        // check (`emit_encode_value`, byte-length via UTF8.GetByteCount) on
+        // decode too. XTypes 1.3 §7.4.3 requires enforcement on BOTH sides;
+        // `r.ReadString()` only ever validated the wire's remaining bytes.
+        if let Some(b) = &s.bound {
+            let bv = crate::emitter::const_expr_to_cs(b);
+            let tmpv = format!("__bcs{depth}");
+            writeln!(out, "{indent}string {tmpv} = r.ReadString();").map_err(fmt_err)?;
+            writeln!(
+                out,
+                "{indent}if ({tmpv} != null && System.Text.Encoding.UTF8.GetByteCount({tmpv}) > {bv}) throw new System.ArgumentException(\"decoded string length exceeds its IDL bound ({bv})\");"
+            )
+            .map_err(fmt_err)?;
+            writeln!(out, "{indent}{target} = {tmpv};").map_err(fmt_err)?;
+            return Ok(());
         }
     }
     match ts {
@@ -2124,7 +2150,15 @@ fn emit_decode_assign(
             .map_err(fmt_err)?;
             Ok(())
         }
-        TypeSpec::Map(m) => emit_decode_map(out, indent, &m.key, &m.value, target, depth),
+        TypeSpec::Map(m) => emit_decode_map(
+            out,
+            indent,
+            &m.key,
+            &m.value,
+            m.bound.as_ref(),
+            target,
+            depth,
+        ),
         TypeSpec::Sequence(s) => {
             let elem_ty = cs_storage_type(&s.elem);
             let dhv = format!("__seqdh{depth}");
@@ -2140,6 +2174,18 @@ fn emit_decode_assign(
                 writeln!(out, "{d}var {dhv} = r.BeginDHeader();").map_err(fmt_err)?;
             }
             writeln!(out, "{d}int {cntv} = r.ReadSequenceLength();").map_err(fmt_err)?;
+            // B1 follow-up (#22 decode-side parity): mirror the encode-side
+            // bound check (`emit_encode_sequence`) — XTypes 1.3 §7.4.3
+            // requires the IDL bound enforced on decode too, not just the
+            // wire-format validation `ReadSequenceLength` already does.
+            if let Some(b) = &s.bound {
+                let bv = crate::emitter::const_expr_to_cs(b);
+                writeln!(
+                    out,
+                    "{d}if ({cntv} > {bv}) throw new System.ArgumentException(\"decoded sequence length exceeds its IDL bound ({bv})\");"
+                )
+                .map_err(fmt_err)?;
+            }
             // Pick the concrete container matching the property type: an
             // unbounded sequence uses `SequenceList<T>` (ISequence), a bounded
             // `sequence<T, N>` uses `BoundedList<T>(N)` (IBoundedSequence) so the
@@ -2186,6 +2232,7 @@ fn emit_decode_map(
     indent: &str,
     key: &TypeSpec,
     value: &TypeSpec,
+    bound: Option<&ConstExpr>,
     target: &str,
     depth: usize,
 ) -> Result<(), CsGenError> {
@@ -2206,6 +2253,16 @@ fn emit_decode_map(
         writeln!(out, "{d}var {dhv} = r.BeginDHeader();").map_err(fmt_err)?;
     }
     writeln!(out, "{d}int {cntv} = r.ReadSequenceLength();").map_err(fmt_err)?;
+    // B1 follow-up (#22 decode-side parity): mirror the encode-side bound
+    // check (`emit_encode_map`) — XTypes 1.3 §7.4.3.
+    if let Some(b) = bound {
+        let bv = crate::emitter::const_expr_to_cs(b);
+        writeln!(
+            out,
+            "{d}if ({cntv} > {bv}) throw new System.ArgumentException(\"decoded map length exceeds its IDL bound ({bv})\");"
+        )
+        .map_err(fmt_err)?;
+    }
     writeln!(
         out,
         "{d}var {dictv} = new System.Collections.Generic.Dictionary<{key_ty}, {val_ty}>();"
@@ -2232,11 +2289,18 @@ fn emit_decode_map(
 /// uint32 OCTET length, then `length/2` UTF-16LE code units assembled into a C#
 /// `string`. Matches the zerodds-cdr reference (byte length, not code-unit
 /// count). DDS-XTypes 1.3 §7.4.3 / OMG CDR wstring rule.
+///
+/// B1 blocker fix (deep review of #22 decode-bounds-cross-backend): a bounded
+/// `wstring<N>` must reject an over-bound decode the same way the encode side
+/// does (`emit_encode_value`, `s.wide` branch, `.Length > bound`) — this was
+/// missing entirely, so decode silently accepted any wide string regardless
+/// of its IDL bound. Mirrors the narrow `string<N>` decode check above.
 fn emit_decode_wstring(
     out: &mut String,
     indent: &str,
     target: &str,
     depth: usize,
+    bound: Option<&ConstExpr>,
 ) -> Result<(), CsGenError> {
     let octv = format!("__woct{depth}");
     let sbv = format!("__wsb{depth}");
@@ -2253,6 +2317,14 @@ fn emit_decode_wstring(
     writeln!(out, "{d}{{").map_err(fmt_err)?;
     writeln!(out, "{d}    {sbv}.Append((char)r.ReadUInt16());").map_err(fmt_err)?;
     writeln!(out, "{d}}}").map_err(fmt_err)?;
+    if let Some(b) = bound {
+        let bv = crate::emitter::const_expr_to_cs(b);
+        writeln!(
+            out,
+            "{d}if ({sbv}.Length > {bv}) throw new System.ArgumentException(\"decoded wstring length exceeds its IDL bound ({bv})\");"
+        )
+        .map_err(fmt_err)?;
+    }
     writeln!(out, "{d}{target} = {sbv}.ToString();").map_err(fmt_err)?;
     writeln!(out, "{indent}}}").map_err(fmt_err)?;
     Ok(())
@@ -2388,8 +2460,22 @@ fn emit_decode_return_mutable(
     Ok(())
 }
 
-/// KeyHash: PlainCdr2BeKeyHolder -> MD5 if > 16 bytes, otherwise zero-pad.
-/// XTypes 1.3 §7.6.8.
+/// KeyHash: PlainCdr2BeKeyHolder -> MD5 if the KeyHolder's maximum
+/// serialized size exceeds 16 bytes, otherwise zero-pad. XTypes 1.3 §7.6.8.4
+/// step 5.
+///
+/// The zero-pad/MD5 branch is decided **statically per topic type**, from
+/// the maximum possible size of the `@key` members — NOT from the actual
+/// runtime length of a given instance's serialized bytes (`crates/cdr/src/
+/// key_hash.rs`'s module doc is the authoritative statement of this rule;
+/// the `idl-rust` reference bakes the same static decision into a
+/// `KEY_HOLDER_MAX_SIZE` const consumed by `zerodds_cdr::compute_key_hash`).
+/// The previous C# codegen branched on `__kb.Length` — the ACTUAL runtime
+/// byte count of this specific sample — which only coincides with the
+/// static decision when every `@key` member is fixed-size; for a `@key`
+/// with a bounded string/sequence, a short instance would wrongly take the
+/// zero-pad branch even though the type's static max mandates MD5,
+/// diverging from every other backend/vendor for the same type.
 fn emit_key_hash_body(
     out: &mut String,
     indent: &str,
@@ -2400,27 +2486,148 @@ fn emit_key_hash_body(
         "{indent}var __kw = new Xcdr2Writer(EndianMode.BigEndian);"
     )
     .map_err(fmt_err)?;
-    for m in members {
-        if !m.is_key {
-            continue;
-        }
+    let key_members: Vec<&MemberInfo> = members.iter().filter(|m| m.is_key).collect();
+    // member-id order (explicit `@id(N)`, else declaration index) — XTypes
+    // 1.3 §7.6.8.3.1.b. The previous code walked `members` in declaration
+    // order, silently diverging from `@id`-reordered structs.
+    let ordered = sort_by_member_id(key_members);
+    for m in &ordered {
         emit_key_encode_value(out, indent, &m.type_spec, &format!("sample.{}", m.cs_prop))?;
     }
     writeln!(out, "{indent}var __kb = __kw.ToArray();").map_err(fmt_err)?;
-    // XTypes §7.6.8: when keyholder size > 16 -> MD5; else zero-pad to 16.
-    writeln!(
-        out,
-        "{indent}if (__kb.Length > 16) {{ return Md5.Hash(__kb); }}"
-    )
-    .map_err(fmt_err)?;
-    writeln!(out, "{indent}var __h = new byte[16];").map_err(fmt_err)?;
-    writeln!(
-        out,
-        "{indent}System.Array.Copy(__kb, 0, __h, 0, __kb.Length);"
-    )
-    .map_err(fmt_err)?;
-    writeln!(out, "{indent}return __h;").map_err(fmt_err)?;
+    let uses_md5 = match csharp_key_holder_max_size(&ordered) {
+        Some(n) => n > 16,
+        None => true,
+    };
+    if uses_md5 {
+        writeln!(out, "{indent}return Md5.Hash(__kb);").map_err(fmt_err)?;
+    } else {
+        writeln!(out, "{indent}var __h = new byte[16];").map_err(fmt_err)?;
+        writeln!(
+            out,
+            "{indent}System.Array.Copy(__kb, 0, __h, 0, __kb.Length);"
+        )
+        .map_err(fmt_err)?;
+        writeln!(out, "{indent}return __h;").map_err(fmt_err)?;
+    }
     Ok(())
+}
+
+/// Sorts `@key` members into KeyHolder emission order: explicit `@id(N)` if
+/// set, else the member's declaration index (XTypes 1.3 §7.6.8.3.1.b).
+fn sort_by_member_id(members: Vec<&MemberInfo>) -> Vec<&MemberInfo> {
+    let mut ordered: Vec<(u32, &MemberInfo)> = members
+        .into_iter()
+        .enumerate()
+        .map(|(idx, m)| (m.explicit_id.unwrap_or(idx as u32), m))
+        .collect();
+    ordered.sort_by_key(|(id, _)| *id);
+    ordered.into_iter().map(|(_, m)| m).collect()
+}
+
+/// Static maximum serialized size (PLAIN_CDR2-BE, max align 4) of a
+/// KeyHolder built from `key_members` (already in emission order). Mirrors
+/// `crates/idl-rust/src/struct_emit.rs`'s `compute_key_holder_max_size` /
+/// `key_holder_atom_size` (byte-identical algorithm, ported to this
+/// backend's `TYPE_REG`/`STRUCT_REG`), and the shared reference in
+/// `crates/idl/src/keyhash.rs`. `None` => dynamically sized => MD5 branch.
+fn csharp_key_holder_max_size(key_members: &[&MemberInfo]) -> Option<usize> {
+    let mut offset = 0usize;
+    for m in key_members {
+        let count: usize = if m.array_dims.is_empty() {
+            1
+        } else {
+            // Array dimensions are C# constant-expression strings here, not
+            // resolved integers — array-typed top-level `@key` members are
+            // not exercised by any passing case today (the nested-struct
+            // key path already rejects array fields explicitly); treat as
+            // dynamically sized rather than guess a wrong static size.
+            return None;
+        };
+        for _ in 0..count {
+            offset = csharp_key_atom_size(&m.type_spec, offset)?;
+        }
+    }
+    Some(offset)
+}
+
+/// Evaluates a bounded-string `@key`'s bound (decimal or `0x` literal, with
+/// an optional leading unary `+`) to a `usize`. `None` if non-constant.
+/// Mirrors `crates/idl/src/keyhash.rs::const_usize`.
+fn const_expr_to_usize(e: &ConstExpr) -> Option<usize> {
+    use zerodds_idl::ast::{Literal, LiteralKind, UnaryOp};
+    match e {
+        ConstExpr::Literal(Literal {
+            kind: LiteralKind::Integer,
+            raw,
+            ..
+        }) => {
+            let t = raw.trim();
+            let v = if let Some(hex) = t.strip_prefix("0x").or_else(|| t.strip_prefix("0X")) {
+                i64::from_str_radix(hex, 16).ok()?
+            } else {
+                t.parse::<i64>().ok()?
+            };
+            usize::try_from(v).ok()
+        }
+        ConstExpr::Unary {
+            op: UnaryOp::Plus,
+            operand,
+            ..
+        } => const_expr_to_usize(operand),
+        _ => None,
+    }
+}
+
+/// Advances a running KeyHolder byte offset by one occurrence of a `@key`
+/// member of type `ts`, applying the BE PLAIN_CDR2 alignment (max align 4)
+/// before the value. Recurses into nested `@key` structs (own `@key`
+/// subset, or all members if none — XTypes 1.3 §7.6.8). `None` for a
+/// dynamically sized type (unbounded string, sequence, map, enum/union/
+/// bitmask/bitset/unresolved scoped — matching the `idl-rust` reference's
+/// conservative treatment of non-struct scoped types).
+fn csharp_key_atom_size(ts: &TypeSpec, offset: usize) -> Option<usize> {
+    let pad_to = |off: usize, align: usize| -> usize { off + (align - (off % align)) % align };
+    match ts {
+        TypeSpec::Primitive(p) => {
+            let size = primitive_wire_size(*p) as usize;
+            let align = size.clamp(1, 4);
+            pad_to(offset, align).checked_add(size)
+        }
+        TypeSpec::String(s) => {
+            let n = const_expr_to_usize(s.bound.as_ref()?)?;
+            let body = if s.wide { 2 * n } else { n + 1 };
+            pad_to(offset, 4).checked_add(4)?.checked_add(body)
+        }
+        TypeSpec::Scoped(scoped) => match lookup_scoped_kind(scoped) {
+            Some(ScopedKind::Typedef {
+                inner,
+                is_array: false,
+            }) => csharp_key_atom_size(&inner, offset),
+            Some(ScopedKind::Struct { .. }) => {
+                let sd = lookup_struct_def(scoped)?;
+                let nested = collect_member_info(&sd);
+                let nested_keys: Vec<&MemberInfo> = nested.iter().filter(|m| m.is_key).collect();
+                let effective: Vec<&MemberInfo> = if nested_keys.is_empty() {
+                    nested.iter().collect()
+                } else {
+                    nested_keys
+                };
+                let effective = sort_by_member_id(effective);
+                let mut off = offset;
+                for m in &effective {
+                    if !m.array_dims.is_empty() {
+                        return None;
+                    }
+                    off = csharp_key_atom_size(&m.type_spec, off)?;
+                }
+                Some(off)
+            }
+            _ => None,
+        },
+        // sequence / fixed / map / any @key => dynamically sized => MD5.
+        _ => None,
+    }
 }
 
 fn emit_key_encode_value(
@@ -2435,14 +2642,7 @@ fn emit_key_encode_value(
             writeln!(out, "{indent}__kw.WriteString({expr});").map_err(fmt_err)?;
             Ok(())
         }
-        TypeSpec::Scoped(_) => {
-            writeln!(
-                out,
-                "{indent}// nested key types delegate via TypeSupport (Phase 6+)"
-            )
-            .map_err(fmt_err)?;
-            Ok(())
-        }
+        TypeSpec::Scoped(scoped) => emit_key_encode_scoped(out, indent, scoped, expr),
         _ => {
             writeln!(
                 out,
@@ -2452,6 +2652,93 @@ fn emit_key_encode_value(
             Ok(())
         }
     }
+}
+
+/// `TypeSpec::Scoped` key member: dealias typedefs (chasing multi-level
+/// chains via recursion), expand a nested-struct key into its own `@key`
+/// members (or ALL members if it has none — XTypes 1.3 §7.6.8), in
+/// member-id order. Enums / unions / bitmasks / bitsets / array-typedef /
+/// unresolved names are unsupported `@key` shapes (matching the `idl-rust`
+/// reference, which rejects them the same way) — emit a loud runtime
+/// `XcdrException`, consistent with the existing catch-all below, instead of
+/// the previous silent no-op that emitted zero key bytes for a
+/// typedef-aliased or nested-struct `@key` member (a wrong KeyHash on the
+/// wire, cross-vendor-interop-breaking).
+fn emit_key_encode_scoped(
+    out: &mut String,
+    indent: &str,
+    scoped: &ScopedName,
+    expr: &str,
+) -> Result<(), CsGenError> {
+    match lookup_scoped_kind(scoped) {
+        Some(ScopedKind::Typedef {
+            inner,
+            is_array: false,
+        }) => {
+            // The member's C# type is the typedef wrapper record `record
+            // class Alias(T Value)` (see `emit_encode_value`'s matching
+            // Typedef arm) — unwrap `.Value` before recursing on the
+            // dealiased inner type.
+            emit_key_encode_value(out, indent, &inner, &format!("({expr}).Value"))
+        }
+        Some(ScopedKind::Struct { .. }) => {
+            let Some(sd) = lookup_struct_def(scoped) else {
+                return emit_key_unsupported(out, indent, expr, "unresolved nested @key struct");
+            };
+            let nested = collect_member_info(&sd);
+            let nested_keys: Vec<&MemberInfo> = nested.iter().filter(|m| m.is_key).collect();
+            let effective: Vec<&MemberInfo> = if nested_keys.is_empty() {
+                nested.iter().collect()
+            } else {
+                nested_keys
+            };
+            // member-id order (explicit `@id(N)`, else declaration index),
+            // matching the KeyHolder emission order used for the outer
+            // struct (XTypes 1.3 §7.6.8.3.1.b).
+            let effective = sort_by_member_id(effective);
+            for m in &effective {
+                if !m.array_dims.is_empty() {
+                    return emit_key_unsupported(
+                        out,
+                        indent,
+                        expr,
+                        "array field inside a nested-struct @key",
+                    );
+                }
+                emit_key_encode_value(out, indent, &m.type_spec, &format!("{expr}.{}", m.cs_prop))?;
+            }
+            Ok(())
+        }
+        _ => emit_key_unsupported(
+            out,
+            indent,
+            expr,
+            "enum/union/bitmask/bitset/array-typedef/unresolved @key",
+        ),
+    }
+}
+
+/// Emits a loud `XcdrException` throw for a `@key` shape this backend does
+/// not (yet) support, instead of silently emitting zero key bytes.
+fn emit_key_unsupported(
+    out: &mut String,
+    indent: &str,
+    expr: &str,
+    what: &str,
+) -> Result<(), CsGenError> {
+    writeln!(
+        out,
+        "{indent}throw new XcdrException(\"unsupported key type ({what}) for member {expr}\");"
+    )
+    .map_err(fmt_err)?;
+    Ok(())
+}
+
+/// Looks up the full [`StructDef`] for a scoped nested-struct `@key` member.
+/// Populated alongside [`TYPE_REG`] in [`build_type_registry`].
+fn lookup_struct_def(s: &ScopedName) -> Option<StructDef> {
+    let key = &s.parts.last()?.text;
+    STRUCT_REG.with(|r| r.borrow().get(key).cloned())
 }
 
 fn emit_key_encode_primitive(

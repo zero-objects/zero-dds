@@ -27,7 +27,8 @@
 
 use zerodds_qos::{
     DeadlineQosPolicy, DurabilityKind, Duration, LifespanQosPolicy, LivelinessKind,
-    LivelinessQosPolicy, OwnershipKind, ReliabilityKind, ReliabilityQosPolicy,
+    LivelinessQosPolicy, OwnershipKind, PresentationAccessScope, PresentationQosPolicy,
+    ReliabilityKind, ReliabilityQosPolicy,
 };
 use zerodds_rtps::publication_data::PublicationBuiltinTopicData;
 use zerodds_rtps::subscription_data::SubscriptionBuiltinTopicData;
@@ -71,6 +72,11 @@ fn publication_data_roundtrip_preserves_all_new_qos_policies() {
         lifespan: LifespanQosPolicy {
             duration: Duration::from_millis(10_000),
         },
+        presentation: PresentationQosPolicy {
+            access_scope: PresentationAccessScope::Group,
+            coherent_access: true,
+            ordered_access: true,
+        },
         partition: vec!["alpha".into(), "beta".into(), "".into()],
         user_data: vec![0xDE, 0xAD, 0xBE, 0xEF],
         topic_data: vec![0xCA, 0xFE],
@@ -98,6 +104,9 @@ fn publication_data_roundtrip_preserves_all_new_qos_policies() {
     );
     assert_eq!(decoded.deadline.period, Duration::from_millis(200));
     assert_eq!(decoded.lifespan.duration, Duration::from_millis(10_000));
+    assert_eq!(decoded.presentation.access_scope, PresentationAccessScope::Group);
+    assert!(decoded.presentation.coherent_access);
+    assert!(decoded.presentation.ordered_access);
     assert_eq!(decoded.partition.len(), 3);
     assert_eq!(decoded.partition[0], "alpha");
     assert_eq!(decoded.partition[1], "beta");
@@ -128,6 +137,11 @@ fn subscription_data_roundtrip_preserves_reader_qos_policies() {
         deadline: DeadlineQosPolicy {
             period: Duration::from_millis(500),
         },
+        presentation: PresentationQosPolicy {
+            access_scope: PresentationAccessScope::Topic,
+            coherent_access: false,
+            ordered_access: true,
+        },
         partition: vec!["ControlRoom".into()],
         user_data: vec![],
         topic_data: vec![],
@@ -154,6 +168,9 @@ fn subscription_data_roundtrip_preserves_reader_qos_policies() {
         Duration::from_millis(2500)
     );
     assert_eq!(decoded.deadline.period, Duration::from_millis(500));
+    assert_eq!(decoded.presentation.access_scope, PresentationAccessScope::Topic);
+    assert!(!decoded.presentation.coherent_access);
+    assert!(decoded.presentation.ordered_access);
     assert_eq!(decoded.partition, vec!["ControlRoom".to_string()]);
 }
 
@@ -173,6 +190,7 @@ fn defaults_roundtrip_stays_default() {
         liveliness: LivelinessQosPolicy::default(),
         deadline: DeadlineQosPolicy::default(),
         lifespan: LifespanQosPolicy::default(),
+        presentation: PresentationQosPolicy::default(),
         partition: Vec::new(),
         user_data: vec![],
         topic_data: vec![],
@@ -194,5 +212,6 @@ fn defaults_roundtrip_stays_default() {
     assert!(decoded.liveliness.lease_duration.is_infinite());
     assert!(decoded.deadline.period.is_infinite());
     assert!(decoded.lifespan.duration.is_infinite());
+    assert_eq!(decoded.presentation, PresentationQosPolicy::default());
     assert!(decoded.partition.is_empty());
 }

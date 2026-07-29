@@ -1,6 +1,5 @@
 ---
 source: crates/idl-rust/tests/snapshot_codegen.rs
-assertion_line: 36
 expression: run(idl)
 ---
 // SPDX-License-Identifier: Apache-2.0
@@ -22,7 +21,7 @@ pub struct Point {
 impl zerodds_dcps::DdsType for Point {
     const TYPE_NAME: &'static str = "Point";
     const EXTENSIBILITY: zerodds_dcps::Extensibility = zerodds_dcps::Extensibility::Appendable;
-    const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0xa6, 0xc8, 0x13, 0x29, 0xee, 0x41, 0x8c, 0x64, 0x6e, 0xc6, 0xa5, 0x22, 0xba, 0x58]));
+    const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0xff, 0xbe, 0xb6, 0xd7, 0xeb, 0xf7, 0x27, 0x5a, 0x27, 0x06, 0xec, 0xe5, 0x3c, 0x1a]));
 
     fn encode(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
         let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little).xcdr2();
@@ -82,10 +81,10 @@ impl zerodds_dcps::DdsType for Point {
         <Self as zerodds_cdr::CdrDecode>::decode(&mut reader).map_err(::core::convert::Into::into)
     }
 
-    fn field_value(&self, path: &str) -> ::core::option::Option<zerodds_sql_filter::Value> {
+    fn field_value(&self, path: &str) -> ::core::option::Option<zerodds_dcps::FilterValue> {
         match path {
-            "x" => ::core::option::Option::Some(zerodds_sql_filter::Value::Int(self.x as i64)),
-            "y" => ::core::option::Option::Some(zerodds_sql_filter::Value::Int(self.y as i64)),
+            "x" => ::core::option::Option::Some(zerodds_dcps::FilterValue::Int(self.x as i64)),
+            "y" => ::core::option::Option::Some(zerodds_dcps::FilterValue::Int(self.y as i64)),
             _ => ::core::option::Option::None,
         }
     }

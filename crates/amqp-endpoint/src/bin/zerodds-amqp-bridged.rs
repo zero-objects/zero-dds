@@ -544,6 +544,12 @@ fn write_amqp_frame_metered(
     Ok(())
 }
 
+/// Hard cap on a single AMQP 1.0 frame (16 MiB) — see
+/// `crates/amqp-endpoint/src/client.rs::MAX_AMQP_FRAME_SIZE` for the
+/// rationale (this bridge daemon doesn't share that module, so the cap
+/// is duplicated at the same value rather than pulled in).
+const MAX_AMQP_FRAME_SIZE: u32 = 16 * 1024 * 1024;
+
 fn read_amqp_frame(stream: &mut TcpStream) -> std::io::Result<Vec<u8>> {
     let mut hdr = [0u8; 8];
     stream.read_exact(&mut hdr)?;
@@ -553,6 +559,15 @@ fn read_amqp_frame(stream: &mut TcpStream) -> std::io::Result<Vec<u8>> {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidData,
             "frame size < 8",
+        ));
+    }
+    if parsed.size > MAX_AMQP_FRAME_SIZE {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            format!(
+                "AMQP frame size {} exceeds MAX_AMQP_FRAME_SIZE ({MAX_AMQP_FRAME_SIZE})",
+                parsed.size
+            ),
         ));
     }
     let body_len = (parsed.size - 8) as usize;
@@ -781,6 +796,54 @@ fn unquote(s: &str) -> &str {
 #[allow(clippy::expect_used)]
 mod tests {
     use super::*;
+
+    // -------------------------------------------------------------
+    // Buffer-cap hardening — a peer-announced frame `size` above
+    // MAX_AMQP_FRAME_SIZE must be rejected cleanly (no multi-GB
+    // allocation attempt) right after the 8-byte header is read,
+    // before the body is read/allocated. Mirrors the established
+    // `crates/transport-tcp/src/framing.rs::MAX_FRAME_SIZE` guard.
+    // -------------------------------------------------------------
+
+    #[test]
+    fn read_amqp_frame_rejects_oversized_size_cleanly() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("local_addr");
+        let handle = std::thread::spawn(move || {
+            let mut stream = TcpStream::connect(addr).expect("connect");
+            // Header only: size far beyond MAX_AMQP_FRAME_SIZE. No body
+            // bytes follow — read_amqp_frame must reject before ever
+            // attempting to read/allocate the body.
+            let h = FrameHeader {
+                size: u32::MAX,
+                doff: 2,
+                frame_type: FrameType::Amqp,
+                channel: 0,
+            };
+            stream
+                .write_all(&encode_frame_header(h))
+                .expect("write header");
+        });
+        let (mut accepted, _) = listener.accept().expect("accept");
+        let res = read_amqp_frame(&mut accepted);
+        assert!(res.is_err(), "expected clean rejection, got {res:?}");
+        handle.join().expect("writer thread");
+    }
+
+    #[test]
+    fn amqp_frame_within_bound_still_round_trips() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("local_addr");
+        let body = vec![1u8, 2, 3, 4];
+        let handle = std::thread::spawn(move || {
+            let mut stream = TcpStream::connect(addr).expect("connect");
+            write_amqp_frame(&mut stream, 0, &body).expect("write frame");
+        });
+        let (mut accepted, _) = listener.accept().expect("accept");
+        let got = read_amqp_frame(&mut accepted).expect("read_amqp_frame");
+        assert_eq!(got, vec![1u8, 2, 3, 4]);
+        handle.join().expect("writer thread");
+    }
 
     #[test]
     fn config_default_uses_anonymous_sasl() {

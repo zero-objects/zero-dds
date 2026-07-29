@@ -54,10 +54,8 @@ path = "src/lib.rs"
 [dependencies]
 zerodds-cdr = {{ path = "{}/crates/cdr" }}
 zerodds-dcps = {{ path = "{}/crates/dcps" }}
-zerodds-sql-filter = {{ path = "{}/crates/sql-filter" }}
 zerodds-types = {{ path = "{}/crates/types" }}
 "#,
-        workspace_root.display(),
         workspace_root.display(),
         workspace_root.display(),
         workspace_root.display()
@@ -461,5 +459,270 @@ fn compile_check_array_of_string_member() {
     compile_generated(
         "array_of_string",
         "@final struct Names { string names[3]; sequence<long> rows[2]; };",
+    );
+}
+
+/// Regression for #20: a `@key` member whose type is a typedef alias to a
+/// primitive must dealias, not hard-error. `emit_key_field_write` /
+/// `key_holder_atom_size` (struct_emit.rs) previously called only
+/// `type_map::struct_def_by_scoped` on `TypeSpec::Scoped` — a typedef chasing
+/// to a non-struct terminal (a plain `long`) fell straight into the
+/// "complex @key field (enum or unresolved nested type)" error, even though
+/// `type_map::resolve_typedef_to_spec` (already used for non-key member
+/// types) can chase the alias to its primitive. Fast (no cargo): asserts the
+/// codegen succeeds and the KeyHolder writer uses the primitive's `write_i32`,
+/// not an error.
+#[test]
+fn typedef_key_resolves_to_primitive_leaf() {
+    let idl = r#"typedef long MyId; struct S { @key MyId id; };"#;
+    let ast = zerodds_idl::parse(idl, &ParserConfig::default()).expect("parse");
+    let src = generate_rust_module(&ast, &RustGenOptions::default())
+        .expect("typedef-to-primitive @key member must generate, not hard-error (regression #20)");
+    assert!(
+        src.contains("holder.write_i32(self.id);"),
+        "typedef @key must dealias to the primitive KeyHolder write:\n{src}"
+    );
+    // KEY_HOLDER_MAX_SIZE must be computed (Some), not fall back to the
+    // dynamic-size MD5 path (None) — the dealiased primitive has a known
+    // fixed atom size.
+    assert!(
+        src.contains("KEY_HOLDER_MAX_SIZE"),
+        "typedef @key must still get a static KeyHolder size:\n{src}"
+    );
+}
+
+/// Regression for #20, chain variant: `resolve_typedef_to_spec` chases up to
+/// 16 alias levels; a 2-level typedef chain (`Distance -> Meters -> long`)
+/// used as `@key` must resolve all the way to the primitive.
+#[test]
+fn typedef_key_two_level_chain_resolves_to_primitive() {
+    let idl = r#"typedef long Meters; typedef Meters Distance; struct S { @key Distance d; };"#;
+    let ast = zerodds_idl::parse(idl, &ParserConfig::default()).expect("parse");
+    let src = generate_rust_module(&ast, &RustGenOptions::default())
+        .expect("2-level typedef chain @key must resolve to the primitive (regression #20)");
+    assert!(
+        src.contains("holder.write_i32(self.d);"),
+        "2-level typedef chain @key must dealias to the primitive KeyHolder write:\n{src}"
+    );
+}
+
+/// Regression for #20, non-key control: a NON-`@key` member of the same
+/// typedef-aliased type must be unaffected by the key-path fix (it never used
+/// the broken path — `emit_member_encode`/`rust_type_for` already dealias
+/// correctly). Guards against a fix that only works for `@key`-tagged fields.
+#[test]
+fn typedef_non_key_member_still_generates() {
+    let idl = r#"typedef long MyId; struct S { MyId id; @key long other; };"#;
+    let ast = zerodds_idl::parse(idl, &ParserConfig::default()).expect("parse");
+    let src = generate_rust_module(&ast, &RustGenOptions::default())
+        .expect("non-key typedef member must keep generating (control, regression #20)");
+    assert!(
+        src.contains("pub id: MyId,") && src.contains("pub type MyId = i32;"),
+        "typedef-to-primitive non-key field keeps the alias type (which resolves to i32):\n{src}"
+    );
+    assert!(
+        src.contains("holder.write_i32(self.other);"),
+        "the plain-primitive @key member must be unaffected:\n{src}"
+    );
+}
+
+/// Regression for #20, extended check: a `@key` member whose type is a
+/// typedef to an ENUM must still produce the correctly-labeled
+/// "complex @key field" error — not a crash and not a silently wrong
+/// primitive write. `resolve_typedef_to_spec` chases the typedef to the
+/// enum's own scoped name, which then falls through to the existing
+/// `struct_def_by_scoped`-fails guard.
+#[test]
+fn typedef_key_of_enum_gives_labeled_error_not_crash() {
+    let idl = r#"enum Kind { K_A, K_B }; typedef Kind KindAlias; struct S { @key KindAlias k; };"#;
+    let ast = zerodds_idl::parse(idl, &ParserConfig::default()).expect("parse");
+    let err = generate_rust_module(&ast, &RustGenOptions::default())
+        .expect_err("typedef-to-enum @key must be a labeled error, not succeed silently-wrong");
+    match err {
+        zerodds_idl_rust::RustGenError::Unsupported { what, .. } => {
+            assert_eq!(
+                what, "complex @key field (enum or unresolved nested type)",
+                "typedef-to-enum @key must keep the enum-labeled error"
+            );
+        }
+        other => panic!("expected Unsupported{{enum..}}, got {other:?}"),
+    }
+}
+
+/// Regression for #20, extended check: a `@key` member whose type is a
+/// typedef to a SEQUENCE must land in the sequence-labeled error, not the
+/// generic "enum or unresolved nested type" one — `resolve_typedef_to_spec`
+/// resolves straight to `TypeSpec::Sequence`, which recurses into the
+/// existing, correctly-named `Unsupported{"complex @key field (sequence)"}`
+/// arm instead of stopping at the Scoped arm's fallback.
+#[test]
+fn typedef_key_of_sequence_gives_labeled_error() {
+    let idl = r#"typedef sequence<long> Ids; struct S { @key Ids ids; long dummy; };"#;
+    let ast = zerodds_idl::parse(idl, &ParserConfig::default()).expect("parse");
+    let err = generate_rust_module(&ast, &RustGenOptions::default())
+        .expect_err("typedef-to-sequence @key must be a labeled error");
+    match err {
+        zerodds_idl_rust::RustGenError::Unsupported { what, .. } => {
+            assert_eq!(
+                what, "complex @key field (sequence)",
+                "typedef-to-sequence @key must get the sequence-labeled error, not the generic one"
+            );
+        }
+        other => panic!("expected Unsupported{{sequence}}, got {other:?}"),
+    }
+}
+
+/// Bug #20 end-to-end: the typedef-aliased `@key` member must actually
+/// compile (not just generate source that looks right).
+#[test]
+#[ignore = "requires cargo offline + path-deps"]
+fn compile_check_typedef_key_primitive() {
+    compile_generated(
+        "typedef_key_primitive",
+        r#"typedef long MyId; struct S { @key MyId id; double value; };"#,
+    );
+}
+
+/// Regression for #22 (encode-bound half): `emit_member_bound_checks` did
+/// not thread the `@optional` flag into `emit_bound_checks_decl`, so a
+/// bounded `string`/`wstring`/`sequence`/`map` member that is ALSO
+/// `@optional` hard-errored the generated encoder (`self.{field}.len()` on
+/// an `Option<String>` — `Option` has no `.len()`). Fast (no cargo): asserts
+/// the generated encode body guards the bound check behind an
+/// `if let Some(..)`, not a bare `.len()` on the `Option` itself.
+#[test]
+fn optional_bounded_string_bound_check_guards_through_option() {
+    let idl = r#"struct S { @optional string<8> label; long id; };"#;
+    let ast = zerodds_idl::parse(idl, &ParserConfig::default()).expect("parse");
+    let src = generate_rust_module(&ast, &RustGenOptions::default())
+        .expect("optional bounded string must generate, not hard-error (regression #22)");
+    assert!(
+        src.contains("if let ::core::option::Option::Some(ref __zd_opt_b) = self.label"),
+        "the bound check on an @optional bounded field must be guarded by an Option check:\n{src}"
+    );
+    assert!(
+        !src.contains("self.label.len()"),
+        "must never call .len() directly on the Option-wrapped field:\n{src}"
+    );
+}
+
+/// Regression for #22 end-to-end: `@optional string<N>` (the reported repro
+/// shape) must actually compile.
+#[test]
+#[ignore = "requires cargo offline + path-deps"]
+fn compile_check_optional_bounded_string() {
+    compile_generated(
+        "optional_bounded_string",
+        r#"struct S { @optional string<8> label; long id; };"#,
+    );
+}
+
+/// Regression for #22 (decode-bound half, the SEVERE finding): before this
+/// fix, a generated `decode` only checked the remaining wire buffer
+/// (`zerodds_cdr` composite decoders), never the IDL-declared bound N — a
+/// `string<8>` field would decode an arbitrarily large well-formed payload
+/// without complaint (XTypes 1.3 §7.4.3 requires the bound enforced on BOTH
+/// encode and decode). Fast (no cargo): asserts the generated decode body
+/// now checks the decoded value's length against the bound and raises
+/// `DecodeError::BoundExceeded`, for both a bounded string and a bounded
+/// sequence.
+#[test]
+fn decode_body_rejects_over_bound_values_not_just_remaining_buffer() {
+    let idl = r#"struct S { string<8> label; sequence<long,4> vals; };"#;
+    let ast = zerodds_idl::parse(idl, &ParserConfig::default()).expect("parse");
+    let src = generate_rust_module(&ast, &RustGenOptions::default()).expect("gen");
+    assert!(
+        src.contains(
+            "zerodds_cdr::DecodeError::BoundExceeded { actual: __zd_dv.len(), bound: 8, message: \"decoded string length exceeds its IDL bound (8)\" }"
+        ),
+        "decode must reject a bounded string exceeding its IDL bound, not just check remaining buffer:\n{src}"
+    );
+    assert!(
+        src.contains(
+            "zerodds_cdr::DecodeError::BoundExceeded { actual: __zd_dv.len(), bound: 4, message: \"decoded sequence length exceeds its IDL bound (4)\" }"
+        ),
+        "decode must reject a bounded sequence exceeding its IDL bound:\n{src}"
+    );
+}
+
+/// Regression for #22, `@optional` decode-bound variant: the decode-side
+/// bound check must also fire through the `Option` wrapper (guarded by
+/// `if let Some`), symmetric to the encode-side fix above.
+#[test]
+fn decode_body_rejects_over_bound_optional_value() {
+    let idl = r#"struct S { @optional string<8> label; long id; };"#;
+    let ast = zerodds_idl::parse(idl, &ParserConfig::default()).expect("parse");
+    let src = generate_rust_module(&ast, &RustGenOptions::default()).expect("gen");
+    assert!(
+        src.contains("if let ::core::option::Option::Some(ref __zd_dvi) = __zd_dv"),
+        "decode-side bound check on an @optional bounded field must be guarded by an Option check:\n{src}"
+    );
+    assert!(
+        src.contains("zerodds_cdr::DecodeError::BoundExceeded { actual: __zd_dvi.len(), bound: 8"),
+        "decode-side bound check must run on the unwrapped Option value:\n{src}"
+    );
+}
+
+/// Regression for #22, control: a bounded member with NO violation must
+/// still round-trip (the new checks must not be over-eager / off-by-one).
+/// Also exercises the wire-level DecodeError::BoundExceeded plumbing end to
+/// end via the raw CdrEncode/CdrDecode path (not just DdsType, whose
+/// decode-error detail collapses through a pre-existing, unrelated
+/// zerodds-dcps placeholder shim — not this fix's concern).
+#[test]
+#[ignore = "requires cargo offline + path-deps"]
+fn compile_check_decode_bound_enforcement() {
+    compile_generated(
+        "decode_bound_enforcement",
+        r#"struct S { string<8> label; sequence<long,4> vals; @optional wstring<3> w; };"#,
+    );
+}
+
+/// Coverage gap (NOT a correctness bug — deep review of #22
+/// decode-bounds-cross-backend, self-check of the reference `idl-rust`
+/// backend): `string<N> names[3]` (an ARRAY of a bounded string) has no test
+/// proving its per-element decode bound check, even though the
+/// implementation already handles it — `array_elem_needs_manual_decode`
+/// (`type_map.rs`) routes `TypeSpec::String` through
+/// `emit_manual_array_decode` (`struct_emit.rs`), whose innermost per-element
+/// branch already calls `emit_decode_bound_checks` when
+/// `type_has_bounds(elem_spec)` holds (see its own doc comment: "B1
+/// follow-up array-of-bounded-element gap ... previously decoded each
+/// element with no IDL-bound check at all"). This test closes the coverage
+/// gap the existing `array_of_bounded_sequence_checks_element_not_array_length`
+/// test (`bounded_sequence.rs`) left open for `string<N>[...]` specifically
+/// (that test only covers `sequence<octet,4>[...]`).
+#[test]
+fn decode_body_rejects_over_bound_array_of_bounded_string() {
+    let idl = r#"struct A { string<4> names[3]; };"#;
+    let ast = zerodds_idl::parse(idl, &ParserConfig::default()).expect("parse");
+    let src = generate_rust_module(&ast, &RustGenOptions::default()).expect("gen");
+    assert!(
+        src.contains(
+            "zerodds_cdr::DecodeError::BoundExceeded { actual: __zd_dv.len(), bound: 4, message: \"decoded string length exceeds its IDL bound (4)\" }"
+        ),
+        "array-of-bounded-string element decode must reject an over-bound \
+         element, not just check the wire's remaining buffer:\n{src}"
+    );
+    // Must be the per-element MANUAL array decode path (String has no Copy
+    // impl, so it cannot ride the `[T; N]: CdrDecode` blanket impl) — proves
+    // the check is reached via `emit_manual_array_decode`, not skipped
+    // because the array took some other, unchecked path.
+    assert!(
+        src.contains("let mut __arr: ::std::vec::Vec<") && src.contains("__arr.push("),
+        "array-of-bounded-string must decode via the manual per-element array \
+         decoder (String is not Copy, so the blanket [T; N] impl cannot apply):\n{src}"
+    );
+}
+
+/// End-to-end compile proof for the coverage-gap test above: an array of a
+/// bounded string must actually compile, not just look right in the
+/// generated text.
+#[test]
+#[ignore = "requires cargo offline + path-deps"]
+fn compile_check_decode_bound_array_of_bounded_string() {
+    compile_generated(
+        "decode_bound_array_of_bounded_string",
+        r#"struct A { string<4> names[3]; };"#,
     );
 }

@@ -114,13 +114,42 @@ pub(crate) fn write_array<T: UaEncode>(
     Ok(())
 }
 
+/// Rejects a wire-supplied element `count` that cannot possibly fit the
+/// bytes actually remaining, given the minimum wire size of one element
+/// (`min_elem`). Mirrors `crates/cdr/src/composite.rs`'s
+/// `len > reader.remaining()` guard: it must run *before* any
+/// `Vec::with_capacity`/`reserve` call, so a huge wire count cannot force
+/// an oversized allocation ahead of the (bounds-checked) per-element reads.
+///
+/// `pub` (not `pub(crate)`) so downstream OPC-UA binary-encoding consumers
+/// (e.g. `zerodds-opcua-server`'s `wire.rs`, which reuses this crate's
+/// [`UaReader`]/[`DecodeError`]) can apply the same guard instead of
+/// re-inventing it.
+pub fn check_array_len(
+    r: &UaReader<'_>,
+    count: usize,
+    min_elem: usize,
+    message: &'static str,
+) -> Result<(), DecodeError> {
+    let max_count = r.remaining() / min_elem.max(1);
+    if count > max_count {
+        return Err(DecodeError::MalformedMessage { message });
+    }
+    Ok(())
+}
+
 /// Reads an `Int32`-length-prefixed array (`-1` = null → empty).
 pub(crate) fn read_array<T: UaDecode>(r: &mut UaReader<'_>) -> Result<Vec<T>, DecodeError> {
     let len = r.read_i32()?;
     if len < 0 {
         return Ok(Vec::new());
     }
-    let mut out = Vec::with_capacity(len as usize);
+    let len = len as usize;
+    // Conservative bound: every element needs >= 1 wire byte, so a count
+    // above the remaining bytes cannot be genuine. Reject before
+    // `Vec::with_capacity` — see `check_array_len`.
+    check_array_len(r, len, 1, "array length exceeds remaining bytes")?;
+    let mut out = Vec::with_capacity(len);
     for _ in 0..len {
         out.push(T::decode(r)?);
     }
@@ -142,7 +171,9 @@ pub(crate) fn read_u16_array(r: &mut UaReader<'_>) -> Result<Vec<u16>, DecodeErr
     if len < 0 {
         return Ok(Vec::new());
     }
-    let mut out = Vec::with_capacity(len as usize);
+    let len = len as usize;
+    check_array_len(r, len, 2, "UInt16 array length exceeds remaining bytes")?;
+    let mut out = Vec::with_capacity(len);
     for _ in 0..len {
         out.push(r.read_u16()?);
     }
@@ -164,7 +195,9 @@ pub(crate) fn read_u32_array(r: &mut UaReader<'_>) -> Result<Vec<u32>, DecodeErr
     if len < 0 {
         return Ok(Vec::new());
     }
-    let mut out = Vec::with_capacity(len as usize);
+    let len = len as usize;
+    check_array_len(r, len, 4, "UInt32 array length exceeds remaining bytes")?;
+    let mut out = Vec::with_capacity(len);
     for _ in 0..len {
         out.push(r.read_u32()?);
     }
@@ -186,7 +219,10 @@ pub(crate) fn read_string_array(r: &mut UaReader<'_>) -> Result<Vec<String>, Dec
     if len < 0 {
         return Ok(Vec::new());
     }
-    let mut out = Vec::with_capacity(len as usize);
+    let len = len as usize;
+    // Every string carries at least its Int32 length prefix.
+    check_array_len(r, len, 4, "String array length exceeds remaining bytes")?;
+    let mut out = Vec::with_capacity(len);
     for _ in 0..len {
         out.push(read_string(r)?);
     }
@@ -204,4 +240,109 @@ pub fn to_binary<T: UaEncode>(value: &T) -> Result<Vec<u8>, EncodeError> {
 pub fn from_binary<T: UaDecode>(bytes: &[u8]) -> Result<T, DecodeError> {
     let mut r = UaReader::new(bytes);
     T::decode(&mut r)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zerodds_opcua_gateway::types::Guid;
+
+    // -------------------------------------------------------------
+    // Buffer-cap hardening — a wire-supplied `Int32` element count
+    // must be rejected cleanly (no OOM, no panic) before
+    // `Vec::with_capacity` runs, when it cannot possibly fit the
+    // bytes actually remaining. Mirrors the established
+    // `len > reader.remaining()` guard in
+    // crates/cdr/src/composite.rs.
+    // -------------------------------------------------------------
+
+    #[test]
+    fn read_array_rejects_oversized_length() {
+        let mut w = UaWriter::new();
+        // Announce a huge element count, but supply no element bytes.
+        w.write_i32(1_000_000_000);
+        let mut r = UaReader::new(w.as_slice());
+        let res = read_array::<Guid>(&mut r);
+        assert!(
+            matches!(res, Err(DecodeError::MalformedMessage { .. })),
+            "expected clean rejection, got {res:?}"
+        );
+    }
+
+    #[test]
+    fn read_array_roundtrip_within_bound() {
+        let items = alloc::vec![
+            Guid {
+                data1: 1,
+                data2: 2,
+                data3: 3,
+                data4: [0u8; 8],
+            },
+            Guid {
+                data1: 4,
+                data2: 5,
+                data3: 6,
+                data4: [1u8; 8],
+            },
+        ];
+        let mut w = UaWriter::new();
+        write_array(&mut w, &items, "Guid array").expect("encode");
+        let mut r = UaReader::new(w.as_slice());
+        let back: Vec<Guid> = read_array(&mut r).expect("decode");
+        assert_eq!(back, items);
+    }
+
+    #[test]
+    fn read_u16_array_rejects_oversized_length() {
+        let mut w = UaWriter::new();
+        w.write_i32(1_000_000_000);
+        let mut r = UaReader::new(w.as_slice());
+        let res = read_u16_array(&mut r);
+        assert!(matches!(res, Err(DecodeError::MalformedMessage { .. })));
+    }
+
+    #[test]
+    fn read_u16_array_roundtrip_within_bound() {
+        let items = alloc::vec![1u16, 2, 3, 65535];
+        let mut w = UaWriter::new();
+        write_u16_array(&mut w, &items).expect("encode");
+        let mut r = UaReader::new(w.as_slice());
+        assert_eq!(read_u16_array(&mut r).expect("decode"), items);
+    }
+
+    #[test]
+    fn read_u32_array_rejects_oversized_length() {
+        let mut w = UaWriter::new();
+        w.write_i32(1_000_000_000);
+        let mut r = UaReader::new(w.as_slice());
+        let res = read_u32_array(&mut r);
+        assert!(matches!(res, Err(DecodeError::MalformedMessage { .. })));
+    }
+
+    #[test]
+    fn read_u32_array_roundtrip_within_bound() {
+        let items = alloc::vec![1u32, 2, 3, u32::MAX];
+        let mut w = UaWriter::new();
+        write_u32_array(&mut w, &items).expect("encode");
+        let mut r = UaReader::new(w.as_slice());
+        assert_eq!(read_u32_array(&mut r).expect("decode"), items);
+    }
+
+    #[test]
+    fn read_string_array_rejects_oversized_length() {
+        let mut w = UaWriter::new();
+        w.write_i32(1_000_000_000);
+        let mut r = UaReader::new(w.as_slice());
+        let res = read_string_array(&mut r);
+        assert!(matches!(res, Err(DecodeError::MalformedMessage { .. })));
+    }
+
+    #[test]
+    fn read_string_array_roundtrip_within_bound() {
+        let items = alloc::vec![String::from("alpha"), String::from("beta")];
+        let mut w = UaWriter::new();
+        write_string_array(&mut w, &items).expect("encode");
+        let mut r = UaReader::new(w.as_slice());
+        assert_eq!(read_string_array(&mut r).expect("decode"), items);
+    }
 }

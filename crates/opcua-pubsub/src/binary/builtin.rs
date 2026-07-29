@@ -14,8 +14,8 @@ use zerodds_opcua_gateway::node_id::{ExpandedNodeId, NodeId, NodeIdentifier};
 use zerodds_opcua_gateway::types::{BuiltinTypeKind, Guid, LocalizedText, QualifiedName};
 
 use super::{
-    UaDecode, UaEncode, UaReader, UaWriter, len_i32, read_byte_string, read_string,
-    write_byte_string, write_string,
+    UaDecode, UaEncode, UaReader, UaWriter, check_array_len, len_i32, read_byte_string,
+    read_string, write_byte_string, write_string,
 };
 use crate::error::{DecodeError, EncodeError};
 
@@ -535,7 +535,12 @@ impl UaDecode for Variant {
                     field: "Variant array",
                 });
             }
-            value.reserve(len as usize);
+            let len = len as usize;
+            // Conservative bound: every value needs >= 1 wire byte, so a
+            // count above the remaining bytes cannot be genuine. Reject
+            // before `reserve` (see `check_array_len`).
+            check_array_len(r, len, 1, "Variant array length exceeds remaining bytes")?;
+            value.reserve(len);
             for _ in 0..len {
                 value.push(decode_variant_value(r, type_id)?);
             }
@@ -550,7 +555,9 @@ impl UaDecode for Variant {
                     field: "ArrayDimensions",
                 });
             }
-            let mut dims = Vec::with_capacity(n as usize);
+            let n = n as usize;
+            check_array_len(r, n, 4, "ArrayDimensions length exceeds remaining bytes")?;
+            let mut dims = Vec::with_capacity(n);
             for _ in 0..n {
                 dims.push(r.read_i32()? as u32);
             }
@@ -856,6 +863,37 @@ mod tests {
         let enc = bytes.first().copied().unwrap_or(0);
         assert_ne!(enc & VARIANT_ARRAY_FLAG, 0);
         assert_ne!(enc & VARIANT_DIMENSIONS_FLAG, 0);
+    }
+
+    #[test]
+    fn variant_array_oversized_length_rejected_cleanly() {
+        // Buffer-cap hardening regression (builtin.rs:538): a
+        // wire-supplied array length must be rejected before
+        // `Vec::reserve`, not turned into a multi-GB allocation
+        // attempt from a 5-byte packet.
+        let mut bytes = alloc::vec![VARIANT_ARRAY_FLAG | BuiltinTypeKind::Int32.value()];
+        bytes.extend_from_slice(&1_000_000_000i32.to_le_bytes());
+        // No element bytes follow.
+        let err = from_binary::<Variant>(&bytes).expect_err("should reject cleanly");
+        assert!(matches!(err, DecodeError::MalformedMessage { .. }));
+    }
+
+    #[test]
+    fn array_dimensions_oversized_length_rejected_cleanly() {
+        // Buffer-cap hardening regression (builtin.rs:553): the
+        // ArrayDimensions count must be bounds-checked before
+        // `Vec::with_capacity`.
+        let mut bytes =
+            alloc::vec![VARIANT_ARRAY_FLAG | VARIANT_DIMENSIONS_FLAG | BuiltinTypeKind::Byte
+                .value()];
+        // One-element array (so the array-length + element decode
+        // succeeds) …
+        bytes.extend_from_slice(&1i32.to_le_bytes());
+        bytes.push(0); // the single Byte element
+        // … followed by a huge, unsupported ArrayDimensions count.
+        bytes.extend_from_slice(&1_000_000_000i32.to_le_bytes());
+        let err = from_binary::<Variant>(&bytes).expect_err("should reject cleanly");
+        assert!(matches!(err, DecodeError::MalformedMessage { .. }));
     }
 
     #[test]

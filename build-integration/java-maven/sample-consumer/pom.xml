@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SPDX-License-Identifier: Apache-2.0
+  Copyright 2026 ZeroDDS Contributors
+
+  Sample consumer for the exec-maven-plugin pattern documented in
+  documentation/04-idl/idlc-handbook.md §4.5. `mvn compile` runs
+  zerodds-idlc in the generate-sources phase, then registers its output
+  directory as a compile source root (build-helper-maven-plugin — the
+  handbook's own exec-maven-plugin snippet omits this step, so this pom
+  is deliberately more complete than the doc snippet).
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>org.zerodds.samples</groupId>
+  <artifactId>zerodds-idlc-maven-sample</artifactId>
+  <version>1.0.0-rc.7</version>
+  <packaging>jar</packaging>
+
+  <properties>
+    <maven.compiler.source>17</maven.compiler.source>
+    <maven.compiler.target>17</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <zerodds.idl.dir>${project.basedir}/src/main/idl/Robot.idl</zerodds.idl.dir>
+    <zerodds.idl.outputDir>${project.build.directory}/generated-sources/java</zerodds.idl.outputDir>
+  </properties>
+
+  <!--
+    Generated Java is not self-contained (unlike the Rust/Swift/D/Nim/
+    Julia/Lua/Ada backends): it needs the org.zerodds.cdr / org.omg.dds.topic
+    runtime shipped by crates/java-omgdds/java (groupId org.zerodds,
+    artifactId omgdds) — the same runtime the Gradle plugin's sample
+    consumer needs. `mvn install` that module into the local repo before
+    building this sample (see README.md).
+  -->
+  <dependencies>
+    <dependency>
+      <groupId>org.zerodds</groupId>
+      <artifactId>omgdds</artifactId>
+      <version>0.0.0</version>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>3.4.1</version>
+        <executions>
+          <execution>
+            <id>generate-idl</id>
+            <phase>generate-sources</phase>
+            <goals><goal>exec</goal></goals>
+            <configuration>
+              <executable>zerodds-idlc</executable>
+              <arguments>
+                <argument>generate</argument>
+                <argument>${zerodds.idl.dir}</argument>
+                <argument>--java</argument>
+                <argument>-o</argument>
+                <argument>${zerodds.idl.outputDir}</argument>
+              </arguments>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!--
+        exec-maven-plugin has no source-root-registration primitive of its
+        own (unlike a real generate-sources Mojo, which would call
+        project.addCompileSourceRoot(...) directly) — build-helper bridges
+        that gap.
+      -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <version>3.6.0</version>
+        <executions>
+          <execution>
+            <id>add-generated-source</id>
+            <phase>generate-sources</phase>
+            <goals><goal>add-source</goal></goals>
+            <configuration>
+              <sources>
+                <source>${zerodds.idl.outputDir}</source>
+                <!--
+                  ZeroDDS Java runtime the generated code references but the
+                  omgdds artifact does NOT ship: the org.zerodds.types.*
+                  annotations (Extensibility, Key, …) and the
+                  org.omg.dds.topic.TopicType<T> interface. Compile them from
+                  source (mirrors the C# sample's <Compile Include> of
+                  crates/idl-csharp/runtime/Omg.Types.cs).
+                -->
+                <source>${project.basedir}/../../../crates/idl-java/runtime</source>
+              </sources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

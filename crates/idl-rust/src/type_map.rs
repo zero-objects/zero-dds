@@ -323,7 +323,7 @@ pub fn member_body_has_leading_dheader(spec: &TypeSpec) -> bool {
 /// Returns `None` when the chain ends at a declared struct/union/enum (i.e.
 /// the name is itself the terminal type) or cannot be resolved.
 /// zerodds-lint: recursion-depth 16
-fn resolve_typedef_to_spec(scoped: &ScopedName) -> Option<TypeSpec> {
+pub(crate) fn resolve_typedef_to_spec(scoped: &ScopedName) -> Option<TypeSpec> {
     let mut name = scoped.parts.last().map(|i| i.text.clone())?;
     let mut last_spec: Option<TypeSpec> = None;
     for _ in 0..16 {

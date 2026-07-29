@@ -1,6 +1,5 @@
 ---
 source: crates/idl-rust/tests/snapshot_codegen.rs
-assertion_line: 285
 expression: run(idl)
 ---
 // SPDX-License-Identifier: Apache-2.0
@@ -21,7 +20,7 @@ pub struct Lookup {
 impl zerodds_dcps::DdsType for Lookup {
     const TYPE_NAME: &'static str = "Lookup";
     const EXTENSIBILITY: zerodds_dcps::Extensibility = zerodds_dcps::Extensibility::Appendable;
-    const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::None;
+    const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0x24, 0x64, 0x82, 0xf4, 0x8a, 0x68, 0x80, 0x02, 0x20, 0x78, 0xdb, 0xd3, 0x90, 0x12]));
 
     fn encode(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
         let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little).xcdr2();
@@ -75,7 +74,7 @@ impl zerodds_dcps::DdsType for Lookup {
         <Self as zerodds_cdr::CdrDecode>::decode(&mut reader).map_err(::core::convert::Into::into)
     }
 
-    fn field_value(&self, path: &str) -> ::core::option::Option<zerodds_sql_filter::Value> {
+    fn field_value(&self, path: &str) -> ::core::option::Option<zerodds_dcps::FilterValue> {
         match path {
             _ => ::core::option::Option::None,
         }

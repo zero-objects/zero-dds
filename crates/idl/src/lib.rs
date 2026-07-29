@@ -30,6 +30,7 @@ pub mod engine;
 pub mod errors;
 pub mod features;
 pub mod grammar;
+pub mod keyhash;
 pub mod lexer;
 pub mod parser;
 pub mod preprocessor;

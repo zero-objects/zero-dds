@@ -701,6 +701,20 @@ pub struct RuntimeConfig {
     #[cfg(feature = "security")]
     pub interface_bindings: Vec<InterfaceBindingSpec>,
 
+    /// DDS-Security §9.3.3 identity-adjusted participant GUID prefix.
+    /// `None` (default) → the participant constructor picks a random
+    /// prefix ([`crate::participant::random_guid_prefix`]), same as the
+    /// unsecured path. `Some(prefix)` → the constructor MUST start the
+    /// runtime with exactly this prefix instead of a random one, so that
+    /// the SPDP beacon, handshake `c.pdata` and all entity GUIDs are
+    /// derived from the identity cert — a random wire GUID fails a
+    /// peer's §9.3.3 check. Set by [`Self::with_security_bundle`] from
+    /// [`zerodds_security_runtime::SecurityProfile::adjusted_participant_guid`]
+    /// (mirrors what `zerodds-c-api::security_ffi::finish_secure_runtime`
+    /// already does for the FFI path).
+    #[cfg(feature = "security")]
+    pub security_guid_prefix: Option<GuidPrefix>,
+
     /// `true` → the SPDP beacon additionally announces the 12 secure
     /// discovery bits (16..27, DDS-Security 1.2 §7.4.7.1). Default
     /// `false` — only standard bits are announced. Set by the DCPS
@@ -1183,6 +1197,8 @@ impl Default for RuntimeConfig {
             security_logger: None,
             #[cfg(feature = "security")]
             interface_bindings: Vec::new(),
+            #[cfg(feature = "security")]
+            security_guid_prefix: None,
             announce_secure_endpoints: false,
             // Env hook for bench/FastDDS interop: ZERODDS_SECURE_SPDP=1 turns
             // on the reliable secure SPDP channel (0xff0101). Production sets this
@@ -1235,9 +1251,16 @@ impl RuntimeConfig {
     /// Apply a [`SecurityBundle`](zerodds_security_runtime::SecurityBundle):
     /// wires its security-event logger into [`Self::security_logger`] and, if
     /// the bundle carries a [`SecurityProfile`](zerodds_security_runtime::SecurityProfile),
-    /// its gate into [`Self::security`]. Convenience for the common
-    /// `SecurityBundle::builder()…build()` flow so callers don't have to set
-    /// the two fields by hand.
+    /// its gate into [`Self::security`] AND its DDS-Security §9.3.3
+    /// identity-adjusted GUID prefix into [`Self::security_guid_prefix`].
+    /// Convenience for the common `SecurityBundle::builder()…build()` flow
+    /// so callers don't have to set the fields by hand.
+    ///
+    /// The GUID-prefix wiring matters: without it the participant
+    /// constructor falls back to a random prefix, which a peer's §9.3.3
+    /// handshake check (`c.pdata` GUID must derive from the identity cert)
+    /// rejects. This mirrors `zerodds-c-api::security_ffi::finish_secure_runtime`,
+    /// which has always used the adjusted prefix on the FFI path.
     #[cfg(feature = "security")]
     #[must_use]
     pub fn with_security_bundle(
@@ -1249,6 +1272,9 @@ impl RuntimeConfig {
         }
         if let Some(profile) = bundle.security_profile() {
             self.security = Some(profile.gate.clone());
+            let mut prefix_bytes = [0u8; 12];
+            prefix_bytes.copy_from_slice(&profile.adjusted_participant_guid[..12]);
+            self.security_guid_prefix = Some(GuidPrefix::from_bytes(prefix_bytes));
         }
         self
     }
@@ -2023,6 +2049,10 @@ struct UserWriterSlot {
     ownership_strength: i32,
     /// Partition list.
     partition: Vec<String>,
+    /// Presentation QoS offered by this writer (Spec §2.2.3.6). RxO-checked
+    /// against the remote reader's requested presentation in
+    /// `wire_writer_to_remote_reader`.
+    presentation: zerodds_qos::PresentationQosPolicy,
     /// Per-matched-reader ProtectionLevel. Derived at the
     /// SEDP match from `sub.security_info`. `None` entries
     /// for legacy readers. Empty for writers without matched
@@ -2215,6 +2245,12 @@ struct UserReaderSlot {
     /// execute the callback cloned without another lock (minimize lock
     /// hold time).
     listener: Option<alloc::sync::Arc<UserReaderListener>>,
+    /// `true` = RELIABLE requested, `false` = BEST_EFFORT (Spec §2.2.3.14).
+    /// Mirrors `cfg.reliable` — needed standalone because
+    /// `ReliableReader::best_effort` has no public getter and the RxO
+    /// check in `wire_reader_to_remote_writer` needs the *requested* kind,
+    /// not the writer-derived one.
+    reliable: bool,
     durability: zerodds_qos::DurabilityKind,
     /// Deadline period in nanoseconds (0 == INFINITE).
     deadline_nanos: u64,
@@ -2259,6 +2295,10 @@ struct UserReaderSlot {
     ownership: zerodds_qos::OwnershipKind,
     /// Partition.
     partition: Vec<String>,
+    /// Presentation QoS requested by this reader (Spec §2.2.3.6). RxO-checked
+    /// against the remote writer's offered presentation in
+    /// `wire_reader_to_remote_writer`.
+    presentation: zerodds_qos::PresentationQosPolicy,
     /// Per-writer strength cache for exclusive-ownership resolution
     /// (DDS 1.4 §2.2.3.23). Filled by `wire_reader_to_remote_writer`
     /// from each `PublicationBuiltinTopicData.ownership_strength`;
@@ -2274,6 +2314,15 @@ struct UserReaderSlot {
     /// XTypes 1.3 §7.6.3.7 — TCE policy controlling the strictness
     /// of the XTypes match path.
     type_consistency: zerodds_types::qos::TypeConsistencyEnforcement,
+    /// E1 bug 1 — the exact DataRepresentation accept list this reader
+    /// announced on the wire (PID 0x0073), i.e. `sub_data.data_representation`
+    /// as computed once in `register_user_reader_kind` (per-reader override
+    /// via `cfg.data_representation_offer`, or the widened
+    /// `reader_accept_repr` default). Mirrored here so
+    /// `wire_reader_to_remote_writer` can RxO-check the remote writer's
+    /// offered representation against what THIS reader actually accepts,
+    /// without recomputing the widen-default logic at match time.
+    data_representation_accept: Vec<i16>,
     /// A2 — TIME_BASED_FILTER `minimum_separation` (DDS 1.4 §2.2.3.12), in
     /// nanoseconds, for the runtime/C-FFI delivery path. `0` (default) = off.
     /// Set via [`DcpsRuntime::set_user_reader_time_based_filter`] (the
@@ -2380,6 +2429,10 @@ pub struct UserWriterConfig {
     /// XTypes 1.3 §7.3.4.2 TypeIdentifier (F-TYPES-3 wire-up). Default
     /// `TypeIdentifier::None` for the `T::TYPE_IDENTIFIER` default.
     pub type_identifier: zerodds_types::TypeIdentifier,
+    /// Presentation QoS (Spec §2.2.3.6) — Publisher-group scope offered by
+    /// this writer. Default `PresentationQosPolicy::default()` (INSTANCE,
+    /// no coherent/ordered access).
+    pub presentation: zerodds_qos::PresentationQosPolicy,
 
     /// D.5g — per-writer override of the DataRepresentation offer list.
     /// `None` = use `RuntimeConfig::data_representation_offer`.
@@ -2405,6 +2458,10 @@ pub struct UserReaderConfig {
     pub liveliness: zerodds_qos::LivelinessQosPolicy,
     /// Ownership.
     pub ownership: zerodds_qos::OwnershipKind,
+    /// Presentation QoS (Spec §2.2.3.6) — Subscriber-group scope requested by
+    /// this reader. Default `PresentationQosPolicy::default()` (INSTANCE,
+    /// no coherent/ordered access).
+    pub presentation: zerodds_qos::PresentationQosPolicy,
     /// Partition.
     pub partition: Vec<String>,
     /// UserData QoS (Spec §2.2.3.1).
@@ -2453,6 +2510,7 @@ fn build_publication_data(
         liveliness: cfg.liveliness,
         deadline: cfg.deadline,
         lifespan: cfg.lifespan,
+        presentation: cfg.presentation,
         partition: cfg.partition.clone(),
         user_data: cfg.user_data.clone(),
         topic_data: cfg.topic_data.clone(),
@@ -2534,6 +2592,7 @@ fn build_subscription_data(
         ownership: cfg.ownership,
         liveliness: cfg.liveliness,
         deadline: cfg.deadline,
+        presentation: cfg.presentation,
         partition: cfg.partition.clone(),
         user_data: cfg.user_data.clone(),
         topic_data: cfg.topic_data.clone(),
@@ -4462,6 +4521,7 @@ impl DcpsRuntime {
                     ownership: cfg.ownership,
                     ownership_strength: cfg.ownership_strength,
                     partition: cfg.partition.clone(),
+                    presentation: cfg.presentation,
                     #[cfg(feature = "security")]
                     reader_protection: BTreeMap::new(),
                     #[cfg(feature = "security")]
@@ -4709,6 +4769,7 @@ impl DcpsRuntime {
                     sample_tx: tx,
                     async_waker: Arc::new(std::sync::Mutex::new(None)),
                     listener: None,
+                    reliable: cfg.reliable,
                     durability: cfg.durability,
                     deadline_nanos: qos_duration_to_nanos(cfg.deadline.period),
                     // Start time as reference (see register_user_writer).
@@ -4729,9 +4790,11 @@ impl DcpsRuntime {
                     liveliness_alive_writers: alloc::collections::BTreeSet::new(),
                     ownership: cfg.ownership,
                     partition: cfg.partition.clone(),
+                    presentation: cfg.presentation,
                     writer_strengths: alloc::collections::BTreeMap::new(),
                     type_identifier: cfg.type_identifier.clone(),
                     type_consistency: cfg.type_consistency,
+                    data_representation_accept: sub_data.data_representation.clone(),
                     // A2 — TIME_BASED_FILTER off by default; the C-FFI/rmw path
                     // arms it via `set_user_reader_time_based_filter`.
                     tbf_min_separation_nanos: 0,
@@ -5341,6 +5404,21 @@ impl DcpsRuntime {
                     bump(slot, qid::DURABILITY);
                     return;
                 }
+                // E1 bug 1 — Reliability: offered.kind >= requested.kind
+                // (Spec §2.2.3.14.4 / §2.2.3 Table: BestEffort < Reliable).
+                // A BEST_EFFORT writer must NOT associate with a RELIABLE
+                // reader — previously unenforced (`qid::RELIABILITY` was
+                // wired into the diagnostic name lookup only, never into a
+                // `bump()` call here).
+                let writer_reliability_kind = if slot.reliable {
+                    zerodds_qos::ReliabilityKind::Reliable
+                } else {
+                    zerodds_qos::ReliabilityKind::BestEffort
+                };
+                if writer_reliability_kind < sub.reliability.kind {
+                    bump(slot, qid::RELIABILITY);
+                    return;
+                }
                 // Deadline: writer period <= reader period (the writer promises
                 // to write faster than the reader expects).
                 if !deadline_compat(
@@ -5369,10 +5447,25 @@ impl DcpsRuntime {
                     bump(slot, qid::OWNERSHIP);
                     return;
                 }
-                // Partition: at least one common partition — or
-                // both empty (default partition "").
+                // E1 bug 1 — Presentation: offered.access_scope >=
+                // requested.access_scope AND offered.coherent_access >=
+                // requested.coherent_access AND offered.ordered_access >=
+                // requested.ordered_access (Spec §2.2.3.6.6). Previously
+                // unenforced for the same reason as RELIABILITY above.
+                if !slot.presentation.is_compatible_with(sub.presentation) {
+                    bump(slot, qid::PRESENTATION);
+                    return;
+                }
+                // E1 bug 2 — Partition: at least one common partition — or
+                // both empty (default partition ""). DDS 1.4 §2.2.3.13 is
+                // explicit that PARTITION is NOT an RxO policy: a mismatch
+                // causes silent non-association (no
+                // OFFERED_INCOMPATIBLE_QOS / REQUESTED_INCOMPATIBLE_QOS
+                // listener event, no status-counter bump) — unlike
+                // DURABILITY/DEADLINE/LIVELINESS/OWNERSHIP/RELIABILITY/
+                // PRESENTATION above, which are genuine RxO policies. Do
+                // NOT call `bump()` here.
                 if !partitions_overlap(&slot.partition, &sub.partition) {
-                    bump(slot, qid::PARTITION);
                     return;
                 }
                 // F-TYPES-3 XTypes-1.3 §7.6.3.7 symmetric writer-side check.
@@ -5406,36 +5499,36 @@ impl DcpsRuntime {
                     }
                 }
 
+                // E1 bug 1 — DataRepresentation (XTypes 1.3 §7.6.3.1.2,
+                // RTPS 2.5 PID 0x0073): Writer-offered = Per-Writer-Override
+                // (slot.data_rep_offer_override) OR Runtime-Default.
+                // Reader-accepted = sub.data_representation (spec default
+                // `[XCDR1]` if empty). Match mode from RuntimeConfig.
+                // Computed BEFORE the proxy is constructed so a disjoint
+                // offer/accept set rejects the match outright (previously
+                // the proxy was added anyway on a `None` negotiation
+                // result — an explicit code comment admitted "a spec-strict
+                // caller should reject the match").
+                use zerodds_rtps::publication_data::data_representation as dr;
+                let writer_offered: Vec<i16> = slot
+                    .data_rep_offer_override
+                    .clone()
+                    .unwrap_or_else(|| self.config.data_representation_offer.clone());
+                let dr_mode = self.config.data_rep_match_mode;
+                let Some(negotiated) =
+                    dr::negotiate(&writer_offered, &sub.data_representation, dr_mode)
+                else {
+                    bump(slot, qid::DATA_REPRESENTATION);
+                    return;
+                };
+
                 let mut proxy = zerodds_rtps::reader_proxy::ReaderProxy::new(
                     sub.key,
                     locators.clone(),
                     Vec::new(),
                     slot.reliable,
                 );
-                // D.5g — Per-Peer DataRepresentation negotiation
-                // (XTypes 1.3 §7.6.3.1.2). Writer-offered = Per-Writer-
-                // Override (slot.data_rep_offer_override) ODER Runtime-
-                // Default. Reader-accepted = sub.data_representation
-                // (spec default `[XCDR1]` if empty). Match mode from
-                // RuntimeConfig.
-                {
-                    use zerodds_rtps::publication_data::data_representation as dr;
-                    let writer_offered: Vec<i16> = slot
-                        .data_rep_offer_override
-                        .clone()
-                        .unwrap_or_else(|| self.config.data_representation_offer.clone());
-                    let mode = self.config.data_rep_match_mode;
-                    if let Some(negotiated) =
-                        dr::negotiate(&writer_offered, &sub.data_representation, mode)
-                    {
-                        proxy.set_negotiated_data_representation(negotiated);
-                    } else {
-                        // No overlap → SEDP match spec violation.
-                        // We add the proxy anyway for best-effort
-                        // compat; the wire-format default stays XCDR2.
-                        // A spec-strict caller should reject the match.
-                    }
-                }
+                proxy.set_negotiated_data_representation(negotiated);
                 // Spec §2.2.3.4 Tab. 16: cache replay suppression. For
                 // Volatile the reader must not see any late-joiner history
                 // → skip up to `cache.max_sn`. For Transient/Persistent
@@ -5706,6 +5799,16 @@ impl DcpsRuntime {
                     bump(slot, qid::DURABILITY);
                     return;
                 }
+                // E1 bug 1 — Reliability, symmetric to `wire_writer_to_remote_reader`.
+                let requested_reliability_kind = if slot.reliable {
+                    zerodds_qos::ReliabilityKind::Reliable
+                } else {
+                    zerodds_qos::ReliabilityKind::BestEffort
+                };
+                if pubd.reliability.kind < requested_reliability_kind {
+                    bump(slot, qid::RELIABILITY);
+                    return;
+                }
                 if !deadline_compat(
                     qos_duration_to_nanos(pubd.deadline.period),
                     slot.deadline_nanos,
@@ -5728,8 +5831,35 @@ impl DcpsRuntime {
                     bump(slot, qid::OWNERSHIP);
                     return;
                 }
+                // E1 bug 1 — Presentation, symmetric to `wire_writer_to_remote_reader`.
+                if !pubd.presentation.is_compatible_with(slot.presentation) {
+                    bump(slot, qid::PRESENTATION);
+                    return;
+                }
+                // E1 bug 1 — DataRepresentation, symmetric to
+                // `wire_writer_to_remote_reader`: the remote writer's offered
+                // representation set must overlap this reader's own accept
+                // list (`data_representation_accept`, exactly what this
+                // reader announced on the wire).
+                {
+                    use zerodds_rtps::publication_data::data_representation as dr;
+                    let dr_mode = self.config.data_rep_match_mode;
+                    if dr::negotiate(
+                        &pubd.data_representation,
+                        &slot.data_representation_accept,
+                        dr_mode,
+                    )
+                    .is_none()
+                    {
+                        bump(slot, qid::DATA_REPRESENTATION);
+                        return;
+                    }
+                }
+                // E1 bug 2 — Partition, symmetric to `wire_writer_to_remote_reader`:
+                // DDS 1.4 §2.2.3.13 mandates silent non-association, no
+                // REQUESTED_INCOMPATIBLE_QOS listener event. Do NOT call
+                // `bump()` here.
                 if !partitions_overlap(&pubd.partition, &slot.partition) {
-                    bump(slot, qid::PARTITION);
                     return;
                 }
 
@@ -11646,6 +11776,7 @@ mod tests {
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             ownership: zerodds_qos::OwnershipKind::Shared,
             ownership_strength: 0,
+            presentation: Default::default(),
             partition: alloc::vec![],
             user_data: alloc::vec![],
             topic_data: alloc::vec![],
@@ -11661,6 +11792,7 @@ mod tests {
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             ownership: zerodds_qos::OwnershipKind::Shared,
+            presentation: Default::default(),
             partition: alloc::vec![],
             user_data: alloc::vec![],
             topic_data: alloc::vec![],
@@ -11725,6 +11857,7 @@ mod tests {
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             ownership: zerodds_qos::OwnershipKind::Shared,
             ownership_strength: 0,
+            presentation: Default::default(),
             partition: alloc::vec![],
             user_data: alloc::vec![],
             topic_data: alloc::vec![],
@@ -11740,6 +11873,7 @@ mod tests {
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             ownership: zerodds_qos::OwnershipKind::Shared,
+            presentation: Default::default(),
             partition: alloc::vec![],
             user_data: alloc::vec![],
             topic_data: alloc::vec![],
@@ -11797,6 +11931,7 @@ mod tests {
                 liveliness: zerodds_qos::LivelinessQosPolicy::default(),
                 ownership: zerodds_qos::OwnershipKind::Shared,
                 ownership_strength: 0,
+                presentation: Default::default(),
                 partition: alloc::vec![],
                 user_data: alloc::vec![],
                 topic_data: alloc::vec![],
@@ -11814,6 +11949,7 @@ mod tests {
                 deadline: zerodds_qos::DeadlineQosPolicy::default(),
                 liveliness: zerodds_qos::LivelinessQosPolicy::default(),
                 ownership: zerodds_qos::OwnershipKind::Shared,
+                presentation: Default::default(),
                 partition: alloc::vec![],
                 user_data: alloc::vec![],
                 topic_data: alloc::vec![],
@@ -12145,6 +12281,7 @@ mod tests {
                 liveliness: zerodds_qos::LivelinessQosPolicy::default(),
                 ownership: zerodds_qos::OwnershipKind::Shared,
                 ownership_strength: 0,
+                presentation: Default::default(),
                 partition: alloc::vec![],
                 user_data: alloc::vec![],
                 topic_data: alloc::vec![],
@@ -12162,6 +12299,7 @@ mod tests {
                 deadline: zerodds_qos::DeadlineQosPolicy::default(),
                 liveliness: zerodds_qos::LivelinessQosPolicy::default(),
                 ownership: zerodds_qos::OwnershipKind::Shared,
+                presentation: Default::default(),
                 partition: alloc::vec![],
                 user_data: alloc::vec![],
                 topic_data: alloc::vec![],
@@ -12219,6 +12357,7 @@ mod tests {
                     liveliness: zerodds_qos::LivelinessQosPolicy::default(),
                     ownership: zerodds_qos::OwnershipKind::Shared,
                     ownership_strength: 0,
+                    presentation: Default::default(),
                     partition: alloc::vec![],
                     user_data: alloc::vec![],
                     topic_data: alloc::vec![],
@@ -12236,6 +12375,7 @@ mod tests {
                     deadline: zerodds_qos::DeadlineQosPolicy::default(),
                     liveliness: zerodds_qos::LivelinessQosPolicy::default(),
                     ownership: zerodds_qos::OwnershipKind::Shared,
+                    presentation: Default::default(),
                     partition: alloc::vec![],
                     user_data: alloc::vec![],
                     topic_data: alloc::vec![],
@@ -12313,6 +12453,7 @@ mod tests {
                 liveliness: zerodds_qos::LivelinessQosPolicy::default(),
                 ownership: zerodds_qos::OwnershipKind::Shared,
                 ownership_strength: 0,
+                presentation: Default::default(),
                 partition: alloc::vec![],
                 user_data: alloc::vec![],
                 topic_data: alloc::vec![],
@@ -12330,6 +12471,7 @@ mod tests {
                 deadline: zerodds_qos::DeadlineQosPolicy::default(),
                 liveliness: zerodds_qos::LivelinessQosPolicy::default(),
                 ownership: zerodds_qos::OwnershipKind::Shared,
+                presentation: Default::default(),
                 partition: alloc::vec![],
                 user_data: alloc::vec![],
                 topic_data: alloc::vec![],
@@ -12689,6 +12831,7 @@ mod tests {
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
             lifespan: zerodds_qos::LifespanQosPolicy::default(),
+            presentation: Default::default(),
             partition: Vec::new(),
             user_data: Vec::new(),
             topic_data: Vec::new(),
@@ -12760,6 +12903,7 @@ mod tests {
                 liveliness: zerodds_qos::LivelinessQosPolicy::default(),
                 ownership: zerodds_qos::OwnershipKind::Shared,
                 ownership_strength: 0,
+                presentation: Default::default(),
                 partition: Vec::new(),
                 user_data: Vec::new(),
                 topic_data: Vec::new(),
@@ -12777,6 +12921,7 @@ mod tests {
                 deadline: zerodds_qos::DeadlineQosPolicy::default(),
                 liveliness: zerodds_qos::LivelinessQosPolicy::default(),
                 ownership: zerodds_qos::OwnershipKind::Shared,
+                presentation: Default::default(),
                 partition: Vec::new(),
                 user_data: Vec::new(),
                 topic_data: Vec::new(),
@@ -12898,6 +13043,7 @@ mod tests {
                 liveliness: zerodds_qos::LivelinessQosPolicy::default(),
                 ownership: zerodds_qos::OwnershipKind::Shared,
                 ownership_strength: 0,
+                presentation: Default::default(),
                 partition: Vec::new(),
                 user_data: Vec::new(),
                 topic_data: Vec::new(),
@@ -13388,6 +13534,7 @@ mod tests {
                 liveliness: zerodds_qos::LivelinessQosPolicy::default(),
                 ownership: zerodds_qos::OwnershipKind::Shared,
                 ownership_strength: 0,
+                presentation: Default::default(),
                 partition: Vec::new(),
                 user_data: Vec::new(),
                 topic_data: Vec::new(),
@@ -13635,6 +13782,7 @@ mod tests {
                 liveliness: zerodds_qos::LivelinessQosPolicy::default(),
                 ownership: zerodds_qos::OwnershipKind::Shared,
                 ownership_strength: 0,
+                presentation: Default::default(),
                 partition: Vec::new(),
                 user_data: Vec::new(),
                 topic_data: Vec::new(),
@@ -13761,6 +13909,7 @@ mod tests {
                 liveliness: LivelinessQosPolicy::default(),
                 deadline: zerodds_qos::DeadlineQosPolicy::default(),
                 lifespan: zerodds_qos::LifespanQosPolicy::default(),
+                presentation: Default::default(),
                 partition: Vec::new(),
                 user_data: Vec::new(),
                 topic_data: Vec::new(),
@@ -13821,6 +13970,7 @@ mod tests {
                 ownership: zerodds_qos::OwnershipKind::Shared,
                 liveliness: LivelinessQosPolicy::default(),
                 deadline: zerodds_qos::DeadlineQosPolicy::default(),
+                presentation: Default::default(),
                 partition: Vec::new(),
                 user_data: Vec::new(),
                 topic_data: Vec::new(),
@@ -13954,6 +14104,7 @@ mod tests {
                 liveliness: LivelinessQosPolicy::default(),
                 deadline: zerodds_qos::DeadlineQosPolicy::default(),
                 lifespan: zerodds_qos::LifespanQosPolicy::default(),
+                presentation: Default::default(),
                 partition: Vec::new(),
                 user_data: Vec::new(),
                 topic_data: Vec::new(),
@@ -14026,6 +14177,7 @@ mod tests {
                 ownership: zerodds_qos::OwnershipKind::Shared,
                 liveliness: LivelinessQosPolicy::default(),
                 deadline: zerodds_qos::DeadlineQosPolicy::default(),
+                presentation: Default::default(),
                 partition: Vec::new(),
                 user_data: Vec::new(),
                 topic_data: Vec::new(),
@@ -14095,6 +14247,7 @@ mod tests {
                 liveliness: LivelinessQosPolicy::default(),
                 deadline: zerodds_qos::DeadlineQosPolicy::default(),
                 lifespan: zerodds_qos::LifespanQosPolicy::default(),
+                presentation: Default::default(),
                 partition: Vec::new(),
                 user_data: Vec::new(),
                 topic_data: Vec::new(),
@@ -15201,6 +15354,7 @@ mod tests {
             },
             ownership: zerodds_qos::OwnershipKind::Shared,
             ownership_strength: 0,
+            presentation: Default::default(),
             partition,
             user_data: alloc::vec![],
             topic_data: alloc::vec![],
@@ -15227,6 +15381,7 @@ mod tests {
                 lease_duration: QosDuration::INFINITE,
             },
             ownership: zerodds_qos::OwnershipKind::Shared,
+            presentation: Default::default(),
             partition,
             user_data: alloc::vec![],
             topic_data: alloc::vec![],

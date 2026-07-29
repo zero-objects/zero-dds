@@ -33,6 +33,7 @@ pub use resolver::{
 };
 pub use spec_validators::{SpecValidationError, validate_all as validate_spec_constraints};
 pub use to_typeobject::{
-    LoweredSpec, MapError, NameMap, build_type_registry, lower_struct_to_minimal, map_type_spec,
+    LoweredSpec, MapError, NameMap, build_type_registry, lower_struct_to_minimal, make_array_ti,
+    map_type_spec, map_type_spec_resolved,
 };
 pub use union_validation::{UnionValidationError, validate_unions};

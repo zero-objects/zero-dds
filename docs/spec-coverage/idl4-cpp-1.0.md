@@ -274,8 +274,22 @@ for a user-defined IDL type or interface (assuming it is also a
 legal IDL name) shall result in the mapped name having an underscore
 ('_') prepended."
 
-**Repo:** Reserved-Word-Liste in `crates/idl-cpp/src/error.rs`-
-Validation.
+Der Spec-Text (`internal/standards/cache/omg/idl4-cpp-1.0.pdf`, §7.1.2,
+geprüft 2026-07-28) enthält KEINE Alternative-Konformitätsklausel — kein
+"or shall be rejected" existiert an dieser oder einer anderen Stelle
+des Absatzes/Abschnitts. Der vorherige Eintrag hier zitierte eine
+solche Klausel; dieses Zitat existiert im Spec nicht und war falsch
+(github-triage 2026-07-28 #14).
+
+**Repo:** Reserved-Word-Liste (`CPP_RESERVED`, 84 Einträge) +
+`is_reserved`/`check_identifier` in `crates/idl-cpp/src/type_map.rs`
+(nicht `error.rs` — `error.rs` definiert nur die
+`CppGenError::InvalidName`-Variante, die `check_identifier`
+zurückgibt). `check_identifier` wird an 23 Stellen in
+`crates/idl-cpp/src/emitter.rs` aufgerufen und lehnt jeden mit einem
+C++-Keyword kollidierenden IDL-Identifier per Hard-Reject
+(`Err(InvalidName)`) ab — das Spec-mandatierte
+Underscore-Prefix-Escaping ist nicht implementiert.
 
 **Tests:** `reserved_class_is_rejected`,
 `reserved_field_name_is_rejected`,
@@ -285,9 +299,24 @@ Validation.
 `non_reserved_identifier_passes`,
 `check_returns_invalidname_with_reason`.
 
-**Status:** done — ZeroDDS-strict Reject ist Spec-konforme Variante
-(Spec lizenziert Implementations zur Wahl zwischen Underscore-Prefix
-und Reject; siehe §7.1.2 letzter Absatz "or shall be rejected").
+**Status:** partial — die Kollisions-*Erkennung* ist vollständig und
+korrekt (84-Einträge-Tabelle + alle 23 Emit-Stellen), aber das bei
+Kollision angewandte Mapping (Hard-Reject) ist nicht das, was §7.1.2
+mandatiert (Underscore-Prefix-Escaping). Ein sonst legaler IDL-Typ-
+oder Member-Name (z.B. `long register;`, `struct class { ... };`)
+bleibt über den Voll-C++-Pfad unkompilierbar, obwohl der Spec ein
+Kompilieren als `_register`/`_class` verlangt. Kontrast: der
+Sibling-Pfad `--c-mode` (`crates/idl-cpp/src/c_mode.rs`, Vendor-Spec
+`zerodds-xcdr2-c-1.0` §9.5) wurde im selben Durchgang (github-triage
+#14) auf Escaping via Trailing-Underscore-Suffix statt Reject
+umgestellt — die Reject-statt-Escape-Lücke des Voll-C++-Pfads bleibt
+als **offener** Folgepunkt getrackt (Umbau aller 23
+`check_identifier`-Aufrufstellen von einem Early-Return-Gate zu einer
+Namens-Substitution, plus Anpassung der 7 reject-orientierten Tests
+oben auf Escaping-Assertions, ist außerhalb des Scopes des
+#14-Durchgangs, der C-Mode + die 12 Backends ohne jede vorherige
+Keyword-Behandlung abdeckte; hier bewusst nicht als Pflaster
+mitgezogen).
 
 ### 7.1.3 C++11 als Mindest-Standard; C++98/03 über Annex C
 
@@ -1335,9 +1364,12 @@ CORBA-Coexistence (`corba-3.3.md`).
 
 ## Audit-Status
 
-57 done / 0 partial / 0 open / 20 n/a (informative) / 0 n/a (rejected).
+56 done / 1 partial / 0 open / 20 n/a (informative) / 0 n/a (rejected).
 
 Test-Lauf: `cargo test -p zerodds-idl-cpp` — 133 lib + 150 integration
 (11 Bins) = 283 Tests grün, 0 failed.
 
-Keine offenen Punkte.
+Ein partieller Punkt (§7.1.2, Reserved-Name-Kollisionsbehandlung:
+Erkennung vollständig, aber Reject statt Spec-mandatiertem Escaping) —
+siehe dieser Eintrag für den getrackten Folgepunkt-Scope. Keine
+vollständig offenen Punkte.

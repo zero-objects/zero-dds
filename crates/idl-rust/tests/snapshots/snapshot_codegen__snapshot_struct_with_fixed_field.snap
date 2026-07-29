@@ -1,6 +1,5 @@
 ---
 source: crates/idl-rust/tests/snapshot_codegen.rs
-assertion_line: 275
 expression: run(idl)
 ---
 // SPDX-License-Identifier: Apache-2.0
@@ -75,7 +74,7 @@ impl zerodds_dcps::DdsType for Price {
         <Self as zerodds_cdr::CdrDecode>::decode(&mut reader).map_err(::core::convert::Into::into)
     }
 
-    fn field_value(&self, path: &str) -> ::core::option::Option<zerodds_sql_filter::Value> {
+    fn field_value(&self, path: &str) -> ::core::option::Option<zerodds_dcps::FilterValue> {
         match path {
             _ => ::core::option::Option::None,
         }

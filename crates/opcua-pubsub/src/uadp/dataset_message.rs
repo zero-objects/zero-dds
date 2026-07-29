@@ -13,7 +13,7 @@ use alloc::vec::Vec;
 
 use zerodds_opcua_gateway::data_value::{DataValue, Variant};
 
-use crate::binary::{UaDecode, UaEncode, UaReader, UaWriter, len_u16};
+use crate::binary::{UaDecode, UaEncode, UaReader, UaWriter, check_array_len, len_u16};
 use crate::error::{DecodeError, EncodeError};
 
 // DataSetFlags1 (Part 14 §7.2.2.3.2).
@@ -364,16 +364,23 @@ fn decode_field_data(
             Ok(DataSetData::Raw(rest.to_vec()))
         }
         FieldEncoding::Variant => {
-            let count = r.read_u16()?;
+            let count = r.read_u16()? as usize;
             if kind == DataSetMessageKind::DeltaFrame {
-                let mut fields = Vec::with_capacity(count as usize);
+                // Each entry needs >= 3 bytes: a UInt16 index plus a
+                // minimum 1-byte Variant encoding. Reject before
+                // `Vec::with_capacity` (mirrors
+                // `crates/cdr/src/composite.rs`'s
+                // `len > reader.remaining()` guard).
+                check_array_len(r, count, 3, "DeltaVariant field count exceeds remaining bytes")?;
+                let mut fields = Vec::with_capacity(count);
                 for _ in 0..count {
                     let idx = r.read_u16()?;
                     fields.push((idx, Variant::decode(r)?));
                 }
                 Ok(DataSetData::DeltaVariant(fields))
             } else {
-                let mut fields = Vec::with_capacity(count as usize);
+                check_array_len(r, count, 1, "Variant field count exceeds remaining bytes")?;
+                let mut fields = Vec::with_capacity(count);
                 for _ in 0..count {
                     fields.push(Variant::decode(r)?);
                 }
@@ -381,16 +388,25 @@ fn decode_field_data(
             }
         }
         FieldEncoding::DataValue => {
-            let count = r.read_u16()?;
+            let count = r.read_u16()? as usize;
             if kind == DataSetMessageKind::DeltaFrame {
-                let mut fields = Vec::with_capacity(count as usize);
+                // Each entry needs >= 3 bytes: a UInt16 index plus a
+                // minimum 1-byte DataValue encoding mask.
+                check_array_len(
+                    r,
+                    count,
+                    3,
+                    "DeltaDataValue field count exceeds remaining bytes",
+                )?;
+                let mut fields = Vec::with_capacity(count);
                 for _ in 0..count {
                     let idx = r.read_u16()?;
                     fields.push((idx, DataValue::decode(r)?));
                 }
                 Ok(DataSetData::DeltaDataValue(fields))
             } else {
-                let mut fields = Vec::with_capacity(count as usize);
+                check_array_len(r, count, 1, "DataValue field count exceeds remaining bytes")?;
+                let mut fields = Vec::with_capacity(count);
                 for _ in 0..count {
                     fields.push(DataValue::decode(r)?);
                 }

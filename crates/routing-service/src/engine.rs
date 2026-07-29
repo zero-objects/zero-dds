@@ -237,6 +237,7 @@ fn user_reader_cfg(ep: &Endpoint, type_name: &str) -> UserReaderConfig {
             ..Default::default()
         },
         ownership: ep.qos.ownership.into(),
+        presentation: Default::default(),
         partition: ep.partition.clone(),
         user_data: Vec::new(),
         topic_data: Vec::new(),
@@ -270,6 +271,7 @@ fn user_writer_cfg(ep: &Endpoint, type_name: &str) -> UserWriterConfig {
         } else {
             0
         },
+        presentation: Default::default(),
         partition: ep.partition.clone(),
         user_data: Vec::new(),
         topic_data: Vec::new(),

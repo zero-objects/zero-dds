@@ -618,3 +618,186 @@ module conf {
         "generated header contains C++-reserved identifiers: {offenders:?}"
     );
 }
+
+// ============================================================================
+// KeyHash correctness (XTypes 1.3 §7.6.8) — cpp idiomatic mode
+// ============================================================================
+
+/// Isolates the `key_hash(...)` method DEFINITION body for `type_name` (the
+/// out-of-line `topic_type_support<T>::key_hash` impl, not the in-class
+/// declaration nor the general `encode`/`decode` bodies which legitimately
+/// reference different member sets) so assertions about what the KeyHash
+/// writes don't false-positive/false-negative against the general (non-key)
+/// encoder OR another struct's own `key_hash` (a nested `@key` struct is
+/// itself independently keyed, so its `key_hash` appears earlier in the
+/// file — searching for the FIRST `key_hash(const ` would grab the wrong
+/// one).
+fn key_hash_body<'a>(cpp: &'a str, type_name: &str) -> &'a str {
+    let marker = format!("::{type_name}>::key_hash(const ");
+    let start = cpp
+        .find(&marker)
+        .unwrap_or_else(|| panic!("key_hash definition for {type_name} present:\n{cpp}"));
+    let body_start = cpp[start..].find('{').expect("key_hash body opens") + start;
+    let body_end = cpp[body_start..]
+        .find("\n} // namespace topic")
+        .map(|i| body_start + i)
+        .unwrap_or(cpp.len());
+    &cpp[body_start..body_end]
+}
+
+#[test]
+fn keyhash_nested_struct_key_expands_inner_key_members_only() {
+    // A `@key` member whose type is itself a struct with its OWN partial
+    // `@key` annotations must expand into ONLY those `@key` members, not the
+    // struct's full member list (previously: `emit_value_write`'s Final-struct
+    // arm unconditionally encoded ALL of `Inner`'s members into the KeyHash).
+    let cpp = gen_cpp(
+        "@final struct Inner { @key long x; long ignored; @key long y; };\n\
+         @final struct Outer { @key Inner i; long z; };",
+    );
+    let kh = key_hash_body(&cpp, "Outer");
+    assert!(
+        kh.contains("zd_v.i().x()") && kh.contains("zd_v.i().y()"),
+        "nested-struct @key must expand into the inner struct's own @key members:\n{kh}"
+    );
+    assert!(
+        !kh.contains("zd_v.i().ignored()"),
+        "a non-@key inner member must NOT be included when the inner struct has explicit @key members:\n{kh}"
+    );
+    // The general (non-key) encoder is untouched: it still encodes ALL of
+    // Inner's members, including `ignored`.
+    assert!(
+        cpp.contains("zd_v.i().ignored()"),
+        "general (non-key) encode must still encode the whole nested struct:\n{cpp}"
+    );
+}
+
+#[test]
+fn keyhash_nested_struct_without_keys_uses_all_inner_members() {
+    // XTypes 1.3 §7.6.8: an aggregate @key member with NO @key members of its
+    // own is keyed in full (all its members).
+    let cpp = gen_cpp(
+        "@final struct Pair { long a; long b; };\n\
+         @final struct Holder { @key Pair p; };",
+    );
+    let kh = key_hash_body(&cpp, "Holder");
+    assert!(
+        kh.contains("zd_v.p().a()") && kh.contains("zd_v.p().b()"),
+        "a keyless nested struct must key on ALL its members:\n{kh}"
+    );
+}
+
+#[test]
+fn keyhash_typedef_in_nested_struct_key_no_longer_vanishes() {
+    // Regression (the WORSE variant of the nested-key bug): a `@key` member
+    // whose type is a struct that itself has a typedef-aliased `@key` member
+    // used to make the ENTIRE outer member vanish from the KeyHash
+    // (`typespec_supported`/`scoped_struct`'s `all_encodable` gate rejected
+    // `Inner` outright because `MyId` didn't classify as enum/struct/union/
+    // bitholder), emitting the comment `member 'i' not supported
+    // (nested/enum/map; skip)` and zero key bytes for `i`.
+    let cpp = gen_cpp(
+        "typedef long MyId;\n\
+         @final struct Inner { @key MyId x; };\n\
+         @final struct Outer { @key Inner i; };",
+    );
+    let kh = key_hash_body(&cpp, "Outer");
+    assert!(
+        !kh.contains("member 'i' not supported"),
+        "the outer @key member must no longer vanish from the KeyHash:\n{kh}"
+    );
+    assert!(
+        kh.contains("zd_v.i().x()"),
+        "the typedef-aliased inner @key member must dealias and be written:\n{kh}"
+    );
+}
+
+#[test]
+fn keyhash_multi_level_typedef_chain_in_nested_key_dealiases() {
+    let cpp = gen_cpp(
+        "typedef long Points;\ntypedef Points Score;\n\
+         @final struct Inner { @key Score s; };\n\
+         @final struct Outer { @key Inner i; };",
+    );
+    let kh = key_hash_body(&cpp, "Outer");
+    assert!(
+        kh.contains("zd_v.i().s()"),
+        "a multi-level typedef chain inside a nested @key struct must fully dealias:\n{kh}"
+    );
+    assert!(!kh.contains("member 'i' not supported"), "{kh}");
+}
+
+#[test]
+fn keyhash_array_field_inside_nested_struct_key_is_a_loud_error() {
+    // An array-typed field inside a nested-struct @key subset is not a
+    // supported shape (matches every other backend's identical rejection,
+    // e.g. `idl-rust`'s `emit_key_field_write`) — codegen must reject it with
+    // a loud `UnsupportedConstruct`, not silently drop the field from the
+    // KeyHash (which was this function's original defect class).
+    let idl = "@final struct Inner { @key long a[3]; };\n\
+               @final struct Outer { @key Inner i; };";
+    let ast = zerodds_idl::parse(idl, &ParserConfig::default()).expect("parse must succeed");
+    let err = generate_cpp_header(&ast, &CppGenOptions::default())
+        .expect_err("array field inside a nested-struct @key must be a codegen error");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("array field inside a nested-struct @key"),
+        "{msg}"
+    );
+}
+
+#[test]
+fn keyhash_array_of_struct_key_expands_each_elements_own_key_subset() {
+    // A `@key` member of ARRAY-of-struct type (e.g. `@key Inner arr[2]`) was
+    // previously excluded from the `is_struct_key` nested-key-subset path
+    // (which required `declarators.iter().all(Simple)`), so it fell through
+    // to `emit_plain_member_encode`'s array-of-struct branch: a DHEADER
+    // wrapping N elements, each encoded via the WHOLE-struct `emit_value_write`
+    // — wrong on both counts for a KeyHolder (always the FLAT, un-framed
+    // concatenation of key bytes, XTypes 1.3 §7.6.8) and wrong on inclusion
+    // (must expand to each element's own `@key` subset, not its full member
+    // set). Verify: no DHEADER helper call inside the KeyHash body, each
+    // element indexed and its own `@key` member (`x`) written, and the
+    // non-`@key` member (`ignored`) NOT written.
+    let cpp = gen_cpp(
+        "@final struct Inner { @key long x; long ignored; };\n\
+         @final struct Outer { @key Inner arr[2]; long tail; };",
+    );
+    let kh = key_hash_body(&cpp, "Outer");
+    assert!(
+        kh.contains("for (const auto& zd_akey0 : zd_v.arr())"),
+        "array-of-struct @key member must be iterated element-wise:\n{kh}"
+    );
+    assert!(
+        kh.contains("zd_akey0.x()"),
+        "each array element's own @key member must be written:\n{kh}"
+    );
+    assert!(
+        !kh.contains("zd_akey0.ignored()"),
+        "a non-@key inner member must NOT be included when the element struct has explicit @key members:\n{kh}"
+    );
+    assert!(
+        !kh.contains("dheader_begin_r") && !kh.contains("dheader_end_r"),
+        "a KeyHolder is always the FLAT, un-framed concatenation of key bytes — no DHEADER inside the KeyHash body:\n{kh}"
+    );
+    // The general (non-key) encoder is untouched: it still DHEADER-wraps the
+    // array and encodes each element's WHOLE struct, including `ignored`.
+    assert!(
+        cpp.contains("dheader_begin_r"),
+        "general (non-key) encode of array-of-struct must still frame a DHEADER:\n{cpp}"
+    );
+}
+
+#[test]
+fn keyhash_member_id_order_not_declaration_order() {
+    // XTypes 1.3 §7.6.8.3.1.b: KeyHolder members in ascending member-id order.
+    // Declaration order here is a, b; member-id order (via @id) is b, a.
+    let cpp = gen_cpp("@final struct K { @id(1) @key octet a; @id(0) @key long b; };");
+    let kh = key_hash_body(&cpp, "K");
+    let pos_a = kh.find("zd_v.a()").expect("a() written");
+    let pos_b = kh.find("zd_v.b()").expect("b() written");
+    assert!(
+        pos_b < pos_a,
+        "member-id 0 (b) must be written before member-id 1 (a):\n{kh}"
+    );
+}

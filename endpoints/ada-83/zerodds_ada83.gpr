@@ -1,0 +1,19 @@
+-- SPDX-License-Identifier: Apache-2.0
+-- Copyright 2026 ZeroDDS Contributors
+--
+--  pre-Object Ada 83 endpoint SDK (ADR 0013) — strict Ada 83 (-gnat83), the
+--  oldest-legacy variant. Additive to the modern procedural + Object-Ada SDKs.
+
+project Zerodds_Ada83 is
+
+   for Languages use ("Ada");
+   for Source_Dirs use ("src", "test");
+   for Object_Dir use "build";
+   for Exec_Dir use "build";
+   for Main use ("test_ada83_identity.adb", "test_ada83_async.adb");
+
+   package Compiler is
+      for Default_Switches ("Ada") use ("-gnat83", "-g", "-O2");
+   end Compiler;
+
+end Zerodds_Ada83;

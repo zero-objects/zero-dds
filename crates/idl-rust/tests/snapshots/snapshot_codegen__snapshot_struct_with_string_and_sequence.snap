@@ -1,6 +1,5 @@
 ---
 source: crates/idl-rust/tests/snapshot_codegen.rs
-assertion_line: 197
 expression: run(idl)
 ---
 // SPDX-License-Identifier: Apache-2.0
@@ -22,7 +21,7 @@ pub struct Message {
 impl zerodds_dcps::DdsType for Message {
     const TYPE_NAME: &'static str = "Message";
     const EXTENSIBILITY: zerodds_dcps::Extensibility = zerodds_dcps::Extensibility::Appendable;
-    const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::None;
+    const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0x3f, 0x1c, 0x2f, 0xc1, 0x83, 0xf2, 0xa6, 0xdb, 0x8a, 0x8d, 0x87, 0xba, 0xd3, 0x73]));
 
     fn encode(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
         let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little).xcdr2();
@@ -82,9 +81,9 @@ impl zerodds_dcps::DdsType for Message {
         <Self as zerodds_cdr::CdrDecode>::decode(&mut reader).map_err(::core::convert::Into::into)
     }
 
-    fn field_value(&self, path: &str) -> ::core::option::Option<zerodds_sql_filter::Value> {
+    fn field_value(&self, path: &str) -> ::core::option::Option<zerodds_dcps::FilterValue> {
         match path {
-            "topic" => ::core::option::Option::Some(zerodds_sql_filter::Value::String(self.topic.clone())),
+            "topic" => ::core::option::Option::Some(zerodds_dcps::FilterValue::String(self.topic.clone())),
             _ => ::core::option::Option::None,
         }
     }

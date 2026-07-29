@@ -20,6 +20,7 @@ test: all
 	build/test_native_roundtrip
 	build/test_native_framing $(GOLDEN_DIR)
 	build/test_native_reflect $(GOLDEN_DIR)
+	build/test_oop_endpoint
 
 clean:
 	-$(GPRCLEAN) -P zerodds_ada_native.gpr

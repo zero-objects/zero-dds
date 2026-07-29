@@ -1,6 +1,5 @@
 ---
 source: crates/idl-rust/tests/snapshot_codegen.rs
-assertion_line: 230
 expression: run(idl)
 ---
 // SPDX-License-Identifier: Apache-2.0
@@ -25,7 +24,7 @@ impl zerodds_dcps::DdsType for Composite {
     const EXTENSIBILITY: zerodds_dcps::Extensibility = zerodds_dcps::Extensibility::Appendable;
     const HAS_KEY: bool = true;
     const KEY_HOLDER_MAX_SIZE: ::core::option::Option<usize> = ::core::option::Option::Some(8);
-    const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0x45, 0x0a, 0xbe, 0x89, 0x34, 0x0d, 0x54, 0x45, 0x07, 0x6d, 0xeb, 0x28, 0xc2, 0xbc]));
+    const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0x54, 0x1c, 0xe9, 0x31, 0x3c, 0xfd, 0xe0, 0x8c, 0xc0, 0xca, 0x53, 0x3f, 0x2b, 0xd7]));
 
     fn encode(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
         let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little).xcdr2();
@@ -96,11 +95,11 @@ impl zerodds_dcps::DdsType for Composite {
         holder.write_i32(self.b);
     }
 
-    fn field_value(&self, path: &str) -> ::core::option::Option<zerodds_sql_filter::Value> {
+    fn field_value(&self, path: &str) -> ::core::option::Option<zerodds_dcps::FilterValue> {
         match path {
-            "b" => ::core::option::Option::Some(zerodds_sql_filter::Value::Int(self.b as i64)),
-            "a" => ::core::option::Option::Some(zerodds_sql_filter::Value::Int(self.a as i64)),
-            "payload" => ::core::option::Option::Some(zerodds_sql_filter::Value::String(self.payload.clone())),
+            "b" => ::core::option::Option::Some(zerodds_dcps::FilterValue::Int(self.b as i64)),
+            "a" => ::core::option::Option::Some(zerodds_dcps::FilterValue::Int(self.a as i64)),
+            "payload" => ::core::option::Option::Some(zerodds_dcps::FilterValue::String(self.payload.clone())),
             _ => ::core::option::Option::None,
         }
     }

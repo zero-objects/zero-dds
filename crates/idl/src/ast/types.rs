@@ -460,6 +460,16 @@ pub struct ModuleDef {
     pub definitions: Vec<Definition>,
     pub annotations: Vec<Annotation>,
     pub span: Span,
+    /// Name-identifier span of every source occurrence that was merged into
+    /// this node — one entry for a plain module, N entries for a module
+    /// reopened N times (§7.4.1.4). The AST builder folds reopened
+    /// `module M { ... }` blocks into a single [`ModuleDef`] so backends
+    /// emit one wrapper per module instead of double-emitting (see
+    /// `ast::builder::merge_reopened_modules`); validators that care about
+    /// *where* each reopen occurred (e.g. the §7.4.6.4.1.4 effect-5
+    /// exposed-redefine check) inspect this instead of `name.span`, which
+    /// only ever reflects the first occurrence.
+    pub reopen_spans: Vec<Span>,
 }
 
 // ============================================================================
@@ -1161,6 +1171,7 @@ mod tests {
             definitions: vec![],
             annotations: vec![],
             span: s(0, 20),
+            reopen_spans: vec![s(7, 8)],
         });
         assert_eq!(m.span(), s(0, 20));
     }

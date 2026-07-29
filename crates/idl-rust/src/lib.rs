@@ -36,6 +36,22 @@
 //! | `@key` | `encode_key_holder_be` implementation |
 //! | `@id(N)` | member ID for mutable extensibility |
 //!
+//! ## Runtime dependencies of the generated code
+//!
+//! In default mode (`RustGenOptions::cdr_only == false`), the emitted Rust
+//! module needs exactly three ZeroDDS crates as `[dependencies]`:
+//! `zerodds-cdr` (`CdrEncode`/`CdrDecode`, wire types), `zerodds-dcps`
+//! (`DdsType`, plus `FilterValue` — the re-exported SQL-filter value type
+//! used by `field_value`) and `zerodds-types` (`TypeIdentifier` for
+//! `DdsType::TYPE_IDENTIFIER`). It does **not** need a
+//! direct dependency on `zerodds-sql-filter` — `field_value` goes through
+//! `zerodds_dcps::FilterValue`, exactly like `#[derive(DdsType)]` in
+//! `zerodds-cdr-derive` does, so a minimal typed user never has to add the
+//! filter crate to their own `Cargo.toml`.
+//!
+//! In `cdr_only` mode (the CORBA/GIOP path) the `DdsType` impl is omitted
+//! entirely, so only `zerodds-cdr` is needed.
+//!
 //! ## Example
 //!
 //! ```rust

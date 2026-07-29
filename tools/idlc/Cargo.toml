@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 authors.workspace = true
-description = "ZeroDDS IDL4 compiler CLI — Backends fuer C, C++, C#, Java, Python, Rust ueber zerodds-idl-* Codegen-Crates."
+description = "ZeroDDS IDL4 compiler CLI — 17 Backends (C/C++/Rust/TS/C#/Java/Python/Go/Nim/Zig/D/Ada/Elixir/OCaml/Julia/Lua/Swift) ueber die zerodds-idl-* Codegen-Crates."
 homepage = "https://zerodds.org"
 documentation = "https://docs.rs/zerodds-idlc"
 readme = "README.md"
@@ -24,9 +24,9 @@ workspace = true
 # Cyclone defaults @final). Exactly one should be active; the `--default-
 # extensibility` CLI flag overrides this at runtime regardless.
 default = ["ext-default-appendable"]
-ext-default-appendable = []
-ext-default-final = []
-ext-default-mutable = []
+ext-default-appendable = ["zerodds-idl-compose/ext-default-appendable"]
+ext-default-final = ["zerodds-idl-compose/ext-default-final"]
+ext-default-mutable = ["zerodds-idl-compose/ext-default-mutable"]
 
 [[bin]]
 name = "zerodds-idlc"
@@ -34,9 +34,20 @@ path = "src/main.rs"
 
 [dependencies]
 zerodds-idl = { version = "1.0.0-rc.6", path = "../../crates/idl" }
+zerodds-idl-compose = { version = "1.0.0-rc.6", path = "../../crates/idl-compose", default-features = false }
 zerodds-idl-cpp = { version = "1.0.0-rc.6", path = "../../crates/idl-cpp" }
 zerodds-idl-csharp = { version = "1.0.0-rc.6", path = "../../crates/idl-csharp" }
 zerodds-idl-java = { version = "1.0.0-rc.6", path = "../../crates/idl-java" }
+zerodds-idl-go = { version = "1.0.0-rc.6", path = "../../crates/idl-go" }
+zerodds-idl-nim = { version = "1.0.0-rc.6", path = "../../crates/idl-nim" }
+zerodds-idl-ocaml = { version = "1.0.0-rc.6", path = "../../crates/idl-ocaml" }
+zerodds-idl-julia = { version = "1.0.0-rc.6", path = "../../crates/idl-julia" }
+zerodds-idl-lua = { version = "1.0.0-rc.6", path = "../../crates/idl-lua" }
+zerodds-idl-swift = { version = "1.0.0-rc.6", path = "../../crates/idl-swift" }
+zerodds-idl-d = { version = "1.0.0-rc.6", path = "../../crates/idl-d" }
+zerodds-idl-elixir = { version = "1.0.0-rc.6", path = "../../crates/idl-elixir" }
+zerodds-idl-ada = { version = "1.0.0-rc.6", path = "../../crates/idl-ada" }
+zerodds-idl-zig = { version = "1.0.0-rc.6", path = "../../crates/idl-zig" }
 zerodds-idl-python = { version = "1.0.0-rc.6", path = "../../crates/idl-python" }
 zerodds-idl-rust = { version = "1.0.0-rc.6", path = "../../crates/idl-rust" }
 zerodds-idl-ts = { version = "1.0.0-rc.6", path = "../../crates/idl-ts" }

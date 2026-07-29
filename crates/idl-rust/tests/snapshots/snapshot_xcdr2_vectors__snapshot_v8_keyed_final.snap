@@ -1,6 +1,5 @@
 ---
 source: crates/idl-rust/tests/snapshot_xcdr2_vectors.rs
-assertion_line: 76
 expression: "gen_default(\"@final struct Sensor { @key long id; double value; };\")"
 ---
 // SPDX-License-Identifier: Apache-2.0
@@ -24,7 +23,7 @@ impl zerodds_dcps::DdsType for Sensor {
     const EXTENSIBILITY: zerodds_dcps::Extensibility = zerodds_dcps::Extensibility::Final;
     const HAS_KEY: bool = true;
     const KEY_HOLDER_MAX_SIZE: ::core::option::Option<usize> = ::core::option::Option::Some(4);
-    const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0x0f, 0xda, 0x52, 0x1a, 0xc0, 0x4d, 0x84, 0x42, 0xc7, 0x5b, 0x65, 0x50, 0x02, 0x04]));
+    const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0x78, 0xff, 0x9c, 0x53, 0xba, 0x72, 0x21, 0x6c, 0x54, 0x84, 0x3c, 0x99, 0xde, 0x29]));
 
     fn encode(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
         let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little).xcdr2();
@@ -78,10 +77,10 @@ impl zerodds_dcps::DdsType for Sensor {
         holder.write_i32(self.id);
     }
 
-    fn field_value(&self, path: &str) -> ::core::option::Option<zerodds_sql_filter::Value> {
+    fn field_value(&self, path: &str) -> ::core::option::Option<zerodds_dcps::FilterValue> {
         match path {
-            "id" => ::core::option::Option::Some(zerodds_sql_filter::Value::Int(self.id as i64)),
-            "value" => ::core::option::Option::Some(zerodds_sql_filter::Value::Float(self.value)),
+            "id" => ::core::option::Option::Some(zerodds_dcps::FilterValue::Int(self.id as i64)),
+            "value" => ::core::option::Option::Some(zerodds_dcps::FilterValue::Float(self.value)),
             _ => ::core::option::Option::None,
         }
     }

@@ -73,6 +73,11 @@ impl<'a> RecordReader<'a> {
         Self { bytes, cursor: 0 }
     }
 
+    /// Bytes not yet consumed.
+    fn remaining(&self) -> usize {
+        self.bytes.len().saturating_sub(self.cursor)
+    }
+
     fn need(&self, what: &'static str, n: usize) -> Result<&'a [u8], ReadError> {
         if self.cursor + n > self.bytes.len() {
             return Err(ReadError::Truncated {
@@ -154,6 +159,19 @@ impl<'a> RecordReader<'a> {
         let time_base = self.read_i64("time_base")?;
         let pn = self.read_u32("participant_count")? as usize;
         let tn = self.read_u32("topic_count")? as usize;
+        // Each ParticipantEntry needs >= 16 bytes (GUID) + 4 bytes (the
+        // participant_name length prefix); reject a wire-announced count
+        // that cannot possibly fit the bytes remaining *before*
+        // `Vec::with_capacity` — mirrors `crates/cdr/src/composite.rs`'s
+        // `len > reader.remaining()` guard.
+        const MIN_PARTICIPANT_BYTES: usize = 20;
+        if pn > self.remaining() / MIN_PARTICIPANT_BYTES {
+            return Err(ReadError::Truncated {
+                what: "participant_count",
+                need: pn.saturating_mul(MIN_PARTICIPANT_BYTES),
+                have: self.remaining(),
+            });
+        }
         let mut participants = Vec::with_capacity(pn);
         for _ in 0..pn {
             let guid_slice = self.read_bytes("participant_guid", 16)?;
@@ -161,6 +179,16 @@ impl<'a> RecordReader<'a> {
             guid.copy_from_slice(guid_slice);
             let name = self.read_string("participant_name")?;
             participants.push(ParticipantEntry { guid, name });
+        }
+        // Each TopicEntry needs >= 4 + 4 bytes (the two string length
+        // prefixes).
+        const MIN_TOPIC_BYTES: usize = 8;
+        if tn > self.remaining() / MIN_TOPIC_BYTES {
+            return Err(ReadError::Truncated {
+                what: "topic_count",
+                need: tn.saturating_mul(MIN_TOPIC_BYTES),
+                have: self.remaining(),
+            });
         }
         let mut topics = Vec::with_capacity(tn);
         for _ in 0..tn {
@@ -321,6 +349,49 @@ mod tests {
             r.parse_header(),
             Err(ReadError::UnsupportedVersion(999))
         ));
+    }
+
+    // -------------------------------------------------------------
+    // Buffer-cap hardening — a wire-announced participant_count /
+    // topic_count that cannot possibly fit the bytes remaining in
+    // the file must be rejected cleanly (no OOM, no panic) *before*
+    // `Vec::with_capacity` runs. Mirrors the established
+    // `len > reader.remaining()` guard in
+    // crates/cdr/src/composite.rs.
+    // -------------------------------------------------------------
+
+    #[test]
+    fn huge_participant_count_with_tiny_file_is_rejected_cleanly() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&ZDDSREC_MAGIC);
+        buf.extend_from_slice(&ZDDSREC_VERSION.to_le_bytes());
+        buf.extend_from_slice(&0i64.to_le_bytes()); // time_base
+        buf.extend_from_slice(&u32::MAX.to_le_bytes()); // participant_count
+        buf.extend_from_slice(&0u32.to_le_bytes()); // topic_count
+        // No participant bytes follow — a naive `Vec::with_capacity`
+        // would attempt a many-GB allocation from this ~20-byte file.
+        let mut r = RecordReader::new(&buf);
+        let res = r.parse_header();
+        assert!(
+            matches!(res, Err(ReadError::Truncated { what: "participant_count", .. })),
+            "expected clean Truncated rejection, got {res:?}"
+        );
+    }
+
+    #[test]
+    fn huge_topic_count_with_tiny_file_is_rejected_cleanly() {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&ZDDSREC_MAGIC);
+        buf.extend_from_slice(&ZDDSREC_VERSION.to_le_bytes());
+        buf.extend_from_slice(&0i64.to_le_bytes()); // time_base
+        buf.extend_from_slice(&0u32.to_le_bytes()); // participant_count
+        buf.extend_from_slice(&u32::MAX.to_le_bytes()); // topic_count
+        let mut r = RecordReader::new(&buf);
+        let res = r.parse_header();
+        assert!(
+            matches!(res, Err(ReadError::Truncated { what: "topic_count", .. })),
+            "expected clean Truncated rejection, got {res:?}"
+        );
     }
 
     #[test]

@@ -25,6 +25,16 @@ package Native_Framing is
       Seq     : Unsigned_16;
       Sample  : Byte_Array) return Byte_Array;
 
+   --  Locate the sample body inside a received WRITE_DATA frame. The 8-byte
+   --  envelope (header + submessage header) is skipped; `Body_First .. Body_Last`
+   --  index into `Frame` (empty body -> Body_Last = Body_First - 1). `Valid` is
+   --  False if the frame is too short or not a WRITE_DATA submessage.
+   procedure Xrce_Read_Frame
+     (Frame      : Byte_Array;
+      Body_First : out Natural;
+      Body_Last  : out Integer;
+      Valid      : out Boolean);
+
    --  CRC-16/CCITT-FALSE (poly 0x1021, init 0xFFFF, no reflection).
    function Crc16_Ccitt_False (Data : Byte_Array) return Unsigned_16;
 

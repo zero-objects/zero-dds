@@ -1898,6 +1898,111 @@ fn normalize_member(m: &Member) -> Member {
     m2
 }
 
+/// Raw struct-def lookup by scoped name, with NO gate on whether every one
+/// of the struct's members is codecable by the *general* XCDR2 encoder
+/// (unlike `scoped_struct`, which requires that — see `all_encodable`). The
+/// KeyHash-specific walker (`emit_key_value_write`) dealiases and expands
+/// independently of the general encoder, so a nested struct that the general
+/// encoder cannot fully encode (e.g. because one of ITS members is a typedef
+/// alias) can still be found and expanded here.
+fn struct_def_raw(s: &ScopedName) -> Option<StructDef> {
+    let last = s.parts.last()?.text.clone();
+    STRUCT_DEFS.with(|r| r.borrow().get(&last).cloned())
+}
+
+/// Sorts `members` into ascending member-id order (explicit `@id(N)`, else
+/// positional index within `members`) — XTypes 1.3 §7.6.8.3.1.b / the same
+/// convention `@mutable` EMHEADER member-id assignment uses elsewhere in this
+/// file (see `find_uint_annotation(&m.annotations, "id")` at the `@mutable`
+/// emit sites).
+fn sort_members_by_id<'a>(members: &[&'a Member]) -> Vec<&'a Member> {
+    let mut ordered: Vec<(u32, &Member)> = members
+        .iter()
+        .enumerate()
+        .map(|(idx, m)| {
+            (
+                find_uint_annotation(&m.annotations, "id").unwrap_or(idx as u32),
+                *m,
+            )
+        })
+        .collect();
+    ordered.sort_by_key(|(id, _)| *id);
+    ordered.into_iter().map(|(_, m)| m).collect()
+}
+
+/// KeyHash-specific value writer (XTypes 1.3 §7.6.8). Recurses through
+/// typedef alias chains (dealiasing independently of the general encoder's
+/// `typespec_supported`/`scoped_struct` gate — FINDING: a nested struct
+/// whose own member was a typedef used to make the ENTIRE outer `@key`
+/// member vanish from the KeyHash, worse than the over-inclusion bug below).
+///
+/// For a member whose (dealiased) type is a nested struct, expands to that
+/// struct's own `@key` subset (or ALL its members if it declares none —
+/// XTypes 1.3 §7.6.8: a keyless aggregate is keyed in full), in member-id
+/// order, regardless of the struct's own extensibility: a KeyHolder is
+/// always the FLAT concatenation of key bytes, never DHEADER-framed, even
+/// when the general (non-key) encoder would splice an @appendable/@mutable
+/// nested struct's own framed encode.
+///
+/// Falls back to the generic `emit_value_write` for primitives, strings,
+/// enums, unions, bitholders — the investigation found those already
+/// correct via the existing generic per-field encoder.
+/// zerodds-lint: recursion-depth 16
+fn emit_key_value_write(
+    out: &mut String,
+    ts: &TypeSpec,
+    access: &str,
+    endian: &str,
+    origin: &str,
+) -> Result<(), CppGenError> {
+    if let TypeSpec::Scoped(s) = ts {
+        let resolved = resolve_typedef_spec(ts);
+        if resolved != *ts {
+            return emit_key_value_write(out, &resolved, access, endian, origin);
+        }
+        if let Some(def) = struct_def_raw(s) {
+            let nested_keys: Vec<&Member> = def
+                .members
+                .iter()
+                .filter(|m| has_key_annotation(&m.annotations))
+                .collect();
+            let effective: Vec<&Member> = if nested_keys.is_empty() {
+                def.members.iter().collect()
+            } else {
+                nested_keys
+            };
+            for m in sort_members_by_id(&effective) {
+                for decl in &m.declarators {
+                    let field = &decl.name().text;
+                    if matches!(decl, Declarator::Array(_)) {
+                        // Loud codegen error, not a silent skip: dropping the
+                        // field from the KeyHash would silently under-encode
+                        // the KeyHolder (same class of bug this function
+                        // exists to fix). Matches the other 12 backends'
+                        // identical rejection of an array field inside a
+                        // nested-struct @key (e.g. `idl-rust`'s
+                        // `emit_key_field_write`, `idl-go`'s
+                        // `emit_key_struct_member`).
+                        return Err(CppGenError::UnsupportedConstruct {
+                            construct: "array field inside a nested-struct @key".to_string(),
+                            context: Some(field.clone()),
+                        });
+                    }
+                    emit_key_value_write(
+                        out,
+                        &m.type_spec,
+                        &format!("{access}.{field}()"),
+                        endian,
+                        origin,
+                    )?;
+                }
+            }
+            return Ok(());
+        }
+    }
+    emit_value_write(out, ts, access, endian, origin, "    ")
+}
+
 /// If `s` resolves to a union, return its [`UnionDef`]. A union member is wired
 /// (Bug R3) via the union's own DHEADER-framed `topic_type_support<Union>`
 /// encode/decode (splice path, identical to an `@appendable` nested struct).
@@ -4474,18 +4579,45 @@ fn emit_value_read(
             .map_err(fmt_err)?;
         }
         TypeSpec::String(s) if !s.wide => {
-            writeln!(
-                out,
-                "{indent}{setter}(::dds::topic::xcdr2::read_string_origin(zd_buf, zd_pos, zd_len, {origin}, zd_max_align, zd_be));"
-            )
-            .map_err(fmt_err)?;
+            // B1 follow-up (#22 decode-side parity): mirror the encode-side
+            // bound check (`emit_value_write` above) on decode — XTypes 1.3
+            // §7.4.3 requires the IDL bound enforced on BOTH sides, not just
+            // the wire's remaining-buffer check that `read_string_origin`
+            // already does.
+            if let Some(b) = &s.bound {
+                let bv = const_expr_to_cpp(b);
+                let id = next_nest_id();
+                let tmp = format!("zd_bc{id}");
+                writeln!(
+                    out,
+                    "{indent}{{ auto {tmp} = ::dds::topic::xcdr2::read_string_origin(zd_buf, zd_pos, zd_len, {origin}, zd_max_align, zd_be); if ({tmp}.size() > {bv}) throw std::length_error(\"decoded string length exceeds its IDL bound ({bv})\"); {setter}(std::move({tmp})); }}"
+                )
+                .map_err(fmt_err)?;
+            } else {
+                writeln!(
+                    out,
+                    "{indent}{setter}(::dds::topic::xcdr2::read_string_origin(zd_buf, zd_pos, zd_len, {origin}, zd_max_align, zd_be));"
+                )
+                .map_err(fmt_err)?;
+            }
         }
         TypeSpec::String(s) if s.wide => {
-            writeln!(
-                out,
-                "{indent}{setter}(::dds::topic::xcdr2::read_wstring_origin(zd_buf, zd_pos, zd_len, {origin}, zd_max_align, zd_be));"
-            )
-            .map_err(fmt_err)?;
+            if let Some(b) = &s.bound {
+                let bv = const_expr_to_cpp(b);
+                let id = next_nest_id();
+                let tmp = format!("zd_bc{id}");
+                writeln!(
+                    out,
+                    "{indent}{{ auto {tmp} = ::dds::topic::xcdr2::read_wstring_origin(zd_buf, zd_pos, zd_len, {origin}, zd_max_align, zd_be); if ({tmp}.size() > {bv}) throw std::length_error(\"decoded wstring length exceeds its IDL bound ({bv})\"); {setter}(std::move({tmp})); }}"
+                )
+                .map_err(fmt_err)?;
+            } else {
+                writeln!(
+                    out,
+                    "{indent}{setter}(::dds::topic::xcdr2::read_wstring_origin(zd_buf, zd_pos, zd_len, {origin}, zd_max_align, zd_be));"
+                )
+                .map_err(fmt_err)?;
+            }
         }
         TypeSpec::Sequence(seq) => {
             if matches!(&*seq.elem, TypeSpec::Primitive(PrimitiveType::Octet)) {
@@ -4497,6 +4629,18 @@ fn emit_value_read(
                     "{indent}    ::dds::topic::xcdr2::check_avail(zd_pos, zd_cnt, zd_len);"
                 )
                 .map_err(fmt_err)?;
+                // B1 follow-up (#22 decode-side parity): mirror the encode-side
+                // bound check — XTypes 1.3 §7.4.3 requires the IDL bound
+                // enforced on decode too, not just the wire's remaining-buffer
+                // check `check_avail` already does above.
+                if let Some(b) = &seq.bound {
+                    let bv = const_expr_to_cpp(b);
+                    writeln!(
+                        out,
+                        "{indent}    if (zd_cnt > {bv}) throw std::length_error(\"decoded sequence length exceeds its IDL bound ({bv})\");"
+                    )
+                    .map_err(fmt_err)?;
+                }
                 writeln!(
                     out,
                     "{indent}    std::vector<uint8_t> zd_seq(zd_buf + zd_pos, zd_buf + zd_pos + zd_cnt);"
@@ -4544,6 +4688,16 @@ fn emit_value_read(
                 writeln!(out, "{indent}    const auto zd_seq_dh = ::dds::topic::xcdr2::dheader_read_r(zd_buf, zd_pos, zd_len, zd_be, zd_repr); (void)zd_seq_dh;").map_err(fmt_err)?;
             }
             writeln!(out, "{indent}    auto zd_cnt = ::dds::topic::xcdr2::read_le_origin<uint32_t>(zd_buf, zd_pos, zd_len, {origin}, zd_max_align, zd_be);").map_err(fmt_err)?;
+            // B1 follow-up (#22 decode-side parity): mirror the encode-side
+            // bound check — XTypes 1.3 §7.4.3.
+            if let Some(b) = &seq.bound {
+                let bv = const_expr_to_cpp(b);
+                writeln!(
+                    out,
+                    "{indent}    if (zd_cnt > {bv}) throw std::length_error(\"decoded sequence length exceeds its IDL bound ({bv})\");"
+                )
+                .map_err(fmt_err)?;
+            }
             writeln!(out, "{indent}    std::vector<{elem_cpp_ty}> zd_seq;").map_err(fmt_err)?;
             writeln!(out, "{indent}    zd_seq.reserve(zd_cnt);").map_err(fmt_err)?;
             writeln!(
@@ -4719,6 +4873,16 @@ fn emit_value_read(
                 writeln!(out, "{inner}const auto zd_map_dh = ::dds::topic::xcdr2::dheader_read_r(zd_buf, zd_pos, zd_len, zd_be, zd_repr); (void)zd_map_dh;").map_err(fmt_err)?;
             }
             writeln!(out, "{inner}auto zd_mcnt = ::dds::topic::xcdr2::read_le_origin<uint32_t>(zd_buf, zd_pos, zd_len, {origin}, zd_max_align, zd_be);").map_err(fmt_err)?;
+            // B1 follow-up (#22 decode-side parity): mirror the encode-side
+            // bound check — XTypes 1.3 §7.4.3.
+            if let Some(b) = &m.bound {
+                let bv = const_expr_to_cpp(b);
+                writeln!(
+                    out,
+                    "{inner}if (zd_mcnt > {bv}) throw std::length_error(\"decoded map length exceeds its IDL bound ({bv})\");"
+                )
+                .map_err(fmt_err)?;
+            }
             writeln!(out, "{inner}std::map<{k_ty}, {v_ty}> {mapv};").map_err(fmt_err)?;
             writeln!(
                 out,
@@ -5031,13 +5195,31 @@ fn emit_mutable_member_decode_case(
                 // Read the string body directly from the EMHEADER body origin.
                 writeln!(out, "                    auto zd_body_origin = zd_pos;")
                     .map_err(fmt_err)?;
-                writeln!(out, "                    zd_v.{name}(::dds::topic::xcdr2::read_string_origin(zd_buf, zd_pos, zd_len, zd_body_origin, zd_max_align, zd_be));").map_err(fmt_err)?;
+                // B1 follow-up (#22 decode-side parity): mirror the encode-side
+                // bound check — XTypes 1.3 §7.4.3.
+                if let Some(b) = &s.bound {
+                    let bv = const_expr_to_cpp(b);
+                    writeln!(out, "                    auto zd_bcs = ::dds::topic::xcdr2::read_string_origin(zd_buf, zd_pos, zd_len, zd_body_origin, zd_max_align, zd_be);").map_err(fmt_err)?;
+                    writeln!(out, "                    if (zd_bcs.size() > {bv}) throw std::length_error(\"decoded string length exceeds its IDL bound ({bv})\");").map_err(fmt_err)?;
+                    writeln!(out, "                    zd_v.{name}(std::move(zd_bcs));")
+                        .map_err(fmt_err)?;
+                } else {
+                    writeln!(out, "                    zd_v.{name}(::dds::topic::xcdr2::read_string_origin(zd_buf, zd_pos, zd_len, zd_body_origin, zd_max_align, zd_be));").map_err(fmt_err)?;
+                }
             }
             TypeSpec::String(s) if s.wide => {
                 // EMHEADER LC=5 (Bug XV-mut): wstring octet-length prefix = NEXTINT.
                 writeln!(out, "                    auto zd_body_origin = zd_pos;")
                     .map_err(fmt_err)?;
-                writeln!(out, "                    zd_v.{name}(::dds::topic::xcdr2::read_wstring_origin(zd_buf, zd_pos, zd_len, zd_body_origin, zd_max_align, zd_be));").map_err(fmt_err)?;
+                if let Some(b) = &s.bound {
+                    let bv = const_expr_to_cpp(b);
+                    writeln!(out, "                    auto zd_bcw = ::dds::topic::xcdr2::read_wstring_origin(zd_buf, zd_pos, zd_len, zd_body_origin, zd_max_align, zd_be);").map_err(fmt_err)?;
+                    writeln!(out, "                    if (zd_bcw.size() > {bv}) throw std::length_error(\"decoded wstring length exceeds its IDL bound ({bv})\");").map_err(fmt_err)?;
+                    writeln!(out, "                    zd_v.{name}(std::move(zd_bcw));")
+                        .map_err(fmt_err)?;
+                } else {
+                    writeln!(out, "                    zd_v.{name}(::dds::topic::xcdr2::read_wstring_origin(zd_buf, zd_pos, zd_len, zd_body_origin, zd_max_align, zd_be));").map_err(fmt_err)?;
+                }
             }
             TypeSpec::Sequence(seq) => {
                 // FINDING T1b: a sequence<primitive> is LC=4 (separate NEXTINT to
@@ -5056,6 +5238,16 @@ fn emit_mutable_member_decode_case(
                     writeln!(out, "                    {{ const auto zd_seq_dh = ::dds::topic::xcdr2::dheader_read_r(zd_buf, zd_pos, zd_len, zd_be, zd_repr); (void)zd_seq_dh; }}").map_err(fmt_err)?;
                 }
                 writeln!(out, "                    auto zd_cnt = ::dds::topic::xcdr2::read_le_origin<uint32_t>(zd_buf, zd_pos, zd_len, zd_body_origin, zd_max_align, zd_be);").map_err(fmt_err)?;
+                // B1 follow-up (#22 decode-side parity): mirror the encode-side
+                // bound check — XTypes 1.3 §7.4.3.
+                if let Some(b) = &seq.bound {
+                    let bv = const_expr_to_cpp(b);
+                    writeln!(
+                        out,
+                        "                    if (zd_cnt > {bv}) throw std::length_error(\"decoded sequence length exceeds its IDL bound ({bv})\");"
+                    )
+                    .map_err(fmt_err)?;
+                }
                 if matches!(&*seq.elem, TypeSpec::Primitive(PrimitiveType::Octet)) {
                     // sequence<octet>: raw byte block directly from the buffer.
                     writeln!(
@@ -5261,6 +5453,16 @@ fn emit_mutable_member_decode_case(
                 // unconditionally, then read the count. (See encode arm above.)
                 writeln!(out, "                    {{ const auto zd_map_dh = ::dds::topic::xcdr2::dheader_read_r(zd_buf, zd_pos, zd_len, zd_be, zd_repr); (void)zd_map_dh; }}").map_err(fmt_err)?;
                 writeln!(out, "                    auto zd_mcnt = ::dds::topic::xcdr2::read_le_origin<uint32_t>(zd_buf, zd_pos, zd_len, zd_body_origin, zd_max_align, zd_be);").map_err(fmt_err)?;
+                // B1 follow-up (#22 decode-side parity): mirror the encode-side
+                // bound check — XTypes 1.3 §7.4.3.
+                if let Some(b) = &m.bound {
+                    let bv = const_expr_to_cpp(b);
+                    writeln!(
+                        out,
+                        "                    if (zd_mcnt > {bv}) throw std::length_error(\"decoded map length exceeds its IDL bound ({bv})\");"
+                    )
+                    .map_err(fmt_err)?;
+                }
                 writeln!(out, "                    std::map<{k_ty}, {v_ty}> {mapv};")
                     .map_err(fmt_err)?;
                 writeln!(
@@ -5355,10 +5557,76 @@ fn emit_key_hash_fn(
     )
     .map_err(fmt_err)?;
     writeln!(out, "        (void)zd_max_align;").map_err(fmt_err)?;
-    for m in &s.members {
-        if !has_key_annotation(&m.annotations) {
+    // XTypes 1.3 §7.6.8.3.1.b: KeyHolder members in ascending member-id order
+    // (explicit `@id(N)`, else positional index among the `@key` members) —
+    // NOT declaration order.
+    let key_members: Vec<&Member> = s
+        .members
+        .iter()
+        .filter(|m| has_key_annotation(&m.annotations))
+        .collect();
+    for m in sort_members_by_id(&key_members) {
+        let dealiased = normalize_member(m);
+        // A `@key` member whose (typedef-dealiased) type is a nested struct
+        // is NOT delegated to `emit_plain_member_encode` (whose Scoped-struct
+        // arm — via `emit_value_write` — encodes the WHOLE nested struct, and
+        // for @appendable/@mutable splices the struct's own DHEADER-framed
+        // encode). A KeyHolder is always the FLAT concatenation of that
+        // struct's own `@key` subset (XTypes 1.3 §7.6.8), independent of the
+        // struct's own extensibility — expand it with `emit_key_value_write`
+        // instead. `struct_def_raw` (unlike `scoped_struct`) has no
+        // "all-members-generically-encodable" gate, so a nested struct that
+        // itself contains a typedef-aliased member (previously making the
+        // whole outer member silently vanish from the KeyHash) is still
+        // found and expanded here.
+        let is_struct_key =
+            matches!(&dealiased.type_spec, TypeSpec::Scoped(sc) if struct_def_raw(sc).is_some());
+        if is_struct_key {
+            for decl in &dealiased.declarators {
+                let name = &decl.name().text;
+                match decl {
+                    Declarator::Simple(_) => {
+                        emit_key_value_write(
+                            out,
+                            &dealiased.type_spec,
+                            &format!("zd_v.{name}()"),
+                            "be",
+                            "zd_origin",
+                        )?;
+                    }
+                    // Array-of-struct `@key` member (e.g. `@key Inner arr[3]`):
+                    // NOT delegated to `emit_plain_member_encode` (whose
+                    // array-of-struct branch wraps a DHEADER and encodes each
+                    // element's WHOLE struct via `emit_value_write` — wrong on
+                    // both counts for a KeyHolder, which is always the FLAT,
+                    // un-framed concatenation of key bytes, XTypes 1.3
+                    // §7.6.8). N nested range-for loops (row-major, same
+                    // shape as the primitive multi-dim array path above) feed
+                    // each element straight into `emit_key_value_write`,
+                    // which expands it to just its own `@key` subset — same
+                    // fix as the Simple-declarator case, extended over the
+                    // array's elements instead of skipping it.
+                    Declarator::Array(arr) => {
+                        let n = arr.sizes.len();
+                        let mut acc = format!("zd_v.{name}()");
+                        for d in 0..n {
+                            let lv = format!("zd_akey{d}");
+                            writeln!(out, "        for (const auto& {lv} : {acc}) {{")
+                                .map_err(fmt_err)?;
+                            acc = lv;
+                        }
+                        emit_key_value_write(out, &dealiased.type_spec, &acc, "be", "zd_origin")?;
+                        for _ in 0..n {
+                            writeln!(out, "        }}").map_err(fmt_err)?;
+                        }
+                    }
+                }
+            }
             continue;
         }
+        // Primitive / string / enum / union / bitholder / sequence / array
+        // `@key` members: the investigation found the existing generic
+        // per-field encoder already correct for these shapes — reuse it.
         emit_plain_member_encode(out, m, "be", "zd_origin")?;
     }
     // XTypes 1.3 §7.6.8.4: holder ≤ 16 octets -> zero-pad; otherwise MD5.

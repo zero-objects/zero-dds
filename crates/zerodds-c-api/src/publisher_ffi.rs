@@ -201,6 +201,7 @@ pub unsafe extern "C" fn zerodds_pub_create_datawriter(
             // endpoint config so `partitions_overlap` (DDS 1.4 §2.2.3.10) gates
             // matching. Previously hardcoded empty → every writer landed in the
             // default partition regardless of the requested names.
+            presentation: Default::default(),
             partition: qos.partition.names.clone(),
             user_data: qos.user_data.value.clone(),
             topic_data: qos.topic_data.value.clone(),

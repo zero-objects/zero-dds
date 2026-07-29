@@ -179,6 +179,15 @@ L1-L4 gegen [`zerodds-xcdr2-bindings-conformance-1.0`](zerodds-xcdr2-bindings-co
 `crates/java-omgdds/java/examples/TopicTypedSmoke.java` ist Referenz-
 Smoke (generierter `PointTypeSupport` + Pub/Sub-Loop).
 
+Lauffähige Deep-Examples (sync + async, Sensor-Telemetrie
+`Reading { id, value, label }`, über den `Zdw`-Wire-Core byte-identisch):
+
+- Sync: [`endpoints/java/ExampleSync.java`](../../endpoints/java/ExampleSync.java)
+  — Poll-Loop über eine In-Memory-FIFO, voller Feld-Decode.
+- Async: [`endpoints/java/ExampleAsync.java`](../../endpoints/java/ExampleAsync.java)
+  — Reader-Thread + `BlockingQueue`, Consumer blockt auf `take()`.
+- Quickstart: [`endpoints/java/QUICKSTART.md`](../../endpoints/java/QUICKSTART.md).
+
 ## §11 Errata + Open-Questions
 
 - **§11.1 Java `byte` ist signed**: Wire-Bytes sind `uint8`-semantisch.

@@ -1,6 +1,5 @@
 ---
 source: crates/idl-rust/tests/snapshot_xcdr2_vectors.rs
-assertion_line: 69
 expression: "gen_default(\"module Outer { module Inner { @final struct S { long x; }; }; };\")"
 ---
 // SPDX-License-Identifier: Apache-2.0
@@ -27,7 +26,7 @@ pub mod Outer {
         impl zerodds_dcps::DdsType for S {
             const TYPE_NAME: &'static str = "Outer::Inner::S";
             const EXTENSIBILITY: zerodds_dcps::Extensibility = zerodds_dcps::Extensibility::Final;
-            const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0x8d, 0xd4, 0x51, 0xf5, 0x36, 0xfb, 0x4f, 0x96, 0xe5, 0x10, 0x9a, 0xa3, 0xe6, 0x23]));
+            const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0x2d, 0xb5, 0x8f, 0xd2, 0x7b, 0xcd, 0x55, 0x72, 0x3a, 0xff, 0x3f, 0x31, 0x3a, 0xd9]));
 
             fn encode(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
                 let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little).xcdr2();
@@ -71,9 +70,9 @@ pub mod Outer {
                 <Self as zerodds_cdr::CdrDecode>::decode(&mut reader).map_err(::core::convert::Into::into)
             }
 
-            fn field_value(&self, path: &str) -> ::core::option::Option<zerodds_sql_filter::Value> {
+            fn field_value(&self, path: &str) -> ::core::option::Option<zerodds_dcps::FilterValue> {
                 match path {
-                    "x" => ::core::option::Option::Some(zerodds_sql_filter::Value::Int(self.x as i64)),
+                    "x" => ::core::option::Option::Some(zerodds_dcps::FilterValue::Int(self.x as i64)),
                     _ => ::core::option::Option::None,
                 }
             }

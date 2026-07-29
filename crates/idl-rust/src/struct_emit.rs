@@ -61,10 +61,10 @@ pub fn emit_struct(out: &mut String, s: &StructDef, module_path: &[String]) -> R
 }
 
 /// Like [`emit_struct`], but with a `cdr_only` switch: at `true` the
-/// `DdsType` impl (XCDR2 + `field_value`, pulls `zerodds_dcps`/`zerodds_types`/
-/// `zerodds_sql_filter`) is omitted. Only the struct decl + classic
-/// `CdrEncode`/`CdrDecode` remain — exactly what the CORBA/GIOP path needs
-/// (no DDS topic pipeline, hence no DdsType dependencies).
+/// `DdsType` impl (XCDR2 + `field_value`, pulls `zerodds_dcps`/`zerodds_types`)
+/// is omitted. Only the struct decl + classic `CdrEncode`/`CdrDecode` remain —
+/// exactly what the CORBA/GIOP path needs (no DDS topic pipeline, hence no
+/// DdsType dependencies).
 pub fn emit_struct_with_mode(
     out: &mut String,
     s: &StructDef,
@@ -566,7 +566,7 @@ fn emit_dds_type_impl(
     Ok(())
 }
 
-/// Emittiert `fn field_value(&self, path: &str) -> Option<zerodds_sql_filter::Value>`
+/// Emittiert `fn field_value(&self, path: &str) -> Option<zerodds_dcps::FilterValue>`
 /// for SQL-filter evaluation (QueryCondition / ContentFilteredTopic).
 ///
 /// DDS 1.4 §B.2.1: filter expressions reference field values via
@@ -574,7 +574,7 @@ fn emit_dds_type_impl(
 /// as a deterministic match-arm table.
 fn emit_field_value(out: &mut String, s: &StructDef) -> Result<()> {
     out.push_str(
-        "    fn field_value(&self, path: &str) -> ::core::option::Option<zerodds_sql_filter::Value> {\n",
+        "    fn field_value(&self, path: &str) -> ::core::option::Option<zerodds_dcps::FilterValue> {\n",
     );
     out.push_str("        match path {\n");
     for member in &s.members {
@@ -636,11 +636,11 @@ fn emit_field_value_arm(
             K::Enum => {
                 let expr = if optional {
                     format!(
-                        "self.{name}.as_ref().map(|v| zerodds_sql_filter::Value::Int(*v as i64))"
+                        "self.{name}.as_ref().map(|v| zerodds_dcps::FilterValue::Int(*v as i64))"
                     )
                 } else {
                     format!(
-                        "::core::option::Option::Some(zerodds_sql_filter::Value::Int(self.{name} as i64))"
+                        "::core::option::Option::Some(zerodds_dcps::FilterValue::Int(self.{name} as i64))"
                     )
                 };
                 out.push_str(&format!("            \"{name}\" => {expr},\n"));
@@ -662,28 +662,28 @@ fn emit_field_value_arm(
             | PrimitiveType::Char
             | PrimitiveType::WideChar,
         ) => Some(if optional {
-            format!("self.{name}.as_ref().map(|v| zerodds_sql_filter::Value::Int(*v as i64))")
+            format!("self.{name}.as_ref().map(|v| zerodds_dcps::FilterValue::Int(*v as i64))")
         } else {
             format!(
-                "::core::option::Option::Some(zerodds_sql_filter::Value::Int(self.{name} as i64))"
+                "::core::option::Option::Some(zerodds_dcps::FilterValue::Int(self.{name} as i64))"
             )
         }),
         TypeSpec::Primitive(PrimitiveType::Floating(FloatingType::Float)) => Some(if optional {
-            format!("self.{name}.as_ref().map(|v| zerodds_sql_filter::Value::Float(*v as f64))")
+            format!("self.{name}.as_ref().map(|v| zerodds_dcps::FilterValue::Float(*v as f64))")
         } else {
             format!(
-                "::core::option::Option::Some(zerodds_sql_filter::Value::Float(self.{name} as f64))"
+                "::core::option::Option::Some(zerodds_dcps::FilterValue::Float(self.{name} as f64))"
             )
         }),
         TypeSpec::Primitive(PrimitiveType::Floating(_)) => Some(if optional {
-            format!("self.{name}.as_ref().map(|v| zerodds_sql_filter::Value::Float(*v))")
+            format!("self.{name}.as_ref().map(|v| zerodds_dcps::FilterValue::Float(*v))")
         } else {
-            format!("::core::option::Option::Some(zerodds_sql_filter::Value::Float(self.{name}))")
+            format!("::core::option::Option::Some(zerodds_dcps::FilterValue::Float(self.{name}))")
         }),
         TypeSpec::Primitive(PrimitiveType::Boolean) => Some(if optional {
-            format!("self.{name}.as_ref().map(|v| zerodds_sql_filter::Value::Bool(*v))")
+            format!("self.{name}.as_ref().map(|v| zerodds_dcps::FilterValue::Bool(*v))")
         } else {
-            format!("::core::option::Option::Some(zerodds_sql_filter::Value::Bool(self.{name}))")
+            format!("::core::option::Option::Some(zerodds_dcps::FilterValue::Bool(self.{name}))")
         }),
         // A narrow `string` is a Rust `String` (clone directly); a wide
         // `wstring` is `zerodds_cdr::WString` (a newtype over `String`), so
@@ -699,10 +699,10 @@ fn emit_field_value_arm(
             };
             Some(if optional {
                 let inner = to_string("v");
-                format!("self.{name}.as_ref().map(|v| zerodds_sql_filter::Value::String({inner}))")
+                format!("self.{name}.as_ref().map(|v| zerodds_dcps::FilterValue::String({inner}))")
             } else {
                 let inner = to_string(&format!("self.{name}"));
-                format!("::core::option::Option::Some(zerodds_sql_filter::Value::String({inner}))")
+                format!("::core::option::Option::Some(zerodds_dcps::FilterValue::String({inner}))")
             })
         }
         // Scoped is resolved and fully handled by the early return above.
@@ -787,11 +787,20 @@ fn key_holder_atom_size(spec: &TypeSpec, offset: usize) -> Option<usize> {
             Some(pad_to(offset, 4).checked_add(size)?)
         }
         TypeSpec::Scoped(scoped) => {
+            // A typedef alias: dealias first (FINDING #20 fix) and recurse on
+            // the resolved type — typedef-to-primitive/string then lands in
+            // the Primitive/String arms above, typedef-to-struct lands back
+            // here with the terminal struct name (struct_def_by_scoped
+            // below), typedef-to-seq/map/fixed correctly falls to `None`
+            // (MD5) via the matching arm for that TypeSpec variant.
+            if let Some(resolved) = crate::type_map::resolve_typedef_to_spec(scoped) {
+                return key_holder_atom_size(&resolved, offset);
+            }
             // Nested-struct @key: expand its own @key members in member-id
-            // order (FINDING F2). A scoped non-struct (enum/typedef-to-prim)
-            // is keyed as its underlying integer — but those don't appear as
-            // @key aggregate members in the proof corpus; fall back to MD5
-            // (None) if it is not a resolvable struct.
+            // order (FINDING F2). A scoped non-struct (genuine enum/unresolved
+            // name) is keyed as its underlying integer — but those don't
+            // appear as @key aggregate members in the proof corpus; fall
+            // back to MD5 (None) if it is not a resolvable struct.
             let sd = crate::type_map::struct_def_by_scoped(scoped)?;
             let nested_keys: Vec<&Member> = sd
                 .members
@@ -908,6 +917,16 @@ fn emit_key_field_write(out: &mut String, spec: &TypeSpec, value_expr: &str) -> 
             out.push_str(&format!("        holder.write_string(&{value_expr});\n"));
         }
         TypeSpec::Scoped(scoped) => {
+            // A typedef alias: dealias first (FINDING #20 fix) and recurse on
+            // the resolved type — typedef-to-primitive/string then emits via
+            // the Primitive/String arms above, typedef-to-struct lands back
+            // here with the terminal struct name (struct_def_by_scoped
+            // below), typedef-to-seq/map/fixed correctly falls into the
+            // matching, correctly-labeled error arm for that TypeSpec variant
+            // instead of the generic "enum or unresolved nested type" one.
+            if let Some(resolved) = crate::type_map::resolve_typedef_to_spec(scoped) {
+                return emit_key_field_write(out, &resolved, value_expr);
+            }
             // FINDING F2: a nested-struct `@key` member expands recursively
             // into the nested struct's own `@key` members, in member-id order
             // (XTypes 1.3 §7.6.8 step 3) — exactly what CycloneDDS / RTI /
@@ -1299,6 +1318,82 @@ fn emit_bound_checks(out: &mut String, spec: &TypeSpec, value_expr: &str, depth:
     }
 }
 
+/// Decode-side mirror of [`emit_bound_checks`] — regression #22 / XTypes 1.3
+/// §7.4.3: the IDL bound of a `string<N>` / `wstring<N>` / `sequence<T,N>` /
+/// `map<K,V,N>` must be enforced on BOTH encode and decode, not just encode.
+/// Before this, a generated `decode` only rejected a value that overran the
+/// remaining wire buffer (`zerodds_cdr` composite decoders) — a `string<8>`
+/// field decoded a well-formed-but-oversized payload (e.g. 1 MB) without
+/// complaint, an untrusted-input DoS vector. Emits the identical recursive
+/// shape as the encode-side check (same nesting for `sequence<sequence<T,N>>`
+/// / `map<K,V,N>`), but raises `DecodeError::BoundExceeded` instead of
+/// `EncodeError::ValueOutOfRange`, since the value already exists in memory
+/// by the time this runs (checked post-decode, not pre-encode).
+///
+/// zerodds-lint: recursion-depth 64 (bounded by IDL nesting)
+fn emit_decode_bound_checks(out: &mut String, spec: &TypeSpec, value_expr: &str, depth: usize) {
+    match spec {
+        TypeSpec::Sequence(seq) => {
+            if let Some(n) = seq
+                .bound
+                .as_ref()
+                .and_then(crate::type_map::const_expr_as_usize)
+            {
+                out.push_str(&format!(
+                    "if {value_expr}.len() > {n} {{ return ::core::result::Result::Err(zerodds_cdr::DecodeError::BoundExceeded {{ actual: {value_expr}.len(), bound: {n}, message: \"decoded sequence length exceeds its IDL bound ({n})\" }}.into()); }} "
+                ));
+            }
+            if type_has_bounds(&seq.elem) {
+                let item = format!("__d{depth}");
+                out.push_str(&format!("for {item} in {value_expr}.iter() {{ "));
+                emit_decode_bound_checks(out, &seq.elem, &item, depth + 1);
+                out.push_str("} ");
+            }
+        }
+        TypeSpec::String(s) => {
+            if let Some(n) = s
+                .bound
+                .as_ref()
+                .and_then(crate::type_map::const_expr_as_usize)
+            {
+                if s.wide {
+                    out.push_str(&format!(
+                        "if {value_expr}.as_str().encode_utf16().count() > {n} {{ return ::core::result::Result::Err(zerodds_cdr::DecodeError::BoundExceeded {{ actual: {value_expr}.as_str().encode_utf16().count(), bound: {n}, message: \"decoded wstring length exceeds its IDL bound ({n})\" }}.into()); }} "
+                    ));
+                } else {
+                    out.push_str(&format!(
+                        "if {value_expr}.len() > {n} {{ return ::core::result::Result::Err(zerodds_cdr::DecodeError::BoundExceeded {{ actual: {value_expr}.len(), bound: {n}, message: \"decoded string length exceeds its IDL bound ({n})\" }}.into()); }} "
+                    ));
+                }
+            }
+        }
+        TypeSpec::Map(m) => {
+            if let Some(n) = m
+                .bound
+                .as_ref()
+                .and_then(crate::type_map::const_expr_as_usize)
+            {
+                out.push_str(&format!(
+                    "if {value_expr}.len() > {n} {{ return ::core::result::Result::Err(zerodds_cdr::DecodeError::BoundExceeded {{ actual: {value_expr}.len(), bound: {n}, message: \"decoded map length exceeds its IDL bound ({n})\" }}.into()); }} "
+                ));
+            }
+            if type_has_bounds(&m.value) {
+                let item = format!("__dv{depth}");
+                out.push_str(&format!("for {item} in {value_expr}.values() {{ "));
+                emit_decode_bound_checks(out, &m.value, &item, depth + 1);
+                out.push_str("} ");
+            }
+            if type_has_bounds(&m.key) {
+                let item = format!("__dk{depth}");
+                out.push_str(&format!("for {item} in {value_expr}.keys() {{ "));
+                emit_decode_bound_checks(out, &m.key, &item, depth + 1);
+                out.push_str("} ");
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Emits bound checks for a value `base_expr` of declared type
 /// `type_spec` with `declarator`. For an array declarator
 /// (`sequence<octet,4> arr[3]`) `base_expr` is a (possibly
@@ -1306,15 +1401,45 @@ fn emit_bound_checks(out: &mut String, spec: &TypeSpec, value_expr: &str, depth:
 /// array elements so the array length is not wrongly checked against the
 /// sequence bound. Shared by struct members (`base = self.{name}`) and
 /// union arms (`base = __v`).
+///
+/// `optional` is `true` for an `@optional` struct member, whose field type
+/// is `Option<T>` (or `Option<[T; N]>` for an array declarator) rather than
+/// `T` directly — regression #22: `base_expr.len()` on an `Option<String>`
+/// does not compile (`Option` has no `.len()`, only `Option::len` on the
+/// wrapper itself, which is not what a bound check means here). When
+/// `optional` is `true` the checks below run under an
+/// `if let Some(ref ..) = base_expr` guard (mirroring idl-cpp's
+/// `has_value()` guard, `emitter.rs` around the mutable/appendable bound
+/// checks) — an absent optional trivially satisfies any bound. Union arms
+/// are never `Option`-wrapped (the match binding is already the arm's raw
+/// value), so that call site always passes `false`.
 pub(crate) fn emit_bound_checks_decl(
     out: &mut String,
     type_spec: &TypeSpec,
     declarator: &Declarator,
     base_expr: &str,
+    optional: bool,
 ) {
     if !type_has_bounds(type_spec) {
         return;
     }
+    if optional {
+        out.push_str(&format!(
+            "if let ::core::option::Option::Some(ref __zd_opt_b) = {base_expr} {{ "
+        ));
+        emit_bound_checks_for_declarator(out, type_spec, declarator, "__zd_opt_b");
+        out.push_str("} ");
+        return;
+    }
+    emit_bound_checks_for_declarator(out, type_spec, declarator, base_expr);
+}
+
+fn emit_bound_checks_for_declarator(
+    out: &mut String,
+    type_spec: &TypeSpec,
+    declarator: &Declarator,
+    base_expr: &str,
+) {
     match declarator {
         Declarator::Simple(_) => emit_bound_checks(out, type_spec, base_expr, 0),
         Declarator::Array(arr) => {
@@ -1334,7 +1459,8 @@ pub(crate) fn emit_bound_checks_decl(
 
 fn emit_member_bound_checks(out: &mut String, member: &Member, declarator: &Declarator) {
     let base = format!("self.{}", declarator_ident(declarator));
-    emit_bound_checks_decl(out, &member.type_spec, declarator, &base);
+    let optional = crate::annotations::member_is_optional(&member.annotations);
+    emit_bound_checks_decl(out, &member.type_spec, declarator, &base, optional);
 }
 
 /// Picks the compact XTypes 1.3 §7.4.3.4.2 length code for a `@mutable`
@@ -1716,7 +1842,7 @@ fn emit_field_decode_with_optional(
             // So with array-of-struct ALL levels carry a DHEADER under
             // XCDR2 — exactly what `[T; N]: CdrEncode` writes.
             let mut expr = String::new();
-            emit_manual_array_decode(&mut expr, &elem_ty, &sizes, 0, reader_expr);
+            emit_manual_array_decode(&mut expr, &elem_ty, spec, &sizes, 0, reader_expr);
             if optional {
                 out.push_str(&format!("::core::option::Option::Some({expr})"));
             } else {
@@ -1736,13 +1862,32 @@ fn emit_field_decode_with_optional(
     // only special-case the simple declarator.
     if let (TypeSpec::String(s), Declarator::Simple(_)) = (spec, decl) {
         if s.wide {
+            // Regression #22: a bounded `wstring<N>` must reject an
+            // over-bound decoded value (XTypes 1.3 §7.4.3), not just an
+            // over-bound encode. `has_bound` gates the extra check so an
+            // unbounded `wstring` keeps the original single-expression form.
+            let has_bound = type_has_bounds(spec);
             if optional {
                 // `@optional wstring`: uint8 present flag + value if present.
                 out.push_str(&format!(
                     "if zerodds_cdr::BufferReader::read_u8({reader_expr})? != 0 {{ ::core::option::Option::Some("
                 ));
-                emit_xcdr2_wstring_decode(out, reader_expr);
+                if has_bound {
+                    out.push_str("{ let __zd_dv = ");
+                    emit_xcdr2_wstring_decode(out, reader_expr);
+                    out.push_str("; ");
+                    emit_decode_bound_checks(out, spec, "__zd_dv", 0);
+                    out.push_str("__zd_dv }");
+                } else {
+                    emit_xcdr2_wstring_decode(out, reader_expr);
+                }
                 out.push_str(") } else { ::core::option::Option::None }");
+            } else if has_bound {
+                out.push_str("{ let __zd_dv = ");
+                emit_xcdr2_wstring_decode(out, reader_expr);
+                out.push_str("; ");
+                emit_decode_bound_checks(out, spec, "__zd_dv", 0);
+                out.push_str("__zd_dv }");
             } else {
                 emit_xcdr2_wstring_decode(out, reader_expr);
             }
@@ -1760,9 +1905,30 @@ fn emit_field_decode_with_optional(
     } else {
         target
     };
-    out.push_str(&format!(
-        "<{final_target} as zerodds_cdr::CdrDecode>::decode({reader_expr})?"
-    ));
+    let raw_decode = format!("<{final_target} as zerodds_cdr::CdrDecode>::decode({reader_expr})?");
+    // Regression #22 / XTypes 1.3 §7.4.3: enforce the IDL bound on decode
+    // too. By this point `decl` is always `Declarator::Simple` when
+    // `type_has_bounds(spec)` holds — an array declarator whose element is
+    // a bounded String/Sequence/Map returned earlier via the manual
+    // array-decode path above (`array_elem_needs_manual_decode`), so no
+    // separate array-of-bounded-element case is possible here.
+    if type_has_bounds(spec) {
+        if optional {
+            out.push_str("{ let __zd_dv = ");
+            out.push_str(&raw_decode);
+            out.push_str("; if let ::core::option::Option::Some(ref __zd_dvi) = __zd_dv { ");
+            emit_decode_bound_checks(out, spec, "__zd_dvi", 0);
+            out.push_str("} __zd_dv }");
+        } else {
+            out.push_str("{ let __zd_dv = ");
+            out.push_str(&raw_decode);
+            out.push_str("; ");
+            emit_decode_bound_checks(out, spec, "__zd_dv", 0);
+            out.push_str("__zd_dv }");
+        }
+    } else {
+        out.push_str(&raw_decode);
+    }
     Ok(())
 }
 
@@ -1776,10 +1942,23 @@ fn emit_field_decode_with_optional(
 /// `try_into` (no `Copy` bound). `reader_expr` is the reader receiver
 /// (`&mut reader` / `&mut body_reader`).
 ///
+/// `elem_spec` is the IDL type spec of the array's element (as opposed to
+/// `elem_ty`, its Rust type rendering) — B1 follow-up array-of-bounded-
+/// element gap (regression #22 remaining disclosed gap, e.g.
+/// `sequence<octet,4> arr[3]`): a bounded element type reaches this manual
+/// per-element decode path (its element is a `Vec`/`String`/`BTreeMap`, not
+/// `Copy`), which previously decoded each element with no IDL-bound check
+/// at all — the recursive [`emit_decode_bound_checks`] only ran on the
+/// simple-declarator path in [`emit_field_decode_with_optional`]. When
+/// `type_has_bounds(elem_spec)` holds, the innermost per-element decode
+/// wraps the freshly decoded element in [`emit_decode_bound_checks`] before
+/// it is pushed, mirroring the simple-declarator behavior.
+///
 /// zerodds-lint: recursion-depth 8
 fn emit_manual_array_decode(
     out: &mut String,
     elem_ty: &str,
+    elem_spec: &TypeSpec,
     sizes: &[usize],
     dim: usize,
     reader_expr: &str,
@@ -1799,7 +1978,13 @@ fn emit_manual_array_decode(
     ));
     out.push_str(&format!("for _ in 0..{n} {{ __arr.push("));
     if dim + 1 < sizes.len() {
-        emit_manual_array_decode(out, elem_ty, sizes, dim + 1, reader_expr);
+        emit_manual_array_decode(out, elem_ty, elem_spec, sizes, dim + 1, reader_expr);
+    } else if type_has_bounds(elem_spec) {
+        out.push_str(&format!(
+            "{{ let __zd_dv = <{elem_ty} as zerodds_cdr::CdrDecode>::decode({reader_expr})?; "
+        ));
+        emit_decode_bound_checks(out, elem_spec, "__zd_dv", dim + 1);
+        out.push_str("__zd_dv }");
     } else {
         out.push_str(&format!(
             "<{elem_ty} as zerodds_cdr::CdrDecode>::decode({reader_expr})?"

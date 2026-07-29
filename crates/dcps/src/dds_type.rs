@@ -92,16 +92,34 @@ pub trait DdsType: Sized {
     /// reader-writer matching falls back to plain `type_name`
     /// comparison (DDS 1.4 §2.2.3 default path)".
     ///
-    /// idl-rust codegen emits the appropriate TypeIdentifier here:
-    /// - Primitive `int32` → `TypeIdentifier::Primitive(PrimitiveKind::Int32)`,
-    /// - String `string<N>` → `TypeIdentifier::String8Small{ bound }`,
-    /// - Composite struct → `TypeIdentifier::EquivalenceHash` (once the
-    ///   TypeRegistry lookup is live).
+    /// idl-rust codegen (`type_identifier.rs`) emits a codegen-time-computed
+    /// `EquivalenceHashComplete` of the struct's `CompleteStructType` here
+    /// for essentially every struct shape (#24 fix — previously only
+    /// primitive/string-only-member structs got a non-`None` id; a single
+    /// typedef/enum/sequence/map/nested-struct/array member nulled the
+    /// *whole* struct's identity, since the resolution was a self-contained
+    /// per-struct subset that could not look up other named types). Member
+    /// types are now resolved against the full `Specification`'s named-type
+    /// registry (`zerodds_idl::semantics::build_type_registry`, the same
+    /// mapper the AST → `TypeObject` pipeline uses), so the emitted id is
+    /// non-`None` for typedef/enum/sequence/map/nested-struct/array members
+    /// too. It only stays `None` for a struct that (transitively) contains a
+    /// still-genuinely-unmappable `TypeSpec` (`fixed<>`/`any`).
     ///
     /// Once both sides (writer + reader) provide a TypeIdentifier, the
     /// subscriber match path calls
     /// [`zerodds_types::type_matcher::TypeMatcher::match_types`]
-    /// (XTypes §7.6.3.7 + DDS 1.4 §2.2.3 TypeConsistencyEnforcement).
+    /// (XTypes §7.6.3.7 + DDS 1.4 §2.2.3 TypeConsistencyEnforcement). Note
+    /// the runtime match currently compares `EquivalenceHashComplete` ids
+    /// against an empty [`zerodds_types::resolve::TypeRegistry`] (no
+    /// TypeLookup-service wiring yet): identical hashes match; differing
+    /// hashes are treated as a hard mismatch (fail-closed) rather than a
+    /// structural (e.g. widening-compatible) comparison, since the
+    /// registry has no `TypeObject` to compare against. This correctly
+    /// DETECTS type evolution (added/removed/reordered/widened members) as
+    /// a mismatch, but does not yet allow provably-compatible evolutions
+    /// through — a follow-up (TypeLookup / registry population at match
+    /// time), tracked separately from #24.
     const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::None;
 
     /// Serializes `self` into the XCDR2 payload sent as the

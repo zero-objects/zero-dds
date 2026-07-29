@@ -67,8 +67,16 @@ enum ResolvedKind {
     /// this struct can decide its EMHEADER length-code: an `@appendable` /
     /// `@mutable` nested struct self-delimits with a leading DHEADER (→ LC5
     /// reuses it as the NEXTINT), whereas a `@final` nested struct does not (→
-    /// universal LC4). FINDING T1 (nested @mutable).
-    Struct { ext: IdlExtensibility },
+    /// universal LC4). FINDING T1 (nested @mutable). `def` is the struct's
+    /// own definition (members + annotations), needed by the KeyHash-specific
+    /// walker (`emit_key_field_encode`) to expand a nested `@key` struct
+    /// member into that struct's own `@key` subset instead of delegating to
+    /// the general `encode` (which — correctly, for normal encoding — writes
+    /// ALL of the nested struct's members).
+    Struct {
+        ext: IdlExtensibility,
+        def: StructDef,
+    },
     /// IDL `union` — delegate to `<Name>TypeSupport`.
     Union,
     /// IDL `bitmask` — wire form is a single holder integer (NO DHEADER, NOT a
@@ -132,7 +140,13 @@ fn collect_types(defs: &[Definition], table: &mut TypeTable) {
                 let ext = lower_or_empty(&s.annotations)
                     .extensibility()
                     .unwrap_or(IdlExtensibility::Appendable); // SX2 §7.3.3.1
-                table.insert(s.name.text.clone(), ResolvedKind::Struct { ext });
+                table.insert(
+                    s.name.text.clone(),
+                    ResolvedKind::Struct {
+                        ext,
+                        def: s.clone(),
+                    },
+                );
             }
             Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Enum(e))) => {
                 let ebound = crate::bitset::extract_int_annotation(&e.annotations, "bit_bound")
@@ -1229,7 +1243,7 @@ fn member_body_has_leading_dheader(spec: &TypeSpec, table: &TypeTable) -> bool {
                 member_body_has_leading_dheader(underlying, table)
             }
             // A nested struct: leading DHEADER iff @appendable / @mutable.
-            Some(ResolvedKind::Struct { ext }) => !matches!(ext, IdlExtensibility::Final),
+            Some(ResolvedKind::Struct { ext, .. }) => !matches!(ext, IdlExtensibility::Final),
             // A standalone union is also DHEADER-delimited unless @final, but
             // the rust reference only resolves struct/string/seq/map here; a
             // union member keeps the conservative LC4 fallback (still valid).
@@ -2199,8 +2213,42 @@ fn emit_read_into(
                 "{ind}    for (int __wi{depth} = 0; __wi{depth} < __wn{depth}; __wi{depth}++) {{ __wb{depth}[__wi{depth}] = r.readWChar(); }}"
             )
             .map_err(fmt_err)?;
+            // Bounded `wstring<N>` (B1 blocker fix, deep review of #22
+            // decode-bounds-cross-backend): reject an over-bound decode the
+            // same way encode does (`emit_typespec_encode`, `s.wide` branch,
+            // `.length() > bound`) — this check was missing entirely, so a
+            // bounded wide string was silently unenforced on decode. Mirrors
+            // the narrow `string<N>` decode check below (XTypes 1.3 §7.4.3).
+            if let Some(b) = &s.bound {
+                let bv = crate::emitter::const_expr_to_java(b);
+                writeln!(
+                    out,
+                    "{ind}    if (__wn{depth} > {bv}) throw new IllegalArgumentException(\"decoded wstring length exceeds its IDL bound ({bv})\");"
+                )
+                .map_err(fmt_err)?;
+            }
             writeln!(out, "{ind}    {var} = new String(__wb{depth});").map_err(fmt_err)?;
             writeln!(out, "{ind}}}").map_err(fmt_err)?;
+        }
+        // Bounded narrow `string<N>`: cannot ride the single-expression
+        // `read_expr_for_typespec` path below (no room to insert a check) —
+        // B1 follow-up (#22 decode-side parity): mirror the encode-side
+        // UTF-8-byte-length check (`emit_typespec_encode` above) on decode
+        // too. XTypes 1.3 §7.4.3 requires enforcement on BOTH sides;
+        // `r.readString()` only ever validated the wire's remaining bytes.
+        TypeSpec::String(s) if !s.wide && s.bound.is_some() => {
+            let bv = s
+                .bound
+                .as_ref()
+                .map(crate::emitter::const_expr_to_java)
+                .unwrap_or_default();
+            let read = read_expr_for_typespec(ts)?;
+            writeln!(out, "{ind}{jt} {var} = {read};").map_err(fmt_err)?;
+            writeln!(
+                out,
+                "{ind}if ({var} != null && {var}.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > {bv}) throw new IllegalArgumentException(\"decoded string length exceeds its IDL bound ({bv})\");"
+            )
+            .map_err(fmt_err)?;
         }
         // `fixed<P,S>` decodes through the single-expr path too (BigDecimal =
         // r.readFixedBcd(P, S)).
@@ -2221,6 +2269,16 @@ fn emit_read_into(
                 writeln!(out, "{ind}    r.readDHeader();").map_err(fmt_err)?;
             }
             writeln!(out, "{ind}    int {cntv} = r.readSequenceCount();").map_err(fmt_err)?;
+            // B1 follow-up (#22 decode-side parity): mirror the encode-side
+            // bound check — XTypes 1.3 §7.4.3.
+            if let Some(b) = &seq.bound {
+                let bv = crate::emitter::const_expr_to_java(b);
+                writeln!(
+                    out,
+                    "{ind}    if ({cntv} > {bv}) throw new IllegalArgumentException(\"decoded sequence length exceeds its IDL bound ({bv})\");"
+                )
+                .map_err(fmt_err)?;
+            }
             writeln!(
                 out,
                 "{ind}    java.util.List<{elem_ty}> {outv} = new java.util.ArrayList<>({cntv});"
@@ -2262,6 +2320,16 @@ fn emit_read_into(
                 writeln!(out, "{ind}    r.readDHeader();").map_err(fmt_err)?;
             }
             writeln!(out, "{ind}    int {cntv} = r.readSequenceCount();").map_err(fmt_err)?;
+            // B1 follow-up (#22 decode-side parity): mirror the encode-side
+            // bound check — XTypes 1.3 §7.4.3.
+            if let Some(b) = &map.bound {
+                let bv = crate::emitter::const_expr_to_java(b);
+                writeln!(
+                    out,
+                    "{ind}    if ({cntv} > {bv}) throw new IllegalArgumentException(\"decoded map length exceeds its IDL bound ({bv})\");"
+                )
+                .map_err(fmt_err)?;
+            }
             writeln!(
                 out,
                 "{ind}    java.util.Map<{kj}, {vj}> {outv} = new java.util.LinkedHashMap<>();"
@@ -2507,24 +2575,194 @@ fn emit_key_extraction(
     table: &TypeTable,
 ) -> Result<(), JavaGenError> {
     let inner = format!("{ind}{ind}");
-    for m in &s.members {
-        if member_has_key(m) {
-            for decl in &m.declarators {
-                let name = sanitize_identifier(&decl.name().text)?;
-                let getter = format!("sample.get{}()", capitalize(&name));
-                emit_declarator_encode(
-                    out,
-                    &m.type_spec,
-                    &array_dims(decl),
-                    &getter,
-                    &inner,
-                    table,
-                    0,
-                )?;
-            }
+    // XTypes 1.3 §7.6.8.3.1.b: KeyHolder members in ascending member-id
+    // order (explicit `@id(N)`, else positional index among the `@key`
+    // members) — NOT declaration order.
+    let key_members: Vec<&Member> = s.members.iter().filter(|m| member_has_key(m)).collect();
+    for m in sort_members_by_id(&key_members) {
+        for decl in &m.declarators {
+            let name = sanitize_identifier(&decl.name().text)?;
+            let getter = format!("sample.get{}()", capitalize(&name));
+            emit_key_declarator_encode(out, &m.type_spec, &array_dims(decl), &getter, &inner, table, 0)?;
         }
     }
     Ok(())
+}
+
+/// Sorts `members` into ascending member-id order (explicit `@id(N)`, else
+/// positional index within `members`) — XTypes 1.3 §7.6.8.3.1.b. Mirrors
+/// `idl-rust`'s `emit_key_holder_be` fallback convention (the index is taken
+/// within the already-filtered `@key` list, matching the cross-vendor-
+/// validated reference), and the same convention this file already uses for
+/// `@mutable` EMHEADER auto-id assignment (`member_explicit_id`).
+fn sort_members_by_id<'a>(members: &[&'a Member]) -> Vec<&'a Member> {
+    let mut ordered: Vec<(u32, &Member)> = members
+        .iter()
+        .enumerate()
+        .map(|(idx, m)| (member_explicit_id(m).unwrap_or(idx as u32), *m))
+        .collect();
+    ordered.sort_by_key(|(id, _)| *id);
+    ordered.into_iter().map(|(_, m)| m).collect()
+}
+
+/// KeyHash-specific declarator writer: identical to `emit_declarator_encode`
+/// for array dims (out of scope — the investigation found sequence/array
+/// `@key` shapes already correct via the generic per-field encoder), but at
+/// the scalar leaf delegates to `emit_key_typespec_encode` instead of
+/// `emit_typespec_encode`, so a nested `@key` struct expands to its own
+/// `@key` subset instead of being fully encoded.
+fn emit_key_declarator_encode(
+    out: &mut String,
+    ts: &TypeSpec,
+    dims: &[String],
+    expr: &str,
+    ind: &str,
+    table: &TypeTable,
+    depth: usize,
+) -> Result<(), JavaGenError> {
+    if dims.is_empty() {
+        return emit_key_typespec_encode(out, ts, expr, ind, table, depth);
+    }
+    let dheader = array_dim_needs_dheader(ts, dims, depth, table);
+    let dhv = format!("__adh{depth}");
+    let (body_ind, dheader) = if dheader {
+        writeln!(out, "{ind}{{").map_err(fmt_err)?;
+        let bi = format!("{ind}    ");
+        writeln!(out, "{bi}int {dhv} = w.beginAppendable();").map_err(fmt_err)?;
+        (bi, true)
+    } else {
+        (ind.to_string(), false)
+    };
+    let iv = format!("__ai{depth}");
+    let elem = format!("{expr}[{iv}]");
+    let size = &dims[0];
+    writeln!(
+        out,
+        "{body_ind}for (int {iv} = 0; {iv} < {size}; {iv}++) {{"
+    )
+    .map_err(fmt_err)?;
+    emit_key_declarator_encode(
+        out,
+        ts,
+        &dims[1..],
+        &elem,
+        &format!("{body_ind}    "),
+        table,
+        depth + 1,
+    )?;
+    writeln!(out, "{body_ind}}}").map_err(fmt_err)?;
+    if dheader {
+        writeln!(out, "{body_ind}w.endDelimited({dhv});").map_err(fmt_err)?;
+        writeln!(out, "{ind}}}").map_err(fmt_err)?;
+    }
+    Ok(())
+}
+
+/// KeyHash-specific value writer (XTypes 1.3 §7.6.8). For a `Scoped`
+/// reference that resolves (after dealiasing any typedef chain — see the
+/// `Typedef` arm below) to a nested struct, expands to that struct's own
+/// `@key` subset (or ALL its members if it declares none — XTypes 1.3
+/// §7.6.8: a keyless aggregate is keyed in full), in member-id order,
+/// instead of delegating to `<Type>TypeSupport.INSTANCE.encode(...)` (which
+/// — correct for normal, non-key encoding — writes the WHOLE nested struct).
+/// Every other shape (primitive, string, sequence, map, enum, bitmask,
+/// bitset, union, fixed) is unchanged from — and delegates verbatim to —
+/// the general `emit_typespec_encode`: the investigation found those
+/// already correct via the existing generic per-field encoder.
+/// zerodds-lint: recursion-depth 16
+fn emit_key_typespec_encode(
+    out: &mut String,
+    ts: &TypeSpec,
+    expr: &str,
+    ind: &str,
+    table: &TypeTable,
+    depth: usize,
+) -> Result<(), JavaGenError> {
+    if let TypeSpec::Scoped(s) = ts {
+        let short = scoped_to_short(s);
+        match resolve_scoped(table, &short) {
+            // A `@key` member whose declared type is a typedef must dealias
+            // BEFORE the nested-struct check below can even see the struct:
+            // `typedef Inner InnerAlias; struct Outer { @key InnerAlias i; }`
+            // previously fell straight through to the generic
+            // `emit_typespec_encode` fallback (this match only recognised
+            // `ResolvedKind::Struct` directly), which writes the WHOLE
+            // nested struct via `InnerTypeSupport.INSTANCE.encode(...)`
+            // instead of just its own `@key` subset — the same class of
+            // over-inclusion bug as FINDING #20. Unwrap the Java typedef
+            // wrapper's `.value()` and recurse on the underlying type/dims,
+            // exactly like the general encoder's Bug J #65(4) arm — then
+            // the recursive `emit_key_declarator_encode` call re-enters this
+            // function (for a scalar underlying type) and the `Struct` arm
+            // below fires on the dealiased type.
+            Some(ResolvedKind::Typedef {
+                underlying,
+                array_dims,
+            }) => {
+                let inner = format!("({expr}).value()");
+                return emit_key_declarator_encode(
+                    out,
+                    underlying,
+                    array_dims,
+                    &inner,
+                    ind,
+                    table,
+                    depth + 1,
+                );
+            }
+            Some(ResolvedKind::Struct { def, .. }) => {
+                let def = def.clone();
+                let nested_keys: Vec<&Member> =
+                    def.members.iter().filter(|m| member_has_key(m)).collect();
+                let effective: Vec<&Member> = if nested_keys.is_empty() {
+                    def.members.iter().collect()
+                } else {
+                    nested_keys
+                };
+                for m in sort_members_by_id(&effective) {
+                    for decl in &m.declarators {
+                        let name = sanitize_identifier(&decl.name().text)?;
+                        // Arrays inside a nested-struct key are out of the
+                        // proof scope; reject explicitly rather than
+                        // silently DHEADER-framing a per-element encode of
+                        // the array (which `emit_key_declarator_encode`
+                        // would otherwise do unchanged, mixing DHEADER
+                        // framing into a KeyHolder that must always be the
+                        // FLAT concatenation of key bytes — XTypes 1.3
+                        // §7.6.8). Matches every other backend's identical
+                        // rejection of this shape (e.g. `idl-rust`'s
+                        // `emit_key_field_write`, `idl-cpp`'s
+                        // `emit_key_value_write`, `idl-go`'s
+                        // `emit_key_struct_member`). A top-level `@key`
+                        // array field of this struct's OWN declarator is
+                        // unaffected — those dims are consumed by
+                        // `emit_key_declarator_encode` before this Struct
+                        // arm is ever reached.
+                        if matches!(decl, Declarator::Array(_)) {
+                            return Err(JavaGenError::UnsupportedConstruct {
+                                construct: "array @key field inside a nested-struct key"
+                                    .to_string(),
+                                context: Some(name),
+                            });
+                        }
+                        let getter = format!("({expr}).get{}()", capitalize(&name));
+                        emit_key_declarator_encode(
+                            out,
+                            &m.type_spec,
+                            &array_dims(decl),
+                            &getter,
+                            ind,
+                            table,
+                            depth + 1,
+                        )?;
+                    }
+                }
+                return Ok(());
+            }
+            _ => {}
+        }
+    }
+    emit_typespec_encode(out, ts, expr, ind, table, depth)
 }
 
 /// Static codec helpers shared by the generated TypeSupport: skip an unknown

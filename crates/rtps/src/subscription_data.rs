@@ -20,10 +20,10 @@ use crate::error::WireError;
 use crate::parameter_list::{Parameter, ParameterList, pid};
 use crate::participant_data::{Duration, ENCAPSULATION_PL_CDR_LE};
 use crate::publication_data::{
-    DurabilityKind, ReliabilityKind, ReliabilityQos, collect_locator_params, decode_cdr_string,
-    decode_duration, decode_i32, decode_liveliness, decode_partition, decode_u32,
-    encode_cdr_string_le, encode_duration_le, encode_liveliness_le, encode_locator_params,
-    encode_partition_le, encode_u32_le, guid_from_param,
+    DurabilityKind, PresentationQosPolicy, ReliabilityKind, ReliabilityQos,
+    collect_locator_params, decode_cdr_string, decode_duration, decode_i32, decode_liveliness,
+    decode_partition, decode_u32, encode_cdr_string_le, encode_duration_le, encode_liveliness_le,
+    encode_locator_params, encode_partition_le, encode_u32_le, guid_from_param,
 };
 use crate::wire_types::{Guid, Locator};
 
@@ -53,6 +53,9 @@ pub struct SubscriptionBuiltinTopicData {
     pub liveliness: zerodds_qos::LivelinessQosPolicy,
     /// Deadline-QoS (Spec §2.2.3.7).
     pub deadline: zerodds_qos::DeadlineQosPolicy,
+    /// Presentation-QoS (Spec §2.2.3.6, PID 0x0021). See
+    /// [`crate::publication_data::PublicationBuiltinTopicData::presentation`].
+    pub presentation: crate::publication_data::PresentationQosPolicy,
     /// Partition-QoS (Spec §2.2.3.13).
     pub partition: Vec<String>,
     /// UserData-QoS (Spec §2.2.3.1) — opaque sequence<octet>.
@@ -238,6 +241,19 @@ impl SubscriptionBuiltinTopicData {
             pid::DEADLINE,
             encode_duration_le(self.deadline.period).to_vec(),
         ));
+
+        // PRESENTATION — requested access_scope/coherent/ordered (spec
+        // §2.2.3.6 / PID 0x0021). Symmetric to the writer-side encoding in
+        // `publication_data::encode_into`.
+        {
+            let mut w = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little);
+            self.presentation
+                .encode_into(&mut w)
+                .map_err(|_| WireError::ValueOutOfRange {
+                    message: "presentation encoding failed",
+                })?;
+            params.push(Parameter::new(pid::PRESENTATION, w.into_bytes()));
+        }
 
         // PARTITION.
         if !self.partition.is_empty() {
@@ -467,6 +483,20 @@ impl SubscriptionBuiltinTopicData {
             .map(|period| zerodds_qos::DeadlineQosPolicy { period })
             .unwrap_or_default();
 
+        // PRESENTATION (PID 0x0021) — see `publication_data::decode_from`.
+        let presentation = pl
+            .find(pid::PRESENTATION)
+            .and_then(|p| {
+                let endianness = if little_endian {
+                    zerodds_cdr::Endianness::Little
+                } else {
+                    zerodds_cdr::Endianness::Big
+                };
+                let mut r = zerodds_cdr::BufferReader::new(&p.value, endianness);
+                PresentationQosPolicy::decode_from(&mut r).ok()
+            })
+            .unwrap_or_default();
+
         let partition = pl
             .find(pid::PARTITION)
             .and_then(|p| decode_partition(&p.value, little_endian))
@@ -557,6 +587,7 @@ impl SubscriptionBuiltinTopicData {
             ownership,
             liveliness,
             deadline,
+            presentation,
             partition,
             user_data,
             topic_data,
@@ -601,6 +632,7 @@ mod tests {
             ownership: zerodds_qos::OwnershipKind::Shared,
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            presentation: PresentationQosPolicy::default(),
             partition: alloc::vec::Vec::new(),
             user_data: alloc::vec::Vec::new(),
             topic_data: alloc::vec::Vec::new(),
@@ -637,6 +669,7 @@ mod tests {
             ownership: zerodds_qos::OwnershipKind::Shared,
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            presentation: PresentationQosPolicy::default(),
             partition: alloc::vec::Vec::new(),
             user_data: alloc::vec::Vec::new(),
             topic_data: alloc::vec::Vec::new(),
@@ -697,6 +730,7 @@ mod tests {
             ownership: zerodds_qos::OwnershipKind::Shared,
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            presentation: PresentationQosPolicy::default(),
             partition: alloc::vec::Vec::new(),
             user_data: alloc::vec::Vec::new(),
             topic_data: alloc::vec::Vec::new(),
@@ -731,6 +765,7 @@ mod tests {
             ownership: zerodds_qos::OwnershipKind::Shared,
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            presentation: PresentationQosPolicy::default(),
             partition: alloc::vec::Vec::new(),
             user_data: alloc::vec::Vec::new(),
             topic_data: alloc::vec::Vec::new(),

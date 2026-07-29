@@ -81,6 +81,13 @@ pub fn member_is_optional(annotations: &[Annotation]) -> bool {
     annotations.iter().any(|a| annotation_name(a) == "optional")
 }
 
+/// Reads `@external` (default false) — indirect (pointer/shared) member
+/// storage, XTypes 1.3 §7.2.2.4.4.4.6 / `StructMemberFlag::IS_EXTERNAL`.
+#[must_use]
+pub fn member_is_external(annotations: &[Annotation]) -> bool {
+    annotations.iter().any(|a| annotation_name(a) == "external")
+}
+
 /// Reads `@unit("...")` — the unit of measure of the member. Lands in
 /// the complete TypeObject as `AppliedBuiltinMemberAnnotations.unit`
 /// (XTypes 1.3 §7.3.1.2.1.x). The runtime `MemberDescriptor` carries no
@@ -151,6 +158,18 @@ pub fn enum_wire_octets(bit_bound: u32) -> u8 {
 #[must_use]
 pub fn struct_is_nested(annotations: &[Annotation]) -> bool {
     annotations.iter().any(|a| annotation_name(a) == "nested")
+}
+
+/// Reads `@autoid(HASH)` on a struct/union (default false = SEQUENTIAL,
+/// XTypes 1.3 §7.2.2.4.9 / `StructTypeFlag::IS_AUTOID_HASH`). When set,
+/// members without an explicit `@id(n)` get a member id derived from the
+/// first 4 MD5 bytes of the member name instead of the sequential
+/// (declaration-order) default.
+#[must_use]
+pub fn struct_autoid_hash(annotations: &[Annotation]) -> bool {
+    annotations.iter().any(|a| {
+        annotation_name(a) == "autoid" && annotation_first_param_text(a).as_deref() == Some("HASH")
+    })
 }
 
 fn annotation_first_param_text(a: &Annotation) -> Option<String> {

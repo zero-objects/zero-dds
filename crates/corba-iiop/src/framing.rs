@@ -21,6 +21,17 @@ use zerodds_corba_giop::{GiopError, Message, Version, decode_message_ctx, encode
 use crate::error::IiopError;
 use zerodds_cdr::Endianness;
 
+/// Hard cap on a single GIOP message body read off the wire (16 MiB).
+///
+/// GIOP over TCP (§15.7.1) is a stream protocol: the peer-announced
+/// `message_size` (a `u32`, up to ~4 GiB) cannot be checked against
+/// "bytes remaining" the way an in-memory buffer decode can — there is
+/// no bound until this cap is applied. Mirrors the established
+/// `crates/transport-tcp/src/framing.rs::MAX_FRAME_SIZE` DoS-cap
+/// pattern: reject before allocating, so a peer cannot force a
+/// multi-GB allocation from a 12-byte header.
+const MAX_GIOP_MESSAGE_SIZE: usize = 16 * 1024 * 1024;
+
 /// Reads **one** complete GIOP message from the stream. Returns
 /// `IiopError::Closed` if the peer sends EOF before 12 header bytes
 /// have been read.
@@ -60,6 +71,11 @@ pub fn read_giop_message_full<R: Read + ?Sized>(
     let (header, _rest) = zerodds_corba_giop::MessageHeader::decode(&header_bytes)?;
     let version = header.version;
     let body_size = header.message_size as usize;
+    if body_size > MAX_GIOP_MESSAGE_SIZE {
+        return Err(IiopError::Giop(GiopError::Malformed(alloc::format!(
+            "GIOP message_size {body_size} exceeds MAX_GIOP_MESSAGE_SIZE ({MAX_GIOP_MESSAGE_SIZE})"
+        ))));
+    }
     let mut body = alloc::vec![0u8; body_size];
     r.read_exact(&mut body)?;
 
@@ -98,6 +114,11 @@ fn reassemble_fragments<R: Read + ?Sized>(
         read_exact_or_closed(r, &mut fh)?;
         let (frag_header, _) = zerodds_corba_giop::MessageHeader::decode(&fh)?;
         let fsize = frag_header.message_size as usize;
+        if fsize > MAX_GIOP_MESSAGE_SIZE {
+            return Err(IiopError::Giop(GiopError::Malformed(alloc::format!(
+                "GIOP fragment message_size {fsize} exceeds MAX_GIOP_MESSAGE_SIZE ({MAX_GIOP_MESSAGE_SIZE})"
+            ))));
+        }
         let mut fbody = alloc::vec![0u8; fsize];
         r.read_exact(&mut fbody)?;
         if fsize < FRAG_HEADER_LEN {
@@ -107,6 +128,14 @@ fn reassemble_fragments<R: Read + ?Sized>(
         }
         // Continuation data = fragment body without the request_id prefix.
         acc.extend_from_slice(&fbody[FRAG_HEADER_LEN..]);
+        // Per-fragment size is capped above, but a peer could otherwise
+        // keep the FRAGMENT flag set forever and grow `acc` unboundedly
+        // across many fragments — cap the *reassembled total* too.
+        if acc.len() > MAX_GIOP_MESSAGE_SIZE {
+            return Err(IiopError::Giop(GiopError::Malformed(alloc::format!(
+                "reassembled GIOP message exceeds MAX_GIOP_MESSAGE_SIZE ({MAX_GIOP_MESSAGE_SIZE})"
+            ))));
+        }
         if !frag_header.flags.has_more_fragments() {
             break;
         }
@@ -539,6 +568,83 @@ mod tests {
         let mut r = Cursor::new(&wire);
         let decoded = read_giop_message(&mut r).unwrap();
         assert_eq!(decoded, sample_request());
+    }
+
+    // -------------------------------------------------------------
+    // Buffer-cap hardening — a peer-announced `message_size` (or
+    // fragment `message_size`) that exceeds MAX_GIOP_MESSAGE_SIZE must
+    // be rejected cleanly (no multi-GB allocation attempt) right after
+    // the 12-byte header is parsed, before the body is read/allocated.
+    // Mirrors the established
+    // `crates/transport-tcp/src/framing.rs::MAX_FRAME_SIZE` guard.
+    // -------------------------------------------------------------
+
+    #[test]
+    fn oversized_message_size_is_rejected_cleanly() {
+        let header = zerodds_corba_giop::MessageHeader::new(
+            Version::V1_2,
+            zerodds_corba_giop::Flags::from_endianness(Endianness::Big),
+            zerodds_corba_giop::MessageType::Request,
+            u32::MAX, // far beyond MAX_GIOP_MESSAGE_SIZE
+        );
+        let mut w = zerodds_cdr::BufferWriter::new(Endianness::Big);
+        header.encode(&mut w).unwrap();
+        // No body bytes follow — read_giop_message_full must reject
+        // before attempting to read/allocate `message_size` bytes.
+        let mut r = Cursor::new(w.into_bytes());
+        let err = read_giop_message(&mut r).unwrap_err();
+        assert!(
+            matches!(err, IiopError::Giop(GiopError::Malformed(_))),
+            "expected clean Malformed rejection, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn oversized_fragment_message_size_is_rejected_cleanly() {
+        let mut wire = alloc::vec::Vec::new();
+        // First fragment: small, valid, FRAGMENT flag set.
+        push_frame(
+            &mut wire,
+            Endianness::Big,
+            true,
+            zerodds_corba_giop::MessageType::Request,
+            &[0, 0, 0, 0, 0, 0, 0, 8],
+        );
+        // Follow-up fragment header announces a huge message_size, with
+        // no body bytes following it.
+        let frag_header = zerodds_corba_giop::MessageHeader::new(
+            Version::V1_2,
+            zerodds_corba_giop::Flags::from_endianness(Endianness::Big).with_fragment(false),
+            zerodds_corba_giop::MessageType::Fragment,
+            u32::MAX,
+        );
+        let mut fw = zerodds_cdr::BufferWriter::new(Endianness::Big);
+        frag_header.encode(&mut fw).unwrap();
+        wire.extend_from_slice(&fw.into_bytes());
+
+        let mut r = Cursor::new(&wire);
+        let err = read_giop_message(&mut r).unwrap_err();
+        assert!(
+            matches!(err, IiopError::Giop(GiopError::Malformed(_))),
+            "expected clean Malformed rejection, got {err:?}"
+        );
+    }
+
+    #[test]
+    fn within_bound_messages_still_round_trip() {
+        // Regression guard: the new cap must not reject ordinary
+        // messages (well below MAX_GIOP_MESSAGE_SIZE).
+        let mut buf = alloc::vec::Vec::new();
+        write_giop_message(
+            &mut buf,
+            Version::V1_2,
+            Endianness::Big,
+            false,
+            &sample_request(),
+        )
+        .unwrap();
+        let mut r = Cursor::new(&buf);
+        assert_eq!(read_giop_message(&mut r).unwrap(), sample_request());
     }
 
     #[test]

@@ -176,6 +176,16 @@ Implementation:
 
 **Status:** done
 
+### §10 sync + async Deep-Examples + Quickstart
+
+**Spec:** §10 — sync/async Deep-Examples (Sensor-Telemetrie `Reading{id,value,label}`).
+
+**Repo:** `endpoints/rust/` (Crate `zerodds-endpoint-rust`: `src/lib.rs`, `examples/example_sync.rs`, `examples/example_async.rs`, `QUICKSTART.md`).
+
+**Tests:** CI-Job `endpoints-rust` führt beide aus (`cargo run --example example_sync|example_async`); codepit-verifiziert (5/5 Feld-Decode, byte-identisch via `zerodds-cdr`).
+
+**Status:** done
+
 ## §11 Errata + Open-Questions
 
 ### §11.1 Derive-Macro

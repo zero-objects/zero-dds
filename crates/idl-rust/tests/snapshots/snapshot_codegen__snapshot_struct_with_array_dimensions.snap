@@ -1,6 +1,5 @@
 ---
 source: crates/idl-rust/tests/snapshot_codegen.rs
-assertion_line: 207
 expression: run(idl)
 ---
 // SPDX-License-Identifier: Apache-2.0
@@ -21,7 +20,7 @@ pub struct Matrix3x3 {
 impl zerodds_dcps::DdsType for Matrix3x3 {
     const TYPE_NAME: &'static str = "Matrix3x3";
     const EXTENSIBILITY: zerodds_dcps::Extensibility = zerodds_dcps::Extensibility::Appendable;
-    const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0x9a, 0x2f, 0xf6, 0xb7, 0xfe, 0x42, 0x77, 0xed, 0x87, 0xdc, 0x3e, 0x7d, 0x6a, 0x82]));
+    const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::EquivalenceHashComplete(zerodds_types::EquivalenceHash([0xda, 0xee, 0xd1, 0x10, 0x94, 0x9c, 0xfa, 0x67, 0x1b, 0x76, 0x12, 0xb8, 0x27, 0x60]));
 
     fn encode(&self, out: &mut ::std::vec::Vec<u8>) -> ::core::result::Result<(), zerodds_dcps::EncodeError> {
         let mut writer = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little).xcdr2();
@@ -75,7 +74,7 @@ impl zerodds_dcps::DdsType for Matrix3x3 {
         <Self as zerodds_cdr::CdrDecode>::decode(&mut reader).map_err(::core::convert::Into::into)
     }
 
-    fn field_value(&self, path: &str) -> ::core::option::Option<zerodds_sql_filter::Value> {
+    fn field_value(&self, path: &str) -> ::core::option::Option<zerodds_dcps::FilterValue> {
         match path {
             _ => ::core::option::Option::None,
         }

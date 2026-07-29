@@ -24,6 +24,25 @@ package body Native_Framing is
       return Bytes (W);
    end Xrce_Write_Frame;
 
+   procedure Xrce_Read_Frame
+     (Frame      : Byte_Array;
+      Body_First : out Natural;
+      Body_Last  : out Integer;
+      Valid      : out Boolean)
+   is
+   begin
+      Body_First := Frame'First + 8;
+      Body_Last  := Frame'Last;
+      --  Too short, or submessage id (5th byte) is not WRITE_DATA.
+      if Frame'Length < 8
+        or else Frame (Frame'First + 4) /= XRCE_SM_Write_Data
+      then
+         Valid := False;
+      else
+         Valid := True;
+      end if;
+   end Xrce_Read_Frame;
+
    function Crc16_Ccitt_False (Data : Byte_Array) return Unsigned_16 is
       Crc : Unsigned_16 := 16#FFFF#;
    begin

@@ -54,6 +54,8 @@ pub mod pid {
     pub const LIFESPAN: u16 = QosPid::LIFESPAN;
     /// Partition QoS. (Re-export from `zerodds_qos::Pid::PARTITION`.)
     pub const PARTITION: u16 = QosPid::PARTITION;
+    /// Presentation QoS. (Re-export from `zerodds_qos::Pid::PRESENTATION`.)
+    pub const PRESENTATION: u16 = QosPid::PRESENTATION;
     /// UserData QoS. (Re-export from `zerodds_qos::Pid::USER_DATA`.)
     pub const USER_DATA: u16 = QosPid::USER_DATA;
     /// GroupData QoS. (Re-export from `zerodds_qos::Pid::GROUP_DATA`.)
@@ -290,6 +292,7 @@ pub fn is_standard_pid(masked_pid: u16) -> bool {
             | DEADLINE
             | LIFESPAN
             | PARTITION
+            | PRESENTATION
             | USER_DATA
             | GROUP_DATA
             | TOPIC_DATA

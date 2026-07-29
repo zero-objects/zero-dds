@@ -1,0 +1,12 @@
+{
+    "name": "zerodds-idlc-sample",
+    "description": "Sample consumer proving the zerodds-idlc dub build-step integration",
+    "authors": ["ZeroDDS Contributors"],
+    "license": "Apache-2.0",
+    "targetType": "executable",
+    "sourcePaths": ["source"],
+    "importPaths": ["source", "source/gen"],
+    "preGenerateCommands": [
+        "mkdir -p source/gen && zerodds-idlc generate idl/Robot.idl --d -o source/gen"
+    ]
+}
