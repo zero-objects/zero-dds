@@ -9,8 +9,9 @@ option(BUILD_SHARED_LIBS "Build static or shared library" OFF)
 option(BUILD_ZERODDS_CPP "Enable building zerodds::zerodds-cpp library" ON)
 
 # Set CMAKE_BUILD_TYPE if neither parent nor project set it or if we are using a multi-config generator
-if(NOT CMAKE_BUILD_TYPE OR GENERATOR_IS_MULTI_CONFIG)
-  set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type for the library" FORCE)
+get_property(ZERODDS_MULTI_CONFIG GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+if(NOT ZERODDS_MULTI_CONFIG AND NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type for the library")
 endif()
 
 # Ensure cargo is installed
@@ -33,8 +34,8 @@ endif()
 set(ZERODDS_C_LIBRARY_NAME ${ZERODDS_LIBRARY_PREFIX}${PROJECT_NAME})
 
 # Use the build type to know the folder in which the library will be built
-if(${CMAKE_BUILD_TYPE} STREQUAL "Release" OR ${CMAKE_BUILD_TYPE} STREQUAL "Debug")
-    string(TOLOWER ${CMAKE_BUILD_TYPE} ZERODDS_BUILD_TYPE)
+if("${CMAKE_BUILD_TYPE}" STREQUAL "Release" OR "${CMAKE_BUILD_TYPE}" STREQUAL "Debug")
+    string(TOLOWER "${CMAKE_BUILD_TYPE}" ZERODDS_BUILD_TYPE)
 else()
     set(ZERODDS_BUILD_TYPE "release")
 endif()
