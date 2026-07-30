@@ -96,7 +96,7 @@ let port = UInt16(args.count > 2 ? args[2] : "0") ?? 0
 guard let transport = UDPTransport(port: port) else { fail("udp init failed") }
 
 // Marshal the Ping with the generated codec, hand the bytes to the SDK.
-let sample = Ping(seq: 1, msg: "hello from app").marshalXCDR(.little)
+let sample = try Ping(seq: 1, msg: "hello from app").marshalXCDR(.little)
 
 var body: [UInt8]? = nil
 if mode == "async" {
@@ -121,7 +121,7 @@ if mode == "async" {
 }
 
 guard let got = body else { fail("\(mode): no pong") }
-let pong = Pong.unmarshalXCDR(got, .little)
+let pong = try Pong.unmarshalXCDR(got, .little)
 print("PONG seq=\(pong.seq) reply=\(pong.reply)")
 "#;
 
