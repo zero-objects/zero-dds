@@ -72,6 +72,19 @@ fn extensibility_annotation_form_emits_kwarg() {
     );
 }
 
+/// Broad-audit P0-4: the long form `@extensibility(MUTABLE)` must map to the
+/// same `mutable` kwarg (plus member_ids) as the short `@mutable`. This is the
+/// short-vs-long drift C/C++/TS had; routing through the central
+/// `extensibility_of` guarantees the Python descriptor agrees.
+#[test]
+fn extensibility_annotation_form_mutable_emits_kwarg() {
+    let py = emit("@extensibility(MUTABLE) struct S { long a; };");
+    assert!(
+        py.contains("@idl_struct(typename=\"S\", extensibility=\"mutable\", member_ids=[0])"),
+        "{py}"
+    );
+}
+
 #[test]
 fn struct_with_unbounded_string_uses_string_brand() {
     let py = emit("struct M { string note; };");

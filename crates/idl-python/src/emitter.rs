@@ -20,7 +20,7 @@ use zerodds_idl::ast::types::{
     UnionDcl, UnionDef,
 };
 use zerodds_idl::semantics::annotations::{
-    BuiltinAnnotation, ExtensibilityKind, PlacementKind, lower_annotations,
+    BuiltinAnnotation, ExtensibilityKind, PlacementKind, extensibility_of, lower_annotations,
 };
 
 use crate::error::{IdlPythonError, Result};
@@ -694,8 +694,10 @@ fn emit_module(out: &mut String, m: &ModuleDef, scope: &mut Vec<String>) -> Resu
 /// kwarg for the non-default cases so the compact `@final` layout stays
 /// untouched (XTypes 1.3 §7.4.3.5.3 — DHEADER framing is driven by this).
 fn struct_extensibility_kwarg(s: &StructDef) -> Option<&'static str> {
-    let lowered = lower_annotations(&s.annotations).ok()?;
-    match lowered.extensibility() {
+    // Single-source (broad-audit P0-4): the ONE central normalizer
+    // `extensibility_of` (short forms AND long form
+    // `@extensibility(FINAL|APPENDABLE|MUTABLE)`), the same path C/C++/TS use.
+    match extensibility_of(&s.annotations) {
         Some(ExtensibilityKind::Final) => None, // explicit @final → compact, no kwarg
         Some(ExtensibilityKind::Appendable) => Some("appendable"),
         Some(ExtensibilityKind::Mutable) => Some("mutable"),
@@ -706,8 +708,9 @@ fn struct_extensibility_kwarg(s: &StructDef) -> Option<&'static str> {
 /// Same mapping as [`struct_extensibility_kwarg`] but for a union — drives the
 /// union's DHEADER (appendable/mutable) in the Python runtime's `_IdlUnion`.
 fn union_extensibility_kwarg(u: &UnionDef) -> Option<&'static str> {
-    let lowered = lower_annotations(&u.annotations).ok()?;
-    match lowered.extensibility() {
+    // Single-source (broad-audit P0-4): route through the central
+    // `extensibility_of` (short AND long form), same as the struct path above.
+    match extensibility_of(&u.annotations) {
         Some(ExtensibilityKind::Final) => None,
         Some(ExtensibilityKind::Appendable) => Some("appendable"),
         Some(ExtensibilityKind::Mutable) => Some("mutable"),

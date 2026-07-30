@@ -36,7 +36,7 @@ use zerodds_idl::ast::{
     UnionDcl, UnionDef,
 };
 use zerodds_idl::semantics::annotations::{
-    BuiltinAnnotation, ExtensibilityKind as IdlExtensibility,
+    BuiltinAnnotation, ExtensibilityKind as IdlExtensibility, extensibility_of,
 };
 
 use crate::JavaGenOptions;
@@ -137,9 +137,7 @@ fn collect_types(defs: &[Definition], table: &mut TypeTable) {
         match d {
             Definition::Module(m) => collect_types(&m.definitions, table),
             Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Struct(StructDcl::Def(s)))) => {
-                let ext = lower_or_empty(&s.annotations)
-                    .extensibility()
-                    .unwrap_or(IdlExtensibility::Appendable); // SX2 §7.3.3.1
+                let ext = extensibility_of(&s.annotations).unwrap_or(IdlExtensibility::Appendable); // SX2 §7.3.3.1
                 table.insert(
                     s.name.text.clone(),
                     ResolvedKind::Struct {
@@ -449,15 +447,13 @@ fn emit_typesupport_for_struct(
     let class = sanitize_identifier(&s.name.text)?;
     let support_class = format!("{class}TypeSupport");
     let ind = indent_unit(opts);
-    let lowered = lower_or_empty(&s.annotations);
     // XTypes 1.3 §7.3.1.2.1.1 (and the idl-rust default, annotations.rs:49): an
     // aggregate with NO explicit @final/@appendable/@mutable is FINAL. Defaulting
     // to APPENDABLE here was Bug XW — it wrapped @final nested structs (e.g.
     // `combo::Sample` inside `sequence<Sample>`) in a spurious per-element DHEADER
-    // (rule (30)), diverging from the cdr-core / rust canonical golden.
-    let extensibility = lowered
-        .extensibility()
-        .unwrap_or(IdlExtensibility::Appendable); // SX2 §7.3.3.1
+    // (rule (30)), diverging from the cdr-core / rust canonical golden. Read via
+    // the central `extensibility_of` (short AND long form) for single-source.
+    let extensibility = extensibility_of(&s.annotations).unwrap_or(IdlExtensibility::Appendable); // SX2 §7.3.3.1
 
     let type_name = build_type_name(module_chain, &class);
     let is_keyed = resolved_wire_members(s, table).iter().any(member_has_key);
@@ -722,10 +718,7 @@ fn emit_typesupport_for_union(
     // FUNION_TYPE). Only @appendable/@mutable unions are DHEADER-delimited
     // (rule (21)). The previous hardcoded APPENDABLE DHEADER was the divergence
     // (e.g. `combo::Reading` is @final).
-    let u_lowered = lower_or_empty(&u.annotations);
-    let extensibility = u_lowered
-        .extensibility()
-        .unwrap_or(IdlExtensibility::Appendable); // SX2 §7.3.3.1
+    let extensibility = extensibility_of(&u.annotations).unwrap_or(IdlExtensibility::Appendable); // SX2 §7.3.3.1
     let delimited = !matches!(extensibility, IdlExtensibility::Final);
     let ext_lit = match extensibility {
         IdlExtensibility::Final => "FINAL",

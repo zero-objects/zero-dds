@@ -32,7 +32,7 @@
 
 use zerodds_idl::ast::Annotation;
 use zerodds_idl::semantics::annotations::{
-    BuiltinAnnotation, ExtensibilityKind, Lowered, lower_annotations,
+    BuiltinAnnotation, ExtensibilityKind, Lowered, extensibility_of, lower_annotations,
 };
 
 /// Java FQN prefix for the runtime annotations.
@@ -105,7 +105,11 @@ pub(crate) fn type_annotation_lines(anns: &[Annotation]) -> Vec<String> {
     if has_nested(&lowered) {
         out.push(format!("@{RUNTIME_PREFIX}.Nested"));
     }
-    if let Some(kind) = lowered.extensibility() {
+    // Single-source (broad-audit P0-4): read extensibility through the ONE
+    // central normalizer `extensibility_of` (short forms AND the long form
+    // `@extensibility(FINAL|APPENDABLE|MUTABLE)`), the same path C/C++/TS use,
+    // instead of the local `Lowered::extensibility()` duplicate.
+    if let Some(kind) = extensibility_of(anns) {
         let lit = match kind {
             ExtensibilityKind::Final => "FINAL",
             ExtensibilityKind::Appendable => "APPENDABLE",
@@ -275,6 +279,23 @@ mod tests {
             vec![
                 "@org.zerodds.types.Extensibility(\
                   org.zerodds.types.Extensibility.Kind.APPENDABLE)"
+                    .to_string()
+            ],
+        );
+    }
+
+    /// Broad-audit P0-4: the long form `@extensibility(MUTABLE)` must be
+    /// recognized as MUTABLE, identical to the short `@mutable`. This is the
+    /// short-vs-long drift C/C++/TS had; routing through the central
+    /// `extensibility_of` guarantees the Java header agrees.
+    #[test]
+    fn mutable_long_form_extensibility_emits_mutable() {
+        let anns = struct_anns("@extensibility(MUTABLE) struct S { long x; };");
+        assert_eq!(
+            type_annotation_lines(&anns),
+            vec![
+                "@org.zerodds.types.Extensibility(\
+                  org.zerodds.types.Extensibility.Kind.MUTABLE)"
                     .to_string()
             ],
         );
