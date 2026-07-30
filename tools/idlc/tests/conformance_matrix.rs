@@ -155,10 +155,10 @@ const EXPECTED: &[(&str, [bool; 17])] = &[
     (
         "15_constants",
         [
-            true, true, true, true, true, true, true, true, false, false, false, false, false,
-            false, false, false, false,
+            true, true, true, true, true, true, true, true, true, true, false, true, true, true,
+            true, true, false,
         ],
-    ), // ts Bug N + py Bug M fixed; C: const array bound still open. go: central const-eval resolves `long items[MAX_ITEMS]` (audit P1 "Const-Eval driftet"). ada..swift: const-expression array size still unsupported (literal-only array_size in those backends).
+    ), // ts Bug N + py Bug M fixed; C: const array bound still open. go: central const-eval resolves `long items[MAX_ITEMS]`. #11 gave ada/zig/d/elixir/ocaml/julia/lua const-expression bounds (named consts + arithmetic in array_size/labels). nim + swift keep literal-only array_size — still unsupported.
     (
         "16_modules",
         [
