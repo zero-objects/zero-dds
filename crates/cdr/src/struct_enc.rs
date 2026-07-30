@@ -52,18 +52,42 @@ pub fn encode_appendable<F>(writer: &mut BufferWriter, body: F) -> Result<(), En
 where
     F: FnOnce(&mut BufferWriter) -> Result<(), EncodeError>,
 {
-    // The inner body inherits the parent's alignment cap (XCDR2=4) —
-    // otherwise a 64-bit member inside the DHEADER body would re-align to 8.
-    let mut inner =
-        BufferWriter::new(writer.endianness()).with_max_alignment(writer.max_alignment());
-    body(&mut inner)?;
-    let bytes = inner.into_bytes();
-    let len = u32::try_from(bytes.len()).map_err(|_| EncodeError::ValueOutOfRange {
-        message: "appendable struct body exceeds u32::MAX",
-    })?;
-    writer.write_u32(len)?;
-    writer.write_bytes(&bytes)?;
-    Ok(())
+    // Write a 0-placeholder DHEADER, run the body straight into `writer`, then
+    // backpatch the length. This avoids a throwaway sub-writer Vec plus the copy
+    // of its bytes back into `writer` — one alloc and one full-body memcpy per
+    // @appendable struct per sample.
+    //
+    // Byte-identity depends on the body aligning the same in `writer` as it
+    // would at offset 0 of a sub-writer. The DHEADER body aligns relative to its
+    // own start (XCDR2 §7.4.3.4.5), so this holds iff `body_start` is aligned to
+    // `max_alignment`. write_u32 leaves `writer` 4-aligned; the generated code
+    // only reaches here on the XCDR2 path (max_alignment == 4, verified in
+    // idl-rust struct_emit — @appendable emits no DHEADER under XCDR1). If a
+    // direct caller ever violates that, fall back to the sub-writer so the bytes
+    // are always correct.
+    writer.write_u32(0)?;
+    let body_start = writer.position();
+    if body_start % writer.max_alignment() == 0 {
+        body(writer)?;
+        let len = u32::try_from(writer.position() - body_start).map_err(|_| {
+            EncodeError::ValueOutOfRange {
+                message: "appendable struct body exceeds u32::MAX",
+            }
+        })?;
+        writer.patch_u32_at(body_start - 4, len)?;
+        Ok(())
+    } else {
+        let mut inner =
+            BufferWriter::new(writer.endianness()).with_max_alignment(writer.max_alignment());
+        body(&mut inner)?;
+        let bytes = inner.into_bytes();
+        let len = u32::try_from(bytes.len()).map_err(|_| EncodeError::ValueOutOfRange {
+            message: "appendable struct body exceeds u32::MAX",
+        })?;
+        writer.patch_u32_at(body_start - 4, len)?;
+        writer.write_bytes(&bytes)?;
+        Ok(())
+    }
 }
 
 /// Decodes an `@appendable` struct. Reads the DHEADER length, builds a

@@ -156,10 +156,7 @@ fn final_struct_emits_type_and_marshal() {
 #[test]
 fn appendable_struct_frames_a_dheader() {
     let z = emit("@appendable struct S { uint32 a; };");
-    assert!(
-        z.contains("var body_s = Writer.init(w.buf.allocator, w.endian);"),
-        "{z}"
-    );
+    assert!(z.contains("var body_s = w.sub();"), "{z}");
     assert!(
         z.contains("try w.putU32(@intCast(body.bytes().len));"),
         "{z}"
