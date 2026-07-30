@@ -117,7 +117,11 @@ int main(int argc, char** argv) {
 "####;
 
 fn build_app(cc: &str, port: u16, count: u32) -> Child {
-    let dir = std::env::temp_dir().join(format!("rel_cpp_{}", std::process::id()));
+    // Per-test-unique dir (keyed by the test's unique UDP port): the parallel
+    // test runner runs this file's tests as threads in ONE process, so a shared
+    // `<name>_<pid>/app` path let one test compile the binary while another
+    // exec'd it — ETXTBSY ("Text file busy"). A per-port dir removes the sharing.
+    let dir = std::env::temp_dir().join(format!("rel_cpp_{}_{}", std::process::id(), port));
     std::fs::create_dir_all(&dir).expect("mkdir");
     let src = dir.join("app.cpp");
     std::fs::write(&src, APP_CPP).expect("write app");
