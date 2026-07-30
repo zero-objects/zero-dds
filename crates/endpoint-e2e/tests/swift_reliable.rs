@@ -103,6 +103,9 @@ fn scaffold(tag: &str) -> PathBuf {
 // spec's sender protocol); `bench <port>` reports the async-writer wait-free
 // enqueue latency vs inline `sendto`.
 const SWIFT_RELIABLE_MAIN: &str = r#"import Foundation
+#if canImport(Glibc)
+import Glibc
+#endif
 import ZeroddsReliable
 
 final class UDP {
@@ -111,7 +114,12 @@ final class UDP {
     init(port: UInt16) {
         // Work on the local `s` so no closure captures `self` before both
         // stored properties are assigned (Swift init rule).
+        // SOCK_DGRAM is Int32 on Darwin but a `__socket_type` enum on Glibc.
+        #if canImport(Glibc)
+        let s = socket(AF_INET, Int32(SOCK_DGRAM.rawValue), 0)
+        #else
         let s = socket(AF_INET, SOCK_DGRAM, 0)
+        #endif
         var local = sockaddr_in()
         local.sin_family = sa_family_t(AF_INET)
         local.sin_port = 0
