@@ -232,11 +232,14 @@ fn user_reader_cfg(ep: &Endpoint, type_name: &str) -> UserReaderConfig {
         reliable: ep.qos.reliable,
         durability: ep.qos.durability.into(),
         deadline: DeadlineQosPolicy::default(),
+        latency_budget: Default::default(),
+        destination_order: Default::default(),
         liveliness: LivelinessQosPolicy {
             kind: LivelinessKind::Automatic,
             ..Default::default()
         },
         ownership: ep.qos.ownership.into(),
+        presentation: Default::default(),
         partition: ep.partition.clone(),
         user_data: Vec::new(),
         topic_data: Vec::new(),
@@ -259,6 +262,8 @@ fn user_writer_cfg(ep: &Endpoint, type_name: &str) -> UserWriterConfig {
         reliable: ep.qos.reliable,
         durability: ep.qos.durability.into(),
         deadline: DeadlineQosPolicy::default(),
+        latency_budget: Default::default(),
+        destination_order: Default::default(),
         lifespan: LifespanQosPolicy::default(),
         liveliness: LivelinessQosPolicy {
             kind: LivelinessKind::Automatic,
@@ -270,6 +275,7 @@ fn user_writer_cfg(ep: &Endpoint, type_name: &str) -> UserWriterConfig {
         } else {
             0
         },
+        presentation: Default::default(),
         partition: ep.partition.clone(),
         user_data: Vec::new(),
         topic_data: Vec::new(),

@@ -9,10 +9,9 @@ use core::fmt;
 pub enum RustGenError {
     /// The IDL construct is currently not supported by the Rust codegen.
     ///
-    /// Not a spec bug — some IDL features (Fixed, Map, Any, Bitset,
-    /// Bitmask, Valuetype, Interface, Component, Home) are outside
-    /// the DDS-DataType path. Whoever generates DDS DataTypes does not
-    /// need them.
+    /// Not a spec bug — some IDL features (Fixed, Map, Any, Valuetype,
+    /// Interface, Component, Home) are outside the DDS-DataType path.
+    /// Whoever generates DDS DataTypes does not need them.
     Unsupported {
         /// Construct name (e.g. `"fixed"`).
         what: &'static str,

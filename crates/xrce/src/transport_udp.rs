@@ -108,9 +108,10 @@ mod tests {
     #![allow(clippy::expect_used, clippy::unwrap_used)]
     use super::*;
     use crate::header::{ClientKey, MessageHeader, SessionId, StreamId};
+    use crate::object_id::ObjectId;
+    use crate::object_info::BaseObjectRequest;
     use crate::serial_number::SerialNumber16;
     use crate::submessages::timestamp::TimePoint;
-    use crate::submessages::write_data::DataFormat;
     use crate::submessages::{
         AckNackPayload, CreateClientPayload, FragmentPayload, HeartbeatPayload, ResetPayload,
         Submessage, TimestampPayload, TimestampReplyPayload, WriteDataPayload,
@@ -181,8 +182,11 @@ mod tests {
     #[test]
     fn loopback_roundtrip_write_data() {
         let sm = WriteDataPayload {
-            representation: alloc::vec![1, 2, 3, 4, 5, 6, 7, 8],
-            data_format: DataFormat::Sample,
+            base: BaseObjectRequest {
+                request_id: [0x00, 0x01],
+                object_id: ObjectId::from_raw(0x0DA5),
+            },
+            serialized_data: alloc::vec![1, 2, 3, 4, 5, 6, 7, 8],
         }
         .into_submessage()
         .unwrap();

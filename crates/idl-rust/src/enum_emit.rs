@@ -7,6 +7,7 @@
 //! declaration order.
 
 use zerodds_idl::ast::types::EnumDef;
+use zerodds_idl::semantics::annotations::PlacementKind;
 
 use crate::annotations::enumerator_value;
 use crate::error::Result;
@@ -39,15 +40,20 @@ pub fn emit_enum(out: &mut String, e: &EnumDef) -> Result<()> {
     out.push_str("pub enum ");
     out.push_str(&escape_keyword(&e.name.text));
     out.push_str(" {\n");
+    // §7.2.2.4.8 — `@verbatim(placement=BEGIN_DECLARATION)`.
+    crate::verbatim::emit_verbatim_at(out, "    ", &e.annotations, PlacementKind::BeginDeclaration);
     for (enumerator, value) in e.enumerators.iter().zip(&values) {
         out.push_str("    ");
         out.push_str(&escape_keyword(&enumerator.name.text));
         out.push_str(&format!(" = {value}"));
         out.push_str(",\n");
     }
+    // §7.2.2.4.8 — `@verbatim(placement=END_DECLARATION)`.
+    crate::verbatim::emit_verbatim_at(out, "    ", &e.annotations, PlacementKind::EndDeclaration);
     out.push_str("}\n\n");
 
     if let Some(first) = e.enumerators.first() {
+        out.push_str(crate::emitter::IMPL_LINT_ALLOW);
         out.push_str("impl Default for ");
         out.push_str(&escape_keyword(&e.name.text));
         out.push_str(" {\n");
@@ -60,6 +66,7 @@ pub fn emit_enum(out: &mut String, e: &EnumDef) -> Result<()> {
         out.push_str("}\n\n");
     }
 
+    out.push_str(crate::emitter::IMPL_LINT_ALLOW);
     out.push_str("impl ");
     out.push_str(&escape_keyword(&e.name.text));
     out.push_str(" {\n");
@@ -83,13 +90,15 @@ pub fn emit_enum(out: &mut String, e: &EnumDef) -> Result<()> {
     // §7.3.1.2.1.2): bound≤8 → i8 (1 octet), ≤16 → i16 (2 octets), else i32.
     // The in-memory repr stays i32; only the wire cast narrows. Cyclone honours
     // this; the previous fixed-i32 path silently dropped `@bit_bound`.
-    let octets =
-        crate::annotations::enum_wire_octets(crate::annotations::enum_bit_bound(&e.annotations));
+    let octets = zerodds_idl::semantics::enum_wire_octets(zerodds_idl::semantics::enum_bit_bound(
+        &e.annotations,
+    ));
     let wire_ty = match octets {
         1 => "i8",
         2 => "i16",
         _ => "i32",
     };
+    out.push_str(crate::emitter::IMPL_LINT_ALLOW);
     out.push_str("impl zerodds_cdr::CdrEncode for ");
     out.push_str(&escape_keyword(&e.name.text));
     out.push_str(" {\n");
@@ -100,6 +109,7 @@ pub fn emit_enum(out: &mut String, e: &EnumDef) -> Result<()> {
     out.push_str("    }\n");
     out.push_str("}\n\n");
 
+    out.push_str(crate::emitter::IMPL_LINT_ALLOW);
     out.push_str("impl zerodds_cdr::CdrDecode for ");
     out.push_str(&escape_keyword(&e.name.text));
     out.push_str(" {\n");

@@ -1,0 +1,20 @@
+[package]
+name = "zerodds-dotnet-build-lock"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Test-only: a cross-process advisory lock that serializes the `dotnet build`s which all reference the single ZeroDDS.Cdr project. Concurrent builds race on its shared obj/ output (CS2012); this guard makes them mutually exclusive across test binaries and processes."
+repository = "https://github.com/zero-objects/zero-dds"
+homepage = "https://zerodds.org"
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

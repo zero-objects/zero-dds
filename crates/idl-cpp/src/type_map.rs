@@ -112,6 +112,10 @@ pub fn is_reserved(name: &str) -> bool {
 
 /// Check + error conversion: returns Err if `name` is reserved.
 ///
+/// Retained for the RPC/legacy callers that still want a hard rejection
+/// and for the unit tests; the topic/type codegen now *escapes* instead
+/// (see [`escape_cpp_ident`]).
+///
 /// # Errors
 /// Returns [`CppGenError::InvalidName`] if `name` is a reserved C++
 /// keyword.
@@ -123,6 +127,32 @@ pub fn check_identifier(name: &str) -> Result<(), CppGenError> {
         });
     }
     Ok(())
+}
+
+/// Returns an identifier guaranteed usable as a bare C++ token.
+///
+/// - If `name` is collision-free: returned unchanged.
+/// - If `name` is a reserved C++ keyword: a trailing `_` is appended
+///   (`int` -> `int_`, `class` -> `class_`).
+///
+/// A trailing underscore is *always* a legal C++ identifier: only a
+/// LEADING underscore followed by an uppercase letter, or a name
+/// containing a double underscore, is reserved to the implementation
+/// (ISO/IEC 14882:2017 §5.10). Since no [`CPP_RESERVED`] entry ends in
+/// `_`, the escaped form is never itself reserved (asserted by the
+/// `escaped_form_is_never_itself_reserved` guard test).
+///
+/// This mirrors the thin C-mode backend's [`crate::c_keywords::escape_c_ident`].
+/// The escaping is name-LOCAL: it only touches the C++ identifier text, never
+/// the DDS type name on the wire, member ids, `@key` membership or key-hash
+/// layout, so it cannot move the XCDR2 wire format.
+#[must_use]
+pub fn escape_cpp_ident(name: &str) -> String {
+    if is_reserved(name) {
+        format!("{name}_")
+    } else {
+        name.to_string()
+    }
 }
 
 /// Maps a [`PrimitiveType`] to the C++ type expression (as `&'static str`).
@@ -242,6 +272,54 @@ mod tests {
     fn non_reserved_identifier_passes() {
         assert!(!is_reserved("Foo"));
         assert!(check_identifier("Foo").is_ok());
+    }
+
+    #[test]
+    fn escape_keyword_yields_trailing_underscore() {
+        assert_eq!(escape_cpp_ident("class"), "class_");
+        assert_eq!(escape_cpp_ident("int"), "int_");
+        assert_eq!(escape_cpp_ident("template"), "template_");
+        assert_eq!(escape_cpp_ident("operator"), "operator_");
+        assert_eq!(escape_cpp_ident("delete"), "delete_");
+    }
+
+    #[test]
+    fn escape_non_keyword_unchanged() {
+        assert_eq!(escape_cpp_ident("Foo"), "Foo");
+        assert_eq!(escape_cpp_ident("my_field"), "my_field");
+        // A name that merely *contains* a keyword is untouched.
+        assert_eq!(escape_cpp_ident("class_field"), "class_field");
+    }
+
+    #[test]
+    fn all_keywords_escape_to_trailing_underscore() {
+        for kw in CPP_RESERVED {
+            assert_eq!(escape_cpp_ident(kw), format!("{kw}_"));
+        }
+    }
+
+    #[test]
+    fn escaped_form_is_never_itself_reserved() {
+        // Structurally guaranteed because no CPP_RESERVED entry ends in `_`
+        // (see `no_reserved_word_ends_in_underscore`); asserted defensively so
+        // the escaping can never collide back onto another keyword.
+        for kw in CPP_RESERVED {
+            let escaped = escape_cpp_ident(kw);
+            assert!(!is_reserved(&escaped), "{escaped} must not be reserved");
+        }
+    }
+
+    #[test]
+    fn no_reserved_word_ends_in_underscore() {
+        // Guard: the trailing-underscore escape is only legal because no C++
+        // keyword itself ends in `_`. If a future keyword addition broke this,
+        // `escape_cpp_ident("kw")` could equal another keyword.
+        for kw in CPP_RESERVED {
+            assert!(
+                !kw.ends_with('_'),
+                "CPP_RESERVED entry {kw:?} ends in '_' — breaks the escape invariant"
+            );
+        }
     }
 
     #[test]

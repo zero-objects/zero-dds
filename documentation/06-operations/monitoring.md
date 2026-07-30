@@ -26,12 +26,17 @@ Cheapest path. A monitoring thread holds an
 let stats = some_writer_cache.stats();
 loop {
     let snap = stats.snapshot();
-    metrics::gauge!("dds.cache.len", snap.len as f64);
-    metrics::gauge!("dds.cache.evicted", snap.evicted as f64);
+    metrics::gauge!("dds.cache.len").set(snap.len as f64);
+    metrics::gauge!("dds.cache.evicted").set(snap.evicted as f64);
     if let Some(max) = snap.max_sn { /* … */ }
     std::thread::sleep(std::time::Duration::from_secs(1));
 }
 ```
+
+> ▶ Verified against the real, currently-published [`metrics`](https://docs.rs/metrics)
+> crate (0.24: `gauge!(name)` returns a handle, `.set(value)` applies it —
+> see `monitoring_metrics_gauge_snippet` in
+> `crates/dcps/tests/documentation_snippets_compile.rs`).
 
 No impact on the writer hot path — atomics with `Acquire`-load.
 
@@ -48,8 +53,10 @@ Datadog / Loki / journald-friendly out of the box.
 
 ### 3. OTel exporter
 
-`crates/observability-otlp` (work-in-progress) ships events to
-an OTel collector via OTLP-HTTP. From there, fan out to:
+`crates/observability-otlp` (`zerodds-observability-otlp`) ships
+spans/histograms/events to an OTel collector via OTLP-HTTP-JSON
+(`OtlpExporter` — see [observability.md](../03-configuration/observability.md#layer-3-otel-bridge)
+for the wiring). From there, fan out to:
 
 - Tempo / Jaeger (traces)
 - Mimir / Prometheus (metrics)

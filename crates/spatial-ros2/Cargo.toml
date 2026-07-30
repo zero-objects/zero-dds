@@ -16,9 +16,9 @@ publish = true
 workspace = true
 
 [dependencies]
-zerodds-cdr = { version = "1.0.0-rc.6", path = "../cdr", default-features = false, features = ["std"] }
-zerodds-spatial-dds = { version = "1.0.0-rc.6", path = "../spatial-dds" }
+zerodds-cdr = { version = "1.0.0-rc.7", path = "../cdr", default-features = false, features = ["std"] }
+zerodds-spatial-dds = { version = "1.0.0-rc.7", path = "../spatial-dds" }
 
 [build-dependencies]
-zerodds-idl = { version = "1.0.0-rc.6", path = "../idl" }
-zerodds-idl-rust = { version = "1.0.0-rc.6", path = "../idl-rust" }
+zerodds-idl = { version = "1.0.0-rc.7", path = "../idl" }
+zerodds-idl-rust = { version = "1.0.0-rc.7", path = "../idl-rust" }

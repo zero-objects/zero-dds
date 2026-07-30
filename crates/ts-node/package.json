@@ -1,6 +1,6 @@
 {
   "name": "@zerodds/node",
-  "version": "0.0.0",
+  "version": "1.0.0-rc.7",
   "description": "ZeroDDS TypeScript binding for Node.js (via koffi FFI over zerodds.h). Native RTPS 2.5, XCDR2, DDS 1.4 QoS.",
   "type": "module",
   "main": "dist/index.js",
@@ -22,7 +22,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
-    "tsx": "^4.19.0",
+    "tsx": "^4.23.0",
     "typescript": "^5.6.0"
   },
   "keywords": [

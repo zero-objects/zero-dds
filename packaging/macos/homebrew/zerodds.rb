@@ -6,7 +6,7 @@ class Zerodds < Formula
   desc "ZeroDDS — pure-Rust DDS implementation with bridges (DDS 1.4 / RTPS 2.5 / XTypes 1.3)"
   homepage "https://zerodds.org"
   license "Apache-2.0"
-  version "1.0.0-rc.1"
+  version "1.0.0-rc.7"
 
   depends_on "openssl@3"
 

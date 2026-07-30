@@ -251,7 +251,47 @@ fn build_definition_list(list: &CstNode<'_>, depth: usize) -> BuildResult<Vec<De
             out.push(build_definition(it, depth)?);
         }
     }
-    Ok(out)
+    Ok(merge_reopened_modules(out))
+}
+
+/// §7.4.1.4 module reopen: `module M { ... } ... module M { ... }` at the
+/// same scope refers to the *same* module — the resolver already merges
+/// the reopened module's symbol table into one scope (identical-casing
+/// rule, see `semantics/resolver.rs::add_definition`), but until now the
+/// AST kept two sibling [`Definition::Module`] nodes. Backends that emit
+/// one target-language module construct per AST node (e.g. idl-rust's
+/// `pub mod M { ... }`) then double-emit the wrapper — `E0428` for Rust —
+/// and any backend that emits per-`Definition::Module` at all silently
+/// scatters a reopened module's members across two separate wrappers.
+///
+/// Merge by identical name casing (matching the resolver's reopen rule —
+/// a reopen with *different* casing is a name collision, not a reopen,
+/// and is left for the resolver to reject), folding a later reopen's
+/// definitions, annotations and `reopen_spans` into the first occurrence,
+/// in source order. Differently-named or differently-cased modules are
+/// untouched. `reopen_spans` keeps every occurrence's name-span so
+/// span-sensitive validators (e.g. the import "exposed but not imported"
+/// effect-5 check) can still see each individual reopen after the merge.
+fn merge_reopened_modules(defs: Vec<Definition>) -> Vec<Definition> {
+    let mut merged: Vec<Definition> = Vec::with_capacity(defs.len());
+    for def in defs {
+        if let Definition::Module(m) = def {
+            let existing = merged.iter_mut().find_map(|d| match d {
+                Definition::Module(em) if em.name.text == m.name.text => Some(em),
+                _ => None,
+            });
+            if let Some(existing) = existing {
+                existing.definitions.extend(m.definitions);
+                existing.annotations.extend(m.annotations);
+                existing.reopen_spans.extend(m.reopen_spans);
+                continue;
+            }
+            merged.push(Definition::Module(m));
+        } else {
+            merged.push(def);
+        }
+    }
+    merged
 }
 
 /// zerodds-lint: recursion-depth 64 (a template module body can contain definitions recursively; bounded by IDL nesting)
@@ -409,6 +449,7 @@ fn build_module_dcl(node: &CstNode<'_>, outer_span: Span, depth: usize) -> Build
         definitions,
         annotations: Vec::new(),
         span: outer_span,
+        reopen_spans: vec![span],
     })
 }
 
@@ -3106,6 +3147,94 @@ mod tests {
                 assert!(m.definitions.is_empty());
             }
             _ => panic!("expected module"),
+        }
+    }
+
+    #[test]
+    fn reopened_module_merges_into_single_ast_node() {
+        // §7.4.1.4 module reopen: two `module M { ... }` blocks at the same
+        // scope must become ONE `Definition::Module` in the AST — a backend
+        // that emits one wrapper per `Definition::Module` (e.g. idl-rust's
+        // `pub mod M`) would otherwise double-emit and, for Rust, hit
+        // E0428 ("duplicate definitions").
+        let ast =
+            parse_to_ast("module M { struct A { long x; }; }; module M { struct B { long y; }; };");
+        assert_eq!(
+            ast.definitions.len(),
+            1,
+            "reopened module must collapse to a single AST node, got {:?}",
+            ast.definitions
+        );
+        match &ast.definitions[0] {
+            Definition::Module(m) => {
+                assert_eq!(m.name.text, "M");
+                assert_eq!(m.definitions.len(), 2);
+                let names: Vec<&str> = m
+                    .definitions
+                    .iter()
+                    .map(|d| match d {
+                        Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Struct(
+                            StructDcl::Def(s),
+                        ))) => s.name.text.as_str(),
+                        _ => panic!("expected struct def, got {d:?}"),
+                    })
+                    .collect();
+                assert_eq!(names, ["A", "B"]);
+            }
+            _ => panic!("expected module"),
+        }
+    }
+
+    #[test]
+    fn reopened_module_three_times_merges_all_definitions_in_order() {
+        let ast = parse_to_ast(
+            "module M { struct A { long x; }; }; \
+             module M { struct B { long y; }; }; \
+             module M { struct C { long z; }; };",
+        );
+        assert_eq!(ast.definitions.len(), 1);
+        match &ast.definitions[0] {
+            Definition::Module(m) => assert_eq!(m.definitions.len(), 3),
+            _ => panic!("expected module"),
+        }
+    }
+
+    #[test]
+    fn non_reopened_sibling_modules_stay_separate() {
+        let ast = parse_to_ast(
+            "module A { struct S1 { long x; }; }; module B { struct S2 { long y; }; };",
+        );
+        assert_eq!(ast.definitions.len(), 2);
+        let names: Vec<&str> = ast
+            .definitions
+            .iter()
+            .map(|d| match d {
+                Definition::Module(m) => m.name.text.as_str(),
+                _ => panic!("expected module"),
+            })
+            .collect();
+        assert_eq!(names, ["A", "B"]);
+    }
+
+    #[test]
+    fn reopened_module_nested_at_inner_scope_merges_too() {
+        // The merge runs in `build_definition_list`, which is also used for
+        // the body of a module — so reopen inside an outer module must merge
+        // at that inner scope, not just at the top level.
+        let ast = parse_to_ast(
+            "module Outer { \
+                module Inner { struct A { long x; }; }; \
+                module Inner { struct B { long y; }; }; \
+             };",
+        );
+        let outer = match &ast.definitions[0] {
+            Definition::Module(m) => m,
+            _ => panic!("expected outer module"),
+        };
+        assert_eq!(outer.definitions.len(), 1);
+        match &outer.definitions[0] {
+            Definition::Module(inner) => assert_eq!(inner.definitions.len(), 2),
+            _ => panic!("expected inner module"),
         }
     }
 

@@ -37,9 +37,9 @@ inspect = ["dep:zerodds-inspect-endpoint", "zerodds-inspect-endpoint/inspect"]
 recvmmsg-batch = []
 
 [dependencies]
-zerodds-rtps = { version = "1.0.0-rc.6", path = "../rtps" }
-zerodds-transport = { version = "1.0.0-rc.6", path = "../transport" }
-zerodds-monitor = { version = "1.0.0-rc.6", path = "../monitor", default-features = false, features = ["std"] }
+zerodds-rtps = { version = "1.0.0-rc.7", path = "../rtps" }
+zerodds-transport = { version = "1.0.0-rc.7", path = "../transport" }
+zerodds-monitor = { version = "1.0.0-rc.7", path = "../monitor", default-features = false, features = ["std"] }
 socket2 = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
@@ -48,7 +48,7 @@ socket2 = { workspace = true }
 # feature `recvmmsg-batch`. Default-active on Unix (Linux, macOS, BSD).
 libc = { workspace = true }
 # Inspect-endpoint tap hooks (PDE Reality Inspector). Optional.
-zerodds-inspect-endpoint = { version = "1.0.0-rc.6", path = "../inspect-endpoint", optional = true }
+zerodds-inspect-endpoint = { version = "1.0.0-rc.7", path = "../inspect-endpoint", optional = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

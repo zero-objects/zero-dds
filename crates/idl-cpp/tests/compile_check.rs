@@ -169,6 +169,50 @@ fn compiles_constants() {
     check_compiles(&cpp).expect("constants must compile");
 }
 
+/// Issue #14: reserved C++ keywords used as IDL identifiers at every level are
+/// ESCAPED (trailing `_`), not rejected. Compiling the whole header under
+/// `-std=c++17` is the exhaustive check for a MISSED reference site — any
+/// declaration or accessor/splice/base-class reference that still emits a bare
+/// keyword fails here. Covers: module, enum + enumerators, `@final` nested
+/// (inline-recursed), `@appendable` nested (spliced), base-class inheritance,
+/// and a union with an enum discriminator carrying keyword case labels.
+#[test]
+fn compiles_reserved_word_identifiers() {
+    let cpp = gen_default(
+        "module class { \
+            enum mutable { new, delete }; \
+            @final struct template { long int; long operator; }; \
+            @appendable struct explicit { long friend; }; \
+            struct volatile { template inline; explicit signed; }; \
+            struct virtual : template { long throw; }; \
+            union namespace switch (mutable) { \
+                case new: long alignas; case delete: double noexcept; default: octet register; \
+            }; \
+        };",
+    );
+    check_compiles(&cpp).expect("reserved-word-named types must compile after escaping");
+}
+
+/// End-to-end roundtrip proving the escaped accessors/encode/decode are wired
+/// consistently: a reserved-word-named type is constructed via its escaped
+/// setters, encoded and decoded, and read back via the escaped getters — and
+/// its `type_name()` still reports the ORIGINAL IDL name.
+#[test]
+fn roundtrip_reserved_word_struct() {
+    let cpp = gen_default("@final struct template { long int; long operator; };");
+    let body = r#"
+                ::template_ t;
+                t.int_(42); t.operator_(-7);
+                using TS = ::dds::topic::topic_type_support<::template_>;
+                auto buf = TS::encode(t);
+                auto q = TS::decode(buf.data(), buf.size(), ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
+                assert(q.int_() == 42);
+                assert(q.operator_() == -7);
+                assert(std::string(TS::type_name()) == "template");
+"#;
+    run_roundtrip(&cpp, body).expect("reserved-word struct roundtrip");
+}
+
 /// Compiles, links and runs a small C++ roundtrip test that validates
 /// `topic_type_support<T>::encode` ⇆ `decode` against the emitted
 /// header. This truly closes the gap — not just "syntactically valid",
@@ -334,4 +378,80 @@ fn roundtrip_primitives_and_bool() {
         asserts("q1"),
     );
     run_roundtrip(&cpp, &body).expect("primitives roundtrip (xcdr1+xcdr2)");
+}
+
+/// #24 / F-TYPES-3: syntax-checks a generated header with EXTRA include dirs
+/// (for the C-FFI `zerodds.h` + the `zerodds/dds.hpp` convenience wrapper).
+/// `-fsyntax-only`, so no link against the C-FFI is needed.
+fn check_syntax_with_capi(cpp_source: &str, prologue: &str, body: &str) -> Result<(), String> {
+    let Some(cc) = cpp_compiler() else {
+        eprintln!("WARNING: skipping C++ compile-check, no compiler in PATH");
+        return Ok(());
+    };
+    use std::io::Write;
+    let mut header = NamedTempFile::with_suffix(".hpp").map_err(|e| e.to_string())?;
+    header
+        .write_all(cpp_source.as_bytes())
+        .map_err(|e| e.to_string())?;
+
+    let mut tu = NamedTempFile::with_suffix(".cpp").map_err(|e| e.to_string())?;
+    writeln!(tu, "#include \"{}\"", header.path().display()).map_err(|e| e.to_string())?;
+    writeln!(tu, "{prologue}").map_err(|e| e.to_string())?;
+    writeln!(tu, "void zd_probe() {{").map_err(|e| e.to_string())?;
+    writeln!(tu, "{body}").map_err(|e| e.to_string())?;
+    writeln!(tu, "}}").map_err(|e| e.to_string())?;
+
+    let cpp_include = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("cpp")
+        .join("include");
+    let capi_include = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("zerodds-c-api")
+        .join("include");
+
+    let output = Command::new(cc)
+        .args(["-std=c++17", "-fsyntax-only", "-Wall", "-Wno-unused"])
+        .arg(format!("-I{}", cpp_include.display()))
+        .arg(format!("-I{}", capi_include.display()))
+        .arg(tu.path())
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!(
+            "syntax check FAILED with {cc}:\n--- header ---\n{cpp_source}\n--- stderr ---\n{stderr}"
+        ))
+    }
+}
+
+#[test]
+fn compiles_type_object_accessors() {
+    // The emitted `type_object()` byte constant + `type_object_len()` must
+    // compile and be usable (F-TYPES-3 / #24).
+    let cpp = gen_default("struct Point { long x; long y; };");
+    let body = "    using TS = ::dds::topic::topic_type_support<::Point>;\n\
+                const uint8_t* p = TS::type_object();\n\
+                uintptr_t n = TS::type_object_len();\n\
+                assert(p != nullptr);\n\
+                assert(n > 0);\n\
+                assert(p[0] == 0xF2);  /* EK_COMPLETE */\n";
+    run_roundtrip(&cpp, body).expect("type_object accessors must compile and run");
+}
+
+#[test]
+fn compiles_typed_create_call_site() {
+    // The generated `type_object()` bytes feed `zerodds::TypedWriter`/
+    // `TypedReader`, which call `zerodds_*_create_typed`. Syntax-check the full
+    // instantiated call site (header + C-FFI zerodds.h + dds.hpp wrapper).
+    let cpp = gen_default("struct Sensor { @key long id; double value; };");
+    let prologue = "#include \"zerodds/dds.hpp\"";
+    let body = "    zerodds::Runtime& rt = *(zerodds::Runtime*)nullptr;\n\
+                zerodds::TypedWriter<::Sensor> w(rt, \"topic\");\n\
+                zerodds::TypedReader<::Sensor> r(rt, \"topic\");\n\
+                (void)w; (void)r;\n";
+    check_syntax_with_capi(&cpp, prologue, body).expect("typed-create call site must compile");
 }

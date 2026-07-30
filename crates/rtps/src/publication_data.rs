@@ -42,6 +42,11 @@ pub use zerodds_qos::ReliabilityKind;
 /// under the historical alias `ReliabilityQos`.
 pub use zerodds_qos::ReliabilityQosPolicy as ReliabilityQos;
 
+/// Presentation QoS value: access_scope + coherent_access + ordered_access.
+///
+/// Canonical in [`zerodds_qos::PresentationQosPolicy`]; RTPS re-exportiert.
+pub use zerodds_qos::PresentationQosPolicy;
+
 /// `DataRepresentationId` — XTypes 1.3 §7.6.3.1.1 + RTPS 2.5 PID 0x0073.
 ///
 /// Per spec: 16-bit signed integer; values 0..2 are normatively
@@ -185,8 +190,20 @@ pub struct PublicationBuiltinTopicData {
     pub liveliness: zerodds_qos::LivelinessQosPolicy,
     /// Deadline QoS (spec §2.2.3.7).
     pub deadline: zerodds_qos::DeadlineQosPolicy,
+    /// LatencyBudget QoS (spec §2.2.3.10, PID 0x0027) — offered duration.
+    /// RxO-matched: `offered.duration <= requested.duration`.
+    pub latency_budget: zerodds_qos::LatencyBudgetQosPolicy,
+    /// DestinationOrder QoS (spec §2.2.3.18, PID 0x0025) — offered kind.
+    /// RxO-matched: `offered.kind >= requested.kind`
+    /// (BY_SOURCE_TIMESTAMP > BY_RECEPTION_TIMESTAMP).
+    pub destination_order: zerodds_qos::DestinationOrderQosPolicy,
     /// Lifespan QoS (spec §2.2.3.16) — writer-only.
     pub lifespan: zerodds_qos::LifespanQosPolicy,
+    /// Presentation QoS (spec §2.2.3.6, PID 0x0021). Publisher/Subscriber-group
+    /// scope, inherited by every contained writer/reader. Default
+    /// `PresentationQosPolicy::default()` (INSTANCE scope, no coherent/ordered
+    /// access) when the peer does not send the PID (legacy vendors).
+    pub presentation: PresentationQosPolicy,
     /// Partition QoS (spec §2.2.3.13). Empty list = "default partition" ("").
     pub partition: Vec<String>,
     /// UserData QoS (spec §2.2.3.1) — opaque sequence<octet>,
@@ -344,11 +361,38 @@ impl PublicationBuiltinTopicData {
             encode_duration_le(self.deadline.period).to_vec(),
         ));
 
+        // LATENCY_BUDGET: 8 Byte Duration_t (spec §2.2.3.10 / PID 0x0027).
+        // Always emitted so a strict peer can RxO-match on it.
+        params.push(Parameter::new(
+            pid::LATENCY_BUDGET,
+            encode_duration_le(self.latency_budget.duration).to_vec(),
+        ));
+
+        // DESTINATION_ORDER: 4 Byte u32 kind (spec §2.2.3.18 / PID 0x0025).
+        params.push(Parameter::new(
+            pid::DESTINATION_ORDER,
+            encode_u32_le(self.destination_order.kind as u32).to_vec(),
+        ));
+
         // LIFESPAN: 8 Byte Duration_t
         params.push(Parameter::new(
             pid::LIFESPAN,
             encode_duration_le(self.lifespan.duration).to_vec(),
         ));
+
+        // PRESENTATION: 4 byte access_scope + 1 byte coherent + 1 byte
+        // ordered + 2 byte padding = 8 byte (spec §2.2.3.6 / PID 0x0021).
+        // Always emitted (like RELIABILITY/DURABILITY) so a strict peer
+        // (e.g. RTI) can SEDP-match on it.
+        {
+            let mut w = zerodds_cdr::BufferWriter::new(zerodds_cdr::Endianness::Little);
+            self.presentation
+                .encode_into(&mut w)
+                .map_err(|_| WireError::ValueOutOfRange {
+                    message: "presentation encoding failed",
+                })?;
+            params.push(Parameter::new(pid::PRESENTATION, w.into_bytes()));
+        }
 
         // PARTITION: only if non-empty — an empty list = default (= "").
         if !self.partition.is_empty() {
@@ -592,10 +636,41 @@ impl PublicationBuiltinTopicData {
             .map(|period| zerodds_qos::DeadlineQosPolicy { period })
             .unwrap_or_default();
 
+        let latency_budget = pl
+            .find(pid::LATENCY_BUDGET)
+            .and_then(|p| decode_duration(&p.value, little_endian))
+            .map(|duration| zerodds_qos::LatencyBudgetQosPolicy { duration })
+            .unwrap_or_default();
+
+        let destination_order = pl
+            .find(pid::DESTINATION_ORDER)
+            .and_then(|p| decode_u32(&p.value, little_endian))
+            .map(|v| zerodds_qos::DestinationOrderQosPolicy {
+                kind: zerodds_qos::DestinationOrderKind::from_u32(v),
+            })
+            .unwrap_or_default();
+
         let lifespan = pl
             .find(pid::LIFESPAN)
             .and_then(|p| decode_duration(&p.value, little_endian))
             .map(|duration| zerodds_qos::LifespanQosPolicy { duration })
+            .unwrap_or_default();
+
+        // PRESENTATION (PID 0x0021): default INSTANCE/no-coherent/no-ordered
+        // if the peer does not send it (legacy vendor without PRESENTATION
+        // on the wire, or LE/BE mismatch on the padding bytes — decode
+        // failure falls back to the spec default, never a hard error).
+        let presentation = pl
+            .find(pid::PRESENTATION)
+            .and_then(|p| {
+                let endianness = if little_endian {
+                    zerodds_cdr::Endianness::Little
+                } else {
+                    zerodds_cdr::Endianness::Big
+                };
+                let mut r = zerodds_cdr::BufferReader::new(&p.value, endianness);
+                PresentationQosPolicy::decode_from(&mut r).ok()
+            })
             .unwrap_or_default();
 
         let partition = pl
@@ -689,7 +764,10 @@ impl PublicationBuiltinTopicData {
             ownership_strength,
             liveliness,
             deadline,
+            latency_budget,
+            destination_order,
             lifespan,
+            presentation,
             partition,
             user_data,
             topic_data,
@@ -1046,7 +1124,10 @@ mod tests {
             ownership_strength: 0,
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
+            destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
             lifespan: zerodds_qos::LifespanQosPolicy::default(),
+            presentation: PresentationQosPolicy::default(),
             partition: alloc::vec::Vec::new(),
             user_data: alloc::vec::Vec::new(),
             topic_data: alloc::vec::Vec::new(),

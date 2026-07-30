@@ -60,6 +60,7 @@ pub(crate) mod corba_traits;
 pub mod emitter;
 pub mod error;
 pub mod keywords;
+pub(crate) mod rpc;
 pub mod type_map;
 pub(crate) mod typesupport;
 pub(crate) mod verbatim;
@@ -219,8 +220,9 @@ mod tests {
     fn enum_emits_int_backed_enum() {
         let cs = gen_cs("enum Color { RED, GREEN, BLUE };");
         assert!(cs.contains("public enum Color : int"));
-        assert!(cs.contains("RED,"));
-        assert!(cs.contains("BLUE,"));
+        // F4/A4: explicit ordinals so `@value` gaps survive on the wire.
+        assert!(cs.contains("RED = 0,"));
+        assert!(cs.contains("BLUE = 2,"));
     }
 
     #[test]
@@ -239,6 +241,162 @@ mod tests {
     fn keyed_struct_marker_appears() {
         let cs = gen_cs("struct S { @key long id; long val; };");
         assert!(cs.contains("[Key]"));
+    }
+
+    #[test]
+    fn keyhash_typedef_aliased_key_emits_real_bytes() {
+        // Regression: `@key` whose type is a typedef alias to a primitive
+        // used to emit NOTHING in `ComputeKeyHash` (a silent wrong-wire
+        // KeyHash) instead of dealiasing to `MyId`'s underlying `long` and
+        // writing it. `MyId` must be dealiased to a `WriteInt32` call, and
+        // the old silent no-op comment must be gone.
+        let cs = gen_cs("typedef long MyId;\n@final struct S { @key MyId id; long val; };");
+        assert!(
+            cs.contains("__kw.WriteInt32((sample.Id).Value);"),
+            "typedef-aliased @key must dealias to the underlying primitive write:\n{cs}"
+        );
+        assert!(
+            !cs.contains("nested key types delegate via TypeSupport"),
+            "the silent zero-byte no-op for a Scoped @key must be gone:\n{cs}"
+        );
+    }
+
+    #[test]
+    fn keyhash_multi_level_typedef_chain_key_dealiases_to_terminal_primitive() {
+        // typedef chain: Score -> Points -> long. The KeyHash must dealias
+        // all the way to `long`, not stop at the first level.
+        let cs = gen_cs(
+            "typedef long Points;\ntypedef Points Score;\n@final struct S { @key Score s; };",
+        );
+        assert!(
+            cs.contains("__kw.WriteInt32(((sample.S).Value).Value);"),
+            "multi-level typedef chain must dealias through both levels to Int32:\n{cs}"
+        );
+    }
+
+    #[test]
+    fn keyhash_nested_struct_key_expands_inner_key_members() {
+        // A `@key` member whose type is a nested struct with its own `@key`
+        // members must expand into THOSE members (XTypes 1.3 §7.6.8), not
+        // silently emit nothing.
+        let cs = gen_cs(
+            "@final struct Inner { @key long x; long ignored; @key long y; };\n\
+             @final struct Outer { @key Inner i; long z; };",
+        );
+        assert!(
+            cs.contains("__kw.WriteInt32(sample.I.X);")
+                && cs.contains("__kw.WriteInt32(sample.I.Y);"),
+            "nested-struct @key must expand into the inner struct's own @key members:\n{cs}"
+        );
+        assert!(
+            !cs.contains("sample.I.Ignored"),
+            "a non-@key inner member must NOT be included when the inner struct has explicit @key members:\n{cs}"
+        );
+    }
+
+    #[test]
+    fn keyhash_nested_struct_without_keys_uses_all_inner_members() {
+        // XTypes 1.3 §7.6.8: an aggregate @key member with NO @key members of
+        // its own is keyed in full (all its members).
+        let cs = gen_cs(
+            "@final struct Pair { long a; long b; };\n\
+             @final struct Holder { @key Pair p; };",
+        );
+        assert!(
+            cs.contains("__kw.WriteInt32(sample.P.A);")
+                && cs.contains("__kw.WriteInt32(sample.P.B);"),
+            "a keyless nested struct must key on ALL its members:\n{cs}"
+        );
+    }
+
+    #[test]
+    fn keyhash_multiple_keys_emit_in_member_id_order_not_declaration_order() {
+        // Regression: the KeyHash loop walked `s.members` in DECLARATION
+        // order, ignoring explicit `@id(N)`. XTypes 1.3 §7.6.8.3.1.b
+        // mandates member-id order. `@id(1) octet a; @id(0) long b;` must
+        // write `b` (id 0) before `a` (id 1).
+        let cs = gen_cs("@final struct K { @id(1) @key octet a; @id(0) @key long b; };");
+        let pos_a = cs.find("__kw.WriteOctet(sample.A);").expect("write a");
+        let pos_b = cs.find("__kw.WriteInt32(sample.B);").expect("write b");
+        assert!(
+            pos_b < pos_a,
+            "member-id order must place b (id 0) before a (id 1):\n{cs}"
+        );
+    }
+
+    #[test]
+    fn keyhash_nested_struct_key_expands_in_member_id_order() {
+        // Same ordering rule applies to the expanded nested-struct @key
+        // subset.
+        let cs = gen_cs(
+            "@final struct Inner { @id(1) @key octet a; @id(0) @key long b; };\n\
+             @final struct Outer { @key Inner i; };",
+        );
+        let pos_a = cs.find("__kw.WriteOctet(sample.I.A);").expect("write i.a");
+        let pos_b = cs.find("__kw.WriteInt32(sample.I.B);").expect("write i.b");
+        assert!(
+            pos_b < pos_a,
+            "nested-struct @key subset must also expand in member-id order:\n{cs}"
+        );
+    }
+
+    #[test]
+    fn keyhash_branch_decision_is_static_not_runtime_length() {
+        // Regression: the zero-pad/MD5 branch (XTypes 1.3 §7.6.8.4 step 5) is
+        // decided STATICALLY per topic type from the KeyHolder's maximum
+        // size, not from the actual runtime byte count of a given sample
+        // (`crates/cdr/src/key_hash.rs`'s module doc is authoritative). A
+        // single `@key long` has a static max of 4 bytes (<=16) -> the
+        // generated KeyHash must unconditionally zero-pad, with NO runtime
+        // `__kb.Length` branch at all.
+        let cs = gen_cs("@final struct K { @key long id; };");
+        assert!(
+            !cs.contains("if (__kb.Length"),
+            "a statically-small KeyHolder must not emit a runtime branch decision:\n{cs}"
+        );
+        assert!(
+            cs.contains("var __h = new byte[16];"),
+            "must zero-pad:\n{cs}"
+        );
+
+        // Four longs = exactly 16 (the zero-pad boundary) -> still zero-pad,
+        // unconditionally.
+        let cs16 =
+            gen_cs("@final struct K { @key long a; @key long b; @key long c; @key long d; };");
+        assert!(
+            cs16.contains("var __h = new byte[16];") && !cs16.contains("Md5.Hash"),
+            "16 bytes exactly is still the zero-pad branch:\n{cs16}"
+        );
+
+        // Five longs = 20 > 16 -> unconditionally MD5, no runtime check.
+        let cs20 = gen_cs(
+            "@final struct K { @key long a; @key long b; @key long c; @key long d; @key long e; };",
+        );
+        assert!(
+            cs20.contains("return Md5.Hash(__kb);") && !cs20.contains("if (__kb.Length"),
+            "over 16 bytes is unconditionally the MD5 branch, no runtime check:\n{cs20}"
+        );
+
+        // An unbounded string @key is dynamically sized -> unconditionally
+        // MD5 (matches `idl-rust`'s `key_holder_atom_size`/`keyhash.rs`
+        // reference: unbounded string has no static max).
+        let cs_dyn = gen_cs("@final struct K { @key string s; };");
+        assert!(
+            cs_dyn.contains("return Md5.Hash(__kb);") && !cs_dyn.contains("if (__kb.Length"),
+            "an unbounded-string key is dynamically sized -> always MD5:\n{cs_dyn}"
+        );
+    }
+
+    #[test]
+    fn keyhash_enum_key_is_a_loud_runtime_error_not_silent_wrong() {
+        // Enum @key is not yet a supported shape (matches the idl-rust
+        // reference, which also rejects it) — it must be a loud runtime
+        // throw, not a silent no-op.
+        let cs = gen_cs("enum Color { Red, Green, Blue };\n@final struct S { @key Color c; };");
+        assert!(
+            cs.contains("throw new XcdrException(\"unsupported key type"),
+            "an unsupported enum @key must throw loudly, not silently emit nothing:\n{cs}"
+        );
     }
 
     #[test]

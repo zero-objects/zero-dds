@@ -17,17 +17,20 @@
 //!   `#` stringize and `##` token-paste (Spec §7.2.5 + ISO 14882
 //!   §16.3.2/§16.3.3)
 //! - **`#ifdef`** / **`#ifndef`** / **`#if`** / **`#elif`** /
-//!   **`#else`** / **`#endif`**: conditional compilation with
-//!   expression eval (`defined`, `&&`, `||`, `!`, numeric literals)
+//!   **`#else`** / **`#endif`**: conditional compilation with a full
+//!   integer constant-expression evaluator (`defined`, arithmetic,
+//!   comparisons `< > <= >= == !=`, bit ops, shifts, `&& || !`, unary
+//!   `- ~`, parentheses, with C-preprocessor operator precedence; see
+//!   [`eval_if_expr`])
 //! - **`#pragma <args>`**: stripped (not in the output) — vendor pragmas
 //!   like RTI's `#pragma keylist` are captured as special AST nodes
 //! - **`#undef`**: remove a macro
 //!
 //! Not supported:
-//! - Recursive macro expansion (one pass)
 //! - Variadic macros (`__VA_ARGS__`)
 //! - `#error`, `#warning`, `#line` (parsed, but not functional)
-//! - Full C-PP arithmetic in `#if` (comparisons, bitops, ternary)
+//! - The `? :` ternary in `#if` (all other integer operators are
+//!   implemented with correct precedence)
 //!
 //! # Source map
 //!
@@ -69,12 +72,32 @@ use std::collections::HashMap;
 /// or custom strategies.
 pub trait Resolver {
     /// Resolves a `#include "path"` (relative) or `#include <path>`
-    /// (system) to source text.
+    /// (system) to the location it was actually found at plus its
+    /// source text (see [`Resolved`]).
+    ///
+    /// The returned [`Resolved::path`] is authoritative: the preprocessor
+    /// uses it as the base directory for further relative `#include`s
+    /// inside the resolved file and reports it in the dependency list
+    /// (`cargo:rerun-if-changed` / print-deps). It must therefore be the
+    /// path the content was genuinely read from, not the raw string that
+    /// appeared in the `#include` directive.
     ///
     /// # Errors
     /// Implementation-specific. Should return a meaningful error
     /// that contains the requested path.
-    fn resolve(&self, requesting_file: &str, include: &Include) -> Result<String, ResolveError>;
+    fn resolve(&self, requesting_file: &str, include: &Include) -> Result<Resolved, ResolveError>;
+}
+
+/// Result of a successful [`Resolver::resolve`] call.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Resolved {
+    /// The path the include was actually found at. For filesystem
+    /// resolvers this is the real (canonicalized) on-disk path; for
+    /// in-memory resolvers it is the lookup key. Used as the base for
+    /// nested relative includes and reported as a dependency.
+    pub path: String,
+    /// Content of the resolved file.
+    pub content: String,
 }
 
 /// Describes an include request.
@@ -127,12 +150,18 @@ impl MemoryResolver {
 }
 
 impl Resolver for MemoryResolver {
-    fn resolve(&self, _requesting: &str, include: &Include) -> Result<String, ResolveError> {
+    fn resolve(&self, _requesting: &str, include: &Include) -> Result<Resolved, ResolveError> {
         let path = include.path();
-        self.files.get(path).cloned().ok_or_else(|| ResolveError {
-            requested: path.to_string(),
-            message: format!("file not in MemoryResolver: {path}"),
-        })
+        self.files
+            .get(path)
+            .map(|content| Resolved {
+                path: path.to_string(),
+                content: content.clone(),
+            })
+            .ok_or_else(|| ResolveError {
+                requested: path.to_string(),
+                message: format!("file not in MemoryResolver: {path}"),
+            })
     }
 }
 
@@ -509,17 +538,31 @@ impl<R: Resolver> Preprocessor<R> {
                             });
                         }
                         let inc_path = inc.path().to_string();
-                        // Cycle detection before resolve, so that cycles
-                        // are detected independently of the resolver.
+                        // Cheap raw-string cycle guard before resolve, so
+                        // that cycles are detected independently of the
+                        // resolver (e.g. a file including itself under the
+                        // exact spelling it was opened with).
                         if state.include_stack.iter().any(|f| f == &inc_path) {
                             return Err(PreprocessError::IncludeCycle { file: inc_path });
                         }
-                        let included = self
+                        let resolved = self
                             .resolver
                             .resolve(file_name, &inc)
                             .map_err(PreprocessError::IncludeNotFound)?;
-                        let inc_id = state.source_map.add_file(&inc_path);
-                        self.expand_into(&inc_path, &included, inc_id, state, output, depth + 1)?;
+                        // Use the path the resolver actually found the file
+                        // at — not the raw `#include` string — as the base
+                        // for nested relative includes, the SourceMap entry,
+                        // and the dependency list. Cycle detection on the
+                        // resolved path is handled at `expand_into`'s entry.
+                        let inc_id = state.source_map.add_file(&resolved.path);
+                        self.expand_into(
+                            &resolved.path,
+                            &resolved.content,
+                            inc_id,
+                            state,
+                            output,
+                            depth + 1,
+                        )?;
                     }
                     Directive::Pragma(args) => {
                         if let Some(keylist) = parse_pragma_keylist(args, file_name, line_no) {
@@ -679,9 +722,9 @@ enum Directive<'a> {
     Undef(&'a str),
     Ifdef(&'a str),
     Ifndef(&'a str),
-    /// `#if <const-expr>` — simplified expression eval:
-    /// `defined(MACRO)`, `0`/`1`, as well as `&&`/`||`/`!`.
-    /// (spec stage 2; gated via the `preprocessor_full` feature.)
+    /// `#if <const-expr>` — full integer constant-expression eval
+    /// (`defined(MACRO)`, literals, arithmetic, comparisons, bit ops,
+    /// shifts, `&& || !`, precedence; see [`eval_if_expr`]).
     If(&'a str),
     /// `#elif <const-expr>` — variant of `#if`.
     Elif(&'a str),
@@ -722,163 +765,414 @@ fn parse_directive(line: &str) -> Option<Directive<'_>> {
     }
 }
 
-/// Simplified `#if`-expression evaluation (Spec §7.3.2 + ISO 14882
-/// constant-expression subset).
+/// `#if`/`#elif` constant-expression evaluation with full operator
+/// precedence (Spec §7.3.2, ISO 14882 §16.1 controlling-expression /
+/// §16.6 with the C-preprocessor integer semantics of ISO 9899 §6.10.1).
 ///
-/// Supports:
-/// - Numeric literals: `0` (false), everything else (true).
-/// - `defined(MACRO)` and `defined MACRO` — true if the macro is defined.
-/// - Boolean operators `&&`/`||`/`!` (left-to-right, no precedence).
-/// - Macro identifiers are interpreted as undefined (false),
-///   unless they are explicitly wrapped as `defined(...)`.
+/// The expression is evaluated as a signed 64-bit integer; the branch is
+/// taken when the result is non-zero (C-preprocessor convention). The
+/// pipeline mirrors the C-preprocessor phases for `#if`:
 ///
-/// Full C-preprocessor expression eval (arithmetic, comparisons,
-/// bitops, ternary) is not implemented.
+/// 1. **Lex** the expression into [`IfTok`] tokens.
+/// 2. **`defined`** — `defined(MACRO)` / `defined MACRO` are resolved to
+///    `1`/`0` *before* macro expansion; their operand is never expanded
+///    (ISO 9899 §6.10.1p4).
+/// 3. **Macro expansion** of the remaining operands (object-like macros,
+///    recursively, bounded by [`MAX_MACRO_EXPANSION_DEPTH`]). Any
+///    identifier that survives expansion evaluates to `0`
+///    (ISO 9899 §6.10.1p4).
+/// 4. **Parse + evaluate** with a recursive-descent precedence-climbing
+///    parser.
+///
+/// Supported operators, lowest to highest precedence:
+/// `||`, `&&`, `|`, `^`, `&`, `== !=`, `< > <= >=`, `<< >>`, `+ -`,
+/// `* / %`, unary `! ~ - +`, parentheses. Integer literals may be
+/// decimal, hex (`0x…`), or octal (`0…`) with `u`/`l` suffixes. Division
+/// or remainder by zero yields `0` rather than aborting (non-panicking
+/// choice; a real C preprocessor would emit a diagnostic).
 fn eval_if_expr(expr: &str, macros: &HashMap<String, MacroDef>) -> bool {
     let trimmed = expr.trim();
     if trimmed.is_empty() {
         return false;
     }
-    // Tokenize einfach.
-    let normalized = normalize_if_tokens(trimmed);
-    eval_if_tokens(&normalized, macros)
+    let toks = lex_if(trimmed);
+    let toks = apply_defined(&toks, macros);
+    let toks = expand_if_macros(toks, macros, 0);
+    let mut parser = IfExprParser {
+        toks: &toks,
+        pos: 0,
+    };
+    parser.parse_expr() != 0
 }
 
-fn normalize_if_tokens(expr: &str) -> Vec<String> {
+/// Token of a `#if` constant expression.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum IfTok {
+    Num(i64),
+    Ident(String),
+    /// A binary or unary operator, stored as its canonical spelling.
+    Op(&'static str),
+    LParen,
+    RParen,
+}
+
+/// Lexes a `#if` expression into [`IfTok`]s. Unknown characters are
+/// skipped defensively.
+fn lex_if(expr: &str) -> Vec<IfTok> {
+    let bytes = expr.as_bytes();
     let mut out = Vec::new();
-    let mut chars = expr.chars().peekable();
-    while let Some(c) = chars.next() {
+    let mut i = 0;
+    while i < bytes.len() {
+        let c = bytes[i];
         match c {
-            ' ' | '\t' => {}
-            '(' | ')' | '!' => out.push(c.to_string()),
-            '&' if chars.peek() == Some(&'&') => {
-                chars.next();
-                out.push("&&".into());
+            b' ' | b'\t' | b'\r' | b'\n' => i += 1,
+            b'(' => {
+                out.push(IfTok::LParen);
+                i += 1;
             }
-            '|' if chars.peek() == Some(&'|') => {
-                chars.next();
-                out.push("||".into());
+            b')' => {
+                out.push(IfTok::RParen);
+                i += 1;
             }
-            c if c.is_ascii_alphabetic() || c == '_' => {
-                let mut buf = String::from(c);
-                while let Some(&n) = chars.peek() {
-                    if n.is_ascii_alphanumeric() || n == '_' {
-                        buf.push(n);
-                        chars.next();
-                    } else {
-                        break;
-                    }
+            b'&' if bytes.get(i + 1) == Some(&b'&') => {
+                out.push(IfTok::Op("&&"));
+                i += 2;
+            }
+            b'|' if bytes.get(i + 1) == Some(&b'|') => {
+                out.push(IfTok::Op("||"));
+                i += 2;
+            }
+            b'=' if bytes.get(i + 1) == Some(&b'=') => {
+                out.push(IfTok::Op("=="));
+                i += 2;
+            }
+            b'!' if bytes.get(i + 1) == Some(&b'=') => {
+                out.push(IfTok::Op("!="));
+                i += 2;
+            }
+            b'<' if bytes.get(i + 1) == Some(&b'=') => {
+                out.push(IfTok::Op("<="));
+                i += 2;
+            }
+            b'>' if bytes.get(i + 1) == Some(&b'=') => {
+                out.push(IfTok::Op(">="));
+                i += 2;
+            }
+            b'<' if bytes.get(i + 1) == Some(&b'<') => {
+                out.push(IfTok::Op("<<"));
+                i += 2;
+            }
+            b'>' if bytes.get(i + 1) == Some(&b'>') => {
+                out.push(IfTok::Op(">>"));
+                i += 2;
+            }
+            b'<' => {
+                out.push(IfTok::Op("<"));
+                i += 1;
+            }
+            b'>' => {
+                out.push(IfTok::Op(">"));
+                i += 1;
+            }
+            b'!' => {
+                out.push(IfTok::Op("!"));
+                i += 1;
+            }
+            b'~' => {
+                out.push(IfTok::Op("~"));
+                i += 1;
+            }
+            b'&' => {
+                out.push(IfTok::Op("&"));
+                i += 1;
+            }
+            b'|' => {
+                out.push(IfTok::Op("|"));
+                i += 1;
+            }
+            b'^' => {
+                out.push(IfTok::Op("^"));
+                i += 1;
+            }
+            b'+' => {
+                out.push(IfTok::Op("+"));
+                i += 1;
+            }
+            b'-' => {
+                out.push(IfTok::Op("-"));
+                i += 1;
+            }
+            b'*' => {
+                out.push(IfTok::Op("*"));
+                i += 1;
+            }
+            b'/' => {
+                out.push(IfTok::Op("/"));
+                i += 1;
+            }
+            b'%' => {
+                out.push(IfTok::Op("%"));
+                i += 1;
+            }
+            _ if c.is_ascii_alphabetic() || c == b'_' => {
+                let start = i;
+                while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+                    i += 1;
                 }
-                out.push(buf);
+                out.push(IfTok::Ident(expr[start..i].to_string()));
             }
-            c if c.is_ascii_digit() => {
-                let mut buf = String::from(c);
-                while let Some(&n) = chars.peek() {
-                    if n.is_ascii_digit() {
-                        buf.push(n);
-                        chars.next();
-                    } else {
-                        break;
-                    }
+            _ if c.is_ascii_digit() => {
+                let start = i;
+                while i < bytes.len() && is_int_literal_byte(bytes[i]) {
+                    i += 1;
                 }
-                out.push(buf);
+                out.push(IfTok::Num(parse_int_literal(&expr[start..i])));
             }
-            _ => {} // ignore unknown characters (defensive)
+            _ => i += 1, // ignore unknown characters (defensive)
         }
     }
     out
 }
 
-/// zerodds-lint: recursion-depth 64 (If-Expr; bounded by IDL nesting)
-fn eval_if_tokens(tokens: &[String], macros: &HashMap<String, MacroDef>) -> bool {
-    let (val, _) = eval_or(tokens, 0, macros);
-    val
+/// Byte that may continue an integer literal (digits, hex letters, `x`,
+/// and the `u`/`l` suffixes in either case).
+fn is_int_literal_byte(b: u8) -> bool {
+    b.is_ascii_hexdigit() || matches!(b, b'x' | b'X' | b'u' | b'U' | b'l' | b'L')
 }
 
-fn eval_or(tokens: &[String], idx: usize, macros: &HashMap<String, MacroDef>) -> (bool, usize) {
-    let (mut left, mut i) = eval_and(tokens, idx, macros);
-    while tokens.get(i).map(String::as_str) == Some("||") {
-        let (right, ni) = eval_and(tokens, i + 1, macros);
-        left = left || right;
-        i = ni;
-    }
-    (left, i)
-}
-
-fn eval_and(tokens: &[String], idx: usize, macros: &HashMap<String, MacroDef>) -> (bool, usize) {
-    let (mut left, mut i) = eval_not(tokens, idx, macros);
-    while tokens.get(i).map(String::as_str) == Some("&&") {
-        let (right, ni) = eval_not(tokens, i + 1, macros);
-        left = left && right;
-        i = ni;
-    }
-    (left, i)
-}
-
-/// zerodds-lint: recursion-depth 16 (logical-not chain; bounded by IDL macro nesting)
-fn eval_not(tokens: &[String], idx: usize, macros: &HashMap<String, MacroDef>) -> (bool, usize) {
-    if tokens.get(idx).map(String::as_str) == Some("!") {
-        let (v, ni) = eval_not(tokens, idx + 1, macros);
-        return (!v, ni);
-    }
-    eval_atom(tokens, idx, macros)
-}
-
-fn eval_atom(tokens: &[String], idx: usize, macros: &HashMap<String, MacroDef>) -> (bool, usize) {
-    let Some(tok) = tokens.get(idx) else {
-        return (false, idx);
+/// Parses a C integer literal (decimal / `0x…` hex / `0…` octal) with
+/// optional `u`/`l` suffixes. Unparseable input yields `0`.
+fn parse_int_literal(tok: &str) -> i64 {
+    let digits = tok.trim_end_matches(['u', 'U', 'l', 'L']);
+    let parsed = if let Some(hex) = digits
+        .strip_prefix("0x")
+        .or_else(|| digits.strip_prefix("0X"))
+    {
+        i64::from_str_radix(hex, 16)
+    } else if digits.len() > 1 && digits.starts_with('0') {
+        i64::from_str_radix(digits, 8)
+    } else {
+        digits.parse::<i64>()
     };
-    if tok == "(" {
-        let (v, ni) = eval_or(tokens, idx + 1, macros);
-        let after = if tokens.get(ni).map(String::as_str) == Some(")") {
-            ni + 1
-        } else {
-            ni
-        };
-        return (v, after);
-    }
-    if tok == "defined" {
-        // `defined(MACRO)` or `defined MACRO`.
-        let (next_idx, ident) = if tokens.get(idx + 1).map(String::as_str) == Some("(") {
-            (
-                idx + 3,
-                tokens.get(idx + 2).map(String::as_str).unwrap_or(""),
-            )
-        } else {
-            (
-                idx + 2,
-                tokens.get(idx + 1).map(String::as_str).unwrap_or(""),
-            )
-        };
-        let v = macros.contains_key(ident);
-        let after = if tokens.get(idx + 1).map(String::as_str) == Some("(") {
-            // Skip closing ')'.
-            if tokens.get(next_idx).map(String::as_str) == Some(")") {
-                next_idx + 1
-            } else {
-                next_idx
+    parsed.unwrap_or(0)
+}
+
+/// Resolves `defined(MACRO)` / `defined MACRO` to `1`/`0` before macro
+/// expansion (ISO 9899 §6.10.1p4 — the operand is not expanded).
+fn apply_defined(toks: &[IfTok], macros: &HashMap<String, MacroDef>) -> Vec<IfTok> {
+    let mut out = Vec::with_capacity(toks.len());
+    let mut i = 0;
+    while i < toks.len() {
+        if matches!(&toks[i], IfTok::Ident(id) if id == "defined") {
+            // `defined ( IDENT )`
+            if matches!(toks.get(i + 1), Some(IfTok::LParen)) {
+                if let (Some(IfTok::Ident(name)), Some(IfTok::RParen)) =
+                    (toks.get(i + 2), toks.get(i + 3))
+                {
+                    out.push(IfTok::Num(i64::from(macros.contains_key(name))));
+                    i += 4;
+                    continue;
+                }
+                // Malformed `defined(` — treat as 0.
+                out.push(IfTok::Num(0));
+                i += 1;
+                continue;
             }
-        } else {
-            next_idx
-        };
-        return (v, after);
-    }
-    // Numeric literal: `0` = false, otherwise true.
-    if let Ok(n) = tok.parse::<i64>() {
-        return (n != 0, idx + 1);
-    }
-    // Identifier without `defined()` — treat as a macro-value lookup;
-    // if the macro body parses as an int → accordingly; otherwise true (macro
-    // exists). Function-like macros are treated as true here
-    // (call parameters in the `#if` context are unusual).
-    if let Some(def) = macros.get(tok) {
-        if let Ok(n) = def.body.trim().parse::<i64>() {
-            return (n != 0, idx + 1);
+            // `defined IDENT`
+            if let Some(IfTok::Ident(name)) = toks.get(i + 1) {
+                out.push(IfTok::Num(i64::from(macros.contains_key(name))));
+                i += 2;
+                continue;
+            }
+            out.push(IfTok::Num(0));
+            i += 1;
+            continue;
         }
-        return (true, idx + 1);
+        out.push(toks[i].clone());
+        i += 1;
     }
-    // Unknown identifier → false (spec C-PP convention).
-    (false, idx + 1)
+    out
+}
+
+/// Substitutes object-like macro operands in a `#if` token stream,
+/// recursively until a fixed point (bounded by
+/// [`MAX_MACRO_EXPANSION_DEPTH`] against `#define A B` / `#define B A`
+/// cycles). `defined` has already been resolved by [`apply_defined`], so
+/// no operand of `defined` is expanded here. Function-like macros are
+/// left as identifiers (a call in `#if` is unusual) and thus evaluate to
+/// `0`.
+///
+/// zerodds-lint: recursion-depth 32 (macro chains in #if operands; bounded by MAX_MACRO_EXPANSION_DEPTH)
+fn expand_if_macros(
+    toks: Vec<IfTok>,
+    macros: &HashMap<String, MacroDef>,
+    depth: usize,
+) -> Vec<IfTok> {
+    if depth >= MAX_MACRO_EXPANSION_DEPTH {
+        return toks;
+    }
+    let mut out = Vec::with_capacity(toks.len());
+    let mut changed = false;
+    for t in toks {
+        if let IfTok::Ident(id) = &t {
+            if let Some(def) = macros.get(id) {
+                if def.params.is_none() {
+                    out.extend(lex_if(&def.body));
+                    changed = true;
+                    continue;
+                }
+            }
+        }
+        out.push(t);
+    }
+    if changed {
+        expand_if_macros(out, macros, depth + 1)
+    } else {
+        out
+    }
+}
+
+/// Recursive-descent precedence-climbing parser/evaluator for a `#if`
+/// constant expression. Mutual/self recursion is via `self`-methods and
+/// is bounded by parenthesis nesting.
+struct IfExprParser<'a> {
+    toks: &'a [IfTok],
+    pos: usize,
+}
+
+impl IfExprParser<'_> {
+    fn peek(&self) -> Option<&IfTok> {
+        self.toks.get(self.pos)
+    }
+
+    fn parse_expr(&mut self) -> i64 {
+        self.parse_binary(0)
+    }
+
+    /// Binding power of a binary operator (higher binds tighter). `None`
+    /// for tokens that are not binary operators (`!`, `~`).
+    fn binop_prec(op: &str) -> Option<u8> {
+        Some(match op {
+            "||" => 1,
+            "&&" => 2,
+            "|" => 3,
+            "^" => 4,
+            "&" => 5,
+            "==" | "!=" => 6,
+            "<" | ">" | "<=" | ">=" => 7,
+            "<<" | ">>" => 8,
+            "+" | "-" => 9,
+            "*" | "/" | "%" => 10,
+            _ => return None,
+        })
+    }
+
+    /// zerodds-lint: recursion-depth 16 (precedence climbing; bounded by operator-level count)
+    fn parse_binary(&mut self, min_prec: u8) -> i64 {
+        let mut left = self.parse_unary();
+        while let Some(IfTok::Op(op)) = self.peek() {
+            let Some(prec) = Self::binop_prec(op) else {
+                break;
+            };
+            if prec < min_prec {
+                break;
+            }
+            let op = *op;
+            self.pos += 1;
+            // Left-associative: the right operand binds tighter.
+            let right = self.parse_binary(prec + 1);
+            left = apply_binop(op, left, right);
+        }
+        left
+    }
+
+    /// zerodds-lint: recursion-depth 16 (unary-operator chain; bounded by IDL nesting)
+    fn parse_unary(&mut self) -> i64 {
+        if let Some(IfTok::Op(op)) = self.peek() {
+            match *op {
+                "!" => {
+                    self.pos += 1;
+                    return i64::from(self.parse_unary() == 0);
+                }
+                "~" => {
+                    self.pos += 1;
+                    return !self.parse_unary();
+                }
+                "-" => {
+                    self.pos += 1;
+                    return self.parse_unary().wrapping_neg();
+                }
+                "+" => {
+                    self.pos += 1;
+                    return self.parse_unary();
+                }
+                _ => {}
+            }
+        }
+        self.parse_primary()
+    }
+
+    fn parse_primary(&mut self) -> i64 {
+        match self.peek() {
+            Some(IfTok::Num(n)) => {
+                let n = *n;
+                self.pos += 1;
+                n
+            }
+            Some(IfTok::Ident(_)) => {
+                // Identifier surviving macro expansion → 0 (ISO 9899 §6.10.1p4).
+                self.pos += 1;
+                0
+            }
+            Some(IfTok::LParen) => {
+                self.pos += 1;
+                let v = self.parse_binary(0);
+                if matches!(self.peek(), Some(IfTok::RParen)) {
+                    self.pos += 1;
+                }
+                v
+            }
+            _ => 0,
+        }
+    }
+}
+
+/// Applies a binary operator with C-preprocessor integer semantics.
+/// Division or remainder by zero yields `0` (non-panicking).
+fn apply_binop(op: &str, left: i64, right: i64) -> i64 {
+    match op {
+        "||" => i64::from(left != 0 || right != 0),
+        "&&" => i64::from(left != 0 && right != 0),
+        "|" => left | right,
+        "^" => left ^ right,
+        "&" => left & right,
+        "==" => i64::from(left == right),
+        "!=" => i64::from(left != right),
+        "<" => i64::from(left < right),
+        ">" => i64::from(left > right),
+        "<=" => i64::from(left <= right),
+        ">=" => i64::from(left >= right),
+        "<<" => left.wrapping_shl(u32::try_from(right).unwrap_or(0)),
+        ">>" => left.wrapping_shr(u32::try_from(right).unwrap_or(0)),
+        "+" => left.wrapping_add(right),
+        "-" => left.wrapping_sub(right),
+        "*" => left.wrapping_mul(right),
+        "/" => {
+            if right == 0 {
+                0
+            } else {
+                left.wrapping_div(right)
+            }
+        }
+        "%" => {
+            if right == 0 {
+                0
+            } else {
+                left.wrapping_rem(right)
+            }
+        }
+        _ => 0,
+    }
 }
 
 fn parse_include(rest: &str) -> Option<Include> {
@@ -1061,11 +1355,29 @@ fn strip_optional_quotes(s: &str) -> &str {
         .unwrap_or(s)
 }
 
-/// Object-like macro substitution. Iterates over identifier tokens and
-/// replaces macro names with their values. Simplified variant — no
-/// re-expansion (no macro-in-macro), no function-like macros.
+/// Macro substitution over one source line. Object- and function-like
+/// macros are expanded on identifier tokens; the expansion is re-run
+/// until a fixed point (bounded, see [`expand_macros_rec`]).
+///
+/// String literals (`"…"`) and character literals (`'…'`) are copied
+/// verbatim — a macro name appearing inside a literal is NOT expanded, as
+/// mandated for the C preprocessor (ISO 9899 §6.4.5 / §5.1.1.2: macro
+/// replacement does not descend into string/character constants). This
+/// also protects `@verbatim(text = "…")` payloads, which the frontend
+/// carries as ordinary string literals.
 fn expand_macros(line: &str, macros: &HashMap<String, MacroDef>) -> String {
     expand_macros_rec(line, macros, 0)
+}
+
+/// Length in bytes of the UTF-8 character whose leading byte is `b`.
+fn utf8_char_len(b: u8) -> usize {
+    match b {
+        0x00..=0x7F => 1,
+        0xC0..=0xDF => 2,
+        0xE0..=0xEF => 3,
+        0xF0..=0xF7 => 4,
+        _ => 1, // stray continuation byte: advance one to make progress
+    }
 }
 
 /// Maximum depth for recursive `#define` expansion. Protects against
@@ -1085,6 +1397,28 @@ fn expand_macros_rec(line: &str, macros: &HashMap<String, MacroDef>, depth: usiz
     let mut expanded_any = false;
     while i < bytes.len() {
         let c = bytes[i];
+        if c == b'"' || c == b'\'' {
+            // String or character literal: copy verbatim; macro names
+            // inside a literal are never replaced (C-preprocessor
+            // semantics; also protects `@verbatim` text). Backslash
+            // escapes (`\"`, `\\`, `\'`) do not close the literal.
+            let start = i;
+            let quote = c;
+            i += 1;
+            while i < bytes.len() {
+                if bytes[i] == b'\\' && i + 1 < bytes.len() {
+                    i += 2;
+                    continue;
+                }
+                if bytes[i] == quote {
+                    i += 1;
+                    break;
+                }
+                i += 1;
+            }
+            out.push_str(&line[start..i]);
+            continue;
+        }
         if c.is_ascii_alphabetic() || c == b'_' {
             // Identifier scannen.
             let start = i;
@@ -1117,8 +1451,12 @@ fn expand_macros_rec(line: &str, macros: &HashMap<String, MacroDef>, depth: usiz
                 }
             }
         } else {
-            out.push(c as char);
-            i += 1;
+            // Non-identifier, non-literal: copy one whole UTF-8 char
+            // verbatim (a byte-wise `c as char` would corrupt multi-byte
+            // code points).
+            let end = (i + utf8_char_len(c)).min(bytes.len());
+            out.push_str(&line[i..end]);
+            i = end;
         }
     }
     // If something was expanded, the expansion itself may contain further
@@ -1636,6 +1974,165 @@ struct D {};
         assert!(!out.contains("struct A"));
         assert!(!out.contains("struct C"));
         assert!(!out.contains("struct D"));
+    }
+
+    // -----------------------------------------------------------------
+    // P1 — real `#if` expression evaluator (precedence + comparisons)
+    // and string-/@verbatim-safe macro expansion. All via the public
+    // preprocessor path (`run`), not the internal helpers.
+    // -----------------------------------------------------------------
+
+    /// True if the block guarded by `#if <cond>` is kept, given `defs`
+    /// (`#define …` lines) prepended.
+    fn if_kept(defs: &str, cond: &str) -> bool {
+        let src = format!("{defs}#if {cond}\nKEPT_MARKER\n#endif\n");
+        run(&src).contains("KEPT_MARKER")
+    }
+
+    #[test]
+    fn if_comparison_less_than() {
+        assert!(if_kept("#define API_VERSION 1\n", "API_VERSION < 2"));
+        assert!(!if_kept("#define API_VERSION 2\n", "API_VERSION < 2"));
+        assert!(!if_kept("#define API_VERSION 3\n", "API_VERSION < 2"));
+    }
+
+    #[test]
+    fn if_comparison_greater_than() {
+        assert!(!if_kept("#define API_VERSION 1\n", "API_VERSION > 2"));
+        assert!(!if_kept("#define API_VERSION 2\n", "API_VERSION > 2"));
+        assert!(if_kept("#define API_VERSION 3\n", "API_VERSION > 2"));
+    }
+
+    #[test]
+    fn if_comparison_less_equal() {
+        assert!(if_kept("#define API_VERSION 1\n", "API_VERSION <= 2"));
+        assert!(if_kept("#define API_VERSION 2\n", "API_VERSION <= 2"));
+        assert!(!if_kept("#define API_VERSION 3\n", "API_VERSION <= 2"));
+    }
+
+    #[test]
+    fn if_comparison_greater_equal() {
+        assert!(!if_kept("#define API_VERSION 1\n", "API_VERSION >= 2"));
+        assert!(if_kept("#define API_VERSION 2\n", "API_VERSION >= 2"));
+        assert!(if_kept("#define API_VERSION 3\n", "API_VERSION >= 2"));
+    }
+
+    #[test]
+    fn if_comparison_equal() {
+        assert!(!if_kept("#define API_VERSION 1\n", "API_VERSION == 2"));
+        assert!(if_kept("#define API_VERSION 2\n", "API_VERSION == 2"));
+        assert!(!if_kept("#define API_VERSION 3\n", "API_VERSION == 2"));
+    }
+
+    #[test]
+    fn if_comparison_not_equal() {
+        assert!(if_kept("#define API_VERSION 1\n", "API_VERSION != 2"));
+        assert!(!if_kept("#define API_VERSION 2\n", "API_VERSION != 2"));
+        assert!(if_kept("#define API_VERSION 3\n", "API_VERSION != 2"));
+    }
+
+    #[test]
+    fn if_operator_precedence() {
+        // `&&` binds tighter than `||`: `1 || (0 && 0)` == 1.
+        assert!(if_kept("", "1 || 0 && 0"));
+        // Parentheses override: `(1 || 0) && 0` == 0.
+        assert!(!if_kept("", "(1 || 0) && 0"));
+        // `*` before `+`, then `==`: `1 + 2 * 3 == 7`.
+        assert!(if_kept("", "1 + 2 * 3 == 7"));
+        // Comparison before `&&`: `2 < 3 && 3 < 4`.
+        assert!(if_kept("", "2 < 3 && 3 < 4"));
+    }
+
+    #[test]
+    fn if_defined_combinations() {
+        assert!(if_kept("#define X 1\n", "defined(X)"));
+        assert!(!if_kept("", "defined(X)"));
+        assert!(if_kept("", "!defined(X)"));
+        assert!(!if_kept("#define X 1\n", "!defined(X)"));
+        // `defined MACRO` (no parentheses) form.
+        assert!(if_kept("#define X 1\n", "defined X"));
+    }
+
+    #[test]
+    fn if_macro_operand_arithmetic() {
+        let defs = "#define A 2\n#define B 3\n";
+        assert!(if_kept(defs, "A * B >= 6"));
+        assert!(!if_kept(defs, "A * B > 6"));
+        // Macro chain A -> C -> 4.
+        assert!(if_kept("#define C 4\n#define A C\n", "A == 4"));
+    }
+
+    #[test]
+    fn if_hex_and_octal_literals() {
+        assert!(if_kept("", "0x10 == 16"));
+        assert!(if_kept("", "010 == 8"));
+        assert!(if_kept("", "1u == 1"));
+    }
+
+    #[test]
+    fn if_unary_operators() {
+        assert!(if_kept("", "-1 < 0"));
+        assert!(if_kept("", "~0 == -1"));
+        assert!(if_kept("", "!0"));
+        assert!(!if_kept("", "!1"));
+    }
+
+    #[test]
+    fn if_undefined_identifier_is_zero() {
+        // ISO 9899 §6.10.1p4: an identifier surviving expansion is 0.
+        assert!(!if_kept("", "UNKNOWN"));
+        assert!(if_kept("", "UNKNOWN == 0"));
+    }
+
+    #[test]
+    fn macro_not_expanded_inside_string_literal() {
+        let src = "#define MAX 100\n\
+const string S = \"MAX is the limit\";\n\
+const long L = MAX;\n";
+        let out = run(src);
+        assert!(out.contains("\"MAX is the limit\""), "got: {out}");
+        assert!(out.contains("const long L = 100;"), "got: {out}");
+        assert!(!out.contains("\"100 is"), "got: {out}");
+    }
+
+    #[test]
+    fn macro_not_expanded_inside_char_literal() {
+        let src = "#define A 5\nconst char C = 'A';\nconst long L = A;\n";
+        let out = run(src);
+        assert!(out.contains("'A'"), "got: {out}");
+        assert!(out.contains("const long L = 5;"), "got: {out}");
+    }
+
+    #[test]
+    fn macro_not_expanded_inside_verbatim_text() {
+        // `@verbatim(text="…")` payload is a string literal → protected.
+        let src = "#define MAX 100\n\
+@verbatim(language=\"c\", text=\"int limit = MAX;\")\n\
+struct S { long x; };\n";
+        let out = run(src);
+        assert!(out.contains("int limit = MAX;"), "got: {out}");
+        assert!(!out.contains("int limit = 100;"), "got: {out}");
+    }
+
+    #[test]
+    fn macro_string_with_escaped_quote_is_protected() {
+        // The escaped `\"` must not close the literal early, so `M`
+        // inside stays untouched while `M` outside expands.
+        let src = "#define M 9\nconst string S = \"a \\\" M b\";\nx = M;\n";
+        let out = run(src);
+        assert!(out.contains("\"a \\\" M b\""), "got: {out}");
+        assert!(out.contains("x = 9;"), "got: {out}");
+    }
+
+    #[test]
+    fn macro_still_expands_outside_literals() {
+        // Regression guard: literal protection must not disable ordinary
+        // expansion on the rest of the line.
+        let src = "#define N 7\nlong a = N; string s = \"N\"; long b = N;\n";
+        let out = run(src);
+        assert!(out.contains("long a = 7;"), "got: {out}");
+        assert!(out.contains("long b = 7;"), "got: {out}");
+        assert!(out.contains("\"N\""), "got: {out}");
     }
 
     #[test]

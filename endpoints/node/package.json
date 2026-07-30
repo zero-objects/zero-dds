@@ -1,0 +1,31 @@
+{
+  "name": "zerodds-endpoint",
+  "version": "1.0.0-rc.7",
+  "private": true,
+  "description": "Native pure-Node ZeroDDS endpoint SDK (ADR 0013)",
+  "type": "commonjs",
+  "main": "zerodds.js",
+  "files": [
+    "zerodds.js",
+    "reliable.js",
+    "udp.js",
+    "QUICKSTART.md"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "comment_dependencies": "The thin endpoint (zerodds.js) is a from-scratch XCDR wire-core with zero runtime dependencies — it requires only Node built-ins (Buffer, node:test). It does NOT consume @zerodds/cdr or @zerodds/types; those runtime packages belong to the idlc-generated TypeScript projects (tools/idlc scaffold) and the @zerodds/node FFI binding (crates/ts-node), not to this self-contained endpoint. Declaring them here would add unmet deps and break `npm install`.",
+  "dependencies": {},
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "keywords": [
+    "dds",
+    "dds-xrce",
+    "xcdr2",
+    "endpoint",
+    "zerodds"
+  ],
+  "author": "ZeroDDS Contributors <hello@zerodds.org>",
+  "license": "Apache-2.0"
+}

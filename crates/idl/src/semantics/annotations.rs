@@ -32,6 +32,22 @@ pub enum AutoidKind {
     Hash,
 }
 
+/// Kind from `@try_construct(DISCARD|USE_DEFAULT|TRIM)`
+/// (XTypes 1.3 §7.2.4.2 / §7.3.1.2.1.1 `TRY_CONSTRUCT1`/`TRY_CONSTRUCT2`).
+/// Controls how a reader treats a member it cannot construct correctly
+/// (a string over its bound, a sequence over its max, an enum value outside
+/// `@bit_bound`). The frontend lowers this here; the bits are materialized at
+/// the TypeObject layer (`to_typeobject.rs` → `StructMemberBuilder::try_construct`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TryConstructKind {
+    /// `DISCARD` — drop the sample (default, §7.2.2.4.4.4.4).
+    Discard,
+    /// `USE_DEFAULT` — substitute the member default, keep the sample.
+    UseDefault,
+    /// `TRIM` — truncate strings/sequences to the bound, keep the sample.
+    Trim,
+}
+
 /// Typed representation of the standard builtin annotations.
 #[derive(Debug, Clone, PartialEq)]
 pub enum BuiltinAnnotation {
@@ -70,6 +86,9 @@ pub enum BuiltinAnnotation {
     Mutable,
     /// `@autoid(SEQUENTIAL|HASH)`.
     Autoid(AutoidKind),
+    /// `@try_construct(DISCARD|USE_DEFAULT|TRIM)` (XTypes 1.3 §7.2.4.2). The
+    /// bits are consumed at the TypeObject layer (see [`TryConstructKind`]).
+    TryConstruct(TryConstructKind),
     /// `@topic` (marker).
     Topic,
     /// `@nested`.
@@ -171,6 +190,8 @@ pub enum LowerError {
     UnknownExtensibilityKind(String),
     /// `@autoid(UNKNOWN)`.
     UnknownAutoidKind(String),
+    /// `@try_construct(UNKNOWN)`.
+    UnknownTryConstructKind(String),
     /// Wrong argument count.
     WrongArgumentCount {
         /// Annotation name.
@@ -186,7 +207,61 @@ pub enum LowerError {
         /// Actual value.
         value: u32,
     },
+    /// A recognized builtin annotation was given an argument of the wrong
+    /// type or shape (broad-audit P1), e.g. `@autoid(1)` (integer where an
+    /// enum kind is required), `@extensibility(1)` (integer where
+    /// `FINAL|APPENDABLE|MUTABLE` is required) or `@position("x")` (string
+    /// where a non-negative integer is required). The parser used to swallow
+    /// these as `Ok(None)` / `unwrap_or(0)`, silently generating code with a
+    /// default value. They are now a hard error surfaced by the semantic
+    /// gate.
+    WrongAnnotationArgument {
+        /// Annotation name (without the leading `@`).
+        annotation: String,
+        /// Human-readable description of the accepted argument form.
+        expected: String,
+    },
 }
+
+impl core::fmt::Display for LowerError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::InvalidIdArgument => {
+                write!(f, "annotation argument must be a non-negative integer")
+            }
+            Self::UnknownExtensibilityKind(k) => write!(
+                f,
+                "@extensibility({k}) is not a valid kind (expected FINAL, APPENDABLE or MUTABLE)"
+            ),
+            Self::UnknownAutoidKind(k) => write!(
+                f,
+                "@autoid({k}) is not a valid kind (expected SEQUENTIAL or HASH)"
+            ),
+            Self::UnknownTryConstructKind(k) => write!(
+                f,
+                "@try_construct({k}) is not a valid kind (expected DISCARD, USE_DEFAULT or TRIM)"
+            ),
+            Self::WrongArgumentCount {
+                annotation,
+                expected,
+                got,
+            } => write!(f, "@{annotation} expects {expected} argument(s), got {got}"),
+            Self::PositionOutOfShortRange { value } => write!(
+                f,
+                "@position({value}) is out of range (unsigned short: 0..=65535)"
+            ),
+            Self::WrongAnnotationArgument {
+                annotation,
+                expected,
+            } => write!(
+                f,
+                "@{annotation} has a wrong-typed argument (expected {expected})"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for LowerError {}
 
 /// Result of a lowering — separate lists for recognized builtins
 /// and unknown (passed-through) annotations.
@@ -229,6 +304,19 @@ impl Lowered {
         })
     }
 
+    /// Effective `@try_construct(...)` kind for a member, if present
+    /// (XTypes 1.3 §7.2.4.2). First match wins. Returns `None` for an
+    /// un-annotated member — the caller then applies the default (DISCARD,
+    /// §7.2.2.4.4.4.4), which is the same bit pattern the builder emits by
+    /// default (`TRY_CONSTRUCT1`).
+    #[must_use]
+    pub fn try_construct(&self) -> Option<TryConstructKind> {
+        self.builtins.iter().find_map(|a| match a {
+            BuiltinAnnotation::TryConstruct(k) => Some(*k),
+            _ => None,
+        })
+    }
+
     /// Returns all `@verbatim` specs whose `language` field matches the
     /// desired codegen (XTypes 1.3 §7.2.2.4.8 +
     /// IDL 4.2 §8.3.5.1).
@@ -266,6 +354,67 @@ fn name_tail(a: &Annotation) -> &str {
         .unwrap_or_default()
 }
 
+/// Central `@non_serialized` predicate (broad-audit P0-5, #2).
+///
+/// `true` if the member carries `@non_serialized` (XTypes 1.3 §7.2.4.4.2). Such
+/// a member is program-internal storage: it stays in the in-memory generated
+/// type (the field still exists) but MUST be omitted from EVERY wire form
+/// (encode + decode, XCDR1 + XCDR2, plain + `@mutable`) AND from BOTH the
+/// Minimal and Complete TypeObject — so the emitted TypeIdentifier no longer
+/// covers it (the changed hash is the intended rc correction, decision #2 (a)).
+/// On decode the field is left at its default value.
+///
+/// Every codegen backend MUST gate its wire member loops on this one function
+/// so all 17 emitters agree instead of each re-scanning the annotation (or, as
+/// before, ignoring it and serializing the member).
+#[must_use]
+pub fn member_is_non_serialized(annotations: &[Annotation]) -> bool {
+    annotations.iter().any(|a| name_tail(a) == "non_serialized")
+}
+
+/// Central extensibility normalization (broad-audit P0-4).
+///
+/// Reads the effective [`ExtensibilityKind`] from a raw annotation list,
+/// honoring BOTH the short forms (`@final` / `@appendable` / `@mutable`)
+/// AND the long form `@extensibility(FINAL|APPENDABLE|MUTABLE)`
+/// (XTypes 1.3 §7.3.3). First match wins. Returns `None` for an
+/// un-annotated aggregate — the caller then applies the default
+/// (APPENDABLE, XTypes 1.3 §7.3.3.1).
+///
+/// Every backend (Rust/C++/C/TS/…) MUST read the extensibility through this
+/// one function so the wire form agrees: MUTABLE → PL_CDR / EMHEADER,
+/// APPENDABLE → DHEADER-delimited, FINAL → plain. Scanning only the short
+/// forms silently downgrades `@extensibility(MUTABLE)` to the default and
+/// drifts the wire between backends.
+#[must_use]
+pub fn extensibility_of(annotations: &[Annotation]) -> Option<ExtensibilityKind> {
+    annotations.iter().find_map(extensibility_of_single)
+}
+
+/// Extensibility carried by a single annotation, if any. Recognizes both the
+/// short forms and the `@extensibility(...)` long form; an unknown/malformed
+/// long-form argument yields `None` (the type falls through to the default),
+/// matching the lenient read of the per-backend emitters.
+fn extensibility_of_single(a: &Annotation) -> Option<ExtensibilityKind> {
+    match name_tail(a) {
+        "final" => Some(ExtensibilityKind::Final),
+        "appendable" => Some(ExtensibilityKind::Appendable),
+        "mutable" => Some(ExtensibilityKind::Mutable),
+        "extensibility" => match &a.params {
+            AnnotationParams::Single(ConstExpr::Scoped(s)) => {
+                match s.parts.last().map(|p| p.text.as_str()).unwrap_or("") {
+                    "FINAL" => Some(ExtensibilityKind::Final),
+                    "APPENDABLE" => Some(ExtensibilityKind::Appendable),
+                    "MUTABLE" => Some(ExtensibilityKind::Mutable),
+                    _ => None,
+                }
+            }
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
 fn const_to_u32(expr: &ConstExpr) -> Option<u32> {
     if let ConstExpr::Literal(l) = expr {
         if matches!(l.kind, LiteralKind::Integer) {
@@ -273,6 +422,59 @@ fn const_to_u32(expr: &ConstExpr) -> Option<u32> {
         }
     }
     None
+}
+
+/// First `@…(value)` parameter of an annotation, if it carries exactly one.
+fn first_param(a: &Annotation) -> Option<&ConstExpr> {
+    match &a.params {
+        AnnotationParams::Single(e) => Some(e),
+        AnnotationParams::Named(named) => named.first().map(|np| &np.value),
+        AnnotationParams::None | AnnotationParams::Empty => None,
+    }
+}
+
+/// Effective `@bit_bound(N)` of an enum — the integer that selects the wire
+/// holder width (XTypes 1.3 §7.3.1.2.1.9 `@bit_bound` + §7.4.5.1 enum
+/// serialization). The DEFAULT enum bit_bound is **32**; an explicit
+/// `@bit_bound(N)` with N in 1..=32 narrows the holder. Out-of-range or
+/// malformed values fall back to the 32-bit default (the lowering path in
+/// [`lower_single`] separately rejects a non-integer argument as a hard error).
+///
+/// This is the ONE place every backend reads the enum bound from, so the wire
+/// width agrees across all 17 emitters instead of each defaulting to 4 octets.
+#[must_use]
+pub fn enum_bit_bound(annotations: &[Annotation]) -> u32 {
+    annotations
+        .iter()
+        .find(|a| name_tail(a) == "bit_bound")
+        .and_then(first_param)
+        .and_then(const_to_u32)
+        .filter(|&v| (1..=32).contains(&v))
+        .unwrap_or(32)
+}
+
+/// Wire width in octets (1/2/4) for an enum `@bit_bound` (XTypes 1.3
+/// §7.3.1.2.1.9 + §7.4.5.1). The enum is serialized as a SIGNED integer whose
+/// holder is picked by the bound:
+///
+/// | bit_bound | octets | signed holder |
+/// |-----------|--------|---------------|
+/// | 1..=8     | 1      | int8          |
+/// | 9..=16    | 2      | int16         |
+/// | 17..=32   | 4      | int32         |
+///
+/// The default bound (32, no `@bit_bound`) therefore stays 4 octets. The
+/// in-memory representation may remain a wider integer; only the wire cast
+/// narrows. Cyclone DDS honours this width; matching it is spec-faithful.
+#[must_use]
+pub fn enum_wire_octets(bit_bound: u32) -> u8 {
+    if bit_bound <= 8 {
+        1
+    } else if bit_bound <= 16 {
+        2
+    } else {
+        4
+    }
 }
 
 fn const_to_string(expr: &ConstExpr) -> Option<String> {
@@ -325,6 +527,11 @@ pub fn lower_single(ann: &Annotation) -> Result<Option<BuiltinAnnotation>, Lower
             }
             _ => return Ok(None),
         },
+        // `@extensibility(FINAL|APPENDABLE|MUTABLE)` (XTypes 1.3 §7.3.3). The
+        // value is an enum kind, never a number. A bare `@extensibility` (no
+        // argument) is left for the default; an argument of the wrong TYPE
+        // (`@extensibility(1)`) is a hard error (broad-audit P1) instead of
+        // silently downgrading to the default extensibility.
         "extensibility" => match params {
             AnnotationParams::Single(ConstExpr::Scoped(s)) => {
                 let ident = s.parts.last().map(|p| p.text.as_str()).unwrap_or("");
@@ -338,12 +545,24 @@ pub fn lower_single(ann: &Annotation) -> Result<Option<BuiltinAnnotation>, Lower
                 };
                 BuiltinAnnotation::Extensibility(kind)
             }
-            _ => return Ok(None),
+            AnnotationParams::None | AnnotationParams::Empty => return Ok(None),
+            _ => {
+                return Err(LowerError::WrongAnnotationArgument {
+                    annotation: "extensibility".to_string(),
+                    expected: "FINAL, APPENDABLE or MUTABLE".to_string(),
+                });
+            }
         },
         "final" => BuiltinAnnotation::Final,
         "appendable" => BuiltinAnnotation::Appendable,
         "mutable" => BuiltinAnnotation::Mutable,
+        // `@autoid(SEQUENTIAL|HASH)` (XTypes 1.3 §7.3.1.2.1.10). The value is
+        // an enum kind, never a number. A bare `@autoid` (no argument) is left
+        // for the member-id layer to default (§7.3.1.2.1.1); an argument of the
+        // wrong TYPE (`@autoid(1)`) is a hard error (broad-audit P1) instead of
+        // being silently dropped into `custom`.
         "autoid" => match params {
+            AnnotationParams::None | AnnotationParams::Empty => return Ok(None),
             AnnotationParams::Single(ConstExpr::Scoped(s)) => {
                 let ident = s.parts.last().map(|p| p.text.as_str()).unwrap_or("");
                 let kind = match ident {
@@ -353,7 +572,36 @@ pub fn lower_single(ann: &Annotation) -> Result<Option<BuiltinAnnotation>, Lower
                 };
                 BuiltinAnnotation::Autoid(kind)
             }
-            _ => return Ok(None),
+            _ => {
+                return Err(LowerError::WrongAnnotationArgument {
+                    annotation: "autoid".to_string(),
+                    expected: "SEQUENTIAL or HASH".to_string(),
+                });
+            }
+        },
+        // `@try_construct(DISCARD|USE_DEFAULT|TRIM)` (XTypes 1.3 §7.2.4.2). The
+        // value is an enum kind, never a number. A bare `@try_construct` (no
+        // argument) is left for the default (DISCARD, §7.2.2.4.4.4.4); an
+        // argument of the wrong TYPE (`@try_construct(1)`) is a hard error
+        // (broad-audit P1d) instead of silently downgrading to the default.
+        "try_construct" => match params {
+            AnnotationParams::None | AnnotationParams::Empty => return Ok(None),
+            AnnotationParams::Single(ConstExpr::Scoped(s)) => {
+                let ident = s.parts.last().map(|p| p.text.as_str()).unwrap_or("");
+                let kind = match ident {
+                    "DISCARD" => TryConstructKind::Discard,
+                    "USE_DEFAULT" => TryConstructKind::UseDefault,
+                    "TRIM" => TryConstructKind::Trim,
+                    other => return Err(LowerError::UnknownTryConstructKind(other.to_string())),
+                };
+                BuiltinAnnotation::TryConstruct(kind)
+            }
+            _ => {
+                return Err(LowerError::WrongAnnotationArgument {
+                    annotation: "try_construct".to_string(),
+                    expected: "DISCARD, USE_DEFAULT or TRIM".to_string(),
+                });
+            }
         },
         "topic" => BuiltinAnnotation::Topic,
         "nested" => BuiltinAnnotation::Nested,
@@ -386,11 +634,16 @@ pub fn lower_single(ann: &Annotation) -> Result<Option<BuiltinAnnotation>, Lower
             }
             _ => return Ok(None),
         },
+        // `@position(n)` (§8.3.1.4: `unsigned short value`) — a non-negative
+        // integer in 0..=65535. A non-integer argument (`@position("x")`) is a
+        // hard error (broad-audit P1) instead of silently defaulting to 0.
         "position" => match params {
             AnnotationParams::Single(e) => {
-                let value = const_to_u32(e).unwrap_or(0);
-                // §8.3.1.4: `@annotation position { unsigned short value; }`
-                // — range 0..=65535 (u16). Values above that are a spec
+                let value = const_to_u32(e).ok_or_else(|| LowerError::WrongAnnotationArgument {
+                    annotation: "position".to_string(),
+                    expected: "a non-negative integer (0..=65535)".to_string(),
+                })?;
+                // §8.3.1.4: range 0..=65535 (u16). Values above that are a spec
                 // violation.
                 if value > u32::from(u16::MAX) {
                     return Err(LowerError::PositionOutOfShortRange { value });
@@ -701,6 +954,60 @@ mod tests {
         assert_eq!(lowered.extensibility(), Some(ExtensibilityKind::Final));
     }
 
+    // --- P0-4: central `extensibility_of` (short AND long form) ------------
+
+    #[test]
+    fn extensibility_of_long_form_mutable() {
+        let anns = struct_with_annotations("@extensibility(MUTABLE) struct S { long x; };");
+        assert_eq!(extensibility_of(&anns), Some(ExtensibilityKind::Mutable));
+    }
+
+    #[test]
+    fn extensibility_of_long_form_final() {
+        let anns = struct_with_annotations("@extensibility(FINAL) struct S { long x; };");
+        assert_eq!(extensibility_of(&anns), Some(ExtensibilityKind::Final));
+    }
+
+    #[test]
+    fn extensibility_of_long_form_appendable() {
+        let anns = struct_with_annotations("@extensibility(APPENDABLE) struct S { long x; };");
+        assert_eq!(extensibility_of(&anns), Some(ExtensibilityKind::Appendable));
+    }
+
+    #[test]
+    fn extensibility_of_short_and_long_form_agree() {
+        // The whole point of P0-4: the long form and the matching short form
+        // resolve to the same ExtensibilityKind.
+        for (long, short, kind) in [
+            (
+                "@extensibility(MUTABLE) struct S { long x; };",
+                "@mutable struct S { long x; };",
+                ExtensibilityKind::Mutable,
+            ),
+            (
+                "@extensibility(FINAL) struct S { long x; };",
+                "@final struct S { long x; };",
+                ExtensibilityKind::Final,
+            ),
+            (
+                "@extensibility(APPENDABLE) struct S { long x; };",
+                "@appendable struct S { long x; };",
+                ExtensibilityKind::Appendable,
+            ),
+        ] {
+            let l = extensibility_of(&struct_with_annotations(long));
+            let s = extensibility_of(&struct_with_annotations(short));
+            assert_eq!(l, Some(kind));
+            assert_eq!(l, s, "long and short form drift");
+        }
+    }
+
+    #[test]
+    fn extensibility_of_unannotated_is_none() {
+        let anns = struct_with_annotations("struct S { long x; };");
+        assert_eq!(extensibility_of(&anns), None);
+    }
+
     #[test]
     fn unknown_annotation_preserved_in_custom() {
         let anns = struct_with_annotations("@my_vendor_tag struct S { long x; };");
@@ -858,13 +1165,21 @@ mod tests {
     }
 
     #[test]
-    fn extensibility_non_scoped_is_ignored() {
-        // Not a ConstExpr::Scoped → not recognized as builtin arg
-        let a = lower_one(
+    fn extensibility_wrong_typed_argument_is_error() {
+        // Broad-audit P1: `@extensibility(1)` — an integer where an enum kind
+        // is required — is a hard error, not a silent drop to the default.
+        let err = lower_single(&ann(
             "extensibility",
             AnnotationParams::Single(lit(LiteralKind::Integer, "1")),
+        ))
+        .unwrap_err();
+        assert_eq!(
+            err,
+            LowerError::WrongAnnotationArgument {
+                annotation: "extensibility".into(),
+                expected: "FINAL, APPENDABLE or MUTABLE".into(),
+            }
         );
-        assert_eq!(a, None);
     }
 
     #[test]
@@ -896,12 +1211,122 @@ mod tests {
     }
 
     #[test]
-    fn autoid_non_scoped_is_ignored() {
-        let a = lower_one(
+    fn autoid_wrong_typed_argument_is_error() {
+        // Broad-audit P1: `@autoid(1)` — an integer where SEQUENTIAL|HASH is
+        // required — is a hard error, not a silent drop to `custom`.
+        let err = lower_single(&ann(
             "autoid",
             AnnotationParams::Single(lit(LiteralKind::Integer, "1")),
+        ))
+        .unwrap_err();
+        assert_eq!(
+            err,
+            LowerError::WrongAnnotationArgument {
+                annotation: "autoid".into(),
+                expected: "SEQUENTIAL or HASH".into(),
+            }
         );
-        assert_eq!(a, None);
+    }
+
+    #[test]
+    fn autoid_bare_is_left_for_default() {
+        // A bare `@autoid` (no argument) is not a wrong-typed argument; it is
+        // left for the member-id layer to default (§7.3.1.2.1.1), so lowering
+        // must not treat it as an error.
+        assert_eq!(lower_one("autoid", AnnotationParams::None), None);
+        assert_eq!(lower_one("autoid", AnnotationParams::Empty), None);
+    }
+
+    // ---- @try_construct (XTypes 1.3 §7.2.4.2) ----------------------------
+
+    #[test]
+    fn try_construct_discard_lowers() {
+        let a = lower_one(
+            "try_construct",
+            AnnotationParams::Single(ConstExpr::Scoped(scoped(&["DISCARD"]))),
+        );
+        assert_eq!(
+            a,
+            Some(BuiltinAnnotation::TryConstruct(TryConstructKind::Discard))
+        );
+    }
+
+    #[test]
+    fn try_construct_use_default_lowers() {
+        let a = lower_one(
+            "try_construct",
+            AnnotationParams::Single(ConstExpr::Scoped(scoped(&["USE_DEFAULT"]))),
+        );
+        assert_eq!(
+            a,
+            Some(BuiltinAnnotation::TryConstruct(
+                TryConstructKind::UseDefault
+            ))
+        );
+    }
+
+    #[test]
+    fn try_construct_trim_lowers() {
+        let a = lower_one(
+            "try_construct",
+            AnnotationParams::Single(ConstExpr::Scoped(scoped(&["TRIM"]))),
+        );
+        assert_eq!(
+            a,
+            Some(BuiltinAnnotation::TryConstruct(TryConstructKind::Trim))
+        );
+    }
+
+    #[test]
+    fn try_construct_unknown_is_error() {
+        let err = lower_single(&ann(
+            "try_construct",
+            AnnotationParams::Single(ConstExpr::Scoped(scoped(&["BOGUS"]))),
+        ))
+        .unwrap_err();
+        assert_eq!(err, LowerError::UnknownTryConstructKind("BOGUS".into()));
+    }
+
+    #[test]
+    fn try_construct_wrong_typed_argument_is_error() {
+        // Broad-audit P1d: `@try_construct(1)` — an integer where an enum kind
+        // is required — is a hard error, not a silent drop to the default.
+        let err = lower_single(&ann(
+            "try_construct",
+            AnnotationParams::Single(lit(LiteralKind::Integer, "1")),
+        ))
+        .unwrap_err();
+        assert_eq!(
+            err,
+            LowerError::WrongAnnotationArgument {
+                annotation: "try_construct".into(),
+                expected: "DISCARD, USE_DEFAULT or TRIM".into(),
+            }
+        );
+    }
+
+    #[test]
+    fn try_construct_bare_is_left_for_default() {
+        // A bare `@try_construct` (no argument) is not an error; it is left for
+        // the TypeObject layer to default to DISCARD (§7.2.2.4.4.4.4).
+        assert_eq!(lower_one("try_construct", AnnotationParams::None), None);
+        assert_eq!(lower_one("try_construct", AnnotationParams::Empty), None);
+    }
+
+    #[test]
+    fn lowered_try_construct_reads_first_match() {
+        let anns = alloc::vec![ann(
+            "try_construct",
+            AnnotationParams::Single(ConstExpr::Scoped(scoped(&["TRIM"]))),
+        )];
+        let lowered = lower_annotations(&anns).unwrap();
+        assert_eq!(lowered.try_construct(), Some(TryConstructKind::Trim));
+    }
+
+    #[test]
+    fn try_construct_absent_is_none() {
+        let lowered = Lowered::default();
+        assert_eq!(lowered.try_construct(), None);
     }
 
     #[test]
@@ -1020,14 +1445,20 @@ mod tests {
     }
 
     #[test]
-    fn position_non_integer_falls_back_to_zero() {
-        // const_to_u32 returns None on non-integer → unwrap_or(0)
+    fn position_non_integer_is_error() {
+        // Broad-audit P1: `@position("foo")` — a string where a non-negative
+        // integer is required — is a hard error, not a silent fallback to 0.
+        let err = lower_single(&ann(
+            "position",
+            AnnotationParams::Single(lit(LiteralKind::String, "\"foo\"")),
+        ))
+        .unwrap_err();
         assert_eq!(
-            lower_one(
-                "position",
-                AnnotationParams::Single(lit(LiteralKind::String, "\"foo\""))
-            ),
-            Some(BuiltinAnnotation::Position(0))
+            err,
+            LowerError::WrongAnnotationArgument {
+                annotation: "position".into(),
+                expected: "a non-negative integer (0..=65535)".into(),
+            }
         );
     }
 
@@ -1062,6 +1493,43 @@ mod tests {
     #[test]
     fn bit_bound_without_single_is_ignored() {
         assert_eq!(lower_one("bit_bound", AnnotationParams::None), None);
+    }
+
+    #[test]
+    fn enum_wire_octets_bucket_boundaries() {
+        // XTypes 1.3 §7.4.5.1: 1..=8 → 1, 9..=16 → 2, 17..=32 → 4.
+        assert_eq!(enum_wire_octets(1), 1);
+        assert_eq!(enum_wire_octets(8), 1);
+        assert_eq!(enum_wire_octets(9), 2);
+        assert_eq!(enum_wire_octets(16), 2);
+        assert_eq!(enum_wire_octets(17), 4);
+        assert_eq!(enum_wire_octets(32), 4);
+    }
+
+    #[test]
+    fn enum_bit_bound_reads_annotation_and_defaults_to_32() {
+        // No @bit_bound → default 32 → 4 octets.
+        assert_eq!(enum_bit_bound(&[]), 32);
+        assert_eq!(enum_wire_octets(enum_bit_bound(&[])), 4);
+        // @bit_bound(8) → 8 → 1 octet.
+        let a8 = [ann(
+            "bit_bound",
+            AnnotationParams::Single(lit(LiteralKind::Integer, "8")),
+        )];
+        assert_eq!(enum_bit_bound(&a8), 8);
+        assert_eq!(enum_wire_octets(enum_bit_bound(&a8)), 1);
+        // @bit_bound(16) → 16 → 2 octets.
+        let a16 = [ann(
+            "bit_bound",
+            AnnotationParams::Single(lit(LiteralKind::Integer, "16")),
+        )];
+        assert_eq!(enum_wire_octets(enum_bit_bound(&a16)), 2);
+        // Out-of-range bound (0) falls back to the 32-bit default.
+        let a0 = [ann(
+            "bit_bound",
+            AnnotationParams::Single(lit(LiteralKind::Integer, "0")),
+        )];
+        assert_eq!(enum_bit_bound(&a0), 32);
     }
 
     #[test]

@@ -128,6 +128,13 @@ fn walk_definitions(
                 } else {
                     // Spec idl4-java §7.4: IDL interface -> Java public interface.
                     files.push(emit_non_service_interface_file(iface, pkg, opts)?);
+                    // §7.4: types/consts/exceptions nested in the interface
+                    // body are their own scope. Emit them into a sub-package
+                    // named after the interface (mirroring module -> package,
+                    // lowercased) so a reference `Iface::Nested` resolves via
+                    // `scoped_to_java` to `iface.Nested`. Previously silently
+                    // dropped.
+                    emit_interface_nested_types(iface, pkg, opts, files, ctx)?;
                 }
             }
             Definition::Interface(InterfaceDcl::Forward(_)) => {
@@ -673,7 +680,7 @@ fn emit_const_holder(
     let name = sanitize_identifier(&c.name.text)?;
     let class = format!("{name}Constant");
     let java_ty = const_type_to_java(&c.type_)?;
-    let val = const_expr_to_java(&c.value);
+    let val = coerce_const_value(&c.type_, const_expr_to_java(&c.value));
     let mut body = String::new();
     writeln!(body, "public final class {class} {{").map_err(fmt_err)?;
     writeln!(body, "    public static final {java_ty} {name} = {val};").map_err(fmt_err)?;
@@ -787,6 +794,9 @@ pub(crate) fn type_for_declarator(
 /// zerodds-lint: recursion-depth 64 (Parser/AST-Walk; bounded by IDL nesting)
 pub(crate) fn typespec_to_java(ts: &TypeSpec) -> Result<String, JavaGenError> {
     match ts {
+        TypeSpec::Primitive(zerodds_idl::ast::PrimitiveType::Floating(
+            zerodds_idl::ast::FloatingType::LongDouble,
+        )) => Err(crate::typesupport::long_double_unsupported()),
         TypeSpec::Primitive(p) => Ok(primitive_to_java(*p).to_string()),
         TypeSpec::Scoped(s) => Ok(scoped_to_java(s)),
         TypeSpec::Sequence(s) => {
@@ -842,9 +852,27 @@ pub(crate) fn switch_type_to_java(s: &SwitchTypeSpec) -> Result<String, JavaGenE
     })
 }
 
+/// Coerces a Java constant initializer so it assigns to its declared type
+/// without a narrowing/precision compile error. `octet`/`int8` map to Java
+/// `byte`, but an IDL octet value `0..255` overflows the signed `byte`, so it
+/// is cast (`(byte) (255)` == -1, matching the CDR octet). A Java floating
+/// literal is `double` by default and does not implicitly narrow to `float`,
+/// so `float` constants are cast too. Every other const type assigns directly.
+fn coerce_const_value(t: &zerodds_idl::ast::ConstType, val: String) -> String {
+    use zerodds_idl::ast::{ConstType, FloatingType, IntegerType};
+    match t {
+        ConstType::Octet | ConstType::Integer(IntegerType::Int8) => format!("(byte) ({val})"),
+        ConstType::Floating(FloatingType::Float) => format!("(float) ({val})"),
+        _ => val,
+    }
+}
+
 fn const_type_to_java(t: &zerodds_idl::ast::ConstType) -> Result<String, JavaGenError> {
     Ok(match t {
         zerodds_idl::ast::ConstType::Integer(i) => integer_to_java(*i).to_string(),
+        zerodds_idl::ast::ConstType::Floating(zerodds_idl::ast::FloatingType::LongDouble) => {
+            return Err(crate::typesupport::long_double_unsupported());
+        }
         zerodds_idl::ast::ConstType::Floating(f) => floating_to_java(*f).to_string(),
         zerodds_idl::ast::ConstType::Boolean => "boolean".into(),
         zerodds_idl::ast::ConstType::Char => "char".into(),
@@ -856,8 +884,26 @@ fn const_type_to_java(t: &zerodds_idl::ast::ConstType) -> Result<String, JavaGen
     })
 }
 
+/// Maps an IDL scoped name (`Alpha::T`) to a fully-qualified Java name
+/// (`alpha.T`). Module segments become Java packages, which are emitted
+/// lowercase (mirroring [`walk_definitions`], where each module is
+/// `to_lowercase`d into the package path); only the trailing type name
+/// keeps its original case. The FQN is used inline — no `import` needed
+/// (see [`wrap_compilation_unit`]).
 fn scoped_to_java(s: &ScopedName) -> String {
-    let parts: Vec<String> = s.parts.iter().map(|p| p.text.clone()).collect();
+    let n = s.parts.len();
+    let parts: Vec<String> = s
+        .parts
+        .iter()
+        .enumerate()
+        .map(|(i, p)| {
+            if i + 1 < n {
+                p.text.to_lowercase()
+            } else {
+                p.text.clone()
+            }
+        })
+        .collect();
     parts.join(".")
 }
 
@@ -945,13 +991,25 @@ pub(crate) fn const_expr_to_java(e: &ConstExpr) -> String {
 
 fn literal_to_java(l: &Literal) -> String {
     match l.kind {
-        LiteralKind::Boolean
-        | LiteralKind::Integer
+        // IDL boolean literals are `TRUE`/`FALSE`; Java requires `true`/`false`.
+        LiteralKind::Boolean => {
+            if l.raw.eq_ignore_ascii_case("true") {
+                "true".to_string()
+            } else if l.raw.eq_ignore_ascii_case("false") {
+                "false".to_string()
+            } else {
+                l.raw.to_ascii_lowercase()
+            }
+        }
+        // IDL wide char/string literals carry an `L` prefix (`L'x'`, `L"…"`)
+        // that is not valid Java; strip it — Java `char`/`String` hold UTF-16.
+        LiteralKind::WideChar | LiteralKind::WideString => {
+            l.raw.strip_prefix('L').unwrap_or(&l.raw).to_string()
+        }
+        LiteralKind::Integer
         | LiteralKind::Floating
         | LiteralKind::Char
-        | LiteralKind::WideChar
         | LiteralKind::String
-        | LiteralKind::WideString
         | LiteralKind::Fixed => l.raw.clone(),
     }
 }
@@ -1392,6 +1450,44 @@ fn emit_non_service_interface_file(
         class_name: class,
         source,
     })
+}
+
+/// Emits the type/const/exception declarations nested inside an interface
+/// body as standalone Java files, placed in a sub-package named after the
+/// interface (lowercased, like a module). Without this, `Export::Type`,
+/// `Export::Const` and `Export::Except` in an interface were dropped
+/// silently (F38).
+fn emit_interface_nested_types(
+    iface: &InterfaceDef,
+    pkg: &str,
+    opts: &JavaGenOptions,
+    files: &mut Vec<JavaFile>,
+    ctx: &EmitCtx,
+) -> Result<(), JavaGenError> {
+    use zerodds_idl::ast::Export;
+
+    let has_nested = iface
+        .exports
+        .iter()
+        .any(|e| matches!(e, Export::Type(_) | Export::Const(_) | Export::Except(_)));
+    if !has_nested {
+        return Ok(());
+    }
+    let scope = sanitize_identifier(&iface.name.text)?.to_lowercase();
+    let sub_pkg = if pkg.is_empty() {
+        scope
+    } else {
+        format!("{pkg}.{scope}")
+    };
+    for export in &iface.exports {
+        match export {
+            Export::Type(td) => emit_type_decl_top(td, &sub_pkg, opts, files, ctx)?,
+            Export::Const(c) => files.push(emit_const_holder(c, &sub_pkg, opts)?),
+            Export::Except(e) => files.push(emit_exception_file(e, &sub_pkg, opts)?),
+            Export::Op(_) | Export::Attr(_) => {}
+        }
+    }
+    Ok(())
 }
 
 /// `true` if the interface annotations contain `@service` — then we

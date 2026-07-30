@@ -120,3 +120,8 @@ crates/py/python/zerodds/_core*.dylib
 # The public example mirror (zerodds-examples / "zero-dds-snippets") is its own
 # git repository checked out inside this tree — never track it from the root.
 /zerodds-examples/
+endpoints/**/build/
+endpoints/**/bin/
+endpoints/**/obj/
+endpoints/**/*.class
+endpoints/**/_build/

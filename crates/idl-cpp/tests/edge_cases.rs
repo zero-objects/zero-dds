@@ -41,18 +41,21 @@ fn empty_ast_produces_preamble_only() {
 }
 
 #[test]
-fn struct_with_reserved_field_name_is_rejected() {
-    // IDL does not allow 'class' as an identifier (it is not a keyword
-    // in IDL either, but the C++ generator must reject it).
-    // 'register' is reserved in C++, not in IDL — a perfect test.
+fn struct_with_reserved_field_name_is_escaped() {
+    // Issue #14: the C++ generator now ESCAPES a reserved-word member name
+    // (trailing `_`) instead of rejecting it. `register` is reserved in C++
+    // but not in IDL — a perfect test.
     let ast = parse("struct Foo { long register; };");
-    let res = generate_cpp_header(&ast, &CppGenOptions::default());
-    match res {
-        Err(CppGenError::InvalidName { name, .. }) => {
-            assert_eq!(name, "register");
-        }
-        other => panic!("expected InvalidName, got {other:?}"),
-    }
+    let cpp = generate_cpp_header(&ast, &CppGenOptions::default())
+        .expect("reserved-word field must generate, not error");
+    assert!(
+        cpp.contains("int32_t& register_()"),
+        "member accessor must be escaped:\n{cpp}"
+    );
+    assert!(
+        !cpp.contains("int32_t register;") && !cpp.contains("register()"),
+        "the raw keyword must not be emitted as an identifier:\n{cpp}"
+    );
 }
 
 #[test]

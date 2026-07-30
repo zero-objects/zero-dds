@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "zerodds-endpoint-rust"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Native Rust endpoint SDK (ADR 0013): a thin XRCE + XCDR2 client over the zerodds-cdr core, with sync (poll) and async (thread + channel) deep examples."
+publish = false
+
+[package.metadata.dist]
+dist = false
+
+[lints]
+workspace = true
+
+[dependencies]
+zerodds-cdr = { version = "1.0.0-rc.7", path = "../../crates/cdr", default-features = false, features = ["std"] }

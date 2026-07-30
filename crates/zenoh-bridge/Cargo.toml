@@ -31,10 +31,16 @@ zenoh-runtime = [
 ]
 
 [dependencies]
-zerodds-qos = { version = "1.0.0-rc.6", path = "../qos" }
+zerodds-qos = { version = "1.0.0-rc.7", path = "../qos" }
 
 # Optional, active only with zenoh-runtime.
-zerodds-dcps = { version = "1.0.0-rc.6", path = "../dcps", optional = true }
+zerodds-dcps = { version = "1.0.0-rc.7", path = "../dcps", optional = true }
+# The lz4_flex advisory reaches us only through zenoh-transport's
+# `transport_compression` (decompress_into). It is unfixed upstream:
+# zenoh-transport pins `lz4_flex ^0.10`, below the fixed 0.11.6/0.12.1, and it
+# affects the whole zenoh/ROS 2 ecosystem, not us specifically. We keep zenoh's
+# default features (compression included) and track the upstream bump rather
+# than unilaterally disabling functionality; the advisory stays open until then.
 zenoh = { version = "1", optional = true }
 tokio = { version = "1", optional = true, features = ["rt", "rt-multi-thread", "sync", "macros"] }
 thiserror = { version = "2", optional = true }

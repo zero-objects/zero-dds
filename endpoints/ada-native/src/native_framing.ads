@@ -11,7 +11,8 @@ with Zerodds_Native_Wire; use Zerodds_Native_Wire;
 
 package Native_Framing is
 
-   XRCE_SM_Write_Data : constant := 16#07#;
+   XRCE_SM_Write_Data : constant := 16#07#;  --  endpoint -> hub
+   XRCE_SM_Data       : constant := 16#09#;  --  hub -> endpoint
    XRCE_Write_Flags   : constant := 16#03#;
    XRCE_Flag          : constant := 16#7E#;
    XRCE_Esc           : constant := 16#7D#;
@@ -24,6 +25,20 @@ package Native_Framing is
       Stream  : Byte;
       Seq     : Unsigned_16;
       Sample  : Byte_Array) return Byte_Array;
+
+   --  Locate the sample body inside a received WRITE_DATA (0x07) or DATA (0x09)
+   --  frame. The 8-byte envelope (header + submessage header) is skipped;
+   --  `Body_First .. Body_Last` index into `Frame` (empty body -> Body_Last =
+   --  Body_First - 1). The body is bounded by the 16-bit little-endian
+   --  submessage_length (bytes 6..7), not by Frame'Last, so a trailing appended
+   --  submessage is not folded in. `Valid` is False if the frame is too short,
+   --  is not a WRITE_DATA/DATA submessage, or declares a length that runs past
+   --  the datagram (truncation / wrong length).
+   procedure Xrce_Read_Frame
+     (Frame      : Byte_Array;
+      Body_First : out Natural;
+      Body_Last  : out Integer;
+      Valid      : out Boolean);
 
    --  CRC-16/CCITT-FALSE (poly 0x1021, init 0xFFFF, no reflection).
    function Crc16_Ccitt_False (Data : Byte_Array) return Unsigned_16;

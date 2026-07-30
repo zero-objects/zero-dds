@@ -482,6 +482,19 @@ impl MqttClient {
         }
         let (remaining, _) =
             decode_vbi(&vbi_buf).map_err(|e| ClientError::Codec(format!("{e:?}")))?;
+        // TCP is a stream transport: the broker-announced Remaining Length
+        // (up to 268_435_455 bytes per §2.1.4) cannot be checked against
+        // "bytes remaining" the way an in-memory buffer decode can —
+        // reject before allocating (mirrors
+        // `crates/transport-tcp/src/framing.rs::MAX_FRAME_SIZE` and
+        // `crate::net::MAX_MQTT_PACKET_SIZE`), so a malicious/compromised
+        // broker cannot force a ~256 MB allocation from a 5-byte header.
+        if remaining > crate::net::MAX_MQTT_PACKET_SIZE {
+            return Err(ClientError::Codec(format!(
+                "MQTT Remaining Length {remaining} exceeds MAX_MQTT_PACKET_SIZE ({})",
+                crate::net::MAX_MQTT_PACKET_SIZE
+            )));
+        }
         let mut body = vec![0u8; remaining as usize];
         if !body.is_empty() {
             self.stream

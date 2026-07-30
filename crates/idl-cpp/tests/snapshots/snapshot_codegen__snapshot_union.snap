@@ -49,6 +49,8 @@ struct topic_type_support<::U> {
     static std::vector<uint8_t> encode_be(const ::U& zd_v, ::dds::topic::xcdr2::XcdrVersion zd_repr);
     static ::U decode(const uint8_t* zd_buf, size_t zd_len, ::dds::topic::xcdr2::XcdrVersion zd_repr, bool zd_be = false);
     static std::array<uint8_t, 16> key_hash(const ::U& zd_v);
+    static const uint8_t* type_object() { return nullptr; }
+    static uintptr_t type_object_len() { return 0; }
 };
 
 inline std::vector<uint8_t> topic_type_support<::U>::encode(const ::U& zd_v) {

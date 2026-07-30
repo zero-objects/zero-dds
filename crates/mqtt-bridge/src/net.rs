@@ -23,11 +23,23 @@ use crate::packet::ControlPacketType;
 use crate::vbi::encode_vbi;
 use crate::version::ProtocolVersion;
 
+/// Hard cap on a single MQTT control-packet body (16 MiB).
+///
+/// TCP is a stream transport, so the peer-announced Remaining Length VBI
+/// (up to 268_435_455 bytes per §2.1.4) cannot be checked against "bytes
+/// remaining" the way an in-memory buffer decode can — there is no bound
+/// until this cap is applied. Mirrors the established
+/// `crates/transport-tcp/src/framing.rs::MAX_FRAME_SIZE` DoS-cap pattern:
+/// reject before allocating, so a peer cannot force a ~256 MB allocation
+/// from a 5-byte header.
+pub const MAX_MQTT_PACKET_SIZE: u32 = 16 * 1024 * 1024;
+
 /// Reads one whole MQTT control packet from `r`, returning `(byte0, body)`
 /// where `body` is the variable-header + payload (Remaining Length bytes).
 ///
 /// # Errors
-/// I/O error, or a malformed Remaining Length VBI.
+/// I/O error, a malformed Remaining Length VBI, or a Remaining Length
+/// above [`MAX_MQTT_PACKET_SIZE`].
 pub fn read_packet<R: Read>(r: &mut R) -> io::Result<(u8, Vec<u8>)> {
     let mut b0 = [0u8; 1];
     r.read_exact(&mut b0)?;
@@ -42,6 +54,11 @@ pub fn read_packet<R: Read>(r: &mut R) -> io::Result<(u8, Vec<u8>)> {
             break;
         }
         mult *= 128;
+    }
+    if value > MAX_MQTT_PACKET_SIZE {
+        return Err(io::Error::other(std::format!(
+            "MQTT Remaining Length {value} exceeds MAX_MQTT_PACKET_SIZE ({MAX_MQTT_PACKET_SIZE})"
+        )));
     }
     let mut body = std::vec![0u8; value as usize];
     if value > 0 {
@@ -277,5 +294,27 @@ mod tests {
         let mut cursor = std::io::Cursor::new(framed);
         let (_, got) = read_packet(&mut cursor).expect("read");
         assert_eq!(got.len(), 200);
+    }
+
+    // -------------------------------------------------------------
+    // Buffer-cap hardening — a peer-announced Remaining Length above
+    // MAX_MQTT_PACKET_SIZE must be rejected cleanly (no ~256 MB
+    // allocation attempt) right after the VBI is decoded, before the
+    // body is read/allocated. Mirrors the established
+    // `crates/transport-tcp/src/framing.rs::MAX_FRAME_SIZE` guard.
+    // -------------------------------------------------------------
+
+    #[test]
+    fn read_packet_rejects_oversized_remaining_length_cleanly() {
+        // Encode a Remaining Length just above the cap as a 4-byte VBI;
+        // no body bytes follow — read_packet must reject before ever
+        // attempting to read/allocate the body.
+        let over = MAX_MQTT_PACKET_SIZE + 1;
+        let vbi = crate::vbi::encode_vbi(over).expect("encodable VBI");
+        let mut framed = std::vec![byte0(ControlPacketType::Publish, 0)];
+        framed.extend_from_slice(&vbi);
+        let mut cursor = std::io::Cursor::new(framed);
+        let res = read_packet(&mut cursor);
+        assert!(res.is_err(), "expected clean rejection, got {res:?}");
     }
 }

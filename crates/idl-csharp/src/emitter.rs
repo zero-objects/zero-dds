@@ -16,10 +16,11 @@ use std::collections::BTreeSet;
 use std::fmt::Write;
 
 use zerodds_idl::ast::{
-    Annotation, Case, CaseLabel, ConstExpr, ConstrTypeDecl, Declarator, Definition, EnumDef,
-    ExceptDecl, Export, InterfaceDcl, InterfaceDef, Literal, LiteralKind, Member, ModuleDef,
-    OpDecl, ParamAttribute, ScopedName, Specification, StateVisibility, StructDcl, StructDef,
-    SwitchTypeSpec, TypeDecl, TypeSpec, TypedefDecl, UnionDcl, UnionDef, ValueDef, ValueElement,
+    Annotation, AnnotationParams, Case, CaseLabel, ConstExpr, ConstrTypeDecl, Declarator,
+    Definition, EnumDef, ExceptDecl, Export, InterfaceDcl, InterfaceDef, Literal, LiteralKind,
+    Member, ModuleDef, OpDecl, ParamAttribute, ScopedName, Specification, StateVisibility,
+    StructDcl, StructDef, SwitchTypeSpec, TypeDecl, TypeSpec, TypedefDecl, UnionDcl, UnionDef,
+    ValueDef, ValueElement,
 };
 use zerodds_idl::semantics::annotations::PlacementKind;
 
@@ -62,8 +63,16 @@ pub(crate) fn emit_source(spec: &Specification, opts: &CsGenOptions) -> Result<S
     let mut out = String::new();
     write_preamble(&mut out, &usings)?;
 
+    // 1c. #24 / F-TYPES-3: full-spec resolved NameMap for the emitted COMPLETE
+    // TypeObject byte constants (`complete_struct_type_object_bytes`). Degrades
+    // to an empty map on a build failure — affected structs then emit an empty
+    // `TypeObject` and the runtime falls back to the byte-oriented create.
+    let type_names = zerodds_idl::semantics::build_type_registry(spec)
+        .map(|lowered| lowered.names)
+        .unwrap_or_default();
+
     // 4. Optional top-level namespace (`root_namespace`).
-    let mut ctx = EmitCtx::new(opts);
+    let mut ctx = EmitCtx::new(opts, type_names);
     let outer_prefix: Option<&str> = opts.root_namespace.as_deref().filter(|p| !p.is_empty());
     if let Some(prefix) = outer_prefix {
         ctx.open_namespace(&mut out, prefix)?;
@@ -286,14 +295,22 @@ struct EmitCtx<'o> {
     /// Used by the TypeSupport emitter to build the DDS type name
     /// (spec `zerodds-xcdr2-bindings-conformance-1.0` §5).
     module_path: Vec<String>,
+    /// #24 / F-TYPES-3: full-spec resolved member-type index (the SAME "Path A"
+    /// map `zerodds_idl::semantics::build_type_registry` builds) so each
+    /// emitted `TypeObject` byte constant resolves typedef/enum/sequence/
+    /// nested-struct/array member types exactly as `idl-rust` does. A build
+    /// failure degrades to an empty map → affected structs emit an empty
+    /// `TypeObject` (typed-create then falls back to the byte-oriented create).
+    names: zerodds_idl::semantics::NameMap,
 }
 
 impl<'o> EmitCtx<'o> {
-    fn new(opts: &'o CsGenOptions) -> Self {
+    fn new(opts: &'o CsGenOptions, names: zerodds_idl::semantics::NameMap) -> Self {
         Self {
             opts,
             indent_level: 0,
             module_path: Vec::new(),
+            names,
         }
     }
 
@@ -328,8 +345,26 @@ fn emit_definition(
         Definition::Const(c) => emit_const_decl(out, ctx, c),
         Definition::Except(e) => emit_exception(out, ctx, e),
         Definition::Interface(InterfaceDcl::Def(iface)) => {
-            // Spec idl4-csharp §7.4: IDL interface -> C# interface.
-            emit_interface_stub(out, ctx, iface)
+            if is_service_interface(iface) {
+                // @service → DDS-RPC C# PSM: interface + async + handler +
+                // requester + replier (parity with the Java PSM).
+                let base = ctx.indent();
+                let unit = " ".repeat(ctx.opts.indent_width);
+                // Interface-local exception declarations are emitted nested so
+                // `raises` types resolve (same as the non-service path).
+                for export in &iface.exports {
+                    if let Export::Except(e) = export {
+                        ctx.indent_level += 1;
+                        let r = emit_exception(out, ctx, e);
+                        ctx.indent_level -= 1;
+                        r?;
+                    }
+                }
+                crate::rpc::emit_service(out, iface, &base, &unit)
+            } else {
+                // Spec idl4-csharp §7.4: plain IDL interface -> C# interface.
+                emit_interface_stub(out, ctx, iface)
+            }
         }
         Definition::Interface(InterfaceDcl::Forward(_)) => Ok(()),
         Definition::ValueDef(v) => emit_value_type(out, ctx, v),
@@ -429,6 +464,7 @@ fn emit_struct(out: &mut String, ctx: &mut EmitCtx<'_>, s: &StructDef) -> Result
         let deeper = " ".repeat((ctx.indent_level + 2) * ctx.opts.indent_width);
         let tctx = crate::typesupport::TsEmitContext {
             module_path: &ctx.module_path,
+            names: &ctx.names,
             indent: &ind,
             inner_indent: &inner,
             deeper_indent: &deeper,
@@ -496,8 +532,17 @@ fn emit_struct_inner(
     emit_verbatim_at(out, &inner, &s.annotations, PlacementKind::BeginDeclaration)?;
 
     // Properties (init-only) — Reference-Pattern per Spec.
+    // F36/A36: dedup PascalCase collisions (`my_field` + `myField` → one
+    // `MyField`) across the whole declared member list before emitting.
+    let raws: Vec<&str> = s
+        .members
+        .iter()
+        .flat_map(|m| m.declarators.iter().map(|d| d.name().text.as_str()))
+        .collect();
+    let prop_names = dedup_cs_property_names(&raws);
+    let mut prop_idx = 0usize;
     for m in &s.members {
-        emit_struct_member_property(out, &inner, m)?;
+        emit_struct_member_property(out, &inner, m, &prop_names, &mut prop_idx)?;
     }
 
     emit_verbatim_at(out, &inner, &s.annotations, PlacementKind::EndDeclaration)?;
@@ -510,13 +555,14 @@ fn emit_struct_member_property(
     out: &mut String,
     inner: &str,
     m: &Member,
+    prop_names: &[String],
+    prop_idx: &mut usize,
 ) -> Result<(), CsGenError> {
     let attrs = member_attributes(&m.annotations);
     for decl in &m.declarators {
         let cs_ty = type_for_declarator(&m.type_spec, decl)?;
-        let name = escape_identifier(&decl.name().text)?;
-        let pascal = pascal_case(&decl.name().text);
-        let prop_name = if name == pascal { name.clone() } else { pascal };
+        let prop_name = prop_names[*prop_idx].clone();
+        *prop_idx += 1;
         let storage_ty = if attrs.optional {
             format!("{cs_ty}?")
         } else {
@@ -595,6 +641,7 @@ fn emit_union(out: &mut String, ctx: &mut EmitCtx<'_>, u: &UnionDef) -> Result<(
         let deeper = " ".repeat((ctx.indent_level + 2) * ctx.opts.indent_width);
         let tctx = crate::typesupport::TsEmitContext {
             module_path: &ctx.module_path,
+            names: &ctx.names,
             indent: &ind,
             inner_indent: &inner,
             deeper_indent: &deeper,
@@ -642,6 +689,60 @@ fn declarator_name(d: &Declarator) -> &str {
     &d.name().text
 }
 
+/// The explicit `@value(N)` of an enumerator as a signed integer, if present.
+/// Evaluated straight from the annotation expression (positive/negative integer
+/// literals in dec/hex/octal) so a negative `@value` keeps its sign — the
+/// frontend's string lowering drops it (F4/A4).
+fn enumerator_value_annotation(anns: &[Annotation]) -> Option<i64> {
+    for a in anns {
+        if a.name.parts.last().is_some_and(|p| p.text == "value") {
+            if let AnnotationParams::Single(expr) = &a.params {
+                if let Some(v) = const_expr_as_i64(expr) {
+                    return Some(v);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Evaluates a constant expression to a signed 64-bit integer, covering the
+/// forms an enum `@value` can take: an integer literal and unary `+`/`-`.
+/// zerodds-lint: recursion-depth 64 (Const-Expr-Tree; bounded by IDL nesting)
+fn const_expr_as_i64(e: &ConstExpr) -> Option<i64> {
+    match e {
+        ConstExpr::Literal(Literal {
+            kind: LiteralKind::Integer,
+            raw,
+            ..
+        }) => parse_int_literal(raw).and_then(|v| i64::try_from(v).ok()),
+        ConstExpr::Unary {
+            op: zerodds_idl::ast::UnaryOp::Plus,
+            operand,
+            ..
+        } => const_expr_as_i64(operand),
+        ConstExpr::Unary {
+            op: zerodds_idl::ast::UnaryOp::Minus,
+            operand,
+            ..
+        } => const_expr_as_i64(operand).map(|v| -v),
+        _ => None,
+    }
+}
+
+/// Parses an IDL integer literal (decimal / `0x` hex / leading-zero octal) with
+/// an optional `l`/`u` suffix into a `u64`.
+fn parse_int_literal(raw: &str) -> Option<u64> {
+    let s = raw.trim_end_matches(['l', 'L', 'u', 'U']);
+    if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+        u64::from_str_radix(hex, 16).ok()
+    } else if s.len() > 1 && s.starts_with('0') {
+        u64::from_str_radix(&s[1..], 8).ok()
+    } else {
+        s.parse::<u64>().ok()
+    }
+}
+
 fn emit_enum(out: &mut String, ctx: &mut EmitCtx<'_>, e: &EnumDef) -> Result<(), CsGenError> {
     let name = escape_identifier(&e.name.text)?;
     let ind = ctx.indent();
@@ -650,15 +751,32 @@ fn emit_enum(out: &mut String, ctx: &mut EmitCtx<'_>, e: &EnumDef) -> Result<(),
     writeln!(out, "{ind}{{").map_err(fmt_err)?;
     let inner = " ".repeat((ctx.indent_level + 1) * ctx.opts.indent_width);
     emit_verbatim_at(out, &inner, &e.annotations, PlacementKind::BeginDeclaration)?;
+    // F4/A4: emit explicit ordinals so `@value` gaps survive on the wire.
+    // C# auto-numbers enumerators `0,1,2,…`; without explicit values an IDL enum
+    // `{ A, @value(5) B, C }` would encode C as 2 instead of 6. `@value(N)`
+    // pins N; unannotated enumerators continue from the previous value + 1
+    // (spec idl4-csharp §7.4 / XTypes 1.3 §7.3.1.2.1.6).
+    let mut next: i64 = 0;
     for en in &e.enumerators {
         let en_name = escape_identifier(&en.name.text)?;
-        writeln!(out, "{inner}{en_name},").map_err(fmt_err)?;
+        let val = enumerator_value_annotation(&en.annotations).unwrap_or(next);
+        writeln!(out, "{inner}{en_name} = {val},").map_err(fmt_err)?;
+        next = val.wrapping_add(1);
     }
     emit_verbatim_at(out, &inner, &e.annotations, PlacementKind::EndDeclaration)?;
     writeln!(out, "{ind}}}").map_err(fmt_err)?;
     emit_verbatim_at(out, &ind, &e.annotations, PlacementKind::AfterDeclaration)?;
     writeln!(out).map_err(fmt_err)?;
     Ok(())
+}
+
+/// `true` if the interface carries `@service` — then it is an RPC service and
+/// the C# DDS-RPC PSM (`crate::rpc`) is emitted instead of a plain interface.
+fn is_service_interface(iface: &InterfaceDef) -> bool {
+    iface
+        .annotations
+        .iter()
+        .any(|a| a.name.parts.last().is_some_and(|p| p.text == "service"))
 }
 
 fn emit_interface_stub(
@@ -960,7 +1078,7 @@ fn type_for_declarator(ts: &TypeSpec, decl: &Declarator) -> Result<String, CsGen
 }
 
 /// zerodds-lint: recursion-depth 64 (Parser/AST-Walk; bounded by IDL nesting)
-fn typespec_to_cs(ts: &TypeSpec) -> Result<String, CsGenError> {
+pub(crate) fn typespec_to_cs(ts: &TypeSpec) -> Result<String, CsGenError> {
     match ts {
         TypeSpec::Primitive(p) => Ok(primitive_to_cs(*p).to_string()),
         TypeSpec::Scoped(s) => scoped_to_cs(s),
@@ -1008,7 +1126,7 @@ fn switch_type_to_cs(s: &SwitchTypeSpec) -> Result<String, CsGenError> {
     })
 }
 
-fn scoped_to_cs(s: &ScopedName) -> Result<String, CsGenError> {
+pub(crate) fn scoped_to_cs(s: &ScopedName) -> Result<String, CsGenError> {
     let mut parts: Vec<String> = Vec::with_capacity(s.parts.len());
     for p in &s.parts {
         parts.push(escape_identifier(&p.text)?);
@@ -1069,14 +1187,34 @@ pub(crate) fn const_expr_to_cs(e: &ConstExpr) -> String {
 
 fn literal_to_cs(l: &Literal) -> String {
     match l.kind {
-        LiteralKind::Boolean => l.raw.clone(),
+        // IDL boolean literals are the keywords `TRUE`/`FALSE` (§7.4.1.4); C#
+        // requires the lower-case `true`/`false` tokens (F6/A6).
+        LiteralKind::Boolean => {
+            if l.raw.trim().eq_ignore_ascii_case("true") {
+                "true".to_string()
+            } else {
+                "false".to_string()
+            }
+        }
         LiteralKind::Integer | LiteralKind::Floating => l.raw.clone(),
         LiteralKind::Char => l.raw.clone(),
-        LiteralKind::WideChar => l.raw.clone(),
+        // Wide literals carry the IDL `L` prefix (`L'x'` / `L"…"`), which is not
+        // valid C#. C# `char`/`string` are already UTF-16, so the de-prefixed
+        // text is the correct C# literal (F7/A7).
+        LiteralKind::WideChar => strip_wide_prefix(&l.raw),
         LiteralKind::String => l.raw.clone(),
-        LiteralKind::WideString => l.raw.clone(),
+        LiteralKind::WideString => strip_wide_prefix(&l.raw),
         LiteralKind::Fixed => l.raw.clone(),
     }
+}
+
+/// Strips the IDL wide-literal `L` prefix (`L"…"` → `"…"`, `L'…'` → `'…'`). C#
+/// has no wide-literal prefix; its string/char literals are UTF-16 already, so
+/// the de-prefixed text is the correct C# literal. A raw text without the prefix
+/// is returned unchanged.
+fn strip_wide_prefix(raw: &str) -> String {
+    let t = raw.trim_start();
+    t.strip_prefix('L').unwrap_or(t).to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -1109,6 +1247,47 @@ fn pascal_case(s: &str) -> String {
     }
     if out.is_empty() {
         return s.to_string();
+    }
+    out
+}
+
+/// The C# property name derived from an IDL member name **before** collision
+/// dedup: the escaped identifier when it is already PascalCase-identical (so an
+/// already-PascalCase or reserved-word name keeps its `@`-escaped form),
+/// otherwise the PascalCase form. Mirrors the rule in
+/// `typesupport::collect_member_info`, so the data record and its TypeSupport
+/// agree on every property name.
+pub(crate) fn cs_property_base(raw: &str) -> String {
+    let escaped = escape_identifier(raw).unwrap_or_else(|_| raw.to_string());
+    let pascal = pascal_case(raw);
+    if escaped == pascal { escaped } else { pascal }
+}
+
+/// Deduplicates the C# property names of an ordered member list. IDL permits two
+/// members that differ only in case (`my_field` / `myField`); both fold to the
+/// same PascalCase identifier, which is a CS0102 duplicate-member error in C#
+/// (F36/A36). The first occurrence keeps its plain name; each later collision
+/// gets a deterministic `_2`, `_3`, … suffix (skipping any suffix that would
+/// itself collide). Property names are local — the wire is positional / member-
+/// id-keyed — so a suffix carries no wire meaning; it only restores uniqueness.
+pub(crate) fn dedup_cs_property_names(raws: &[&str]) -> Vec<String> {
+    let mut used: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut out = Vec::with_capacity(raws.len());
+    for raw in raws {
+        let base = cs_property_base(raw);
+        let name = if used.insert(base.clone()) {
+            base
+        } else {
+            let mut n = 2u32;
+            loop {
+                let cand = format!("{base}_{n}");
+                if used.insert(cand.clone()) {
+                    break cand;
+                }
+                n += 1;
+            }
+        };
+        out.push(name);
     }
     out
 }
@@ -1198,7 +1377,7 @@ fn short_name(s: &str) -> String {
 // fmt-Error-Bridge
 // ---------------------------------------------------------------------------
 
-fn fmt_err(_: core::fmt::Error) -> CsGenError {
+pub(crate) fn fmt_err(_: core::fmt::Error) -> CsGenError {
     CsGenError::Internal("string formatting failed".into())
 }
 

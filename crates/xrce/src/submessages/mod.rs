@@ -59,7 +59,9 @@ pub use fragment::{FRAGMENT_FLAG_LAST, FragmentPayload};
 pub use get_info::GetInfoPayload;
 pub use heartbeat::HeartbeatPayload;
 pub use info::InfoPayload;
-pub use read_data::ReadDataPayload;
+pub use read_data::{
+    DataDeliveryControl, READ_SPEC_MAX_FILTER_BYTES, ReadDataPayload, ReadSpecification,
+};
 pub use reset::ResetPayload;
 pub use status::StatusPayload;
 pub use status_agent::StatusAgentPayload;

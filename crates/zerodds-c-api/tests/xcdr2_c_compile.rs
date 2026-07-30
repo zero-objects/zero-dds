@@ -189,3 +189,18 @@ fn v11_compiles() {
         "@mutable struct O { @id(1) long maybe; };",
     ));
 }
+
+#[test]
+fn v12_keyword_identifiers_compiles() {
+    // Welle C.2 #14: IDL identifiers colliding with C keywords ("int",
+    // "register", "static", "for" are legal IDL identifiers — IDL itself
+    // reserves different words like "long"/"default") must escape via a
+    // trailing underscore at every C-mode emit site, not just look
+    // structurally escaped — a real `-std=c99 -Wall -Werror` compile is
+    // the actual proof.
+    assert!(try_compile(
+        "v12",
+        "union U switch (long) { case 0: long for; case 1: long while_val; }; \
+         @final struct int { long register; long static; U u; };",
+    ));
+}

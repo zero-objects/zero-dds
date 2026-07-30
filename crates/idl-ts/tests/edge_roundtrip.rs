@@ -350,3 +350,30 @@ console.log("RESULT", ok ? "PASS" : "FAIL", JSON.stringify({ra, rb, kha, khb}));
 "#;
     assert_pass(run_driver(idl, driver), "keyed");
 }
+
+/// KeyHash correctness regression (byte-exact): a `@key` member whose type
+/// is a TYPEDEF alias of a struct — previously fell through to the general
+/// (non-key) encoder, writing the WHOLE nested struct (including `ignored`)
+/// into the KeyHash instead of just the aliased struct's own `@key` subset
+/// (here: `x` alone). XTypes 1.3 §7.6.8.4: BE holder <=16 octets -> zero-pad
+/// to 16.
+#[test]
+fn keyhash_byte_exact_typedef_of_struct_dealiases_to_own_key_subset() {
+    let idl = "struct Inner { @key long x; long ignored; };\n\
+               typedef Inner InnerAlias;\n\
+               struct Outer { @key InnerAlias i; long tail; };";
+    let driver = r#"
+import { OuterTypeSupport } from "./generated.ts";
+const o = { i: { x: 7, ignored: 99 }, tail: 5 };
+const h = OuterTypeSupport.keyHash(o);
+const expected = new Uint8Array([0,0,0,7, 0,0,0,0,0,0,0,0,0,0,0,0]);
+const bytesOk = h.length === 16 && expected.every((b, idx) => h[idx] === b);
+// A `tail`/`ignored`-only change must NOT move the KeyHash.
+const o2 = { i: { x: 7, ignored: 42 }, tail: 999 };
+const h2 = OuterTypeSupport.keyHash(o2);
+const stableOk = h.length === h2.length && [...h].every((b, idx) => h2[idx] === b);
+const ok = bytesOk && stableOk;
+console.log("RESULT", ok ? "PASS" : "FAIL", JSON.stringify({h: [...h], h2: [...h2]}));
+"#;
+    assert_pass(run_driver(idl, driver), "keyhash-typedef-of-struct");
+}

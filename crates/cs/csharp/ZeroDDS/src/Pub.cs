@@ -95,11 +95,11 @@ public sealed class DataWriter<T> : IDisposable
             qos.Partition.Names.AddRange(pub.PartitionNames);
             using var scope = new ZeroDDS.QosBridge.NativeQosScope();
             var native = ZeroDDS.QosBridge.QosBridge.ToNative(qos, scope);
-            unsafe { _handle = Native.PubCreateDatawriter(_publisher, topic.Handle, (IntPtr)(&native)); }
+            unsafe { _handle = CreateHandle(_publisher, topic, (IntPtr)(&native)); }
         }
         else
         {
-            _handle = Native.PubCreateDatawriter(_publisher, topic.Handle, IntPtr.Zero);
+            _handle = CreateHandle(_publisher, topic, IntPtr.Zero);
         }
         if (_handle == IntPtr.Zero) throw new DdsError("DataWriter::create failed");
         _traits = topic.Traits;
@@ -114,9 +114,34 @@ public sealed class DataWriter<T> : IDisposable
             qos.Partition.Names.AddRange(pub.PartitionNames);
         using var scope = new ZeroDDS.QosBridge.NativeQosScope();
         var native = ZeroDDS.QosBridge.QosBridge.ToNative(qos, scope);
-        unsafe { _handle = Native.PubCreateDatawriter(_publisher, topic.Handle, (IntPtr)(&native)); }
+        unsafe { _handle = CreateHandle(_publisher, topic, (IntPtr)(&native)); }
         if (_handle == IntPtr.Zero) throw new DdsError("DataWriter::create with QoS failed");
         _traits = topic.Traits;
+    }
+
+    /// <summary>
+    /// F-TYPES-3 / #24: creates the native writer, using the typed create
+    /// (<c>zerodds_pub_create_datawriter_typed</c>) when the topic's TypeSupport
+    /// carries a serialized COMPLETE TypeObject — so the endpoint advertises the
+    /// cross-binding <c>TypeIdentifier</c> before it is published (no None-window
+    /// against discovery). A raw-byte / union / unlowerable type has an empty
+    /// TypeObject and falls back to the byte-oriented create.
+    /// </summary>
+    private static IntPtr CreateHandle(IntPtr publisher, Topic<T> topic, IntPtr qos)
+    {
+        var typeObject = topic.Traits.TypeObject;
+        if (typeObject is { Length: > 0 })
+        {
+            unsafe
+            {
+                fixed (byte* p = typeObject)
+                {
+                    return Native.PubCreateDatawriterTyped(publisher, topic.Handle, qos,
+                        (IntPtr)p, (UIntPtr)typeObject.Length);
+                }
+            }
+        }
+        return Native.PubCreateDatawriter(publisher, topic.Handle, qos);
     }
 
     /// <summary>Native handle.</summary>

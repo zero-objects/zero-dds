@@ -148,16 +148,120 @@ pub unsafe extern "C" fn zerodds_sub_create_datareader(
             reliable: matches!(qos.reliability.kind, ReliabilityKind::Reliable),
             durability: qos.durability.kind,
             deadline: qos.deadline.clone(),
+            latency_budget: Default::default(),
+            destination_order: Default::default(),
             liveliness: qos.liveliness.clone(),
             ownership: qos.ownership.kind,
             // QB-cluster: plumb PARTITION from the Subscriber/reader QoS onto the
             // endpoint config so `partitions_overlap` (DDS 1.4 §2.2.3.10) gates
             // matching. Previously hardcoded empty.
+            presentation: Default::default(),
             partition: qos.partition.names.clone(),
             user_data: qos.user_data.value.clone(),
             topic_data: qos.topic_data.value.clone(),
             group_data: qos.group_data.value.clone(),
             type_identifier: zerodds_types::TypeIdentifier::default(),
+            type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
+            data_representation_offer: qos.data_representation.clone(),
+        };
+        let (eid, rx) = match rt.register_user_reader(cfg) {
+            Ok(pair) => pair,
+            Err(_) => return ptr::null_mut(),
+        };
+        let ownership = qos.ownership.kind;
+        let dr = Box::new(ZeroDdsDataReader {
+            subscriber: sub,
+            topic,
+            rt,
+            eid,
+            qos: Mutex::new(qos),
+            rx: Mutex::new(rx),
+            read_cache: Mutex::new(Vec::new()),
+            cft_filter: None,
+            ownership,
+            instances: zerodds_dcps::instance_tracker::InstanceTracker::new(),
+            partition_out: Mutex::new(Default::default()),
+        });
+        let dr_ptr = Box::into_raw(dr);
+        if let Ok(mut list) = sb.datareaders.lock() {
+            list.push(dr_ptr);
+        }
+        dr_ptr
+    }
+}
+
+/// Creates a DataReader over the topic that advertises its type via a
+/// serialized COMPLETE `TypeObject` (F-TYPES-3 / #24). Topic-path mirror of the
+/// flat [`crate::zerodds_reader_create_typed`] and reader-side twin of
+/// [`zerodds_pub_create_datawriter_typed`]: deserializes `type_object_bytes`,
+/// registers the object into the shared TypeLookup registry, derives the
+/// strongly-hashed `TypeIdentifier` and sets the reader slot's
+/// `type_identifier` from it before the endpoint is published — no `None`-window
+/// against discovery. This is the variant the C#/Java bindings call.
+///
+/// # Safety
+/// Like [`zerodds_sub_create_datareader`], plus: `type_object_bytes` must point
+/// to `len` readable bytes (NULL / `len == 0` is rejected with NULL).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zerodds_sub_create_datareader_typed(
+    sub: *mut ZeroDdsSubscriber,
+    topic: *mut ZeroDdsTopic,
+    qos: *const ZeroDdsDataReaderQos,
+    type_object_bytes: *const u8,
+    len: usize,
+) -> *mut ZeroDdsDataReader {
+    if sub.is_null() || topic.is_null() || type_object_bytes.is_null() || len == 0 {
+        return ptr::null_mut();
+    }
+    // SAFETY: see fn # Safety doc — sub+topic+type_object_bytes NULL-checked
+    // above; participant from dp_create_subscriber; qos NULL-tolerant;
+    // type_object_bytes points to `len` readable bytes (caller pledge).
+    unsafe {
+        let sb = &*sub;
+        let tt = &*topic;
+        let dp_handle = sb.participant;
+        if dp_handle.is_null() {
+            return ptr::null_mut();
+        }
+        let dp = &*dp_handle;
+        let rt = match dp.rt.as_ref() {
+            Some(r) => r.clone(),
+            None => return ptr::null_mut(),
+        };
+
+        // Register + derive BEFORE publish — no None-window (F-TYPES-3 / #24).
+        let bytes = slice::from_raw_parts(type_object_bytes, len);
+        let type_identifier = match crate::register_type_object_from_bytes(&rt, bytes) {
+            Some(id) => id,
+            None => return ptr::null_mut(),
+        };
+
+        let qos: DataReaderQos = if qos.is_null() {
+            sb.default_dr_qos
+                .lock()
+                .map(|g| g.clone())
+                .unwrap_or_default()
+        } else {
+            dr_qos_from_c(qos)
+        };
+
+        let cfg = UserReaderConfig {
+            topic_name: tt.name.to_string(),
+            type_name: tt.type_name.to_string(),
+            reliable: matches!(qos.reliability.kind, ReliabilityKind::Reliable),
+            durability: qos.durability.kind,
+            deadline: qos.deadline.clone(),
+            latency_budget: Default::default(),
+            destination_order: Default::default(),
+            liveliness: qos.liveliness.clone(),
+            ownership: qos.ownership.kind,
+            presentation: Default::default(),
+            partition: qos.partition.names.clone(),
+            user_data: qos.user_data.value.clone(),
+            topic_data: qos.topic_data.value.clone(),
+            group_data: qos.group_data.value.clone(),
+            // F-TYPES-3 / #24: derived from the registered TypeObject (not None).
+            type_identifier,
             type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
             data_representation_offer: qos.data_representation.clone(),
         };

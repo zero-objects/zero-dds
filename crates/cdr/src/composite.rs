@@ -55,14 +55,34 @@ fn write_with_dheader<F>(writer: &mut BufferWriter, body: F) -> Result<(), Encod
 where
     F: FnOnce(&mut BufferWriter) -> Result<(), EncodeError>,
 {
-    let mut sub = BufferWriter::new(writer.endianness()).with_max_alignment(writer.max_alignment());
-    body(&mut sub)?;
-    let bytes = sub.into_bytes();
-    let dheader = u32::try_from(bytes.len()).map_err(|_| EncodeError::ValueOutOfRange {
-        message: "collection DHEADER exceeds u32::MAX",
-    })?;
-    writer.write_u32(dheader)?;
-    writer.write_bytes(&bytes)
+    // Backpatched DHEADER: placeholder, body straight into `writer`, patch the
+    // length — no throwaway sub-writer Vec and no copy of its bytes back. Same
+    // alignment argument as `struct_enc::encode_appendable`: the body aligns
+    // relative to its own start and XCDR2 caps alignment at 4, so this is
+    // byte-identical whenever `body_start` is aligned (always, on the XCDR2 path
+    // that is the only one to use a DHEADER). Fall back to the sub-writer
+    // otherwise so the bytes are always correct.
+    writer.write_u32(0)?;
+    let body_start = writer.position();
+    if body_start % writer.max_alignment() == 0 {
+        body(writer)?;
+        let dheader = u32::try_from(writer.position() - body_start).map_err(|_| {
+            EncodeError::ValueOutOfRange {
+                message: "collection DHEADER exceeds u32::MAX",
+            }
+        })?;
+        writer.patch_u32_at(body_start - 4, dheader)
+    } else {
+        let mut sub =
+            BufferWriter::new(writer.endianness()).with_max_alignment(writer.max_alignment());
+        body(&mut sub)?;
+        let bytes = sub.into_bytes();
+        let dheader = u32::try_from(bytes.len()).map_err(|_| EncodeError::ValueOutOfRange {
+            message: "collection DHEADER exceeds u32::MAX",
+        })?;
+        writer.patch_u32_at(body_start - 4, dheader)?;
+        writer.write_bytes(&bytes)
+    }
 }
 
 // ============================================================================

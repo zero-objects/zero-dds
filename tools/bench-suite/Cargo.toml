@@ -29,25 +29,25 @@ workspace = true
 path = "src/lib.rs"
 
 [dependencies]
-zerodds-rtps = { version = "1.0.0-rc.6", path = "../../crates/rtps" }
-zerodds-transport = { version = "1.0.0-rc.6", path = "../../crates/transport" }
-zerodds-transport-udp = { version = "1.0.0-rc.6", path = "../../crates/transport-udp" }
-zerodds-transport-shm = { version = "1.0.0-rc.6", path = "../../crates/transport-shm" }
-zerodds-transport-tcp = { version = "1.0.0-rc.6", path = "../../crates/transport-tcp" }
+zerodds-rtps = { version = "1.0.0-rc.7", path = "../../crates/rtps" }
+zerodds-transport = { version = "1.0.0-rc.7", path = "../../crates/transport" }
+zerodds-transport-udp = { version = "1.0.0-rc.7", path = "../../crates/transport-udp" }
+zerodds-transport-shm = { version = "1.0.0-rc.7", path = "../../crates/transport-shm" }
+zerodds-transport-tcp = { version = "1.0.0-rc.7", path = "../../crates/transport-tcp" }
 # Latency histograms: pure-Rust HdrHistogram port, dev-+bin-only.
 hdrhistogram = { version = "7.5", default-features = false }
 # DCPS-stack roundtrip via the C-FFI hub.
-zerodds = { version = "1.0.0-rc.6", path = "../../crates/zerodds-c-api", package = "zerodds-c-api" }
+zerodds = { version = "1.0.0-rc.7", path = "../../crates/zerodds-c-api", package = "zerodds-c-api" }
 # Typed roundtrip: full XCDR2 encode/decode path, apples-to-apples
 # with Cyclone / RTI / FastDDS custom apps.
-zerodds-dcps = { version = "1.0.0-rc.6", path = "../../crates/dcps" }
-zerodds-cdr = { version = "1.0.0-rc.6", path = "../../crates/cdr" }
-zerodds-types = { version = "1.0.0-rc.6", path = "../../crates/types" }
+zerodds-dcps = { version = "1.0.0-rc.7", path = "../../crates/dcps" }
+zerodds-cdr = { version = "1.0.0-rc.7", path = "../../crates/cdr" }
+zerodds-types = { version = "1.0.0-rc.7", path = "../../crates/types" }
 
 # UDS transport is Unix-only (`#![cfg(unix)]` crate-level). The bench file
 # `transports_e2e` cfg-gates its UDS sections accordingly.
 [target.'cfg(unix)'.dependencies]
-zerodds-transport-uds = { version = "1.0.0-rc.6", path = "../../crates/transport-uds" }
+zerodds-transport-uds = { version = "1.0.0-rc.7", path = "../../crates/transport-uds" }
 
 [dev-dependencies]
 criterion = { workspace = true }

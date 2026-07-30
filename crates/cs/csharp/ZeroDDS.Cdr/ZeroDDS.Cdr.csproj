@@ -7,7 +7,8 @@
     <RootNamespace>ZeroDDS.Cdr</RootNamespace>
     <AssemblyName>ZeroDDS.Cdr</AssemblyName>
     <PackageId>ZeroDDS.Cdr</PackageId>
-    <Version>0.0.0</Version>
+    <!-- Single source of truth = Cargo workspace.package.version. NuGet accepts 1.0.0-rc.7. -->
+    <Version>1.0.0-rc.7</Version>
     <Authors>ZeroDDS Contributors</Authors>
     <Description>XCDR2 TypeSupport helper library for ZeroDDS C# bindings (zerodds-xcdr2-csharp-1.0).</Description>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
@@ -20,5 +21,21 @@
   </PropertyGroup>
   <ItemGroup>
     <None Include="../../README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+  <!--
+       Packaging fix: the IDL-CSharp runtime (namespace Omg.Types — sequence
+       contracts ISequence/IBoundedSequence/BoundedList, the ITopicType marker
+       and the [Key]/[Id]/[Optional]/[MustUnderstand]/[External]/[Nested]/
+       [Extensibility] annotation bridge) lives in the sibling crate
+       crates/idl-csharp/runtime, OUTSIDE this project directory. The SDK's
+       default Compile glob only picks up .cs files under the project folder,
+       so Omg.Types.cs is absent from the ZeroDDS.Cdr assembly and the NuGet
+       package — generated code referencing Omg.Types.* then fails to compile
+       against the published package. We reference the existing file in place
+       (no duplication) with an explicit Compile Include so `dotnet build`
+       compiles it into the assembly and `dotnet pack` ships it. LinkBase keeps
+       it in a tidy virtual folder for IDE display only. -->
+  <ItemGroup>
+    <Compile Include="../../../idl-csharp/runtime/Omg.Types.cs" LinkBase="IdlRuntime" />
   </ItemGroup>
 </Project>

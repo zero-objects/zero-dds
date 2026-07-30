@@ -167,6 +167,17 @@ L1-L4 gegen [`zerodds-xcdr2-bindings-conformance-1.0`](zerodds-xcdr2-bindings-co
 `crates/cs/Examples/TopicTypedSmoke.cs` ist Referenz-Smoke (generierter
 `PointTypeSupport` + Pub/Sub-Loop).
 
+Lauffähige Deep-Examples (sync + async, Sensor-Telemetrie
+`Reading { Id, Value, Label }`, über den pure-C#-Wire-Core byte-identisch):
+
+- Sync: [`endpoints/csharp/ExampleSync.cs`](../../endpoints/csharp/ExampleSync.cs)
+  — `Client.Poll`-Loop über eine In-Memory-FIFO, voller Feld-Decode.
+- Async: [`endpoints/csharp/ExampleAsync.cs`](../../endpoints/csharp/ExampleAsync.cs)
+  — `AsyncReader.Stream()` (`IAsyncEnumerable`), Consumer `await foreach`.
+- Byte-Identität: [`endpoints/csharp/ByteIdentity.cs`](../../endpoints/csharp/ByteIdentity.cs)
+  (@final Golden LE+BE).
+- Quickstart: [`endpoints/csharp/QUICKSTART.md`](../../endpoints/csharp/QUICKSTART.md).
+
 ## §11 Errata + Open-Questions
 
 - **§11.1 `Span<byte>` vs `byte[]`**: Decode nimmt `ReadOnlySpan<byte>`

@@ -61,7 +61,6 @@ path = "src/lib.rs"
 zerodds-cdr = {{ path = "{root}/crates/cdr" }}
 zerodds-dcps = {{ path = "{root}/crates/dcps" }}
 zerodds-types = {{ path = "{root}/crates/types" }}
-zerodds-sql-filter = {{ path = "{root}/crates/sql-filter" }}
 "#,
         root = workspace_root.display()
     );

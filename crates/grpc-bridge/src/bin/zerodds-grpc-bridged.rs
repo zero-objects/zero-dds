@@ -252,6 +252,8 @@ mod bridge_dds {
             reliable: true,
             durability: DurabilityKind::Volatile,
             deadline: DeadlineQosPolicy::default(),
+            latency_budget: Default::default(),
+            destination_order: Default::default(),
             lifespan: LifespanQosPolicy::default(),
             liveliness: LivelinessQosPolicy {
                 kind: LivelinessKind::Automatic,
@@ -259,6 +261,7 @@ mod bridge_dds {
             },
             ownership: OwnershipKind::Shared,
             ownership_strength: 0,
+            presentation: Default::default(),
             partition: Vec::new(),
             user_data: Vec::new(),
             topic_data: Vec::new(),
@@ -275,11 +278,14 @@ mod bridge_dds {
             reliable: true,
             durability: DurabilityKind::Volatile,
             deadline: DeadlineQosPolicy::default(),
+            latency_budget: Default::default(),
+            destination_order: Default::default(),
             liveliness: LivelinessQosPolicy {
                 kind: LivelinessKind::Automatic,
                 ..Default::default()
             },
             ownership: OwnershipKind::Shared,
+            presentation: Default::default(),
             partition: Vec::new(),
             user_data: Vec::new(),
             topic_data: Vec::new(),

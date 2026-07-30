@@ -202,6 +202,15 @@ L1-L4 gegen [`zerodds-xcdr2-bindings-conformance-1.0`](zerodds-xcdr2-bindings-co
 `crates/dcps/examples/hello_dds_publisher.rs` ist Referenz-Smoke
 (generierter `Chatter`-Type + Pub/Sub-Loop).
 
+Deep-Examples (sync + async, analog zu den anderen Endpoint-SDKs), Sensor-
+Telemetrie `Reading { id, value, label }`:
+
+- Sync: [`endpoints/rust/examples/example_sync.rs`](../../endpoints/rust/examples/example_sync.rs)
+  — Poll-Loop, voller Feld-Decode.
+- Async: [`endpoints/rust/examples/example_async.rs`](../../endpoints/rust/examples/example_async.rs)
+  — `AsyncReader` (std-Thread + `mpsc`-Channel), Consumer blockt auf `recv`.
+- Quickstart: [`endpoints/rust/QUICKSTART.md`](../../endpoints/rust/QUICKSTART.md).
+
 ## §11 Errata + Open-Questions
 
 - **§11.1 Derive-Macro**: `#[derive(DdsType)]` waere ergonomisch.

@@ -112,6 +112,103 @@ size_t zdw_xrce_acknack_frame(unsigned char *out, size_t cap,
 int zdw_xrce_heartbeat_read(const unsigned char *frame, size_t len,
                             int *first, int *last, unsigned char *stream);
 
+/* Builds a HEARTBEAT message (the reliable sender announces its unacked window
+ * to the peer). Byte-identical to `zdw_xrce_acknack_frame`'s layout with id
+ * 0x0B and a 5-byte body (first i16 LE, last i16 LE, stream). Returns the frame
+ * length, or 0 if it does not fit. */
+size_t zdw_xrce_heartbeat_frame(unsigned char *out, size_t cap,
+                                unsigned char session, unsigned char stream,
+                                unsigned int seq, int first, int last,
+                                unsigned char payload_stream);
+/* Parses an ACKNACK frame: *first_unacked, *nack (16-bit LE bitmap), *stream. */
+int zdw_xrce_acknack_read(const unsigned char *frame, size_t len,
+                          int *first_unacked, unsigned int *nack,
+                          unsigned char *stream);
+
+/* --- reliable stream state machine (DDS-XRCE 1.0 §8.4.10/§8.4.11) ---
+ *
+ * A stateful reliable sender + receiver mirroring `crates/xrce`
+ * (`ReliableStreamState`), on the byte-identical HEARTBEAT/ACKNACK wire above.
+ * Fixed storage, no malloc: sender window ZDW_REL_WINDOW, receiver reorder
+ * buffer ZDW_REL_RECV_BUF, per-sample payload bounded to ZDW_REL_SLOT_CAP (the
+ * embedded bound; the u16 wire limit is 65535). RFC-1982 16-bit sequence
+ * numbers. A `zdw_reliable` is ~40 KiB -- allocate it static or on the heap,
+ * not on a small stack. */
+
+#define ZDW_REL_WINDOW       16
+#define ZDW_REL_RECV_BUF     64
+#define ZDW_REL_SLOT_CAP     512
+#define ZDW_REL_HEARTBEAT_MS 500u
+
+/* zdw_reliable_* result codes (distinct from ZDW_T_*). */
+#define ZDW_REL_OK          0
+#define ZDW_REL_TOO_LARGE   1  /* payload > ZDW_REL_SLOT_CAP */
+#define ZDW_REL_WINDOW_FULL 2  /* sender window full         */
+#define ZDW_REL_BUF_FULL    3  /* receiver reorder buffer full */
+
+/* One buffered sample (sender in-flight or receiver out-of-order). */
+typedef struct zdw_rel_slot {
+    unsigned char used;
+    unsigned short seq;
+    unsigned short len;
+    unsigned char buf[ZDW_REL_SLOT_CAP];
+} zdw_rel_slot;
+
+/* Reliable stream state (one per reliable stream). */
+typedef struct zdw_reliable {
+    unsigned char stream_id;
+    /* sender */
+    unsigned short next_seq;
+    unsigned long last_hb_ms;
+    int hb_started;
+    zdw_rel_slot in_flight[ZDW_REL_WINDOW];
+    /* receiver */
+    unsigned short expected_seq;
+    zdw_rel_slot recv_buf[ZDW_REL_RECV_BUF];
+} zdw_reliable;
+
+/* Initialise / reset the whole state. */
+void zdw_reliable_init(zdw_reliable *r, unsigned char stream_id);
+void zdw_reliable_reset(zdw_reliable *r);
+
+/* -- sender side -- */
+/* Buffers a new outgoing sample and assigns its RFC-1982 sequence number
+ * (*out_seq). ZDW_REL_TOO_LARGE if len > ZDW_REL_SLOT_CAP, ZDW_REL_WINDOW_FULL
+ * if the window already holds ZDW_REL_WINDOW in-flight samples. */
+int zdw_reliable_submit(zdw_reliable *r, const unsigned char *payload,
+                        size_t len, unsigned short *out_seq);
+size_t zdw_reliable_in_flight_count(const zdw_reliable *r);
+/* In-flight payload for `seq` (for retransmit), or 0 if not held. */
+const unsigned char *zdw_reliable_get_in_flight(const zdw_reliable *r,
+                                                unsigned short seq, size_t *len);
+/* Returns 1 and sets first/last if a HEARTBEAT is due (in-flight non-empty and
+ * ZDW_REL_HEARTBEAT_MS elapsed since the last, or the first ever), else 0.
+ * `now_ms` is a monotonic millisecond clock. */
+int zdw_reliable_pending_heartbeat(zdw_reliable *r, unsigned long now_ms,
+                                   int *first, int *last);
+/* Applies a received ACKNACK: acknowledges (drops) everything before
+ * first_unacked and every clear bit in [first_unacked, first_unacked+16);
+ * keeps set (still-missing) bits for retransmit. */
+void zdw_reliable_recv_acknack(zdw_reliable *r, int first_unacked,
+                               unsigned short nack_bitmap);
+
+/* -- receiver side -- */
+/* Buffers an incoming sample. Duplicates (seq < expected, or already buffered)
+ * are dropped and return ZDW_REL_OK; ZDW_REL_BUF_FULL when the reorder buffer is
+ * full; ZDW_REL_TOO_LARGE if len > ZDW_REL_SLOT_CAP. */
+int zdw_reliable_recv_data(zdw_reliable *r, unsigned short seq,
+                           const unsigned char *payload, size_t len);
+/* Pops the next in-order sample (starting at expected_seq) into out/cap and
+ * advances expected_seq; returns 1 with seq/len set, or 0 when the next
+ * expected sample is not yet buffered. Call in a loop. */
+int zdw_reliable_drain(zdw_reliable *r, unsigned char *out, size_t cap,
+                       unsigned short *seq, size_t *len);
+/* NACK bitmap for the window [expected, expected+16): bit i set = expected+i not
+ * yet received (hint=None semantics -- a clear bit means "received"). */
+unsigned short zdw_reliable_pending_acknack(const zdw_reliable *r);
+size_t zdw_reliable_out_of_order_count(const zdw_reliable *r);
+unsigned short zdw_reliable_expected(const zdw_reliable *r);
+
 #ifdef __cplusplus
 }
 #endif

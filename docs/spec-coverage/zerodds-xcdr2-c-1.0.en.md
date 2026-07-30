@@ -26,7 +26,7 @@ Implementation:
 
 **Repo:** `crates/zerodds-c-api/src/xcdr2.rs` defines `zerodds_typesupport_t` as a `#[repr(C)]` struct in `crates/zerodds-c-api/include/zerodds/typesupport.h`.
 
-**Tests:** `crates/zerodds-c-api/tests/xcdr2_c_compile.rs` (11 tests) compiles the generated C code against the header.
+**Tests:** `crates/zerodds-c-api/tests/xcdr2_c_compile.rs` (12 tests) compiles the generated C code against the header.
 
 **Status:** done
 
@@ -174,10 +174,46 @@ Implementation:
 
 **Status:** done
 
+### §9.5 Reserved-keyword escaping
+
+**Spec:** not explicitly normative in `zerodds-xcdr2-c-1.0` (no OMG C-PSM
+spec exists, §1); tracked here because until 2026-07-28 (github-triage
+#14) the C-mode path had **no** reserved-word check or escaping at all —
+an IDL identifier colliding with a C keyword (`int`, `struct`, `default`,
+`register`, ...) silently produced invalid C (`int32_t int;`), a gap the
+sibling full-C++ path (`idl4-cpp-1.0.en.md` §7.1.2) at least caught via a
+hard reject, C-mode did not even do that.
+
+**Repo:** `crates/idl-cpp/src/c_keywords.rs` — full ISO/IEC 9899 C89..C23
+keyword table (`C_RESERVED`) + `escape_c_ident` (trailing `_` suffix,
+C's idiomatic keyword-escape convention; C has no raw-identifier/
+stropping syntax). Wired into `crates/idl-cpp/src/c_mode.rs` at every
+site a bare (non module-prefixed) C token is emitted from an IDL name:
+`c_identifier` (unscoped struct/union/enum/bitmask/bitset/typedef type
+names), `union_case_field` (union payload field names), and every
+struct/union member field-name derivation used in both the `typedef
+struct` declaration and the encode/decode/free/key-hash bodies (so
+declaration and field-access sites stay consistent). Module-prefixed
+compound tokens (`{c_name}_{enumerator}`) are left as-is since they
+cannot collide with a bare keyword by construction.
+
+**Tests:** `crates/idl-cpp/src/c_mode.rs::tests::{struct_field_named_c_keyword_is_escaped,
+top_level_type_named_c_keyword_is_escaped,
+union_case_field_named_c_keyword_is_escaped,
+enum_value_named_c_keyword_stays_compound_and_valid}` +
+`crates/idl-cpp/src/c_keywords.rs::tests::*` (list coverage, escape
+round-trip, all-keywords sweep) + `crates/zerodds-c-api/tests/xcdr2_c_compile.rs::v12_keyword_identifiers_compiles`
+(real `-std=c99 -Wall -Werror` `gcc`/`clang` compile of a union +
+struct with `int`/`register`/`static`/`for` identifiers — proves the
+escaped output is actually valid C, not just structurally
+keyword-free).
+
+**Status:** done
+
 ---
 
 ## Audit status
 
-14 done / 0 partial / 0 open / 1 n/a (informative) / 0 n/a (rejected).
+15 done / 0 partial / 0 open / 1 n/a (informative) / 0 n/a (rejected).
 
-Test run: `cargo test -p zerodds-c-api` -- unittest 68 + smoke_ffi 1 + xcdr2_c_codegen 12 + xcdr2_c_compile 11 + xcdr2_wire_vectors 13 = 105 tests green, 0 failed; `cargo test -p zerodds-conformance --test cross_language_xcdr2 l3_3_c_ffi_binding` -- 1 test green; `cargo test -p zerodds-cdr --test xcdr2_cross_vendor_fixtures` -- 15 tests green.
+Test run: `cargo test -p zerodds-c-api` -- unittest 68 + smoke_ffi 1 + xcdr2_c_codegen 12 + xcdr2_c_compile 12 + xcdr2_wire_vectors 13 = 106 tests green, 0 failed; `cargo test -p zerodds-conformance --test cross_language_xcdr2 l3_3_c_ffi_binding` -- 1 test green; `cargo test -p zerodds-cdr --test xcdr2_cross_vendor_fixtures` -- 15 tests green.

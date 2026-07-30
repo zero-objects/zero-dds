@@ -6,6 +6,6 @@ includedir=${prefix}/include
 Name: zerodds
 Description: ZeroDDS — pure-Rust DDS implementation
 URL: https://zerodds.org
-Version: 1.0.0
+Version: 1.0.0-rc.7
 Cflags: -I${includedir}
 Libs: -L${libdir} -lzerodds

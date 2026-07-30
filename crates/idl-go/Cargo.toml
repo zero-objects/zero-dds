@@ -1,0 +1,26 @@
+[package]
+name = "zerodds-idl-go"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "OMG IDL4 → Go code generator for ZeroDDS (byte-identical XCDR2 wire, native pure-Go endpoint mapping)."
+repository = "https://github.com/zero-objects/zero-dds"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-idl-go"
+readme = "README.md"
+keywords = ["dds", "idl", "go", "codegen", "xtypes"]
+categories = ["development-tools", "network-programming"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+zerodds-idl = { version = "1.0.0-rc.7", path = "../idl" }
+zerodds-rpc = { version = "1.0.0-rc.7", path = "../rpc", default-features = false, features = ["alloc"] }
+

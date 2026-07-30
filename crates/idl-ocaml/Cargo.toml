@@ -1,0 +1,28 @@
+[package]
+name = "zerodds-idl-ocaml"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "OMG IDL4 → OCaml code generator for ZeroDDS (byte-identical XCDR2 wire, native pure-OCaml endpoint mapping)."
+repository = "https://github.com/zero-objects/zero-dds"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-idl-ocaml"
+readme = "README.md"
+keywords = ["dds", "idl", "ocaml", "codegen", "xtypes"]
+categories = ["development-tools", "network-programming"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+zerodds-idl = { version = "1.0.0-rc.7", path = "../idl" }
+
+[dev-dependencies]
+# NameHash MD5 member-id vectors for the @hashid/@autoid(HASH) parity tests.
+zerodds-types = { version = "1.0.0-rc.7", path = "../types", default-features = false, features = ["alloc"] }

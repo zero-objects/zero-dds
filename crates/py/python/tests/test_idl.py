@@ -1127,3 +1127,77 @@ def test_fixed_member_struct_byte_identical_to_rust_cpp() -> None:
     assert enc.hex() == "070000000700000012345c"
     back = S.decode(enc)
     assert back.id == 7 and back.price == "123.45"
+
+
+# =============================================================================
+# XCDR1 wire path (F.1 item 13) — the generated `encode(representation=0)` /
+# `decode(..., representation=0)` path previously had zero coverage.
+# =============================================================================
+
+
+def test_generated_xcdr1_final_alignment_and_roundtrip() -> None:
+    """@final under XCDR1 caps alignment at 8: the `double` aligns to offset 8
+    (XCDR2 would cap at 4). Asserts byte layout + roundtrip, and that the two
+    representations produce different wire bytes."""
+    import struct as _struct
+
+    mod = _load_generated("xcdr1_gen")
+    X1Final = mod.X1Final
+    v = X1Final(a=1, d=1.0)
+
+    x1 = v.encode(representation=0)  # XCDR1 / classic CDR
+    # octet at 0, 7 bytes pad, f64 aligned to 8 -> total 16 bytes.
+    assert len(x1) == 16, x1.hex()
+    assert x1[0] == 1
+    assert x1[1:8] == b"\x00" * 7, x1.hex()
+    assert x1[8:16] == _struct.pack("<d", 1.0), x1.hex()
+
+    # XCDR2 (default) caps alignment at 4: octet + 3 pad + f64 -> 12 bytes.
+    x2 = v.encode()  # representation defaults to 1 (XCDR2)
+    assert len(x2) == 12, x2.hex()
+    assert x1 != x2
+
+    back = X1Final.decode(x1, representation=0)
+    assert (back.a, back.d) == (1, 1.0)
+
+
+def test_generated_xcdr1_appendable_has_no_dheader() -> None:
+    """@appendable under XCDR1 emits NO DHEADER (XCDR2 emits one, rule(30)).
+    The wire therefore starts with the first member's value, not a length."""
+    mod = _load_generated("xcdr1_gen")
+    X1App = mod.X1App
+    v = X1App(a=7, d=2.5)
+
+    x1 = v.encode(representation=0)
+    # No DHEADER: the wire starts with the long `a` (7) directly.
+    assert x1[0:4] == (7).to_bytes(4, "little"), x1.hex()
+    # long(4) + 4 pad + f64 aligned to 8 -> 16 bytes.
+    assert len(x1) == 16, x1.hex()
+
+    # XCDR2 appendable prepends a DHEADER: the first word is the body length
+    # (12), NOT the value `a`. This is the observable XCDR1-vs-XCDR2 difference.
+    x2 = v.encode()
+    assert x2[0:4] == (12).to_bytes(4, "little"), x2.hex()
+    assert x1 != x2
+
+    back = X1App.decode(x1, representation=0)
+    assert (back.a, back.d) == (7, 2.5)
+
+
+def test_generated_xcdr1_mutable_pl_cdr1_roundtrip() -> None:
+    """@mutable under XCDR1 frames members as PL_CDR1 ([PID][len] + sentinel),
+    NOT XCDR2 PL_CDR2 EMHEADERs. Asserts the PL_CDR1 wire roundtrips and that
+    the two representations differ on the wire."""
+    mod = _load_generated("xcdr1_gen")
+    X1Mut = mod.X1Mut
+    v = X1Mut(a=9, d=-1.5)
+
+    x1 = v.encode(representation=0)
+    back = X1Mut.decode(x1, representation=0)
+    assert (back.a, back.d) == (9, -1.5)
+
+    # PL_CDR1 and PL_CDR2 are different framings -> different bytes.
+    x2 = v.encode()
+    assert x1 != x2
+    # And each representation must decode its OWN wire only.
+    assert X1Mut.decode(x2, representation=1) == v

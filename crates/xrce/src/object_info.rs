@@ -158,7 +158,7 @@ impl ResultStatus {
 // ============================================================================
 
 /// Spec §7.7.8: `BaseObjectRequest { RequestId(2 octets), ObjectId(2 octets) }`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct BaseObjectRequest {
     /// Request identifier (2 octets, unique per stream).
     pub request_id: [u8; 2],

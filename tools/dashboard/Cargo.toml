@@ -25,7 +25,7 @@ name = "zerodds-dashboard"
 path = "src/main.rs"
 
 [dependencies]
-zerodds-foundation = { version = "1.0.0-rc.6", path = "../../crates/foundation" }
-zerodds-monitor = { version = "1.0.0-rc.6", path = "../../crates/monitor", default-features = false, features = ["std", "prometheus-server"] }
+zerodds-foundation = { version = "1.0.0-rc.7", path = "../../crates/foundation" }
+zerodds-monitor = { version = "1.0.0-rc.7", path = "../../crates/monitor", default-features = false, features = ["std", "prometheus-server"] }
 
 [dev-dependencies]

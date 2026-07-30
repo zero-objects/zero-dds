@@ -133,6 +133,7 @@ from .idl import (  # noqa: F401
     idl_union,
     is_idl_struct,
     type_name_of,
+    type_object_of,
 )
 from .topic import IdlReader, IdlTopic, IdlWriter  # noqa: F401
 
@@ -168,6 +169,7 @@ __all__ = [
     "idl_struct",
     "is_idl_struct",
     "type_name_of",
+    "type_object_of",
     "Bool",
     "Bytes",
     "Float32",

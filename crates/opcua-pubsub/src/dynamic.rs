@@ -23,7 +23,7 @@ use alloc::vec::Vec;
 use zerodds_opcua_gateway::data_value::{Variant, VariantValue};
 use zerodds_opcua_gateway::node_id::{NodeId, NodeIdentifier};
 
-use crate::binary::{UaReader, builtin_type_from_value, decode_builtin_value};
+use crate::binary::{UaReader, builtin_type_from_value, check_array_len, decode_builtin_value};
 use crate::config::{
     DataSetMetaData, EnumDescription, SimpleTypeDescription, StructureDescription, StructureType,
 };
@@ -158,7 +158,14 @@ fn decode_value(
         if len < 0 {
             return Ok(DynamicValue::Null);
         }
-        let mut items = Vec::with_capacity(len as usize);
+        let len = len as usize;
+        // Conservative bound: every value needs >= 1 wire byte, so a
+        // count above the remaining bytes cannot be genuine. Reject
+        // before `Vec::with_capacity` (mirrors
+        // `crates/cdr/src/composite.rs`'s `len > reader.remaining()`
+        // guard).
+        check_array_len(r, len, 1, "array length exceeds remaining bytes")?;
+        let mut items = Vec::with_capacity(len);
         for _ in 0..len {
             items.push(decode_one(r, &resolved, meta, depth)?);
         }

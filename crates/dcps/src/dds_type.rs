@@ -92,17 +92,57 @@ pub trait DdsType: Sized {
     /// reader-writer matching falls back to plain `type_name`
     /// comparison (DDS 1.4 §2.2.3 default path)".
     ///
-    /// idl-rust codegen emits the appropriate TypeIdentifier here:
-    /// - Primitive `int32` → `TypeIdentifier::Primitive(PrimitiveKind::Int32)`,
-    /// - String `string<N>` → `TypeIdentifier::String8Small{ bound }`,
-    /// - Composite struct → `TypeIdentifier::EquivalenceHash` (once the
-    ///   TypeRegistry lookup is live).
+    /// idl-rust codegen (`type_identifier.rs`) emits a codegen-time-computed
+    /// `EquivalenceHashComplete` of the struct's `CompleteStructType` here
+    /// for essentially every struct shape (#24 fix — previously only
+    /// primitive/string-only-member structs got a non-`None` id; a single
+    /// typedef/enum/sequence/map/nested-struct/array member nulled the
+    /// *whole* struct's identity, since the resolution was a self-contained
+    /// per-struct subset that could not look up other named types). Member
+    /// types are now resolved against the full `Specification`'s named-type
+    /// registry (`zerodds_idl::semantics::build_type_registry`, the same
+    /// mapper the AST → `TypeObject` pipeline uses), so the emitted id is
+    /// non-`None` for typedef/enum/sequence/map/nested-struct/array members
+    /// too. It only stays `None` for a struct that (transitively) contains a
+    /// still-genuinely-unmappable `TypeSpec` (`fixed<>`/`any`).
     ///
     /// Once both sides (writer + reader) provide a TypeIdentifier, the
     /// subscriber match path calls
     /// [`zerodds_types::type_matcher::TypeMatcher::match_types`]
-    /// (XTypes §7.6.3.7 + DDS 1.4 §2.2.3 TypeConsistencyEnforcement).
+    /// (XTypes §7.6.3.7 + DDS 1.4 §2.2.3 TypeConsistencyEnforcement). As of
+    /// the Gap 2 (#24) fix the runtime match resolves `EquivalenceHash` ids
+    /// against the runtime's POPULATED [`zerodds_types::resolve::TypeRegistry`]
+    /// (owned by the TypeLookup server, filled by
+    /// [`DcpsRuntime::register_type_object`](crate::runtime::DcpsRuntime::register_type_object)
+    /// and by TypeLookup `getTypes` replies): identical hashes match by
+    /// identity (short-circuit, before any lookup); differing hashes are
+    /// compared STRUCTURALLY once both `TypeObject`s are in the registry, so
+    /// provably-compatible evolutions (added/reordered/widening-safe members
+    /// under `@appendable`) now match. A remote id ABSENT from the registry
+    /// triggers a `getTypes` fetch: under `force_type_validation` the match
+    /// DEFERS until the reply lands (no optimistic match); otherwise it
+    /// matches optimistically and confirms asynchronously. See
+    /// `wire_reader_to_remote_writer` / `wire_writer_to_remote_reader`.
     const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::None;
+
+    /// XTypes 1.3 §7.3.4 — the full `TypeObject` for this type, if the
+    /// codegen (or a hand impl) can provide it. Gap 2 (#24) auto-registration
+    /// hook: `Publisher::create_datawriter` / `Subscriber::create_datareader`
+    /// register the returned object with the runtime's TypeLookup server
+    /// (`DcpsRuntime::register_type_object`) at endpoint creation, so
+    ///   * remote peers can fetch it via `getTypes`, and
+    ///   * the local runtime match sites can resolve this endpoint's
+    ///     `TYPE_IDENTIFIER` structurally against the registry.
+    ///
+    /// Default `None` = "no object emitted": the endpoint still carries its
+    /// `TYPE_IDENTIFIER`, and matching falls back to identity / TypeLookup
+    /// fetch from the peer. The idl-rust `MinimalTypeObject`/`CompleteTypeObject`
+    /// emitter that fills this in is a follow-up (today only `TYPE_IDENTIFIER`
+    /// is codegen-emitted); a hand-written `DdsType` may override it.
+    #[must_use]
+    fn type_object() -> Option<zerodds_types::type_object::TypeObject> {
+        None
+    }
 
     /// Serializes `self` into the XCDR2 payload sent as the
     /// `serialized_payload` of a DATA submessage. Default endianness:

@@ -29,6 +29,36 @@ public interface TopicTypeSupport<T> extends org.omg.dds.topic.TopicTypeSupport<
     /** Extensibility (Final/Appendable/Mutable) per OMG XTypes 1.3 §7.2.2.4.4. */
     ExtensibilityKind getExtensibility();
 
+    /**
+     * Serialized COMPLETE {@code TypeObject} (XTypes 1.3 §7.3.4) of this type —
+     * the exact XCDR-LE bytes {@code idlc java} emits from the shared
+     * {@code zerodds_idl::semantics} source (F-TYPES-3 / #24). Byte-identical to
+     * the bytes every other ZeroDDS binding (Rust / cpp / C#) emits for the same
+     * IDL, so {@link #typeIdentifier()} is a cross-binding-consistent hash.
+     * Empty by default; a type without a lowerable TypeObject (union / fixed /
+     * any member) leaves it empty.
+     */
+    default byte[] typeObject() {
+        return new byte[0];
+    }
+
+    /**
+     * Strongly-hashed {@code TypeIdentifier} = the first 14 bytes of the MD5 of
+     * {@link #typeObject()} (XTypes 1.3 §7.3.4.6 EquivalenceHash). Identical to
+     * the {@code TYPE_IDENTIFIER} {@code idl-rust} advertises for the same IDL —
+     * the cross-binding identifier (#24). Empty when there is no TypeObject.
+     */
+    default byte[] typeIdentifier() {
+        byte[] to = typeObject();
+        if (to.length == 0) {
+            return new byte[0];
+        }
+        byte[] md5 = Md5.hash(to);
+        byte[] id = new byte[14];
+        System.arraycopy(md5, 0, id, 0, 14);
+        return id;
+    }
+
     /** Encode with default endianness (LE). */
     byte[] encode(T sample);
 

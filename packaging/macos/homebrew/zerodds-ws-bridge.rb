@@ -4,7 +4,7 @@ class ZeroddsWsBridge < Formula
   desc "ZeroDDS DDS to WebSocket bridge daemon"
   homepage "https://zerodds.org"
   license "Apache-2.0"
-  version "1.0.0-rc.1"
+  version "1.0.0-rc.7"
 
   depends_on "zerodds" # core libs + zerodds-ws-bridged binary live in main formula
   depends_on "openssl@3"

@@ -176,6 +176,16 @@ Implementation:
 
 **Status:** done
 
+### §10 sync + async Deep-Examples + Quickstart
+
+**Spec:** §10 -- lauffähige sync/async Deep-Examples (Sensor-Telemetrie `Reading{id,value,label}`).
+
+**Repo:** `endpoints/java/ExampleSync.java` (Poll-Loop), `endpoints/java/ExampleAsync.java` (Reader-Thread + `BlockingQueue`), `endpoints/java/QUICKSTART.md`.
+
+**Tests:** CI-Job `endpoints-java` (neu) → `javac *.java` + `java ExampleSync|ExampleAsync`; codepit-verifiziert (JDK 21, 5/5 Feld-Decode, byte-identisch via `Zdw`).
+
+**Status:** done
+
 ## §11 Errata + Open-Questions
 
 ### §11.1 Java byte ist signed

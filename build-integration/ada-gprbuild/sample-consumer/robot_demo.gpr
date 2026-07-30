@@ -1,0 +1,16 @@
+-- SPDX-License-Identifier: Apache-2.0
+-- Copyright 2026 ZeroDDS Contributors
+--
+-- `generated/` (robot.ads/robot.adb) does not exist until `make generate`
+-- (or `make build`, which depends on it) has run — this .gpr assumes the
+-- Makefile wrapper (../Makefile) is the entry point, not `gprbuild`
+-- invoked directly.
+project Robot_Demo is
+   for Source_Dirs use ("src", "generated");
+   for Object_Dir use "obj";
+   for Main use ("main.adb");
+
+   package Compiler is
+      for Default_Switches ("Ada") use ("-gnat2012");
+   end Compiler;
+end Robot_Demo;

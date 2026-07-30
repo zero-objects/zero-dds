@@ -26,13 +26,13 @@ name = "zerodds-router"
 path = "src/bin/zerodds-router.rs"
 
 [dependencies]
-zerodds-dcps = { version = "1.0.0-rc.6", path = "../dcps" }
-zerodds-qos = { version = "1.0.0-rc.6", path = "../qos" }
-zerodds-rtps = { version = "1.0.0-rc.6", path = "../rtps" }
-zerodds-cdr = { version = "1.0.0-rc.6", path = "../cdr" }
-zerodds-types = { version = "1.0.0-rc.6", path = "../types" }
-zerodds-sql-filter = { version = "1.0.0-rc.6", path = "../sql-filter" }
-zerodds-monitor = { version = "1.0.0-rc.6", path = "../monitor" }
+zerodds-dcps = { version = "1.0.0-rc.7", path = "../dcps" }
+zerodds-qos = { version = "1.0.0-rc.7", path = "../qos" }
+zerodds-rtps = { version = "1.0.0-rc.7", path = "../rtps" }
+zerodds-cdr = { version = "1.0.0-rc.7", path = "../cdr" }
+zerodds-types = { version = "1.0.0-rc.7", path = "../types" }
+zerodds-sql-filter = { version = "1.0.0-rc.7", path = "../sql-filter" }
+zerodds-monitor = { version = "1.0.0-rc.7", path = "../monitor" }
 roxmltree = { workspace = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

@@ -3,7 +3,7 @@
 $ErrorActionPreference = 'Stop'
 
 $packageName = 'zerodds'
-$version     = '1.0.0-rc.1'
+$version     = '1.0.0-rc.7'
 $url64       = "https://github.com/zero-objects/zerodds/releases/download/v$version/zerodds-$version-x64.msi"
 $checksum64  = '0000000000000000000000000000000000000000000000000000000000000000'
 

@@ -60,6 +60,14 @@ pub mod tckind {
     pub const INDIRECTION: u32 = 0xffff_ffff;
 }
 
+/// Hard cap on `TypeCode` nesting depth (Sequence element / Struct member /
+/// Alias content) during decode. Untrusted input (a `TypeCode` inside a GIOP
+/// `any`, received from any peer) could otherwise nest arbitrarily deep and
+/// overflow the stack — this is a network-reachable DoS, not just a
+/// memory-allocation one, so it is bounded independently of the CDR-buffer
+/// length checks that guard allocation sizes elsewhere in this crate.
+pub const MAX_TYPECODE_DEPTH: u32 = 64;
+
 /// CORBA `TypeCode` (subset: all scalar kinds + string/wstring + sequence +
 /// struct + enum + alias + objref — the common structured `any` contents).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -304,19 +312,31 @@ impl TypeCode {
     pub fn decode(r: &mut BufferReader<'_>) -> Result<Self, DecodeError> {
         let mut cache = TcCache::new();
         // base 0: cache positions are reader-absolute (`r.position()`).
-        Self::decode_ctx(r, 0, &mut cache)
+        Self::decode_ctx(r, 0, &mut cache, 0)
     }
 
     /// Position-tracking decode. `base` = absolute stream offset of the
     /// reader's byte 0; `cache` maps `(base + position)` of a TCKind to the
     /// TypeCode decoded there — a precondition for resolving indirections
-    /// (which point backward by byte offset).
+    /// (which point backward by byte offset). `depth` = current TypeCode
+    /// nesting depth (Sequence element / Struct member / Alias content),
+    /// capped by [`MAX_TYPECODE_DEPTH`] — a GIOP peer sending a deeply
+    /// nested `sequence<sequence<sequence<...>>>` `TypeCode` would otherwise
+    /// recurse without bound and overflow the stack (network-reachable
+    /// crash via any decoded `any`).
     fn decode_ctx(
         r: &mut BufferReader<'_>,
         base: usize,
         cache: &mut TcCache,
+        depth: u32,
     ) -> Result<Self, DecodeError> {
         use tckind::*;
+        if depth > MAX_TYPECODE_DEPTH {
+            return Err(DecodeError::InvalidEnum {
+                kind: "TypeCode nesting exceeds MAX_TYPECODE_DEPTH",
+                value: depth,
+            });
+        }
         // TCKind is a 4-aligned `unsigned long`. Apply the alignment BEFORE
         // recording the position (read_u32 would otherwise do it internally
         // first) — otherwise the cache position points at the padding instead
@@ -373,7 +393,7 @@ impl TypeCode {
                 }
             }
             TK_SEQUENCE => decode_encap_ctx(r, base, cache, |e, cb, cache| {
-                let element = Box::new(Self::decode_ctx(e, cb, cache)?);
+                let element = Box::new(Self::decode_ctx(e, cb, cache, depth + 1)?);
                 let bound = e.read_u32()?;
                 let tc = Self::Sequence { element, bound };
                 cache.insert(tckind_pos, TcCacheEntry::Done(tc.clone()));
@@ -389,7 +409,7 @@ impl TypeCode {
                 let mut members = Vec::with_capacity(count.min(256));
                 for _ in 0..count {
                     let mn = e.read_string()?;
-                    let mt = Self::decode_ctx(e, cb, cache)?;
+                    let mt = Self::decode_ctx(e, cb, cache, depth + 1)?;
                     members.push((mn, mt));
                 }
                 let tc = Self::Struct {
@@ -421,7 +441,7 @@ impl TypeCode {
                 let repo_id = e.read_string()?;
                 let name = e.read_string()?;
                 cache.insert(tckind_pos, TcCacheEntry::InProgress(repo_id.clone()));
-                let content = Box::new(Self::decode_ctx(e, cb, cache)?);
+                let content = Box::new(Self::decode_ctx(e, cb, cache, depth + 1)?);
                 let tc = Self::Alias {
                     repo_id,
                     name,
@@ -565,6 +585,46 @@ mod tests {
         };
         rt(&tc, Endianness::Big);
         rt(&tc, Endianness::Little);
+    }
+
+    // -------------------------------------------------------------
+    // Stack-exhaustion hardening — a `TypeCode` nested (via Sequence
+    // element / Struct member / Alias content) deeper than
+    // `MAX_TYPECODE_DEPTH` must be rejected cleanly (no stack
+    // overflow) rather than recursing without bound. A GIOP peer
+    // controls this nesting via any decoded `any` value.
+    // -------------------------------------------------------------
+
+    #[test]
+    fn nested_sequence_beyond_max_depth_rejected_cleanly() {
+        let mut tc = TypeCode::Octet;
+        for _ in 0..(MAX_TYPECODE_DEPTH + 10) {
+            tc = TypeCode::Sequence {
+                element: Box::new(tc),
+                bound: 0,
+            };
+        }
+        let mut w = BufferWriter::new(Endianness::Big);
+        tc.encode(&mut w).unwrap();
+        let bytes = w.into_bytes();
+        let mut r = BufferReader::new(&bytes, Endianness::Big);
+        let res = TypeCode::decode(&mut r);
+        assert!(
+            matches!(res, Err(DecodeError::InvalidEnum { .. })),
+            "expected clean rejection, got {res:?}"
+        );
+    }
+
+    #[test]
+    fn nested_sequence_within_max_depth_still_round_trips() {
+        let mut tc = TypeCode::Octet;
+        for _ in 0..10 {
+            tc = TypeCode::Sequence {
+                element: Box::new(tc),
+                bound: 0,
+            };
+        }
+        rt(&tc, Endianness::Big);
     }
 
     /// Indirection (§15.3.5.1) — **recursive** struct `Node { Node n; }`: one

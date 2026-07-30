@@ -25,7 +25,7 @@
 set -euo pipefail
 
 DIST_DIR="${1:-target/distrib}"
-PKG_VERSION="${ZERODDS_PKG_VERSION:-1.0.0}"
+PKG_VERSION="${ZERODDS_PKG_VERSION:-1.0.0-rc.7}"
 
 if [ -z "${DEV_ID_APPLICATION:-}" ]; then
     echo "DEV_ID_APPLICATION not set; skipping macOS signing." >&2

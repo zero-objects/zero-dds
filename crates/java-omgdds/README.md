@@ -20,18 +20,20 @@ Two orthogonal Java paths:
   the `org.omg.dds.*` PSM exactly. Drop-in for applications that
   run today on the RTI Connext, OpenSplice or Cyclone DDS Java API.
 
-Both paths use the same wire stack under the hood
-(`crates/rtps` via JNI). The difference is only in the
-Java API form.
+The two paths differ in the wire stack, not only the Java API form.
+`zerodds-java-jni` reaches the Rust `crates/rtps` stack via JNI.
+`zerodds-java-omgdds` (this crate) carries its own pure-Java RTPS
+wire stack (`org.zerodds.rtps`, no JNI, no Rust library) that is
+byte-compatible on the wire with the Rust stack (DDSI-RTPS 2.5).
 
 ## Build
 
 ```bash
 # Maven build (standard Java):
-mvn -f crates/java-omgdds/pom.xml package
+mvn -f crates/java-omgdds/java/pom.xml package
 
 # The JAR lands in:
-ls crates/java-omgdds/target/zerodds-java-omgdds-0.0.0.jar
+ls crates/java-omgdds/java/target/omgdds-0.0.0.jar
 ```
 
 ## Quickstart (OMG PSM form)
@@ -58,9 +60,9 @@ writer.write(new Pose("r1", 1.0, 2.0, 3.0));
 
 ```
 crates/java-omgdds/
-├── Cargo.toml          workspace member, build glue to the JNI layer
-├── src/lib.rs          architecture doc + JNI hooks
-├── src/main/java/      Java sources (Maven layout)
+├── Cargo.toml          workspace member (crate smoke test)
+├── src/lib.rs          architecture doc + version marker (pure-Java, no JNI)
+├── java/src/main/java/ Java sources (Maven layout)
 │   └── org/omg/dds/
 │       ├── core/        Time, Duration, Status, Exception, Listener
 │       ├── core/policy/ all 21 QoS policies, immutable builder
@@ -68,9 +70,10 @@ crates/java-omgdds/
 │       ├── topic/       Topic, ContentFilteredTopic, MultiTopic
 │       ├── pub/         Publisher, DataWriter, PublisherListener
 │       ├── sub/         Subscriber, DataReader, Sample, SampleSelector
-│       ├── type/        TypeSupport, dynamic, builtin
-│       └── rtps/        conversion helpers (delegate to the Rust stack)
-└── pom.xml             Maven build
+│       └── type/        TypeSupport, dynamic, builtin
+│   └── org/zerodds/
+│       └── rtps/        pure-Java RTPS wire stack (SPDP/SEDP/DATA over UDP)
+└── java/pom.xml         Maven build
 ```
 
 ## Documentation Trail

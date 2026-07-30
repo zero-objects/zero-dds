@@ -18,8 +18,13 @@ let cfg = RuntimeConfig {
     participant_lease_duration: Duration::from_secs(100),
     observability: zerodds_foundation::observability::null_sink(),
     // … security fields when feature = "security"
+    ..Default::default()
 };
 ```
+
+> ▶ Runnable example: [`runtime-config`](https://github.com/zero-objects/zero-dds-snippets/tree/master/runtime-config)
+> (starts a real `DcpsRuntime` with this exact field list; also covers the
+> three "Common combinations" recipes below).
 
 ## Field reference
 
@@ -27,8 +32,9 @@ let cfg = RuntimeConfig {
 
 How often the event-loop ticks: liveliness checks, deadline checks,
 lifespan eviction, heartbeat emission, NACK retransmits. Default
-50 ms. Lower = lower latency, higher CPU. For RT deployments use
-5 ms or below; for soft-RT, 50–100 ms is fine.
+5 ms (`DEFAULT_TICK_PERIOD`, spec-compliant). Lower = lower latency,
+higher CPU. For hard-RT deployments use 1–2 ms; for soft-RT/non-RT,
+50–100 ms trades latency for CPU headroom.
 
 ### `spdp_period`
 
@@ -93,7 +99,7 @@ See [security.md](security.md) for the full security configuration.
 RuntimeConfig::default()
 ```
 
-50 ms tick, 5 s SPDP, no security, no observability.
+5 ms tick, 5 s SPDP, no security, no observability.
 
 ### Production server with monitoring
 

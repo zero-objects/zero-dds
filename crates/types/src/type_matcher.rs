@@ -117,6 +117,7 @@ impl<'a> TypeMatcher<'a> {
 #[cfg(test)]
 #[allow(
     clippy::unwrap_used,
+    clippy::expect_used,
     clippy::panic,
     clippy::field_reassign_with_default
 )]
@@ -190,5 +191,109 @@ mod tests {
                 panic!("narrowing i64→i16 must not match");
             }
         }
+    }
+
+    // ================================================================
+    // Gap 2 (#24): structural, hash-referenced matching THROUGH a
+    // populated TypeRegistry. These prove the registry is load-bearing:
+    // the same hash-referenced pair resolves to a real structural verdict
+    // only when the TypeObjects are present (an EMPTY registry can only
+    // fall back to "unknown type objects for hash comparison" = No).
+    // ================================================================
+
+    use crate::builder::{Extensibility, TypeObjectBuilder};
+    use crate::hash::compute_hash;
+    use crate::type_object::{MinimalTypeObject, TypeObject};
+
+    /// Registers a `MinimalStructType` under its `EquivalenceHash` and
+    /// returns the endpoint `TypeIdentifier` (EquivalenceHashMinimal).
+    fn register(
+        reg: &mut TypeRegistry,
+        st: crate::type_object::minimal::MinimalStructType,
+    ) -> TypeIdentifier {
+        let mto = MinimalTypeObject::Struct(st);
+        let hash = compute_hash(&TypeObject::Minimal(mto.clone())).expect("hash");
+        reg.insert_minimal(hash, mto);
+        TypeIdentifier::EquivalenceHashMinimal(hash)
+    }
+
+    /// Appendable struct evolution: the WRITER added a trailing @optional
+    /// member (writer ⊇ reader prefix, XTypes §7.2.4.4.4.4). Default TCE
+    /// (AllowTypeCoercion) → the differing hashes resolve structurally to a
+    /// MATCH once both TypeObjects are in the registry.
+    #[test]
+    fn appendable_trailing_optional_member_matches_via_registry() {
+        let mut reg = TypeRegistry::new();
+        // Reader V1: {a: i32, b: i32}, @appendable.
+        let reader = TypeObjectBuilder::struct_type("::evo::V1")
+            .extensibility(Extensibility::Appendable)
+            .member("a", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| m)
+            .member("b", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| m)
+            .build_minimal();
+        // Writer V2 = V1 + trailing @optional c: i32, @appendable.
+        let writer = TypeObjectBuilder::struct_type("::evo::V2")
+            .extensibility(Extensibility::Appendable)
+            .member("a", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| m)
+            .member("b", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| m)
+            .member("c", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| {
+                m.optional()
+            })
+            .build_minimal();
+        let w_id = register(&mut reg, writer);
+        let r_id = register(&mut reg, reader);
+        assert_ne!(w_id, r_id, "the two evolutions must have distinct hashes");
+
+        let tce = TypeConsistencyEnforcement::default();
+        let m = TypeMatcher::new(&tce);
+        assert!(
+            m.match_types(&w_id, &r_id, &reg).is_match(),
+            "appendable writer-superset must match through the populated registry"
+        );
+        // Load-bearing proof: with an EMPTY registry the exact same call can
+        // NOT resolve the differing hashes → no structural match.
+        assert!(
+            !m.match_types(&w_id, &r_id, &TypeRegistry::new()).is_match(),
+            "empty registry must NOT resolve the differing hashes (old behavior)"
+        );
+    }
+
+    /// A widened member (writer i16 → reader i32) matches under the default
+    /// coercing TCE, but `force_type_validation` disables coercion
+    /// (§7.6.3.7.1) → the structural check reports Incompatible. Both
+    /// verdicts go through the populated registry.
+    #[test]
+    fn widened_member_incompatible_under_force_validation_via_registry() {
+        let mut reg = TypeRegistry::new();
+        // Writer: {a: i16}, @final (exact structural check, no appendable slack).
+        let writer = TypeObjectBuilder::struct_type("::w::Widen")
+            .extensibility(Extensibility::Final)
+            .member("a", TypeIdentifier::Primitive(PrimitiveKind::Int16), |m| m)
+            .build_minimal();
+        // Reader: {a: i32}, @final.
+        let reader = TypeObjectBuilder::struct_type("::w::Widen")
+            .extensibility(Extensibility::Final)
+            .member("a", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| m)
+            .build_minimal();
+        let w_id = register(&mut reg, writer);
+        let r_id = register(&mut reg, reader);
+
+        // Default TCE coerces the widening i16 → i32 → Matches.
+        let coerce = TypeConsistencyEnforcement::default();
+        assert!(
+            TypeMatcher::new(&coerce)
+                .match_types(&w_id, &r_id, &reg)
+                .is_match(),
+            "default TCE must coerce the i16→i32 widening"
+        );
+
+        // force_type_validation disables coercion → Incompatible.
+        let mut strict = TypeConsistencyEnforcement::default();
+        strict.force_type_validation = true;
+        assert!(
+            !TypeMatcher::new(&strict)
+                .match_types(&w_id, &r_id, &reg)
+                .is_match(),
+            "force_type_validation must reject the widened member"
+        );
     }
 }

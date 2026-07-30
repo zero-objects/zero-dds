@@ -20,6 +20,18 @@ public final class SensorTypeSupport implements org.zerodds.cdr.TopicTypeSupport
     public org.zerodds.cdr.ExtensibilityKind getExtensibility() { return org.zerodds.cdr.ExtensibilityKind.FINAL; }
 
     @Override
+    public byte[] typeObject() { return TYPE_OBJECT.clone(); }
+    private static final byte[] TYPE_OBJECT = new byte[] {
+        (byte) 0xf2, (byte) 0x51, (byte) 0x01, (byte) 0x00, (byte) 0x0f, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00, 
+        (byte) 0x07, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x53, (byte) 0x65, (byte) 0x6e, (byte) 0x73, (byte) 0x6f, (byte) 0x72, (byte) 0x00, (byte) 0x00, 
+        (byte) 0x34, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x02, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x11, (byte) 0x00, (byte) 0x00, (byte) 0x00, 
+        (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x21, (byte) 0x00, (byte) 0x04, (byte) 0x00, (byte) 0x03, (byte) 0x00, (byte) 0x00, (byte) 0x00, 
+        (byte) 0x69, (byte) 0x64, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x14, (byte) 0x00, (byte) 0x00, (byte) 0x00, 
+        (byte) 0x01, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x01, (byte) 0x00, (byte) 0x0a, (byte) 0x00, (byte) 0x06, (byte) 0x00, (byte) 0x00, (byte) 0x00, 
+        (byte) 0x76, (byte) 0x61, (byte) 0x6c, (byte) 0x75, (byte) 0x65, (byte) 0x00, (byte) 0x00, (byte) 0x00, 
+    };
+
+    @Override
     public byte[] encode(Sensor sample) { return encode(sample, org.zerodds.cdr.EndianMode.LITTLE_ENDIAN); }
 
     @Override

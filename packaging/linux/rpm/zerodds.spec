@@ -9,7 +9,7 @@ Release:        0.rc1%{?dist}
 Summary:        ZeroDDS — Rust-native DDS implementation with bridges
 License:        Apache-2.0
 URL:            https://zerodds.org
-Source0:        https://github.com/zero-objects/zerodds/archive/v%{version}-rc.1/zerodds-%{version}-rc.1.tar.gz
+Source0:        https://github.com/zero-objects/zerodds/archive/v%{version}-rc.7/zerodds-%{version}-rc.7.tar.gz
 
 # BuildRequires: cargo >= 1.88 (kommt via rustup im rpm-job)
 # BuildRequires: rust >= 1.88 (kommt via rustup im rpm-job)
@@ -52,10 +52,14 @@ Ships the 17 CLI tools listed in zerodds-deployment-1.0.md §1.3
 %package devel
 Summary: ZeroDDS C/C++ development files
 Requires: zerodds-core = %{version}-%{release}
+# The SDK's zeroddsConfig.cmake references /usr/bin/zerodds-idlc, owned by -cli.
+Requires: zerodds-cli = %{version}-%{release}
 
 %description devel
-Public C-headers, static library, and pkg-config descriptor needed to
-build native code against libzerodds. Cross-Ref: zerodds-ffi-loader-1.0.
+Public C/C++ headers, static library, pkg-config descriptor, and the
+find_package(zerodds CONFIG) CMake package (config + version + IDLC generator
+module) needed to build native code against libzerodds.
+Cross-Ref: zerodds-ffi-loader-1.0.
 
 %package ws-bridge
 Summary: ZeroDDS DDS to WebSocket bridge daemon
@@ -118,7 +122,7 @@ Spec: zerodds-deployment-1.0 §2.3. DDS-to-DDS forwarding daemon
 # Build orchestration.
 # ---------------------------------------------------------------------------
 %prep
-%autosetup -n zerodds-%{version}-rc.1
+%autosetup -n zerodds-%{version}-rc.7
 
 %build
 cargo build --release --workspace --exclude zerodds-durability-store-lakehouse --exclude zerodds-durability-service-bin --exclude iceoryx2-oracle-consumer --exclude zerodds-endpoint-codegen --exclude zerodds-endpoint-golden --exclude zerodds-xrce-agent-demo
@@ -145,12 +149,34 @@ for bin in target/release/zerodds-*; do
     install -m 0755 "$bin" %{buildroot}%{_bindir}/
 done
 
-# libzerodds.
+# libzerodds — the versioned runtime shared object goes in -core.
 install -m 0755 target/release/libzerodds.so %{buildroot}%{_libdir}/libzerodds.so.1.0.0
 ln -sf libzerodds.so.1.0.0 %{buildroot}%{_libdir}/libzerodds.so.1
 ln -sf libzerodds.so.1     %{buildroot}%{_libdir}/libzerodds.so
-install -m 0644 crates/zerodds-c-api/include/zerodds.h %{buildroot}%{_includedir}/zerodds.h
-install -m 0644 packaging/linux/rpm/zerodds.pc          %{buildroot}%{_libdir}/pkgconfig/zerodds.pc
+
+# -devel files: the single SDK install staging tree, NO hand-copied header list
+# (spec P0-4). `cmake --install` emits C + C++ headers, the static library,
+# zeroddsConfig.cmake + ConfigVersion, the IDLC generator module and zerodds.pc.
+# We install into a private staging prefix, then relocate the SDK bits into the
+# buildroot; the zerodds-idlc host tool is skipped here because -cli already
+# ships /usr/bin/zerodds-idlc (config Requires: zerodds-cli). Static lib: the
+# runtime .so above is the -core artifact; -devel provides the static SDK.
+%global zdw_stage %{_builddir}/zdw-stage
+cmake -S . -B %{_builddir}/zdw-build \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DBUILD_SHARED_LIBS=OFF \
+    -DZERODDS_BUILD_CPP=ON \
+    -DZERODDS_BUILD_IDLC=ON \
+    -DZERODDS_BUILD_EXAMPLES=OFF \
+    -DZERODDS_BUILD_TESTS=OFF \
+    -DCMAKE_INSTALL_PREFIX=%{_prefix} \
+    -DCMAKE_INSTALL_LIBDIR=%{_lib}
+cmake --build %{_builddir}/zdw-build
+DESTDIR=%{zdw_stage} cmake --install %{_builddir}/zdw-build
+# Relocate SDK payload into the buildroot (headers, cmake package, pkgconfig,
+# static lib). Drop the idlc host tool copy — -cli owns it.
+rm -f %{zdw_stage}%{_bindir}/zerodds-idlc
+cp -a %{zdw_stage}%{_prefix}/. %{buildroot}%{_prefix}/
 
 # systemd + tmpfiles + sysusers.
 for u in packaging/linux/systemd/zerodds-*.service; do
@@ -277,7 +303,13 @@ exit 0
 %{_mandir}/man1/zerodds-xmlc.1*
 
 %files devel
+# All from the single `cmake --install` SDK staging tree (spec P0-4).
 %{_includedir}/zerodds.h
+%{_includedir}/zerodds_xcdr2.h
+%{_includedir}/dds/
+%{_includedir}/zerodds/
+%{_libdir}/libzerodds.a
+%{_libdir}/cmake/zerodds/
 %{_libdir}/pkgconfig/zerodds.pc
 
 %files ws-bridge

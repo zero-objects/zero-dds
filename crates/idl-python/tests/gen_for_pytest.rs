@@ -166,4 +166,17 @@ fn generate_python_modules_for_pytest() {
         "keyed_gen",
         "struct Keyed { @key long id; string label; long long payload; };",
     );
+
+    // XCDR1 wire path (F.1 item 13): the generated `encode(representation=0)` /
+    // `decode(..., representation=0)` path had no coverage. Three extensibility
+    // modes each hit a distinct XCDR1 rule:
+    //   * @final    — alignment cap 8 (double aligns to 8, not XCDR2's 4).
+    //   * @appendable — NO DHEADER on the wire (unlike XCDR2 rule(30)).
+    //   * @mutable  — PL_CDR1 [PID][len] members + PID_LIST_END sentinel.
+    write_module(
+        "xcdr1_gen",
+        "@final struct X1Final { octet a; double d; }; \
+         @appendable struct X1App { long a; double d; }; \
+         @mutable struct X1Mut { @id(1) long a; @id(2) double d; };",
+    );
 }

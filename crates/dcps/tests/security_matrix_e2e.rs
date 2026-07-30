@@ -211,6 +211,9 @@ fn start_secured(
         prefix,
         RuntimeConfig {
             security: Some(gate.clone()),
+            // #11 §9.3.3 guard: security_guid_prefix must equal the prefix passed
+            // to start(), else DcpsRuntime::start rejects the secured runtime.
+            security_guid_prefix: Some(prefix),
             ..RuntimeConfig::default()
         },
     )
@@ -245,10 +248,13 @@ fn writer_cfg(topic: &str, repr: Option<i16>) -> UserWriterConfig {
         reliable: true,
         durability: zerodds_qos::DurabilityKind::Volatile,
         deadline: Default::default(),
+        latency_budget: Default::default(),
+        destination_order: Default::default(),
         lifespan: Default::default(),
         liveliness: Default::default(),
         ownership: zerodds_qos::OwnershipKind::Shared,
         ownership_strength: 0,
+        presentation: Default::default(),
         partition: vec![],
         user_data: vec![],
         topic_data: vec![],
@@ -265,8 +271,11 @@ fn reader_cfg(topic: &str, repr: Option<i16>) -> UserReaderConfig {
         reliable: true,
         durability: zerodds_qos::DurabilityKind::Volatile,
         deadline: Default::default(),
+        latency_budget: Default::default(),
+        destination_order: Default::default(),
         liveliness: Default::default(),
         ownership: zerodds_qos::OwnershipKind::Shared,
+        presentation: Default::default(),
         partition: vec![],
         user_data: vec![],
         topic_data: vec![],

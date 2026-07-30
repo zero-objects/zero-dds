@@ -24,11 +24,12 @@ use zerodds_idl::ast::{
     UnionDcl, UnionDef, ValueDef, ValueElement,
 };
 
+use zerodds_idl::semantics::ExtensibilityKind as ExtKind;
 use zerodds_idl::semantics::annotations::PlacementKind;
 
 use crate::bitset::{emit_bitmask, emit_bitset};
 use crate::error::CppGenError;
-use crate::type_map::{check_identifier, is_reserved, primitive_to_cpp};
+use crate::type_map::{escape_cpp_ident, is_reserved, primitive_to_cpp};
 use crate::verbatim::emit_verbatim_at;
 use crate::{CppGenOptions, TIME_DURATION_TYPES};
 
@@ -162,7 +163,18 @@ pub(crate) fn emit_header(
     let mut probe_unions: Vec<(String, &UnionDef)> = Vec::new();
     collect_topic_unions(&spec.definitions, "", &mut probe_unions);
     if !probe_structs.is_empty() || !probe_unions.is_empty() {
-        emit_topic_type_support_specs(&mut out, opts, &probe_structs, &probe_unions)?;
+        // #24 / F-TYPES-3: full-spec resolved NameMap (the SAME "Path A"
+        // index `build_type_registry` builds) so each emitted
+        // `type_object()` resolves typedef/enum/sequence/map/nested-struct/
+        // union/array member types exactly as `idl-rust` does — a build
+        // failure (cyclic type / not-yet-mappable `fixed`/`any`) degrades to
+        // an empty map, i.e. affected structs emit an empty `type_object()`
+        // (typed-create then falls back to the byte-oriented create), never a
+        // codegen error.
+        let type_names = zerodds_idl::semantics::build_type_registry(spec)
+            .map(|lowered| lowered.names)
+            .unwrap_or_default();
+        emit_topic_type_support_specs(&mut out, opts, &probe_structs, &probe_unions, &type_names)?;
     }
 
     Ok(out)
@@ -225,7 +237,12 @@ fn collect_in_def(d: &Definition, inc: &mut Includes) {
             }
         }
         Definition::Type(td) => collect_in_typedecl(td, inc),
-        Definition::Const(_) => {}
+        Definition::Const(c) => {
+            // A string const emits `constexpr std::string_view`/`std::wstring_view`.
+            if matches!(&c.type_, zerodds_idl::ast::ConstType::String { .. }) {
+                inc.add("<string_view>");
+            }
+        }
         Definition::Except(e) => {
             inc.add("<exception>");
             for m in &e.members {
@@ -324,6 +341,11 @@ fn collect_in_typespec(ts: &TypeSpec, inc: &mut Includes) {
         }
         TypeSpec::Map(m) => {
             inc.add("<map>");
+            // A user-defined (scoped) map key may be a struct, for which we
+            // generate a `std::tie`-based `operator<` — that needs `<tuple>`.
+            if matches!(m.key.as_ref(), TypeSpec::Scoped(_)) {
+                inc.add("<tuple>");
+            }
             collect_in_typespec(&m.key, inc);
             collect_in_typespec(&m.value, inc);
         }
@@ -390,8 +412,8 @@ fn emit_definition(
             emit_interface_stub(out, ctx, iface)
         }
         Definition::Interface(InterfaceDcl::Forward(f)) => {
-            check_identifier(&f.name.text)?;
-            writeln!(out, "{}class {};", ctx.indent(), f.name.text).map_err(fmt_err)?;
+            let name = escape_cpp_ident(&f.name.text);
+            writeln!(out, "{}class {name};", ctx.indent()).map_err(fmt_err)?;
             Ok(())
         }
         Definition::ValueDef(v) => emit_value_type(out, ctx, v),
@@ -429,12 +451,18 @@ fn emit_definition(
 
 /// zerodds-lint: recursion-depth 64 (Parser/AST-Walk; bounded by IDL nesting)
 fn emit_module(out: &mut String, ctx: &mut EmitCtx<'_>, m: &ModuleDef) -> Result<(), CppGenError> {
-    check_identifier(&m.name.text)?;
-    ctx.open_namespace(out, &m.name.text)?;
+    let name = escape_cpp_ident(&m.name.text);
+    ctx.open_namespace(out, &name)?;
+    // Track the lexical scope (raw IDL module name) so member field-type
+    // references inside this module resolve to the correct declaration (P0-2).
+    let _sg = ScopeGuard(cur_scope());
+    let mut inner = cur_scope();
+    inner.push(m.name.text.clone());
+    set_scope(&inner);
     for d in &m.definitions {
         emit_definition(out, ctx, d)?;
     }
-    ctx.close_namespace(out, &m.name.text)?;
+    ctx.close_namespace(out, &name)?;
     Ok(())
 }
 
@@ -447,25 +475,25 @@ fn emit_type_decl(
         TypeDecl::Constr(c) => match c {
             ConstrTypeDecl::Struct(StructDcl::Def(s)) => emit_struct(out, ctx, s),
             ConstrTypeDecl::Struct(StructDcl::Forward(f)) => {
-                check_identifier(&f.name.text)?;
-                writeln!(out, "{}class {};", ctx.indent(), f.name.text).map_err(fmt_err)?;
+                let name = escape_cpp_ident(&f.name.text);
+                writeln!(out, "{}class {name};", ctx.indent()).map_err(fmt_err)?;
                 Ok(())
             }
             ConstrTypeDecl::Union(UnionDcl::Def(u)) => emit_union(out, ctx, u),
             ConstrTypeDecl::Union(UnionDcl::Forward(f)) => {
-                check_identifier(&f.name.text)?;
-                writeln!(out, "{}class {};", ctx.indent(), f.name.text).map_err(fmt_err)?;
+                let name = escape_cpp_ident(&f.name.text);
+                writeln!(out, "{}class {name};", ctx.indent()).map_err(fmt_err)?;
                 Ok(())
             }
             ConstrTypeDecl::Enum(e) => emit_enum(out, ctx, e),
             ConstrTypeDecl::Bitset(b) => {
-                check_identifier(&b.name.text)?;
+                // Name escaping happens inside `emit_bitset` (reserved-word →
+                // trailing `_`), consistent with the abs_path registry entry.
                 let ind = ctx.indent();
                 let inner = " ".repeat((ctx.indent_level + 1) * ctx.opts.indent_width);
                 emit_bitset(out, &ind, &inner, b)
             }
             ConstrTypeDecl::Bitmask(b) => {
-                check_identifier(&b.name.text)?;
                 let ind = ctx.indent();
                 let inner = " ".repeat((ctx.indent_level + 1) * ctx.opts.indent_width);
                 emit_bitmask(out, &ind, &inner, b)
@@ -479,7 +507,7 @@ fn emit_type_decl(
 }
 
 fn emit_struct(out: &mut String, ctx: &mut EmitCtx<'_>, s: &StructDef) -> Result<(), CppGenError> {
-    check_identifier(&s.name.text)?;
+    let sname = escape_cpp_ident(&s.name.text);
     let ind = ctx.indent();
 
     // §7.2.2.4.8 — `@verbatim(placement=BEFORE_DECLARATION)` before the
@@ -489,9 +517,9 @@ fn emit_struct(out: &mut String, ctx: &mut EmitCtx<'_>, s: &StructDef) -> Result
     // Class header with an optional inheritance clause.
     if let Some(base) = &s.base {
         let base_str = scoped_to_cpp(base);
-        writeln!(out, "{ind}class {} : public {} {{", s.name.text, base_str).map_err(fmt_err)?;
+        writeln!(out, "{ind}class {sname} : public {base_str} {{").map_err(fmt_err)?;
     } else {
-        writeln!(out, "{ind}class {} {{", s.name.text).map_err(fmt_err)?;
+        writeln!(out, "{ind}class {sname} {{").map_err(fmt_err)?;
     }
     writeln!(out, "{ind}public:").map_err(fmt_err)?;
 
@@ -502,8 +530,8 @@ fn emit_struct(out: &mut String, ctx: &mut EmitCtx<'_>, s: &StructDef) -> Result
     emit_verbatim_at(out, &inner, &s.annotations, PlacementKind::BeginDeclaration)?;
 
     // Default constructor.
-    writeln!(out, "{inner}{}() = default;", s.name.text).map_err(fmt_err)?;
-    writeln!(out, "{inner}~{}() = default;", s.name.text).map_err(fmt_err)?;
+    writeln!(out, "{inner}{sname}() = default;").map_err(fmt_err)?;
+    writeln!(out, "{inner}~{sname}() = default;").map_err(fmt_err)?;
 
     // Field-order constructor — one parameter per member in declaration
     // order, member-initialised (parameters passed by value + std::move so
@@ -536,8 +564,75 @@ fn emit_struct(out: &mut String, ctx: &mut EmitCtx<'_>, s: &StructDef) -> Result
     // after the closing `};`.
     emit_verbatim_at(out, &ind, &s.annotations, PlacementKind::AfterDeclaration)?;
 
+    // §7.4.2.9: a struct used as a `map` key needs `operator<` so
+    // `std::map<Struct, _>` is well-formed. Emit a lexicographic ordering over
+    // the members (declaration order) via `std::tie` of the const accessors.
+    let is_map_key = MAP_KEY_STRUCTS.with(|set| set.borrow().contains(&s.name.text));
+    if is_map_key {
+        emit_map_key_ordering(out, &ind, s, &sname)?;
+    }
+
     writeln!(out).map_err(fmt_err)?;
     Ok(())
+}
+
+/// Emits a free lexicographic `operator<` for a struct used as a `std::map`
+/// key. Compares the members in declaration order through the const accessors
+/// (`std::tie(l.a(), l.b()) < std::tie(r.a(), r.b())`), which is a strict weak
+/// ordering as long as every member type is itself `<`-comparable (primitives,
+/// strings, vectors, arrays, optionals, and nested map-key structs all are).
+fn emit_map_key_ordering(
+    out: &mut String,
+    ind: &str,
+    s: &StructDef,
+    sname: &str,
+) -> Result<(), CppGenError> {
+    let mut getters: Vec<String> = Vec::new();
+    for m in &s.members {
+        for decl in &m.declarators {
+            getters.push(escape_cpp_ident(&decl.name().text));
+        }
+    }
+    let lhs = getters
+        .iter()
+        .map(|g| format!("zd_l.{g}()"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let rhs = getters
+        .iter()
+        .map(|g| format!("zd_r.{g}()"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    writeln!(
+        out,
+        "{ind}inline bool operator<(const {sname}& zd_l, const {sname}& zd_r) {{"
+    )
+    .map_err(fmt_err)?;
+    writeln!(out, "{ind}    return std::tie({lhs}) < std::tie({rhs});").map_err(fmt_err)?;
+    writeln!(out, "{ind}}}").map_err(fmt_err)?;
+    Ok(())
+}
+
+/// Private storage-field identifier for a member with the RAW IDL name
+/// `raw_name`.
+///
+/// The convention is `<escaped_accessor>_`. When the member name is a reserved
+/// C++ keyword its escaped accessor is `kw_`, so the naive `kw_` + `_` would be
+/// `kw__` — and any identifier containing `__` is reserved to the implementation
+/// (ISO/IEC 14882:2017 [lex.name]/3, guarded by the
+/// `no_implementation_reserved_identifiers` test). For that keyword case the
+/// storage suffix is `field` instead of a second `_` (`operator` ->
+/// `operator_field`), keeping the field legal, `__`-free and distinct from the
+/// `operator_()` accessor. Non-keyword names keep the exact pre-existing
+/// `<name>_` form (so no non-reserved header changes), which is the sole reason
+/// this decides on `is_reserved(raw_name)` rather than on a trailing `_`.
+pub(crate) fn member_storage_ident(raw_name: &str) -> String {
+    let escaped = escape_cpp_ident(raw_name);
+    if is_reserved(raw_name) {
+        format!("{escaped}field")
+    } else {
+        format!("{escaped}_")
+    }
 }
 
 /// Storage type for a member declarator, applying `@shared` (-> shared_ptr)
@@ -568,36 +663,38 @@ fn emit_field_order_ctor(
     s: &StructDef,
     inner: &str,
 ) -> Result<(), CppGenError> {
-    // Flatten members -> (storage_type, field_name) in declaration order.
+    // Flatten members -> (storage_type, raw_member_name) in declaration order.
     let mut fields: Vec<(String, String)> = Vec::new();
     for m in &s.members {
         for decl in &m.declarators {
-            let name = decl.name();
-            check_identifier(&name.text)?;
-            fields.push((member_storage_type(m, decl)?, name.text.clone()));
+            fields.push((member_storage_type(m, decl)?, decl.name().text.clone()));
         }
     }
     if fields.is_empty() {
         return Ok(());
     }
 
+    // Parameter names are the escaped accessor identifiers (`operator_`); the
+    // member-initialiser targets the `__`-free storage field.
     let params = fields
         .iter()
-        .map(|(ty, name)| format!("{ty} {name}"))
+        .map(|(ty, raw)| format!("{ty} {}", escape_cpp_ident(raw)))
         .collect::<Vec<_>>()
         .join(", ");
     let inits = fields
         .iter()
-        .map(|(_, name)| format!("{name}_(std::move({name}))"))
+        .map(|(_, raw)| {
+            format!(
+                "{}(std::move({}))",
+                member_storage_ident(raw),
+                escape_cpp_ident(raw)
+            )
+        })
         .collect::<Vec<_>>()
         .join(", ");
 
-    writeln!(
-        out,
-        "{inner}{}({params})\n{inner}    : {inits} {{}}",
-        s.name.text
-    )
-    .map_err(fmt_err)?;
+    let sname = escape_cpp_ident(&s.name.text);
+    writeln!(out, "{inner}{sname}({params})\n{inner}    : {inits} {{}}").map_err(fmt_err)?;
     Ok(())
 }
 
@@ -611,8 +708,7 @@ fn emit_struct_member_field(
     let shared = has_shared_annotation(&m.annotations);
     for decl in &m.declarators {
         let cpp_ty = type_for_declarator(&m.type_spec, decl)?;
-        let name = decl.name();
-        check_identifier(&name.text)?;
+        let field = member_storage_ident(&decl.name().text);
         let key_marker = if has_key_annotation(&m.annotations) {
             " // @key"
         } else {
@@ -626,14 +722,10 @@ fn emit_struct_member_field(
             cpp_ty
         };
         if optional {
-            writeln!(
-                out,
-                "{inner}std::optional<{core_ty}> {}_;{key_marker}",
-                name.text
-            )
-            .map_err(fmt_err)?;
+            writeln!(out, "{inner}std::optional<{core_ty}> {field};{key_marker}")
+                .map_err(fmt_err)?;
         } else {
-            writeln!(out, "{inner}{core_ty} {}_;{key_marker}", name.text).map_err(fmt_err)?;
+            writeln!(out, "{inner}{core_ty} {field};{key_marker}").map_err(fmt_err)?;
         }
     }
     Ok(())
@@ -649,7 +741,9 @@ fn emit_struct_member_accessors(
     let shared = has_shared_annotation(&m.annotations);
     for decl in &m.declarators {
         let cpp_ty = type_for_declarator(&m.type_spec, decl)?;
-        let name = &decl.name().text;
+        // Escape reserved words so the accessor method name is a legal C++
+        // token AND matches the escaped `_`-suffixed storage field.
+        let name = escape_cpp_ident(&decl.name().text);
         let core_ty = if shared {
             format!("std::shared_ptr<{cpp_ty}>")
         } else {
@@ -660,26 +754,49 @@ fn emit_struct_member_accessors(
         } else {
             core_ty
         };
-        writeln!(out, "{inner}{storage_ty}& {name}() {{ return {name}_; }}").map_err(fmt_err)?;
+        let field = member_storage_ident(&decl.name().text);
+        writeln!(out, "{inner}{storage_ty}& {name}() {{ return {field}; }}").map_err(fmt_err)?;
         writeln!(
             out,
-            "{inner}const {storage_ty}& {name}() const {{ return {name}_; }}"
+            "{inner}const {storage_ty}& {name}() const {{ return {field}; }}"
         )
         .map_err(fmt_err)?;
         writeln!(
             out,
-            "{inner}void {name}(const {storage_ty}& value) {{ {name}_ = value; }}"
+            "{inner}void {name}(const {storage_ty}& value) {{ {field} = value; }}"
         )
         .map_err(fmt_err)?;
+        // broad-audit P0-7: `@shared` (XTypes 1.3 §7.3.1.2.1.9) holds the member
+        // in memory via a `std::shared_ptr<T>`, but the WIRE carries the referenced
+        // value fully by value (byte-identical to the same member WITHOUT @shared).
+        // These value-typed setter overloads let the generated decode assign the
+        // decoded pointee directly (it is wrapped into a fresh `shared_ptr`), so the
+        // decode paths reuse the ordinary `zd_v.name(<value>)` calls unchanged
+        // instead of silently dropping the member. For `@shared @optional` the same
+        // overload engages the outer `std::optional` (assigning a `shared_ptr` to
+        // an `optional<shared_ptr<T>>` makes it present); absence still flows through
+        // the primary `optional`-typed setter via `std::nullopt`.
+        if shared {
+            writeln!(
+                out,
+                "{inner}void {name}(const {cpp_ty}& value) {{ {field} = std::make_shared<{cpp_ty}>(value); }}"
+            )
+            .map_err(fmt_err)?;
+            writeln!(
+                out,
+                "{inner}void {name}({cpp_ty}&& value) {{ {field} = std::make_shared<{cpp_ty}>(std::move(value)); }}"
+            )
+            .map_err(fmt_err)?;
+        }
     }
     Ok(())
 }
 
 fn emit_union(out: &mut String, ctx: &mut EmitCtx<'_>, u: &UnionDef) -> Result<(), CppGenError> {
-    check_identifier(&u.name.text)?;
+    let uname = escape_cpp_ident(&u.name.text);
     let ind = ctx.indent();
     emit_verbatim_at(out, &ind, &u.annotations, PlacementKind::BeforeDeclaration)?;
-    writeln!(out, "{ind}class {} {{", u.name.text).map_err(fmt_err)?;
+    writeln!(out, "{ind}class {uname} {{").map_err(fmt_err)?;
     writeln!(out, "{ind}public:").map_err(fmt_err)?;
     let inner = " ".repeat((ctx.indent_level + 1) * ctx.opts.indent_width);
     emit_verbatim_at(out, &inner, &u.annotations, PlacementKind::BeginDeclaration)?;
@@ -705,8 +822,8 @@ fn emit_union(out: &mut String, ctx: &mut EmitCtx<'_>, u: &UnionDef) -> Result<(
         "{inner}using value_type = std::variant<{variant_str}>;"
     )
     .map_err(fmt_err)?;
-    writeln!(out, "{inner}{}() = default;", u.name.text).map_err(fmt_err)?;
-    writeln!(out, "{inner}~{}() = default;", u.name.text).map_err(fmt_err)?;
+    writeln!(out, "{inner}{uname}() = default;").map_err(fmt_err)?;
+    writeln!(out, "{inner}~{uname}() = default;").map_err(fmt_err)?;
     writeln!(out).map_err(fmt_err)?;
 
     // Discriminator.
@@ -780,15 +897,23 @@ pub(crate) fn declarator_name(d: &Declarator) -> &str {
 }
 
 fn emit_enum(out: &mut String, ctx: &mut EmitCtx<'_>, e: &EnumDef) -> Result<(), CppGenError> {
-    check_identifier(&e.name.text)?;
+    let ename = escape_cpp_ident(&e.name.text);
     let ind = ctx.indent();
     emit_verbatim_at(out, &ind, &e.annotations, PlacementKind::BeforeDeclaration)?;
-    writeln!(out, "{ind}enum class {} : int32_t {{", e.name.text).map_err(fmt_err)?;
+    writeln!(out, "{ind}enum class {ename} : int32_t {{").map_err(fmt_err)?;
     let inner = " ".repeat((ctx.indent_level + 1) * ctx.opts.indent_width);
     emit_verbatim_at(out, &inner, &e.annotations, PlacementKind::BeginDeclaration)?;
+    // XTypes 1.3 §7.4.5.1: an enumerator's wire value is `@value(n)` when
+    // present, else one past the previous enumerator (from 0). Emitting bare
+    // names let C++ re-derive plain ordinals (0,1,2,…), silently diverging from
+    // the TypeObject/peer wire value for any `@value` gap. Emit every value
+    // explicitly so the C++ constant matches the wire.
+    let mut next: i64 = 0;
     for en in &e.enumerators {
-        check_identifier(&en.name.text)?;
-        writeln!(out, "{inner}{},", en.name.text).map_err(fmt_err)?;
+        let en_name = escape_cpp_ident(&en.name.text);
+        let val = enumerator_value_annotation(&en.annotations).unwrap_or(next);
+        writeln!(out, "{inner}{en_name} = {val},").map_err(fmt_err)?;
+        next = val.wrapping_add(1);
     }
     emit_verbatim_at(out, &inner, &e.annotations, PlacementKind::EndDeclaration)?;
     writeln!(out, "{ind}}};").map_err(fmt_err)?;
@@ -802,8 +927,7 @@ fn emit_interface_stub(
     ctx: &mut EmitCtx<'_>,
     iface: &InterfaceDef,
 ) -> Result<(), CppGenError> {
-    let name = &iface.name.text;
-    check_identifier(name)?;
+    let name = escape_cpp_ident(&iface.name.text);
     let ind = ctx.indent();
     let inner = " ".repeat((ctx.indent_level + 1) * ctx.opts.indent_width);
 
@@ -850,7 +974,7 @@ fn emit_interface_stub(
 }
 
 fn emit_interface_op(out: &mut String, inner: &str, op: &OpDecl) -> Result<(), CppGenError> {
-    check_identifier(&op.name.text)?;
+    let op_name = escape_cpp_ident(&op.name.text);
     let ret = match &op.return_type {
         None => "void".to_string(),
         Some(t) => typespec_to_cpp(t)?,
@@ -866,7 +990,7 @@ fn emit_interface_op(out: &mut String, inner: &str, op: &OpDecl) -> Result<(), C
                 ParamAttribute::In => format!("const {ty}&"),
                 ParamAttribute::Out | ParamAttribute::InOut => format!("{ty}&"),
             };
-            Ok(format!("{qual} {}", p.name.text))
+            Ok(format!("{qual} {}", escape_cpp_ident(&p.name.text)))
         })
         .collect::<Result<_, _>>()?;
     let raises_comment = if op.raises.is_empty() {
@@ -877,8 +1001,7 @@ fn emit_interface_op(out: &mut String, inner: &str, op: &OpDecl) -> Result<(), C
     };
     writeln!(
         out,
-        "{inner}virtual {ret} {}({}) = 0;{raises_comment}",
-        op.name.text,
+        "{inner}virtual {ret} {op_name}({}) = 0;{raises_comment}",
         params.join(", ")
     )
     .map_err(fmt_err)?;
@@ -890,16 +1013,15 @@ fn emit_interface_attr(
     inner: &str,
     attr: &zerodds_idl::ast::AttrDecl,
 ) -> Result<(), CppGenError> {
-    check_identifier(&attr.name.text)?;
+    let attr_name = escape_cpp_ident(&attr.name.text);
     let ty = typespec_to_cpp(&attr.type_spec)?;
     // Getter (every attribute has one).
-    writeln!(out, "{inner}virtual {ty} {}() const = 0;", attr.name.text).map_err(fmt_err)?;
+    writeln!(out, "{inner}virtual {ty} {attr_name}() const = 0;").map_err(fmt_err)?;
     // Setter only for non-readonly.
     if !attr.readonly {
         writeln!(
             out,
-            "{inner}virtual void {}(const {ty}& value) = 0;",
-            attr.name.text
+            "{inner}virtual void {attr_name}(const {ty}& value) = 0;"
         )
         .map_err(fmt_err)?;
     }
@@ -911,8 +1033,7 @@ fn emit_value_type(
     ctx: &mut EmitCtx<'_>,
     v: &ValueDef,
 ) -> Result<(), CppGenError> {
-    let name = &v.name.text;
-    check_identifier(name)?;
+    let name = escape_cpp_ident(&v.name.text);
     let ind = ctx.indent();
     let inner = " ".repeat((ctx.indent_level + 1) * ctx.opts.indent_width);
 
@@ -945,7 +1066,7 @@ fn emit_value_type(
             ValueElement::State(s) if matches!(s.visibility, StateVisibility::Public) => {
                 let ty = typespec_to_cpp(&s.type_spec)?;
                 for d in &s.declarators {
-                    let n = &d.name().text;
+                    let n = escape_cpp_ident(&d.name().text);
                     writeln!(out, "{inner}virtual const {ty}& {n}() const = 0;")
                         .map_err(fmt_err)?;
                     writeln!(out, "{inner}virtual void {n}(const {ty}& value) = 0;")
@@ -969,7 +1090,7 @@ fn emit_value_type(
                 if matches!(s.visibility, StateVisibility::Private) {
                     let ty = typespec_to_cpp(&s.type_spec)?;
                     for d in &s.declarators {
-                        let n = &d.name().text;
+                        let n = escape_cpp_ident(&d.name().text);
                         writeln!(out, "{inner}virtual const {ty}& {n}() const = 0;")
                             .map_err(fmt_err)?;
                         writeln!(out, "{inner}virtual void {n}(const {ty}& value) = 0;")
@@ -999,7 +1120,7 @@ fn emit_value_type(
         writeln!(out, "{ind}public:").map_err(fmt_err)?;
         writeln!(out, "{inner}virtual ~{name}_factory() = default;").map_err(fmt_err)?;
         for f in &factories {
-            check_identifier(&f.name.text)?;
+            let f_name = escape_cpp_ident(&f.name.text);
             let params: Vec<String> = f
                 .params
                 .iter()
@@ -1009,13 +1130,12 @@ fn emit_value_type(
                         ParamAttribute::In => format!("const {ty}&"),
                         ParamAttribute::Out | ParamAttribute::InOut => format!("{ty}&"),
                     };
-                    Ok(format!("{qual} {}", p.name.text))
+                    Ok(format!("{qual} {}", escape_cpp_ident(&p.name.text)))
                 })
                 .collect::<Result<_, _>>()?;
             writeln!(
                 out,
-                "{inner}virtual std::shared_ptr<{name}> {}({}) = 0;",
-                f.name.text,
+                "{inner}virtual std::shared_ptr<{name}> {f_name}({}) = 0;",
                 params.join(", ")
             )
             .map_err(fmt_err)?;
@@ -1036,8 +1156,7 @@ fn emit_typedef(
     let ind = ctx.indent();
     emit_verbatim_at(out, &ind, &t.annotations, PlacementKind::BeforeDeclaration)?;
     for decl in &t.declarators {
-        let alias = &decl.name().text;
-        check_identifier(alias)?;
+        let alias = escape_cpp_ident(&decl.name().text);
         let target_ty = type_for_declarator(&t.type_spec, decl)?;
         writeln!(out, "{ind}using {alias} = {target_ty};").map_err(fmt_err)?;
     }
@@ -1051,7 +1170,7 @@ fn emit_const_decl(
     ctx: &mut EmitCtx<'_>,
     c: &zerodds_idl::ast::ConstDecl,
 ) -> Result<(), CppGenError> {
-    check_identifier(&c.name.text)?;
+    let cname = escape_cpp_ident(&c.name.text);
     let ind = ctx.indent();
     let cpp_ty = match &c.type_ {
         zerodds_idl::ast::ConstType::Integer(i) => crate::type_map::integer_to_cpp(*i).to_string(),
@@ -1062,8 +1181,14 @@ fn emit_const_decl(
         zerodds_idl::ast::ConstType::Char => "char".into(),
         zerodds_idl::ast::ConstType::WideChar => "wchar_t".into(),
         zerodds_idl::ast::ConstType::Octet => "uint8_t".into(),
-        zerodds_idl::ast::ConstType::String { wide: false } => "std::string".into(),
-        zerodds_idl::ast::ConstType::String { wide: true } => "std::wstring".into(),
+        // A namespace-scope `constexpr std::string`/`std::wstring` is ill-formed
+        // (non-literal type, non-trivial destructor). `std::string_view` /
+        // `std::wstring_view` ARE literal types, so `constexpr` is well-formed
+        // and the constant still reads as a string (§7.2.3 string const →
+        // constexpr string_view). The initializer string literal has static
+        // storage duration, so the view is valid for the program lifetime.
+        zerodds_idl::ast::ConstType::String { wide: false } => "std::string_view".into(),
+        zerodds_idl::ast::ConstType::String { wide: true } => "std::wstring_view".into(),
         zerodds_idl::ast::ConstType::Scoped(s) => scoped_to_cpp(s),
         zerodds_idl::ast::ConstType::Fixed => {
             // §7.2.4.2.4 — fixed constant without a digits/scale annotation;
@@ -1073,7 +1198,7 @@ fn emit_const_decl(
         }
     };
     let val = const_expr_to_cpp(&c.value);
-    writeln!(out, "{ind}constexpr {cpp_ty} {} = {val};", c.name.text).map_err(fmt_err)?;
+    writeln!(out, "{ind}constexpr {cpp_ty} {cname} = {val};").map_err(fmt_err)?;
     Ok(())
 }
 
@@ -1082,13 +1207,13 @@ fn emit_exception(
     ctx: &mut EmitCtx<'_>,
     e: &ExceptDecl,
 ) -> Result<(), CppGenError> {
-    check_identifier(&e.name.text)?;
+    let ename = escape_cpp_ident(&e.name.text);
     let ind = ctx.indent();
-    writeln!(out, "{ind}class {} : public std::exception {{", e.name.text).map_err(fmt_err)?;
+    writeln!(out, "{ind}class {ename} : public std::exception {{").map_err(fmt_err)?;
     writeln!(out, "{ind}public:").map_err(fmt_err)?;
     let inner = " ".repeat((ctx.indent_level + 1) * ctx.opts.indent_width);
-    writeln!(out, "{inner}{}() = default;", e.name.text).map_err(fmt_err)?;
-    writeln!(out, "{inner}~{}() override = default;", e.name.text).map_err(fmt_err)?;
+    writeln!(out, "{inner}{ename}() = default;").map_err(fmt_err)?;
+    writeln!(out, "{inner}~{ename}() override = default;").map_err(fmt_err)?;
     writeln!(
         out,
         "{inner}const char* what() const noexcept override {{ return \"{}\"; }}",
@@ -1100,9 +1225,8 @@ fn emit_exception(
     for m in &e.members {
         for decl in &m.declarators {
             let cpp_ty = type_for_declarator(&m.type_spec, decl)?;
-            let name = &decl.name().text;
-            check_identifier(name)?;
-            writeln!(out, "{inner}{cpp_ty} {name}_;").map_err(fmt_err)?;
+            let field = member_storage_ident(&decl.name().text);
+            writeln!(out, "{inner}{cpp_ty} {field};").map_err(fmt_err)?;
         }
     }
     writeln!(out, "{ind}}};").map_err(fmt_err)?;
@@ -1125,7 +1249,12 @@ pub(crate) fn type_for_declarator(ts: &TypeSpec, decl: &Declarator) -> Result<St
             // `int x[2][3]` → `std::array<std::array<int, 3>, 2>`.
             let mut out = base;
             for size in arr.sizes.iter().rev() {
-                let n = const_expr_to_usize(size).unwrap_or_default();
+                // Central const-eval: `data[CAP]` / `data[BASE*2]` resolve to
+                // their integer dimension instead of the former literal-only
+                // `const_expr_to_usize`, which dropped every non-literal to `0`
+                // (`std::array<..., 0>`). Symbolic fallback keeps an in-scope
+                // `constexpr` dimension compiling when it cannot be evaluated.
+                let n = bound_to_cpp(size);
                 out = format!("std::array<{out}, {n}>");
             }
             Ok(out)
@@ -1136,6 +1265,22 @@ pub(crate) fn type_for_declarator(ts: &TypeSpec, decl: &Declarator) -> Result<St
 /// zerodds-lint: recursion-depth 64 (Parser/AST-Walk; bounded by IDL nesting)
 pub(crate) fn typespec_to_cpp(ts: &TypeSpec) -> Result<String, CppGenError> {
     match ts {
+        // `long double` has a platform-dependent width and bit layout
+        // (sizeof == 8 on MSVC, 16 x86-80-bit-extended on Linux/gcc, 16
+        // IEEE-binary128 on AArch64) while the XCDR wire form is a fixed 16-byte
+        // value. Native `long double` storage therefore either truncates the
+        // wire (MSVC) or ships a non-portable bit pattern. Until a canonical
+        // binary128 codec exists (blocked on Rust `f128`), reject it at codegen
+        // — exactly like the C backend (`c_mode.rs`) — instead of emitting a
+        // silently platform-divergent member.
+        TypeSpec::Primitive(zerodds_idl::ast::PrimitiveType::Floating(
+            zerodds_idl::ast::FloatingType::LongDouble,
+        )) => Err(CppGenError::UnsupportedConstruct {
+            construct:
+                "long double (no portable 16-byte binary128 wire form; blocked on Rust f128)"
+                    .to_string(),
+            context: None,
+        }),
         TypeSpec::Primitive(p) => Ok(primitive_to_cpp(*p).to_string()),
         TypeSpec::Scoped(s) => Ok(scoped_to_cpp(s)),
         TypeSpec::Sequence(s) => {
@@ -1201,13 +1346,18 @@ pub(crate) fn scoped_to_cpp(s: &ScopedName) -> String {
     }
     // Absolutely qualify known user types so member references resolve at any
     // scope — serializer helpers live at global scope, where a bare single-part
-    // name (an intra-module IDL reference) would not resolve.
-    if let Some(last) = s.parts.last() {
-        if let Some(path) = TYPE_PATHS.with(|r| r.borrow().get(&last.text).cloned()) {
+    // name (an intra-module IDL reference) would not resolve. The reference is
+    // resolved to its FQN against the current lexical scope (P0-2), so two
+    // same-named types in different modules map to their OWN absolute path.
+    if let Some(fqn) = resolve_fqn(s) {
+        if let Some(path) = TYPE_PATHS.with(|r| r.borrow().get(&fqn).cloned()) {
             return path;
         }
     }
-    let parts: Vec<String> = s.parts.iter().map(|p| p.text.clone()).collect();
+    // Fallback for names not in TYPE_PATHS (unregistered base classes,
+    // scoped enumerator references, cross-refs): escape each `::`-component so a
+    // reserved-word module/type/enumerator segment stays a legal C++ token.
+    let parts: Vec<String> = s.parts.iter().map(|p| escape_cpp_ident(&p.text)).collect();
     let joined = parts.join("::");
     if s.absolute {
         format!("::{joined}")
@@ -1265,20 +1415,25 @@ pub(crate) fn const_expr_to_cpp(e: &ConstExpr) -> String {
 
 fn literal_to_cpp(l: &Literal) -> String {
     match l.kind {
-        LiteralKind::Boolean => l.raw.clone(),
+        // IDL boolean literals are `TRUE`/`FALSE` (§7.2.6.4); C++ has no such
+        // tokens — only lowercase `true`/`false`. Emitting the raw IDL spelling
+        // produced non-compiling code (`constexpr bool F = TRUE;`). Normalise
+        // case-insensitively; leave any unexpected spelling untouched.
+        LiteralKind::Boolean => {
+            if l.raw.eq_ignore_ascii_case("true") {
+                "true".to_string()
+            } else if l.raw.eq_ignore_ascii_case("false") {
+                "false".to_string()
+            } else {
+                l.raw.clone()
+            }
+        }
         LiteralKind::Integer | LiteralKind::Floating => l.raw.clone(),
         LiteralKind::Char => l.raw.clone(),
         LiteralKind::WideChar => l.raw.clone(),
         LiteralKind::String => l.raw.clone(),
         LiteralKind::WideString => l.raw.clone(),
         LiteralKind::Fixed => l.raw.clone(),
-    }
-}
-
-fn const_expr_to_usize(e: &ConstExpr) -> Option<usize> {
-    match e {
-        ConstExpr::Literal(l) if l.kind == LiteralKind::Integer => l.raw.parse::<usize>().ok(),
-        _ => None,
     }
 }
 
@@ -1337,6 +1492,47 @@ fn const_expr_as_u32(e: &ConstExpr) -> Option<u32> {
     }
 }
 
+/// Returns the signed `@value(n)` of an enumerator (XTypes 1.3 §7.4.5.1), or
+/// `None` when the enumerator carries no `@value`. The value may be negative
+/// (the enum wire holder is a signed int32), so unlike `find_uint_annotation`
+/// this accepts a leading unary minus.
+fn enumerator_value_annotation(anns: &[Annotation]) -> Option<i64> {
+    for a in anns {
+        if a.name.parts.last().is_some_and(|p| p.text == "value") {
+            if let AnnotationParams::Single(expr) = &a.params {
+                if let Some(v) = const_expr_as_i64(expr) {
+                    return Some(v);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// zerodds-lint: recursion-depth 64 (bounded by AST depth)
+/// Interprets a ConstExpr as a signed i64 (integer literal, possibly with a
+/// leading unary `+`/`-`). Used for enumerator `@value`.
+fn const_expr_as_i64(e: &ConstExpr) -> Option<i64> {
+    match e {
+        ConstExpr::Literal(Literal {
+            kind: LiteralKind::Integer,
+            raw,
+            ..
+        }) => parse_int_literal(raw).and_then(|v| i64::try_from(v).ok()),
+        ConstExpr::Unary {
+            op: zerodds_idl::ast::UnaryOp::Plus,
+            operand,
+            ..
+        } => const_expr_as_i64(operand),
+        ConstExpr::Unary {
+            op: zerodds_idl::ast::UnaryOp::Minus,
+            operand,
+            ..
+        } => const_expr_as_i64(operand).map(|v| -v),
+        _ => None,
+    }
+}
+
 /// Parser for integer literals (decimal, hex `0x`, octal `0...`).
 fn parse_int_literal(raw: &str) -> Option<u64> {
     let s = raw.trim_end_matches(|c: char| matches!(c, 'l' | 'L' | 'u' | 'U'));
@@ -1358,25 +1554,22 @@ enum Extensibility {
 }
 
 fn struct_extensibility(anns: &[Annotation]) -> Extensibility {
-    if has_named_annotation(anns, "final") {
-        Extensibility::Final
-    } else if has_named_annotation(anns, "mutable") {
-        Extensibility::Mutable
-    } else if has_named_annotation(anns, "appendable") {
-        Extensibility::Appendable
-    } else {
-        // Un-annotated default: FINAL. XTypes 1.3 §7.2.2.4.4 leaves the
-        // extensibility of an un-annotated aggregate implementation-defined
-        // (Fast/Cyclone expose it via -default_extensibility / -x; idlc via
-        // `--default-extensibility`). The canonical zerodds choice — anchored
-        // to the cross-vendor-validated `zerodds-cdr` core and the idl-rust
-        // reference (whose hardcoded default is also Final, see
-        // tools/idlc/src/default_ext.rs) — is FINAL, so a nested un-annotated
-        // `@final` struct/union recurses inline (Plain-CDR2, NO per-element /
-        // per-member DHEADER, §7.4.3.4.1). Only types explicitly annotated
-        // SX2: spec default for an unannotated aggregate is APPENDABLE
-        // (§7.3.3.1); `--default-extensibility final` opts back to no-DHEADER.
-        Extensibility::Appendable
+    // Broad-audit P0-4: read the effective extensibility through the ONE
+    // central normalizer, which honors both the short forms
+    // (`@final`/`@appendable`/`@mutable`) AND the long form
+    // `@extensibility(FINAL|APPENDABLE|MUTABLE)` (XTypes 1.3 §7.3.3). Scanning
+    // only the short forms here silently downgraded `@extensibility(MUTABLE)`
+    // to the default and drifted the C++ wire (PL_CDR/EMHEADER vs DHEADER)
+    // away from Rust/Java/Python.
+    match zerodds_idl::semantics::extensibility_of(anns) {
+        Some(ExtKind::Final) => Extensibility::Final,
+        Some(ExtKind::Mutable) => Extensibility::Mutable,
+        Some(ExtKind::Appendable) => Extensibility::Appendable,
+        // Un-annotated default is APPENDABLE (XTypes 1.3 §7.3.3.1); an
+        // un-annotated aggregate is left implementation-defined by §7.2.2.4.4
+        // and `--default-extensibility` patches an explicit short form onto the
+        // AST before emit, so this fallback is the spec default.
+        None => Extensibility::Appendable,
     }
 }
 
@@ -1553,6 +1746,7 @@ fn emit_topic_type_support_specs(
     opts: &CppGenOptions,
     structs: &[(String, &StructDef)],
     unions: &[(String, &UnionDef)],
+    type_names: &zerodds_idl::semantics::NameMap,
 ) -> Result<(), CppGenError> {
     writeln!(out).map_err(fmt_err)?;
     writeln!(
@@ -1576,27 +1770,56 @@ fn emit_topic_type_support_specs(
     // always sees a complete declaration of it, instead of an implicit
     // instantiation of a not-yet-defined template. Unions are emitted before
     // structs so a struct that splices a union sees the union's declaration.
-    let union_fqn = |fqn: &str| -> String {
+    // Build the C++ FQN used as the `topic_type_support<...>` template argument
+    // (and everywhere that references the type in method bodies). Each
+    // `::`-component of the IDL FQN is reserved-word escaped so it matches the
+    // escaped namespace/class the declaration emits. The RAW `fqn` is passed
+    // separately as `type_name` (the DDS wire type name), which MUST stay the
+    // original IDL FQN — escaping is name-local and must not move the wire.
+    let cpp_fqn = |fqn: &str| -> String {
+        let escaped = fqn
+            .split("::")
+            .map(escape_cpp_ident)
+            .collect::<Vec<_>>()
+            .join("::");
         if user_prefix.is_empty() {
-            format!("::{fqn}")
+            format!("::{escaped}")
         } else {
-            format!("::{user_prefix}::{fqn}")
+            format!("::{user_prefix}::{escaped}")
         }
     };
 
     // Phase 1: declarations.
     for (fqn, u) in unions {
-        emit_union_topic_type_support(out, &union_fqn(fqn), fqn, u, TtsPhase::Decl)?;
+        emit_union_topic_type_support(out, &cpp_fqn(fqn), fqn, u, TtsPhase::Decl)?;
     }
     for (fqn, s) in structs {
-        emit_topic_type_support_for(out, &union_fqn(fqn), fqn, s, TtsPhase::Decl)?;
+        let scope = fqn_module_scope(fqn);
+        emit_topic_type_support_for(
+            out,
+            &cpp_fqn(fqn),
+            fqn,
+            s,
+            &scope,
+            type_names,
+            TtsPhase::Decl,
+        )?;
     }
     // Phase 2: out-of-line definitions.
     for (fqn, u) in unions {
-        emit_union_topic_type_support(out, &union_fqn(fqn), fqn, u, TtsPhase::Def)?;
+        emit_union_topic_type_support(out, &cpp_fqn(fqn), fqn, u, TtsPhase::Def)?;
     }
     for (fqn, s) in structs {
-        emit_topic_type_support_for(out, &union_fqn(fqn), fqn, s, TtsPhase::Def)?;
+        let scope = fqn_module_scope(fqn);
+        emit_topic_type_support_for(
+            out,
+            &cpp_fqn(fqn),
+            fqn,
+            s,
+            &scope,
+            type_names,
+            TtsPhase::Def,
+        )?;
     }
 
     writeln!(out, "}} // namespace topic").map_err(fmt_err)?;
@@ -1614,11 +1837,56 @@ enum TtsPhase {
     Def,
 }
 
-/// Returns true if the member annotations are encode-safe (the codegen
-/// can produce wire bytes). False for `@shared` (heap indirection, not
-/// yet supported). `@optional` is allowed.
-fn member_codegen_supported(m: &Member) -> bool {
-    !has_shared_annotation(&m.annotations)
+/// broad-audit P0-7: rejects the `@shared` shapes this backend does not
+/// serialize LOUDLY (a hard `UnsupportedConstruct`), never a silent skip that
+/// would drop the referenced value from the wire. Plain `@shared` and
+/// `@shared @optional` (both serialized by value, see `emit_shared_encode_ref`)
+/// return `Ok(())`.
+///
+/// `@shared` (XTypes 1.3 §7.3.1.2.1.9) governs only the IN-MEMORY representation
+/// (a shared reference / `std::shared_ptr<T>`); ON THE WIRE the referenced value
+/// is serialized fully by value, byte-identical to the same member WITHOUT
+/// `@shared`. A `@shared` ARRAY declarator (`std::shared_ptr<std::array<…>>`) is
+/// the one shape not wired here — the array element path takes the getter
+/// directly, which a shared_ptr indirection would break.
+fn reject_unsupported_shared(m: &Member, decl: &Declarator) -> Result<(), CppGenError> {
+    if !has_shared_annotation(&m.annotations) {
+        return Ok(());
+    }
+    if matches!(decl, Declarator::Array(_)) {
+        return Err(CppGenError::UnsupportedConstruct {
+            construct: "@shared array member".to_string(),
+            context: Some(escape_cpp_ident(&decl.name().text)),
+        });
+    }
+    Ok(())
+}
+
+/// broad-audit P0-7 (encode side): emit a null-safe `const T&` reference to a
+/// `@shared` member's pointee at `indent` and return the reference identifier for
+/// use as the value-access expression. The referenced value is then serialized by
+/// the ordinary `emit_value_write` / `emit_mutable_value_emit` path — byte-
+/// identical to the same member without `@shared` (XTypes 1.3 §7.3.1.2.1.9: the
+/// wire is by-value; `@shared` is in-memory sharing only). A null `shared_ptr`
+/// serializes as a default-constructed value, matching a default non-`@shared`
+/// member (the `static const` empty is a single per-emission instance).
+fn emit_shared_encode_ref(
+    out: &mut String,
+    ts: &TypeSpec,
+    accessor: &str,
+    indent: &str,
+) -> Result<String, CppGenError> {
+    let cpp_ty = typespec_to_cpp(ts)?;
+    let id = next_nest_id();
+    let empty = format!("zd_shempty{id}");
+    let rf = format!("zd_shref{id}");
+    writeln!(out, "{indent}static const {cpp_ty} {empty}{{}};").map_err(fmt_err)?;
+    writeln!(
+        out,
+        "{indent}const {cpp_ty}& {rf} = {accessor} ? *{accessor} : {empty};"
+    )
+    .map_err(fmt_err)?;
+    Ok(rf)
 }
 
 /// Returns true if a type spec is understood by the XCDR2 codegen.
@@ -1709,10 +1977,13 @@ thread_local! {
     /// `@bit_bound` (XTypes §7.4.5.1). An enum member/element serializes at this
     /// width instead of a fixed int32.
     static ENUM_BYTES: RefCell<BTreeMap<String, u32>> = const { RefCell::new(BTreeMap::new()) };
+    /// Simple struct names used as a `map` key — they receive a generated
+    /// lexicographic `operator<` so `std::map<Struct, _>` compiles.
+    static MAP_KEY_STRUCTS: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
     // Monotonic counter for unique nested-struct decode temp-var names
     // (`zd_ns<N>`), so nested-nested decodes do not shadow each other.
     static NEST_CTR: core::cell::Cell<u32> = const { core::cell::Cell::new(0) };
-    // Struct simple-names currently on the `scoped_struct` analysis stack.
+    // Struct FQNs currently on the `scoped_struct` analysis stack.
     // Self-referential / mutually recursive types (XTypes §7.4.5, e.g.
     // `struct Node { sequence<Node> next; }`) would otherwise loop forever
     // through `scoped_struct` → `typespec_supported` → `scoped_struct` and
@@ -1720,6 +1991,141 @@ thread_local! {
     // NOT inline-encodable, so the member uses the heap/splice path (its own
     // `topic_type_support` encode), which terminates at runtime on the data.
     static VISITING: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
+    /// FQN of every named type (enum/struct/union/typedef/bitmask/bitset). Used
+    /// by `resolve_fqn` to resolve a member's `ScopedName` against the current
+    /// lexical scope to the correct declaration (P0-2).
+    static ALL_TYPES: RefCell<BTreeSet<String>> = const { RefCell::new(BTreeSet::new()) };
+    /// Current lexical module scope during emission (outermost-first, raw IDL
+    /// module names). Maintained by `emit_module` (type-decl walk) and set per
+    /// serializer at the `topic_type_support` emit sites; a reference resolves
+    /// its FQN bottom-up from here, exactly as `resolver.rs` does. Mirrors
+    /// `idl-rust`'s `CURRENT_SCOPE`.
+    static CUR_SCOPE: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+    /// Central const/enum symbol table for the whole spec, built once per
+    /// header by [`build_symbol_table`]. Every collection bound and fixed-array
+    /// dimension is resolved through it (via [`resolve_bound`]) so a bound
+    /// written as `CAP` or `BASE*2` yields its evaluated integer instead of a
+    /// backend-local re-parse that dropped non-literals to `0` (audit P1
+    /// "Const-Eval driftet").
+    static CONST_SYMS: RefCell<zerodds_idl::semantics::SymbolTable> =
+        RefCell::new(zerodds_idl::semantics::SymbolTable::new());
+}
+
+/// Resolves a collection-bound / array-dimension `ConstExpr` to a non-negative
+/// integer through the central evaluator + the spec-wide [`CONST_SYMS`] table.
+/// `None` when the expression is not a resolvable non-negative integer (e.g. a
+/// forward reference or a genuinely symbolic value).
+fn resolve_bound(expr: &ConstExpr) -> Option<u64> {
+    CONST_SYMS.with(|c| zerodds_idl::semantics::eval_bound(expr, &c.borrow()))
+}
+
+/// Renders a bound/array-dimension expression as the C++ integer it evaluates
+/// to (the central resolved value). Falls back to the symbolic C++ spelling
+/// only when the expression does not resolve — the const is then relied upon to
+/// be an in-scope `constexpr`. The literal fast path is value-identical, so
+/// literal bounds keep their existing rendering.
+fn bound_to_cpp(expr: &ConstExpr) -> String {
+    resolve_bound(expr).map_or_else(|| const_expr_to_cpp(expr), |n| n.to_string())
+}
+
+/// FQN (`Mod::Sub::Name`) of a type named `name` declared in module path
+/// `scope` — the raw IDL name used as every registry key (P0-2).
+fn idl_fqn(scope: &[String], name: &str) -> String {
+    if scope.is_empty() {
+        name.to_string()
+    } else {
+        format!("{}::{name}", scope.join("::"))
+    }
+}
+
+/// Snapshot of the current lexical scope.
+fn cur_scope() -> Vec<String> {
+    CUR_SCOPE.with(|c| c.borrow().clone())
+}
+
+/// Sets the current lexical scope (raw IDL module names, outermost-first).
+fn set_scope(scope: &[String]) {
+    CUR_SCOPE.with(|c| *c.borrow_mut() = scope.to_vec());
+}
+
+/// Restores `CUR_SCOPE` on drop — used to switch into a nested type's own module
+/// scope for the duration of an inline (@final) member-body recursion, so the
+/// nested type's members resolve relative to WHERE the nested type is declared,
+/// not the outer reference site.
+struct ScopeGuard(Vec<String>);
+impl Drop for ScopeGuard {
+    fn drop(&mut self) {
+        set_scope(&self.0);
+    }
+}
+
+/// Switches `CUR_SCOPE` to the module scope of the type `sc` resolves to and
+/// returns a guard that restores the previous scope on drop. A no-op switch when
+/// `sc` does not resolve (fallback keeps the outer scope).
+fn enter_ref_scope(sc: &ScopedName) -> ScopeGuard {
+    let prev = cur_scope();
+    if let Some(fqn) = resolve_fqn(sc) {
+        set_scope(&fqn_module_scope(&fqn));
+    }
+    ScopeGuard(prev)
+}
+
+/// Resolves a member's `ScopedName` reference to the FQN of the declaration it
+/// binds to, honouring the current lexical scope (`CUR_SCOPE`) exactly as
+/// `resolver.rs` does: absolute names resolve from the root; relative names
+/// search bottom-up from the current scope. As a safety net, when the scoped
+/// search fails but the name (as a suffix) is UNIQUE across all declared types,
+/// that unique declaration is used — this keeps behaviour identical to the prior
+/// simple-name lookup for every non-colliding IDL while still disambiguating
+/// same-named types by scope (P0-2).
+fn resolve_fqn(s: &ScopedName) -> Option<String> {
+    resolve_fqn_in(s, &cur_scope())
+}
+
+fn resolve_fqn_in(s: &ScopedName, scope: &[String]) -> Option<String> {
+    let parts: Vec<String> = s.parts.iter().map(|p| p.text.clone()).collect();
+    if parts.is_empty() {
+        return None;
+    }
+    ALL_TYPES.with(|set| {
+        let set = set.borrow();
+        if s.absolute {
+            let cand = parts.join("::");
+            return if set.contains(&cand) {
+                Some(cand)
+            } else {
+                None
+            };
+        }
+        // Bottom-up: try `<scope>::<parts>`, then drop the innermost module and
+        // retry, down to the root (§7.5.4).
+        let mut base: Vec<String> = scope.to_vec();
+        loop {
+            let mut cand: Vec<String> = base.clone();
+            cand.extend(parts.iter().cloned());
+            let joined = cand.join("::");
+            if set.contains(&joined) {
+                return Some(joined);
+            }
+            if base.is_empty() {
+                break;
+            }
+            base.pop();
+        }
+        // Fallback: unique suffix match (no scope info needed).
+        let suffix = parts.join("::");
+        let tail = format!("::{suffix}");
+        let mut hit: Option<String> = None;
+        for fqn in set.iter() {
+            if *fqn == suffix || fqn.ends_with(&tail) {
+                if hit.is_some() {
+                    return None; // ambiguous — require real scope resolution
+                }
+                hit = Some(fqn.clone());
+            }
+        }
+        hit
+    })
 }
 
 fn next_nest_id() -> u32 {
@@ -1734,6 +2140,24 @@ fn set_type_registry(spec: &Specification) {
     let mut r = Registry::default();
     let mut scope: Vec<String> = Vec::new();
     collect_type_names(&spec.definitions, &mut scope, &mut r);
+    // Intersect the collected map-key SIMPLE names with the simple names of all
+    // declared structs — only a struct key lacks a built-in `operator<`
+    // (primitives, strings, scoped enums all order natively). `r.structs` holds
+    // FQNs, so compare on the FQN's simple-name tail. `MAP_KEY_STRUCTS` stays
+    // keyed by simple name: it only gates whether a struct gets an `operator<`
+    // (looked up by simple name at the declaration site).
+    let struct_simple: BTreeSet<String> = r
+        .structs
+        .iter()
+        .map(|fqn| fqn.rsplit("::").next().unwrap_or(fqn).to_string())
+        .collect();
+    let key_structs: BTreeSet<String> = r
+        .map_key_names
+        .iter()
+        .filter(|n| struct_simple.contains(*n))
+        .cloned()
+        .collect();
+
     ENUM_NAMES.with(|c| *c.borrow_mut() = r.enums);
     STRUCT_NAMES.with(|c| *c.borrow_mut() = r.structs);
     STRUCT_DEFS.with(|c| *c.borrow_mut() = r.struct_defs);
@@ -1744,10 +2168,21 @@ fn set_type_registry(spec: &Specification) {
     BITHOLDER_BYTES.with(|c| *c.borrow_mut() = r.bitholders);
     ENUM_BYTES.with(|c| *c.borrow_mut() = r.enum_bytes);
     BITSET_NAMES.with(|c| *c.borrow_mut() = r.bitsets);
+    ALL_TYPES.with(|c| *c.borrow_mut() = r.all);
+    MAP_KEY_STRUCTS.with(|c| *c.borrow_mut() = key_structs);
+    // Central const/enum table for bound + array-dimension resolution.
+    CONST_SYMS.with(|c| *c.borrow_mut() = zerodds_idl::semantics::build_symbol_table(spec));
+    // Reset the lexical scope for this header's emission.
+    set_scope(&[]);
 }
 
 #[derive(Default)]
 struct Registry {
+    /// FQN of EVERY named type (enum/struct/union/typedef/bitmask/bitset), so a
+    /// reference's lexical scope can be resolved to the correct declaration even
+    /// when two modules declare the same simple name (P0-2). Keyed identically to
+    /// the per-category maps below.
+    all: BTreeSet<String>,
     enums: BTreeSet<String>,
     structs: BTreeSet<String>,
     struct_defs: BTreeMap<String, StructDef>,
@@ -1761,6 +2196,11 @@ struct Registry {
     /// `@bit_bound` (XTypes 1.3 §7.4.5.1 / §7.3.1.2.1.2): N≤8 → 1, N≤16 → 2,
     /// else 4. Cyclone honours this; the prior fixed-int32 path dropped it.
     enum_bytes: BTreeMap<String, u32>,
+    /// Simple type names that appear as a `map<Key, _>` key. A `std::map` key
+    /// needs `operator<`; user structs have none by default, so a
+    /// `map<Struct, _>` member failed to compile. Structs in this set get a
+    /// generated lexicographic `operator<` (§7.4.2.9 map mapping).
+    map_key_names: BTreeSet<String>,
 }
 
 /// The unsigned C++ holder type for a holder width in bytes.
@@ -1785,13 +2225,20 @@ fn holder_bytes_for_bits(bits: u32) -> u32 {
 }
 
 /// Absolute C++ path `::a::b::Name` for a type named `name` in module `scope`.
+///
+/// Every path component is reserved-word escaped (`class` -> `class_`) so the
+/// absolute reference resolves to the same escaped namespace/class the
+/// declaration emits. This is the reference-site chokepoint: `TYPE_PATHS` is
+/// built from here, so every `scoped_to_cpp` lookup (member-type refs,
+/// base-class refs, nested-struct splices) inherits the escaping. Escaping is
+/// name-local — it never touches the DDS wire type name (see `type_name`).
 fn abs_path(scope: &[String], name: &str) -> String {
     let mut p = String::from("::");
     for s in scope {
-        p.push_str(s);
+        p.push_str(&escape_cpp_ident(s));
         p.push_str("::");
     }
-    p.push_str(name);
+    p.push_str(&escape_cpp_ident(name));
     p
 }
 
@@ -1805,9 +2252,14 @@ fn collect_type_names(defs: &[Definition], scope: &mut Vec<String>, r: &mut Regi
                 scope.pop();
             }
             Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Enum(e))) => {
-                r.enums.insert(e.name.text.clone());
-                r.paths
-                    .insert(e.name.text.clone(), abs_path(scope, &e.name.text));
+                // P0-2: every registry key is the fully-qualified IDL name
+                // (`Mod::Sub::Type`), NOT the simple name — two same-named types in
+                // different modules must NOT collide/overwrite. References resolve
+                // their lexical scope to an FQN (see `resolve_fqn`).
+                let fqn = idl_fqn(scope, &e.name.text);
+                r.enums.insert(fqn.clone());
+                r.all.insert(fqn.clone());
+                r.paths.insert(fqn.clone(), abs_path(scope, &e.name.text));
                 // @bit_bound → signed wire holder width (default 32 → 4 bytes).
                 let bound = find_uint_annotation(&e.annotations, "bit_bound")
                     .filter(|&v| (1..=32).contains(&v))
@@ -1819,28 +2271,39 @@ fn collect_type_names(defs: &[Definition], scope: &mut Vec<String>, r: &mut Regi
                 } else {
                     4
                 };
-                r.enum_bytes.insert(e.name.text.clone(), bytes);
+                r.enum_bytes.insert(fqn, bytes);
             }
             Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Struct(StructDcl::Def(s)))) => {
-                r.structs.insert(s.name.text.clone());
-                r.struct_defs.insert(s.name.text.clone(), s.clone());
-                r.paths
-                    .insert(s.name.text.clone(), abs_path(scope, &s.name.text));
+                let fqn = idl_fqn(scope, &s.name.text);
+                r.structs.insert(fqn.clone());
+                r.all.insert(fqn.clone());
+                r.struct_defs.insert(fqn.clone(), s.clone());
+                r.paths.insert(fqn, abs_path(scope, &s.name.text));
+                for m in &s.members {
+                    collect_map_key_names(&m.type_spec, &mut r.map_key_names);
+                }
             }
             Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Union(UnionDcl::Def(u)))) => {
                 // Bug R3: register unions so a union-typed struct member is
                 // classified + spliced (not dropped from the wire).
-                r.unions.insert(u.name.text.clone());
-                r.union_defs.insert(u.name.text.clone(), u.clone());
-                r.paths
-                    .insert(u.name.text.clone(), abs_path(scope, &u.name.text));
+                let fqn = idl_fqn(scope, &u.name.text);
+                r.unions.insert(fqn.clone());
+                r.all.insert(fqn.clone());
+                r.union_defs.insert(fqn.clone(), u.clone());
+                r.paths.insert(fqn, abs_path(scope, &u.name.text));
+                for c in &u.cases {
+                    collect_map_key_names(&c.element.type_spec, &mut r.map_key_names);
+                }
             }
             Definition::Type(TypeDecl::Typedef(td)) => {
                 for decl in &td.declarators {
                     if let Declarator::Simple(n) = decl {
-                        r.typedefs.insert(n.text.clone(), td.type_spec.clone());
+                        let fqn = idl_fqn(scope, &n.text);
+                        r.typedefs.insert(fqn.clone(), td.type_spec.clone());
+                        r.all.insert(fqn);
                     }
                 }
+                collect_map_key_names(&td.type_spec, &mut r.map_key_names);
             }
             Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Bitmask(b))) => {
                 // Holder bits = explicit `@bit_bound`, else the spec DEFAULT of 32
@@ -1848,27 +2311,51 @@ fn collect_type_names(defs: &[Definition], scope: &mut Vec<String>, r: &mut Regi
                 // `@bit_bound` defaults to @bit_bound=32 → a UInt32 (4-byte) holder,
                 // NOT a width sized to the value count. Cross-vendor-validated
                 // against the Rust reference (`bitmask_bit_bound`).
+                let fqn = idl_fqn(scope, &b.name.text);
                 let bits = find_uint_annotation(&b.annotations, "bit_bound").unwrap_or(32);
                 r.bitholders
-                    .insert(b.name.text.clone(), holder_bytes_for_bits(bits));
-                r.paths
-                    .insert(b.name.text.clone(), abs_path(scope, &b.name.text));
+                    .insert(fqn.clone(), holder_bytes_for_bits(bits));
+                r.all.insert(fqn.clone());
+                r.paths.insert(fqn, abs_path(scope, &b.name.text));
             }
             Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Bitset(b))) => {
                 // Holder bits = sum of all bitfield widths (cdr-core ref).
+                let fqn = idl_fqn(scope, &b.name.text);
                 let total: u32 = b
                     .bitfields
                     .iter()
                     .filter_map(|f| const_expr_to_u32(&f.spec.width))
                     .sum();
                 r.bitholders
-                    .insert(b.name.text.clone(), holder_bytes_for_bits(total));
-                r.bitsets.insert(b.name.text.clone());
-                r.paths
-                    .insert(b.name.text.clone(), abs_path(scope, &b.name.text));
+                    .insert(fqn.clone(), holder_bytes_for_bits(total));
+                r.bitsets.insert(fqn.clone());
+                r.all.insert(fqn.clone());
+                r.paths.insert(fqn, abs_path(scope, &b.name.text));
             }
             _ => {}
         }
+    }
+}
+
+/// Records the simple name of every `map<Key, _>` key that is a scoped
+/// (user-defined) type, recursing through sequences, nested maps and the map
+/// value. A scoped key that turns out to be a struct gets a generated
+/// `operator<` (see `set_type_registry`); enum/typedef/primitive keys need
+/// none and are filtered out later.
+/// zerodds-lint: recursion-depth 64 (bounded by IDL nesting)
+fn collect_map_key_names(ts: &TypeSpec, out: &mut BTreeSet<String>) {
+    match ts {
+        TypeSpec::Sequence(s) => collect_map_key_names(&s.elem, out),
+        TypeSpec::Map(m) => {
+            if let TypeSpec::Scoped(key) = m.key.as_ref() {
+                if let Some(last) = key.parts.last() {
+                    out.insert(last.text.clone());
+                }
+            }
+            collect_map_key_names(&m.key, out);
+            collect_map_key_names(&m.value, out);
+        }
+        _ => {}
     }
 }
 
@@ -1878,13 +2365,19 @@ fn collect_type_names(defs: &[Definition], scope: &mut Vec<String>, r: &mut Regi
 /// zerodds-lint: recursion-depth 16
 fn resolve_typedef_spec(ts: &TypeSpec) -> TypeSpec {
     let mut cur = ts.clone();
+    let mut scope = cur_scope();
     for _ in 0..16 {
         let TypeSpec::Scoped(s) = &cur else { break };
-        let Some(last) = s.parts.last() else { break };
-        let Some(aliased) = TYPEDEF_MAP.with(|r| r.borrow().get(&last.text).cloned()) else {
+        // Resolve the alias name in ITS lexical scope; a typedef declared in
+        // another module aliases a type resolved relative to that module.
+        let Some(fqn) = resolve_fqn_in(s, &scope) else {
+            break;
+        };
+        let Some(aliased) = TYPEDEF_MAP.with(|r| r.borrow().get(&fqn).cloned()) else {
             break;
         };
         cur = aliased;
+        scope = fqn_module_scope(&fqn);
     }
     cur
 }
@@ -1898,12 +2391,162 @@ fn normalize_member(m: &Member) -> Member {
     m2
 }
 
+/// Raw struct-def lookup by scoped name, with NO gate on whether every one
+/// of the struct's members is codecable by the *general* XCDR2 encoder
+/// (unlike `scoped_struct`, which requires that — see `all_encodable`). The
+/// KeyHash-specific walker (`emit_key_value_write`) dealiases and expands
+/// independently of the general encoder, so a nested struct that the general
+/// encoder cannot fully encode (e.g. because one of ITS members is a typedef
+/// alias) can still be found and expanded here.
+fn struct_def_raw(s: &ScopedName) -> Option<StructDef> {
+    let fqn = resolve_fqn(s)?;
+    STRUCT_DEFS.with(|r| r.borrow().get(&fqn).cloned())
+}
+
+/// Sorts `members` into ascending member-id order (explicit `@id(N)`, else
+/// positional index within `members`) — XTypes 1.3 §7.6.8.3.1.b / the same
+/// convention `@mutable` EMHEADER member-id assignment uses elsewhere in this
+/// file (see `find_uint_annotation(&m.annotations, "id")` at the `@mutable`
+/// emit sites).
+fn sort_members_by_id<'a>(members: &[&'a Member]) -> Vec<&'a Member> {
+    let mut ordered: Vec<(u32, &Member)> = members
+        .iter()
+        .enumerate()
+        .map(|(idx, m)| {
+            (
+                find_uint_annotation(&m.annotations, "id").unwrap_or(idx as u32),
+                *m,
+            )
+        })
+        .collect();
+    ordered.sort_by_key(|(id, _)| *id);
+    ordered.into_iter().map(|(_, m)| m).collect()
+}
+
+/// Raw IDL source spelling of a member's first declarator — the string the
+/// `@autoid(HASH)` / `@hashid` member-id derivation hashes (P0-3). Never the
+/// C++-escaped identifier: the NameHash is computed over the wire name.
+fn member_raw_name(m: &Member) -> &str {
+    m.declarators.first().map_or("", |d| d.name().text.as_str())
+}
+
+/// Resolved wire member-IDs of `s`, one per wire member (in
+/// [`resolved_wire_members`] order), via the ONE central resolver in the
+/// semantic layer (broad-audit P0-3:
+/// `zerodds_idl::semantics::member_id::resolved_member_id`). The C++ backend no
+/// longer re-derives `@autoid(HASH)` / `@hashid` with a positional counter — it
+/// consumes the same NameHash derivation the TypeObject builder and idl-rust
+/// use, so the EMHEADER (XCDR2) / PID (XCDR1) member ids for hashed members are
+/// byte-identical to the member ids the TypeObject / descriptor carry.
+///
+/// The SEQUENTIAL fallback keeps the running-counter semantics the C++ wire
+/// vectors are gated on (XTypes 1.3 §7.3.1.2.1 / Cyclone-confirmed): an explicit
+/// `@id(n)` advances the auto-id counter to `n+1`, so the next un-annotated
+/// member is `n+1` — not its positional index. The counter steps one slot per
+/// declarator, so a later member keeps its id whether or not codegen emits it
+/// (encode + decode consume this same list, staying in lockstep).
+fn resolved_member_ids(s: &StructDef) -> Vec<u32> {
+    let autoid_hash = zerodds_idl::semantics::member_id::container_autoid_hash(&s.annotations);
+    let mut next: u32 = 0;
+    resolved_wire_members(s)
+        .iter()
+        .map(|m| {
+            let base_id = zerodds_idl::semantics::member_id::resolved_member_id(
+                autoid_hash,
+                &m.annotations,
+                member_raw_name(m),
+                next,
+            );
+            // Advance the auto-id counter past this member's declarator slots
+            // (mirrors the historical `next_id = this_id + 1` per declarator).
+            next = base_id + m.declarators.len() as u32;
+            base_id
+        })
+        .collect()
+}
+
+/// KeyHash-specific value writer (XTypes 1.3 §7.6.8). Recurses through
+/// typedef alias chains (dealiasing independently of the general encoder's
+/// `typespec_supported`/`scoped_struct` gate — FINDING: a nested struct
+/// whose own member was a typedef used to make the ENTIRE outer `@key`
+/// member vanish from the KeyHash, worse than the over-inclusion bug below).
+///
+/// For a member whose (dealiased) type is a nested struct, expands to that
+/// struct's own `@key` subset (or ALL its members if it declares none —
+/// XTypes 1.3 §7.6.8: a keyless aggregate is keyed in full), in member-id
+/// order, regardless of the struct's own extensibility: a KeyHolder is
+/// always the FLAT concatenation of key bytes, never DHEADER-framed, even
+/// when the general (non-key) encoder would splice an @appendable/@mutable
+/// nested struct's own framed encode.
+///
+/// Falls back to the generic `emit_value_write` for primitives, strings,
+/// enums, unions, bitholders — the investigation found those already
+/// correct via the existing generic per-field encoder.
+/// zerodds-lint: recursion-depth 16
+fn emit_key_value_write(
+    out: &mut String,
+    ts: &TypeSpec,
+    access: &str,
+    endian: &str,
+    origin: &str,
+) -> Result<(), CppGenError> {
+    if let TypeSpec::Scoped(s) = ts {
+        let resolved = resolve_typedef_spec(ts);
+        if resolved != *ts {
+            return emit_key_value_write(out, &resolved, access, endian, origin);
+        }
+        if let Some(def) = struct_def_raw(s) {
+            // Recurse into the nested struct's key members in ITS module scope
+            // (P0-2): `struct_def_raw` resolved `s` in the outer scope above.
+            let _sg = enter_ref_scope(s);
+            let nested_keys: Vec<&Member> = def
+                .members
+                .iter()
+                .filter(|m| has_key_annotation(&m.annotations))
+                .collect();
+            let effective: Vec<&Member> = if nested_keys.is_empty() {
+                def.members.iter().collect()
+            } else {
+                nested_keys
+            };
+            for m in sort_members_by_id(&effective) {
+                for decl in &m.declarators {
+                    let field = &decl.name().text;
+                    if matches!(decl, Declarator::Array(_)) {
+                        // Loud codegen error, not a silent skip: dropping the
+                        // field from the KeyHash would silently under-encode
+                        // the KeyHolder (same class of bug this function
+                        // exists to fix). Matches the other 12 backends'
+                        // identical rejection of an array field inside a
+                        // nested-struct @key (e.g. `idl-rust`'s
+                        // `emit_key_field_write`, `idl-go`'s
+                        // `emit_key_struct_member`).
+                        return Err(CppGenError::UnsupportedConstruct {
+                            construct: "array field inside a nested-struct @key".to_string(),
+                            context: Some(field.clone()),
+                        });
+                    }
+                    emit_key_value_write(
+                        out,
+                        &m.type_spec,
+                        &format!("{access}.{}()", escape_cpp_ident(field)),
+                        endian,
+                        origin,
+                    )?;
+                }
+            }
+            return Ok(());
+        }
+    }
+    emit_value_write(out, ts, access, endian, origin, "    ")
+}
+
 /// If `s` resolves to a union, return its [`UnionDef`]. A union member is wired
 /// (Bug R3) via the union's own DHEADER-framed `topic_type_support<Union>`
 /// encode/decode (splice path, identical to an `@appendable` nested struct).
 fn scoped_union(s: &ScopedName) -> Option<UnionDef> {
-    let last = s.parts.last()?.text.clone();
-    UNION_DEFS.with(|r| r.borrow().get(&last).cloned())
+    let fqn = resolve_fqn(s)?;
+    UNION_DEFS.with(|r| r.borrow().get(&fqn).cloned())
 }
 
 /// If `s` names a registered bitmask or bitset, return its holder width in
@@ -1912,18 +2555,18 @@ fn scoped_union(s: &ScopedName) -> Option<UnionDef> {
 /// loss). The struct exposes `enum class : uintN` (bitmask) or `struct{ uint64_t
 /// value; }` (bitset); both narrow to the holder width on the wire.
 fn scoped_bitholder(s: &ScopedName) -> Option<u32> {
-    let last = s.parts.last()?.text.clone();
-    BITHOLDER_BYTES.with(|r| r.borrow().get(&last).copied())
+    let fqn = resolve_fqn(s)?;
+    BITHOLDER_BYTES.with(|r| r.borrow().get(&fqn).copied())
 }
 
 /// Signed wire holder width in BYTES (1/2/4) of an enum named by `s`, from its
 /// `@bit_bound` (XTypes §7.4.5.1). Defaults to 4 for an unregistered name.
 fn scoped_enum_bytes(s: &ScopedName) -> u32 {
-    let Some(last) = s.parts.last().map(|p| p.text.clone()) else {
+    let Some(fqn) = resolve_fqn(s) else {
         return 4;
     };
     ENUM_BYTES
-        .with(|r| r.borrow().get(&last).copied())
+        .with(|r| r.borrow().get(&fqn).copied())
         .unwrap_or(4)
 }
 
@@ -1939,19 +2582,21 @@ fn enum_wire_ctype(bytes: u32) -> &'static str {
 /// `true` if `s` names a registered bitset (struct holder), vs a bitmask
 /// (enum-class holder). Drives `.value` access vs an enum-class cast.
 fn scoped_is_bitset(s: &ScopedName) -> bool {
-    let Some(last) = s.parts.last().map(|p| p.text.clone()) else {
+    let Some(fqn) = resolve_fqn(s) else {
         return false;
     };
-    BITSET_NAMES.with(|r| r.borrow().contains(&last))
+    BITSET_NAMES.with(|r| r.borrow().contains(&fqn))
 }
 
 /// `true` if `s` (a member's scoped type name) unambiguously names an enum.
 fn scoped_is_enum(s: &ScopedName) -> bool {
-    let Some(last) = s.parts.last().map(|p| p.text.clone()) else {
+    let Some(fqn) = resolve_fqn(s) else {
         return false;
     };
-    let is_enum = ENUM_NAMES.with(|r| r.borrow().contains(&last));
-    let is_struct = STRUCT_NAMES.with(|r| r.borrow().contains(&last));
+    // With FQN keys a name binds to exactly one declaration; the `!is_struct`
+    // guard is kept for safety against the fallback suffix match.
+    let is_enum = ENUM_NAMES.with(|r| r.borrow().contains(&fqn));
+    let is_struct = STRUCT_NAMES.with(|r| r.borrow().contains(&fqn));
     is_enum && !is_struct
 }
 
@@ -1981,9 +2626,9 @@ fn scoped_final_struct(s: &ScopedName) -> Option<StructDef> {
 ///
 /// zerodds-lint: recursion-depth 64 (via typespec_supported; bounded by IDL nesting)
 fn scoped_struct(s: &ScopedName) -> Option<(StructDef, Extensibility)> {
-    let last = s.parts.last()?.text.clone();
-    let def = STRUCT_DEFS.with(|r| r.borrow().get(&last).cloned())?;
-    let ext = effective_extensibility(&last, &def.annotations);
+    let fqn = resolve_fqn(s)?;
+    let def = STRUCT_DEFS.with(|r| r.borrow().get(&fqn).cloned())?;
+    let ext = effective_extensibility(&fqn, &def.annotations);
     // Cycle guard: a recursive type (directly or mutually recursive, XTypes
     // §7.4.5 — e.g. `struct Node { sequence<Node> next; }`) would otherwise loop
     // forever through `scoped_struct` → `typespec_supported` → `scoped_struct`
@@ -1993,25 +2638,77 @@ fn scoped_struct(s: &ScopedName) -> Option<(StructDef, Extensibility)> {
     // routes it through the splice path (its own `topic_type_support`
     // encode/decode, length-delimited by a DHEADER), which terminates at runtime
     // on the data — no inline expansion, no member dropped (no wire data loss).
-    if VISITING.with(|v| v.borrow().contains(&last)) {
+    if VISITING.with(|v| v.borrow().contains(&fqn)) {
         return Some((def, ext));
     }
     VISITING.with(|v| {
-        v.borrow_mut().insert(last.clone());
+        v.borrow_mut().insert(fqn.clone());
     });
+    // The struct's members reference types relative to the struct's OWN module
+    // scope, not the reference site's — switch `CUR_SCOPE` for the walk (P0-2).
+    let prev = cur_scope();
+    set_scope(&fqn_module_scope(&fqn));
     let all_encodable = def.members.iter().all(|m| {
         m.declarators.len() == 1
             && matches!(m.declarators.first(), Some(Declarator::Simple(_)))
             && typespec_supported(&m.type_spec)
     });
+    set_scope(&prev);
     VISITING.with(|v| {
-        v.borrow_mut().remove(&last);
+        v.borrow_mut().remove(&fqn);
     });
     if all_encodable {
         Some((def, ext))
     } else {
         None
     }
+}
+
+/// Fully-resolved wire member list for a struct: base-class members FIRST
+/// (recursive, multi-level), then the struct's own members. XTypes inheritance
+/// (§7.4.3.4.1) places base members before derived members on the wire; the
+/// codec (encode/decode/key_hash) must serialize them in that order. The C++
+/// class inherits base accessors (`class Derived : public Base`), so a base
+/// member's `zd_v.<name>()` resolves through inheritance. Base resolution uses
+/// the global `STRUCT_DEFS` registry keyed by simple name; a cycle guard bounds
+/// pathological inheritance loops.
+fn resolved_wire_members(s: &StructDef) -> Vec<Member> {
+    let mut chain: Vec<StructDef> = Vec::new();
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    let mut cur = s.base.clone();
+    // Base classes resolve relative to each struct's own module scope; start from
+    // the current lexical scope (set by the caller to `s`'s module).
+    let mut scope = cur_scope();
+    while let Some(bn) = cur {
+        let Some(fqn) = resolve_fqn_in(&bn, &scope) else {
+            break;
+        };
+        if !seen.insert(fqn.clone()) {
+            break;
+        }
+        let Some(def) = STRUCT_DEFS.with(|r| r.borrow().get(&fqn).cloned()) else {
+            break;
+        };
+        scope = fqn_module_scope(&fqn);
+        cur = def.base.clone();
+        chain.push(def);
+    }
+    // `chain` is [parent, grandparent, …]; reverse so the oldest ancestor's
+    // members lead, then each descendant's, then the struct's own members.
+    let mut out: Vec<Member> = Vec::new();
+    for def in chain.into_iter().rev() {
+        out.extend(def.members.iter().cloned());
+    }
+    out.extend(s.members.iter().cloned());
+    // Broad-audit P0-5 (#2): a `@non_serialized` member (XTypes 1.3 §7.2.4.4.2)
+    // keeps its in-memory C++ field/accessor (emitted from the raw `s.members`)
+    // but is removed from EVERY wire path — encode, decode, and the parallel
+    // `resolved_member_ids` all consume THIS list, so they stay in lockstep and
+    // the sequential auto-id counter compacts over the survivors (matching the
+    // TypeObject builder). On decode the field simply keeps its
+    // default-constructed value, since nothing reads it off the wire.
+    out.retain(|m| !zerodds_idl::semantics::annotations::member_is_non_serialized(&m.annotations));
+    out
 }
 
 /// Declared extensibility of a struct, coerced to `@appendable` when the struct
@@ -2042,34 +2739,50 @@ fn struct_is_recursive(root: &str) -> bool {
     };
     let mut visited = BTreeSet::new();
     visited.insert(root.to_string());
+    let scope = fqn_module_scope(root);
     def.members
         .iter()
-        .any(|m| type_reaches(root, &m.type_spec, &mut visited))
+        .any(|m| type_reaches(root, &m.type_spec, &scope, &mut visited))
 }
 
 /// zerodds-lint: recursion-depth 64 (member-graph walk; bounded by `visited`)
-fn type_reaches(target: &str, ts: &TypeSpec, visited: &mut BTreeSet<String>) -> bool {
-    match resolve_typedef_spec(ts) {
+/// `target` and the `visited` set are FQNs; `scope` is the module scope of the
+/// struct whose members are currently walked, so a relative member reference
+/// resolves to the correct declaration (P0-2).
+fn type_reaches(
+    target: &str,
+    ts: &TypeSpec,
+    scope: &[String],
+    visited: &mut BTreeSet<String>,
+) -> bool {
+    // Resolve typedef aliases relative to the current scope.
+    let prev = cur_scope();
+    set_scope(scope);
+    let resolved = resolve_typedef_spec(ts);
+    set_scope(&prev);
+    match resolved {
         TypeSpec::Scoped(s) => {
-            let Some(name) = s.parts.last().map(|p| p.text.clone()) else {
+            let Some(fqn) = resolve_fqn_in(&s, scope) else {
                 return false;
             };
-            if name == target {
+            if fqn == target {
                 return true;
             }
-            if !visited.insert(name.clone()) {
+            if !visited.insert(fqn.clone()) {
                 return false;
             }
-            let Some(def) = STRUCT_DEFS.with(|r| r.borrow().get(&name).cloned()) else {
+            let Some(def) = STRUCT_DEFS.with(|r| r.borrow().get(&fqn).cloned()) else {
                 return false;
             };
+            let inner = fqn_module_scope(&fqn);
             def.members
                 .iter()
-                .any(|m| type_reaches(target, &m.type_spec, visited))
+                .any(|m| type_reaches(target, &m.type_spec, &inner, visited))
         }
-        TypeSpec::Sequence(seq) => type_reaches(target, &seq.elem, visited),
+        TypeSpec::Sequence(seq) => type_reaches(target, &seq.elem, scope, visited),
         TypeSpec::Map(m) => {
-            type_reaches(target, &m.key, visited) || type_reaches(target, &m.value, visited)
+            type_reaches(target, &m.key, scope, visited)
+                || type_reaches(target, &m.value, scope, visited)
         }
         _ => false,
     }
@@ -2080,13 +2793,22 @@ fn emit_topic_type_support_for(
     cpp_fqn: &str,
     type_name: &str,
     s: &StructDef,
+    scope: &[String],
+    type_names: &zerodds_idl::semantics::NameMap,
     phase: TtsPhase,
 ) -> Result<(), CppGenError> {
+    // Every member/base reference in this struct's serializer resolves relative
+    // to the struct's own module scope (P0-2).
+    let _sg = ScopeGuard(cur_scope());
+    set_scope(scope);
     // Coerced ext: a `@final` recursive type is promoted to `@appendable` here
     // too, so its standalone serializer writes the same DHEADER the splice-decode
-    // at every reference site reads back (see `effective_extensibility`).
-    let ext = effective_extensibility(&s.name.text, &s.annotations);
-    let is_keyed = s.members.iter().any(|m| has_key_annotation(&m.annotations));
+    // at every reference site reads back (see `effective_extensibility`). The
+    // struct's FQN (== `type_name`) keys the recursion analysis.
+    let ext = effective_extensibility(type_name, &s.annotations);
+    let is_keyed = resolved_wire_members(s)
+        .iter()
+        .any(|m| has_key_annotation(&m.annotations));
 
     if phase == TtsPhase::Decl {
         writeln!(out, "template <>").map_err(fmt_err)?;
@@ -2112,6 +2834,10 @@ fn emit_topic_type_support_for(
             "    static constexpr ::dds::topic::core::policy::DataRepresentationKind extensibility() {{ return ::dds::topic::core::policy::DataRepresentationKind::{ext_lit}; }}"
         )
         .map_err(fmt_err)?;
+        // F-TYPES-3 / #24: serialized COMPLETE TypeObject accessor — the bytes
+        // `zerodds::TypedWriter/Reader` hand to `zerodds_*_create_typed`.
+        writeln!(out, "    static const uint8_t* type_object();").map_err(fmt_err)?;
+        writeln!(out, "    static uintptr_t type_object_len();").map_err(fmt_err)?;
         // method signatures only.
         emit_encode_fn(out, cpp_fqn, s, ext, /*be=*/ false, TtsPhase::Decl)?;
         emit_encode_fn(out, cpp_fqn, s, ext, /*be=*/ true, TtsPhase::Decl)?;
@@ -2123,6 +2849,8 @@ fn emit_topic_type_support_for(
     }
 
     // Def phase: out-of-line bodies.
+    // F-TYPES-3 / #24: TypeObject byte constant + accessors.
+    emit_type_object_fns(out, cpp_fqn, s, scope, type_names)?;
     // encode (LE)
     emit_encode_fn(out, cpp_fqn, s, ext, /*be=*/ false, TtsPhase::Def)?;
     // encode_be (BE)
@@ -2132,6 +2860,76 @@ fn emit_topic_type_support_for(
     // key_hash (BE Plain-CDR2 of @key members + MD5)
     emit_key_hash_fn(out, cpp_fqn, s, is_keyed, TtsPhase::Def)?;
     writeln!(out).map_err(fmt_err)?;
+    Ok(())
+}
+
+/// Module-path scope (outermost-first, type name dropped) of a fully-qualified
+/// `Module::Inner::Type` name — the scope `map_type_spec_resolved` needs for
+/// innermost-first relative member-type resolution (mirrors `idl-rust`'s
+/// `CURRENT_SCOPE`).
+fn fqn_module_scope(fqn: &str) -> Vec<String> {
+    let mut parts: Vec<String> = fqn.split("::").map(|p| p.to_string()).collect();
+    parts.pop(); // drop the type's own simple name
+    parts
+}
+
+/// F-TYPES-3 / #24: emits `topic_type_support<T>::type_object()` /
+/// `type_object_len()` out-of-line. The body carries the COMPLETE `TypeObject`
+/// serialized (XCDR-LE) by the SHARED
+/// `zerodds_idl::semantics::complete_struct_type_object_bytes` — the SAME source
+/// `idl-rust`'s `TYPE_IDENTIFIER` codegen uses, so the two bindings emit
+/// byte-identical bytes (and thus the identical `TypeIdentifier`).
+///
+/// A struct whose members cannot all be resolved (a `fixed`/`any` member, or a
+/// scoped reference absent from the registry) emits an empty accessor
+/// (`nullptr` / `0`); `zerodds::TypedWriter` then falls back to the
+/// byte-oriented create — the pre-#24 behavior, never a codegen failure.
+fn emit_type_object_fns(
+    out: &mut String,
+    cpp_fqn: &str,
+    s: &StructDef,
+    scope: &[String],
+    type_names: &zerodds_idl::semantics::NameMap,
+) -> Result<(), CppGenError> {
+    let bytes =
+        zerodds_idl::semantics::complete_struct_type_object_bytes(s, scope, type_names).ok();
+    match bytes {
+        Some(bytes) if !bytes.is_empty() => {
+            writeln!(
+                out,
+                "inline const uint8_t* topic_type_support<{cpp_fqn}>::type_object() {{"
+            )
+            .map_err(fmt_err)?;
+            write!(out, "    static const uint8_t ZD_TYPE_OBJECT[] = {{").map_err(fmt_err)?;
+            for (i, b) in bytes.iter().enumerate() {
+                if i % 12 == 0 {
+                    write!(out, "\n        ").map_err(fmt_err)?;
+                }
+                write!(out, "0x{b:02x}, ").map_err(fmt_err)?;
+            }
+            writeln!(out, "\n    }};").map_err(fmt_err)?;
+            writeln!(out, "    return ZD_TYPE_OBJECT;").map_err(fmt_err)?;
+            writeln!(out, "}}").map_err(fmt_err)?;
+            writeln!(
+                out,
+                "inline uintptr_t topic_type_support<{cpp_fqn}>::type_object_len() {{ return {}; }}",
+                bytes.len()
+            )
+            .map_err(fmt_err)?;
+        }
+        _ => {
+            writeln!(
+                out,
+                "inline const uint8_t* topic_type_support<{cpp_fqn}>::type_object() {{ return nullptr; }}"
+            )
+            .map_err(fmt_err)?;
+            writeln!(
+                out,
+                "inline uintptr_t topic_type_support<{cpp_fqn}>::type_object_len() {{ return 0; }}"
+            )
+            .map_err(fmt_err)?;
+        }
+    }
     Ok(())
 }
 
@@ -2158,6 +2956,10 @@ fn emit_union_topic_type_support(
     u: &UnionDef,
     phase: TtsPhase,
 ) -> Result<(), CppGenError> {
+    // The discriminator + every case type reference resolves relative to the
+    // union's own module scope (P0-2). `type_name` is the union's raw IDL FQN.
+    let _sg = ScopeGuard(cur_scope());
+    set_scope(&fqn_module_scope(type_name));
     let disc_ts = switch_type_spec(&u.switch_type);
     let disc_cpp = switch_type_to_cpp(&u.switch_type)?;
     // A union honours its extensibility just like a struct (XTypes §7.4.4.5):
@@ -2219,6 +3021,20 @@ fn emit_union_topic_type_support(
         writeln!(
             out,
             "    static std::array<uint8_t, 16> key_hash(const {cpp_fqn}& zd_v);"
+        )
+        .map_err(fmt_err)?;
+        // F-TYPES-3 / #24: union TypeObject lowering is not part of the shared
+        // struct builder yet, so the accessor is an empty stub — a union topic's
+        // `zerodds::TypedWriter` falls back to the byte-oriented create. Present
+        // for trait uniformity so `traits::type_object()` compiles for any T.
+        writeln!(
+            out,
+            "    static const uint8_t* type_object() {{ return nullptr; }}"
+        )
+        .map_err(fmt_err)?;
+        writeln!(
+            out,
+            "    static uintptr_t type_object_len() {{ return 0; }}"
         )
         .map_err(fmt_err)?;
         writeln!(out, "}};").map_err(fmt_err)?;
@@ -2376,7 +3192,9 @@ fn render_case_label(expr: &ConstExpr, enum_switch: bool, disc_cpp: &str) -> Str
     if enum_switch {
         if let ConstExpr::Scoped(s) = expr {
             if s.parts.len() == 1 {
-                return format!("{disc_cpp}::{}", s.parts[0].text);
+                // Escape the bare enumerator so a reserved-word label
+                // (`delete` -> `delete_`) matches the escaped `enum class`.
+                return format!("{disc_cpp}::{}", escape_cpp_ident(&s.parts[0].text));
             }
         }
     }
@@ -2593,7 +3411,7 @@ fn emit_encode_fn(
             // origin = 0.
             writeln!(out, "        const size_t zd_origin = 0;").map_err(fmt_err)?;
             writeln!(out, "        (void)zd_origin;").map_err(fmt_err)?;
-            for m in &s.members {
+            for m in &resolved_wire_members(s) {
                 emit_plain_member_encode(out, m, endian_suffix, "zd_origin")?;
             }
         }
@@ -2616,7 +3434,7 @@ fn emit_encode_fn(
             .map_err(fmt_err)?;
             writeln!(out, "        const size_t zd_origin = zd_out.size();").map_err(fmt_err)?;
             writeln!(out, "        (void)zd_origin;").map_err(fmt_err)?;
-            for m in &s.members {
+            for m in &resolved_wire_members(s) {
                 emit_plain_member_encode(out, m, endian_suffix, "zd_origin")?;
             }
             writeln!(
@@ -2635,9 +3453,8 @@ fn emit_encode_fn(
                 "        if (zd_repr == ::dds::topic::xcdr2::XcdrVersion::Xcdr1) {{"
             )
             .map_err(fmt_err)?;
-            let mut zd_pl_id = 0u32;
-            for m in &s.members {
-                emit_pl_cdr1_member_encode(out, m, &mut zd_pl_id, endian_suffix)?;
+            for (m, id) in resolved_wire_members(s).iter().zip(resolved_member_ids(s)) {
+                emit_pl_cdr1_member_encode(out, m, id, endian_suffix)?;
             }
             writeln!(
                 out,
@@ -2652,9 +3469,8 @@ fn emit_encode_fn(
             .map_err(fmt_err)?;
             writeln!(out, "        const size_t zd_origin = zd_scope.origin;").map_err(fmt_err)?;
             writeln!(out, "        (void)zd_origin;").map_err(fmt_err)?;
-            let mut zd_next_id = 0u32;
-            for m in &s.members {
-                emit_mutable_member_encode(out, m, endian_suffix, &mut zd_next_id)?;
+            for (m, id) in resolved_wire_members(s).iter().zip(resolved_member_ids(s)) {
+                emit_mutable_member_encode(out, m, endian_suffix, id)?;
             }
             writeln!(
                 out,
@@ -2670,6 +3486,182 @@ fn emit_encode_fn(
     Ok(())
 }
 
+/// Emit the XCDR array BODY (element bytes, WITHOUT any per-member EMHEADER/PID
+/// framing) for one array declarator, reading from the C++ getter `access` and
+/// aligning relative to `origin`. Shared by the @final/@appendable plain path
+/// and the @mutable EMHEADER (XCDR2) / PL_CDR1 (XCDR1) paths (broad-audit P0-6).
+/// Returns `false` for an array shape this backend does not yet emit (the caller
+/// decides between a skip comment (plain) and a hard error (mutable)).
+///
+/// Layout (XTypes 1.3 §7.4.3.5): a primitive array (PARRAY) — 1-D or multi-dim —
+/// is tight-packed with NO collection DHEADER; a 1-D leaf `string`/`wstring`
+/// array likewise; an array of non-primitive elements (enum/struct/union, any
+/// dims; string only for >=2-D) is one collection DHEADER wrapping the row-major
+/// elements. `emit_value_write` picks the per-element form (final structs inline,
+/// appendable/mutable structs + unions splice their own DHEADER-framed encode).
+fn emit_array_body_encode(
+    out: &mut String,
+    type_spec: &TypeSpec,
+    ndims: usize,
+    access: &str,
+    endian: &str,
+    origin: &str,
+    indent: &str,
+) -> Result<bool, CppGenError> {
+    let beb = if endian == "be" { "true" } else { "false" };
+    let prim = matches!(type_spec, TypeSpec::Primitive(_));
+    let leaf_1d = ndims == 1 && matches!(type_spec, TypeSpec::Primitive(_) | TypeSpec::String(_));
+    if leaf_1d {
+        writeln!(out, "{indent}for (const auto& zd_ae : {access}) {{").map_err(fmt_err)?;
+        emit_value_write(out, type_spec, "zd_ae", endian, origin, indent)?;
+        writeln!(out, "{indent}}}").map_err(fmt_err)?;
+        Ok(true)
+    } else if prim && ndims >= 2 {
+        // Multi-dim primitive array = PARRAY (XTypes 1.3 §7.4.3.5 rule 8): NO
+        // collection DHEADER, row-major elements tight-packed.
+        let mut acc = access.to_string();
+        let mut ind = indent.to_string();
+        for d in 0..ndims {
+            let lv = format!("zd_a{d}");
+            writeln!(out, "{ind}for (const auto& {lv} : {acc}) {{").map_err(fmt_err)?;
+            acc = lv;
+            ind.push_str("    ");
+        }
+        emit_value_write(out, type_spec, &acc, endian, origin, &ind)?;
+        for _ in 0..ndims {
+            ind.truncate(ind.len() - 4);
+            writeln!(out, "{ind}}}").map_err(fmt_err)?;
+        }
+        Ok(true)
+    } else if matches!(type_spec, TypeSpec::Scoped(s) if scoped_is_enum(s) || scoped_struct(s).is_some() || scoped_union(s).is_some())
+        || (matches!(type_spec, TypeSpec::String(_)) && ndims >= 2)
+    {
+        // Array of non-primitive elements: one collection DHEADER wrapping N
+        // elements inline, row-major, NO count.
+        writeln!(out, "{indent}{{").map_err(fmt_err)?;
+        writeln!(
+            out,
+            "{indent}const auto zd_arr_dh = ::dds::topic::xcdr2::dheader_begin_r(zd_out, zd_repr);"
+        )
+        .map_err(fmt_err)?;
+        let mut acc = access.to_string();
+        let mut ind = indent.to_string();
+        for d in 0..ndims {
+            let lv = format!("zd_a{d}");
+            writeln!(out, "{ind}for (const auto& {lv} : {acc}) {{").map_err(fmt_err)?;
+            acc = lv;
+            ind.push_str("    ");
+        }
+        emit_value_write(out, type_spec, &acc, endian, origin, &ind)?;
+        for _ in 0..ndims {
+            ind.truncate(ind.len() - 4);
+            writeln!(out, "{ind}}}").map_err(fmt_err)?;
+        }
+        writeln!(
+            out,
+            "{indent}::dds::topic::xcdr2::dheader_end_r(zd_out, zd_arr_dh, {beb}, zd_repr);"
+        )
+        .map_err(fmt_err)?;
+        writeln!(out, "{indent}}}").map_err(fmt_err)?;
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
+/// Symmetric decode counterpart of [`emit_array_body_encode`]: read the XCDR
+/// array BODY (no per-member framing) into `zd_v.<name>` via its getter/setter,
+/// aligning relative to `origin`. Returns `false` for an unsupported shape.
+fn emit_array_body_decode(
+    out: &mut String,
+    type_spec: &TypeSpec,
+    ndims: usize,
+    name: &str,
+    origin: &str,
+    indent: &str,
+) -> Result<bool, CppGenError> {
+    let inner = format!("{indent}    ");
+    let prim = matches!(type_spec, TypeSpec::Primitive(_));
+    let leaf_1d = ndims == 1 && matches!(type_spec, TypeSpec::Primitive(_) | TypeSpec::String(_));
+    let prim_read_expr = || -> String {
+        match type_spec {
+            TypeSpec::Primitive(PrimitiveType::Boolean) => {
+                "::dds::topic::xcdr2::read_bool(zd_buf, zd_pos, zd_len)".to_string()
+            }
+            TypeSpec::Primitive(PrimitiveType::Octet) => {
+                "::dds::topic::xcdr2::read_u8(zd_buf, zd_pos, zd_len)".to_string()
+            }
+            TypeSpec::Primitive(p) => format!(
+                "::dds::topic::xcdr2::read_le_origin<{}>(zd_buf, zd_pos, zd_len, {origin}, zd_max_align, zd_be)",
+                primitive_to_cpp(*p)
+            ),
+            TypeSpec::String(s) if s.wide => format!(
+                "::dds::topic::xcdr2::read_wstring_origin(zd_buf, zd_pos, zd_len, {origin}, zd_max_align, zd_be)"
+            ),
+            _ => format!(
+                "::dds::topic::xcdr2::read_string_origin(zd_buf, zd_pos, zd_len, {origin}, zd_max_align, zd_be)"
+            ),
+        }
+    };
+    if leaf_1d {
+        let read_expr = prim_read_expr();
+        writeln!(out, "{indent}{{").map_err(fmt_err)?;
+        writeln!(out, "{inner}auto zd_arr = zd_v.{name}();").map_err(fmt_err)?;
+        writeln!(
+            out,
+            "{inner}for (auto& zd_ae : zd_arr) {{ zd_ae = {read_expr}; }}"
+        )
+        .map_err(fmt_err)?;
+        writeln!(out, "{inner}zd_v.{name}(zd_arr);").map_err(fmt_err)?;
+        writeln!(out, "{indent}}}").map_err(fmt_err)?;
+        Ok(true)
+    } else if prim && ndims >= 2 {
+        let read_expr = prim_read_expr();
+        writeln!(out, "{indent}{{").map_err(fmt_err)?;
+        writeln!(out, "{inner}auto zd_arr = zd_v.{name}();").map_err(fmt_err)?;
+        let mut acc = String::from("zd_arr");
+        let mut ind = inner.clone();
+        for d in 0..ndims {
+            let lv = format!("zd_a{d}");
+            writeln!(out, "{ind}for (auto& {lv} : {acc}) {{").map_err(fmt_err)?;
+            acc = lv;
+            ind.push_str("    ");
+        }
+        writeln!(out, "{ind}{acc} = {read_expr};").map_err(fmt_err)?;
+        for _ in 0..ndims {
+            ind.truncate(ind.len() - 4);
+            writeln!(out, "{ind}}}").map_err(fmt_err)?;
+        }
+        writeln!(out, "{inner}zd_v.{name}(zd_arr);").map_err(fmt_err)?;
+        writeln!(out, "{indent}}}").map_err(fmt_err)?;
+        Ok(true)
+    } else if matches!(type_spec, TypeSpec::Scoped(s) if scoped_is_enum(s) || scoped_struct(s).is_some() || scoped_union(s).is_some())
+        || (matches!(type_spec, TypeSpec::String(_)) && ndims >= 2)
+    {
+        writeln!(out, "{indent}{{").map_err(fmt_err)?;
+        writeln!(out, "{indent}const auto zd_arr_dh = ::dds::topic::xcdr2::dheader_read_r(zd_buf, zd_pos, zd_len, zd_be, zd_repr); (void)zd_arr_dh;").map_err(fmt_err)?;
+        writeln!(out, "{indent}auto zd_arr = zd_v.{name}();").map_err(fmt_err)?;
+        let mut acc = String::from("zd_arr");
+        let mut ind = indent.to_string();
+        for d in 0..ndims {
+            let lv = format!("zd_a{d}");
+            writeln!(out, "{ind}for (auto& {lv} : {acc}) {{").map_err(fmt_err)?;
+            acc = lv;
+            ind.push_str("    ");
+        }
+        emit_value_read(out, type_spec, &format!("{acc} ="), origin, &ind, false)?;
+        for _ in 0..ndims {
+            ind.truncate(ind.len() - 4);
+            writeln!(out, "{ind}}}").map_err(fmt_err)?;
+        }
+        writeln!(out, "{indent}zd_v.{name}(zd_arr);").map_err(fmt_err)?;
+        writeln!(out, "{indent}}}").map_err(fmt_err)?;
+        Ok(true)
+    } else {
+        Ok(false)
+    }
+}
+
 /// Emit Plain-CDR2 (LE/BE) encoding for one member at the current
 /// position; alignment relative to `origin`.
 fn emit_plain_member_encode(
@@ -2679,93 +3671,26 @@ fn emit_plain_member_encode(
     origin: &str,
 ) -> Result<(), CppGenError> {
     let m = &normalize_member(m);
-    let beb = if endian == "be" { "true" } else { "false" };
-    if !member_codegen_supported(m) {
-        for decl in &m.declarators {
-            let name = &decl.name().text;
-            writeln!(
-                out,
-                "        // xcdr2: @shared member '{name}' not supported (skip)"
-            )
-            .map_err(fmt_err)?;
-        }
-        return Ok(());
-    }
     let is_optional = has_optional_annotation(&m.annotations);
+    let shared = has_shared_annotation(&m.annotations);
     for decl in &m.declarators {
-        let name = &decl.name().text;
-        // 1-D fixed array of a leaf type (primitive / string / wstring): XCDR2
-        // encodes N contiguous elements, no length prefix. Multi-dim arrays and
-        // arrays of struct/sequence remain a follow-up (need the type registry /
-        // recursion — see idl-cpp-xcdr2-encoder-gaps.md).
+        // broad-audit P0-7: reject the unsupported @shared shapes loudly instead
+        // of silently skipping the member (data loss).
+        reject_unsupported_shared(m, decl)?;
+        let name = escape_cpp_ident(&decl.name().text);
+        // Fixed array member (any dims): emit the shared array body — 1-D leaf
+        // primitives/strings tight-packed, multi-dim primitive PARRAY tight-
+        // packed, non-primitive elements DHEADER-wrapped (XTypes 1.3 §7.4.3.5).
         if let Declarator::Array(arr) = decl {
-            let prim = matches!(m.type_spec, TypeSpec::Primitive(_));
-            let leaf_1d = arr.sizes.len() == 1
-                && matches!(m.type_spec, TypeSpec::Primitive(_) | TypeSpec::String(_));
-            if leaf_1d {
-                writeln!(out, "        for (const auto& zd_ae : zd_v.{name}()) {{")
-                    .map_err(fmt_err)?;
-                emit_value_write(out, &m.type_spec, "zd_ae", endian, origin, "        ")?;
-                writeln!(out, "        }}").map_err(fmt_err)?;
-            } else if prim && arr.sizes.len() >= 2 {
-                // Multi-dim array of a PRIMITIVE element (Bug XV-arr): this is a
-                // PARRAY (XTypes 1.3 §7.4.3.5 rule 8) — a primitive array is
-                // PLAIN-collection regardless of dimensionality, so it carries NO
-                // collection DHEADER. Emit the row-major elements tight-packed,
-                // exactly like the 1-D leaf path. (Earlier code wrongly wrapped a
-                // DHEADER here; the corrected Rust golden `long grid[2][3]` is 6×i32
-                // back-to-back with no length prefix — cross-vendor-validated.)
-                let n = arr.sizes.len();
-                let mut acc = format!("zd_v.{name}()");
-                let mut ind = String::from("        ");
-                for d in 0..n {
-                    let lv = format!("zd_a{d}");
-                    writeln!(out, "{ind}for (const auto& {lv} : {acc}) {{").map_err(fmt_err)?;
-                    acc = lv;
-                    ind.push_str("    ");
-                }
-                emit_value_write(out, &m.type_spec, &acc, endian, origin, &ind)?;
-                for _ in 0..n {
-                    ind.truncate(ind.len() - 4);
-                    writeln!(out, "{ind}}}").map_err(fmt_err)?;
-                }
-            } else if matches!(&m.type_spec, TypeSpec::Scoped(s) if scoped_is_enum(s) || scoped_struct(s).is_some() || scoped_union(s).is_some())
-                || (matches!(m.type_spec, TypeSpec::String(_)) && arr.sizes.len() >= 2)
-            {
-                // Array of NON-primitive elements (enum / struct / union, any dims;
-                // string only for >=2 dims — 1-D string keeps the legacy no-DHEADER
-                // leaf path above): one DHEADER (XTypes §7.4.3.5) wrapping N
-                // elements inline, row-major, NO count. N nested range-for loops.
-                // `emit_value_write` picks the per-element form: @final structs
-                // recurse inline; @appendable/@mutable structs and unions splice
-                // their own DHEADER-framed `topic_type_support<...>::encode`.
-                let n = arr.sizes.len();
-                writeln!(out, "        {{").map_err(fmt_err)?;
-                writeln!(
-                    out,
-                    "        const auto zd_arr_dh = ::dds::topic::xcdr2::dheader_begin_r(zd_out, zd_repr);"
-                )
-                .map_err(fmt_err)?;
-                let mut acc = format!("zd_v.{name}()");
-                let mut ind = String::from("        ");
-                for d in 0..n {
-                    let lv = format!("zd_a{d}");
-                    writeln!(out, "{ind}for (const auto& {lv} : {acc}) {{").map_err(fmt_err)?;
-                    acc = lv;
-                    ind.push_str("    ");
-                }
-                emit_value_write(out, &m.type_spec, &acc, endian, origin, &ind)?;
-                for _ in 0..n {
-                    ind.truncate(ind.len() - 4);
-                    writeln!(out, "{ind}}}").map_err(fmt_err)?;
-                }
-                writeln!(
-                    out,
-                    "        ::dds::topic::xcdr2::dheader_end_r(zd_out, zd_arr_dh, {beb}, zd_repr);"
-                )
-                .map_err(fmt_err)?;
-                writeln!(out, "        }}").map_err(fmt_err)?;
-            } else {
+            if !emit_array_body_encode(
+                out,
+                &m.type_spec,
+                arr.sizes.len(),
+                &format!("zd_v.{name}()"),
+                endian,
+                origin,
+                "        ",
+            )? {
                 writeln!(
                     out,
                     "        // xcdr2: array member '{name}' (multi-dim string-1D-only / unsupported elem) not supported (skip)"
@@ -2786,17 +3711,36 @@ fn emit_plain_member_encode(
             // Final/appendable: 1-byte present-flag, then the value if present.
             writeln!(out, "        if (zd_v.{name}().has_value()) {{").map_err(fmt_err)?;
             writeln!(out, "            zd_out.push_back(uint8_t{{1}});").map_err(fmt_err)?;
-            emit_value_write(
-                out,
-                &m.type_spec,
-                &format!("(*zd_v.{name}())"),
-                endian,
-                origin,
-                "        ",
-            )?;
+            // broad-audit P0-7: `@shared @optional` — the present value is the
+            // pointee of the inner shared_ptr (`*(*optional)`), serialized by value.
+            if shared {
+                let rf = emit_shared_encode_ref(
+                    out,
+                    &m.type_spec,
+                    &format!("(*zd_v.{name}())"),
+                    "            ",
+                )?;
+                emit_value_write(out, &m.type_spec, &rf, endian, origin, "        ")?;
+            } else {
+                emit_value_write(
+                    out,
+                    &m.type_spec,
+                    &format!("(*zd_v.{name}())"),
+                    endian,
+                    origin,
+                    "        ",
+                )?;
+            }
             writeln!(out, "        }} else {{").map_err(fmt_err)?;
             writeln!(out, "            zd_out.push_back(uint8_t{{0}});").map_err(fmt_err)?;
             writeln!(out, "        }}").map_err(fmt_err)?;
+        } else if shared {
+            // broad-audit P0-7: @shared member — serialize the referenced value BY
+            // VALUE (deref the shared_ptr), byte-identical to the same non-@shared
+            // member (XTypes 1.3 §7.3.1.2.1.9).
+            let rf =
+                emit_shared_encode_ref(out, &m.type_spec, &format!("zd_v.{name}()"), "        ")?;
+            emit_value_write(out, &m.type_spec, &rf, endian, origin, "    ")?;
         } else {
             emit_value_write(
                 out,
@@ -2858,7 +3802,7 @@ fn emit_value_write(
             // Bounded narrow `string<N>` (DDS-XTypes §7.4.3): byte-length check
             // (std::string::size = bytes = CDR wire length).
             if let Some(b) = &s.bound {
-                let bv = const_expr_to_cpp(b);
+                let bv = bound_to_cpp(b);
                 writeln!(
                     out,
                     "{pre}if ({access}.size() > {bv}) throw std::length_error(\"bounded string length exceeds its IDL bound ({bv})\");"
@@ -2883,7 +3827,7 @@ fn emit_value_write(
             // Bounded `wstring<N>` (DDS-XTypes §7.4.3): bound is in wide chars
             // (std::wstring::size). Wire = UTF-16 (conformance §9.1).
             if let Some(b) = &s.bound {
-                let bv = const_expr_to_cpp(b);
+                let bv = bound_to_cpp(b);
                 writeln!(
                     out,
                     "{pre}if ({access}.size() > {bv}) throw std::length_error(\"bounded wstring length exceeds its IDL bound ({bv})\");"
@@ -2909,7 +3853,7 @@ fn emit_value_write(
             // error. The encode returns a vector (no Result channel), so this
             // throws — strict vendors (OpenDDS) reject on the wire likewise.
             if let Some(b) = &seq.bound {
-                let bv = const_expr_to_cpp(b);
+                let bv = bound_to_cpp(b);
                 writeln!(
                     out,
                     "{pre}if ({access}.size() > {bv}) throw std::length_error(\"bounded sequence length exceeds its IDL bound ({bv})\");"
@@ -3060,7 +4004,7 @@ fn emit_value_write(
         // (crates/cdr/src/composite.rs §7.4.4.6) byte-for-byte.
         TypeSpec::Map(m) => {
             if let Some(b) = &m.bound {
-                let bv = const_expr_to_cpp(b);
+                let bv = bound_to_cpp(b);
                 writeln!(
                     out,
                     "{pre}if ({access}.size() > {bv}) throw std::length_error(\"bounded map length exceeds its IDL bound ({bv})\");"
@@ -3158,10 +4102,15 @@ fn emit_value_write(
             let Some((def, ext)) = scoped_struct(sc) else {
                 return Ok(());
             };
+            // Resolve the nested type's C++ name in the OUTER scope, then switch
+            // to the nested type's own module for its inline (@final) member loop
+            // (P0-2). Appendable/mutable splice via the precomputed name.
+            let cpp = scoped_to_cpp(sc);
+            let _sg = enter_ref_scope(sc);
             match ext {
                 Extensibility::Final => {
                     for sm in &def.members {
-                        let sm_name = &sm.declarators[0].name().text;
+                        let sm_name = escape_cpp_ident(&sm.declarators[0].name().text);
                         emit_value_write(
                             out,
                             &sm.type_spec,
@@ -3173,7 +4122,6 @@ fn emit_value_write(
                     }
                 }
                 Extensibility::Appendable | Extensibility::Mutable => {
-                    let cpp = scoped_to_cpp(sc);
                     let id = next_nest_id();
                     writeln!(out, "{pre}{{").map_err(fmt_err)?;
                     writeln!(
@@ -3210,6 +4158,10 @@ fn emit_value_write(
             let Some(u) = scoped_union(sc) else {
                 return Ok(());
             };
+            // C++ name resolved in the OUTER scope; the @final inline body
+            // resolves the union's own cases in the union's module scope (P0-2).
+            let cpp = scoped_to_cpp(sc);
+            let _sg = enter_ref_scope(sc);
             match union_extensibility(&u.annotations) {
                 // @final union (rule (26) FUNION_TYPE): inline disc + selected
                 // member, NO DHEADER (XTypes 1.3 §7.4.3.4.1). Identical to the
@@ -3235,7 +4187,6 @@ fn emit_value_write(
                 // serializer (4-aligned splice point preserves member alignment
                 // under XCDR2 max_align=4, §7.4.3.4.2).
                 Extensibility::Appendable | Extensibility::Mutable => {
-                    let cpp = scoped_to_cpp(sc);
                     let id = next_nest_id();
                     writeln!(out, "{pre}{{").map_err(fmt_err)?;
                     writeln!(
@@ -3290,51 +4241,80 @@ fn union_extensibility(anns: &[Annotation]) -> Extensibility {
     struct_extensibility(anns)
 }
 
-/// Emit Mutable-EMHEADER + body for one member. `next_id` is the running
-/// sequential auto-id counter (XTypes 1.3 §7.3.4.3: `@autoid` defaults to
-/// SEQUENTIAL — member id = declaration order, vendor-confirmed byte-identical
-/// to CycloneDDS). An explicit `@id(N)` sets the id and resets the counter to
-/// N+1. Previously this used an FNV name-hash, which diverged from rust/python/
-/// ts/csharp + Cyclone on the wire whenever a @mutable member lacked an @id.
+/// Emit Mutable-EMHEADER + body for one member. `base_id` is the member's wire
+/// id resolved centrally (broad-audit P0-3: `@id(N)` / `@hashid` / struct-level
+/// `@autoid(HASH)`, else the sequential positional fallback — see
+/// [`resolved_member_ids`]). Multiple declarators of one member step up from
+/// `base_id`. Previously this backend used its own positional counter that
+/// ignored `@autoid(HASH)` / `@hashid`, diverging from rust + the TypeObject.
 fn emit_mutable_member_encode(
     out: &mut String,
     m: &Member,
     endian: &str,
-    next_id: &mut u32,
+    base_id: u32,
 ) -> Result<(), CppGenError> {
     let m = &normalize_member(m);
-    if !member_codegen_supported(m) {
-        for decl in &m.declarators {
-            let name = &decl.name().text;
-            *next_id += 1; // consume id slot (kept in lockstep with the decoder)
-            writeln!(
-                out,
-                "        // xcdr2: @shared member '{name}' not supported (skip)"
-            )
-            .map_err(fmt_err)?;
-        }
-        return Ok(());
-    }
     let is_optional = has_optional_annotation(&m.annotations);
+    let shared = has_shared_annotation(&m.annotations);
     let must_understand = has_named_annotation(&m.annotations, "must_understand");
-    let id_override = find_uint_annotation(&m.annotations, "id");
     let mu_lit = if must_understand { "true" } else { "false" };
+    let beb = if endian == "be" { "true" } else { "false" };
 
     for (idx, decl) in m.declarators.iter().enumerate() {
-        let name = &decl.name().text;
-        // Resolve the member id FIRST and advance the counter, even on the skip
-        // paths below — ids are assigned by declaration order regardless of
-        // whether codegen emits the member, so a later member keeps its id
-        // (encode + decode skip identically, so they stay in lockstep).
-        let this_id = match id_override {
-            Some(id) => id + idx as u32,
-            None => *next_id,
-        };
-        *next_id = this_id + 1;
+        // broad-audit P0-7: reject unsupported @shared shapes loudly.
+        reject_unsupported_shared(m, decl)?;
+        let name = escape_cpp_ident(&decl.name().text);
+        // Central-resolved id; further declarators of the same member step up
+        // from it. encode + decode compute the same id from the same wire-member
+        // list + index, so they stay in lockstep across the skip paths below.
+        let this_id = base_id + idx as u32;
+        // broad-audit P0-6: an array member in an @mutable struct. XTypes 1.3
+        // §7.4.3.4.2 — an array member is framed with the universal LC=4 EMHEADER
+        // (a separately-serialized NEXTINT = total array-body byte length), the
+        // same choice the Rust reference makes (`mutable_length_code_for` returns
+        // None → Lc4 for `Declarator::Array`). The body is the identical PLAIN
+        // array encoding (tight-packed primitives / DHEADER-wrapped non-primitive
+        // elements), so the member reaches the wire — the previous silent skip
+        // dropped it entirely.
+        if let Declarator::Array(arr) = decl {
+            let id_expr = format!("0x{this_id:x}u");
+            writeln!(
+                out,
+                "        {{ const auto zd_sub = ::dds::topic::xcdr2::emheader_nextint_begin(zd_out, zd_origin, {id_expr}, {mu_lit}, {beb});"
+            )
+            .map_err(fmt_err)?;
+            writeln!(
+                out,
+                "            {{ const auto zd_body_origin = zd_sub.body_start; (void)zd_body_origin;"
+            )
+            .map_err(fmt_err)?;
+            let ok = emit_array_body_encode(
+                out,
+                &m.type_spec,
+                arr.sizes.len(),
+                &format!("zd_v.{name}()"),
+                endian,
+                "zd_body_origin",
+                "            ",
+            )?;
+            if !ok {
+                return Err(CppGenError::UnsupportedConstruct {
+                    construct: "array member in @mutable struct".into(),
+                    context: Some(name),
+                });
+            }
+            writeln!(out, "            }}").map_err(fmt_err)?;
+            writeln!(
+                out,
+                "            ::dds::topic::xcdr2::emheader_nextint_end(zd_out, zd_sub, {beb}); }}"
+            )
+            .map_err(fmt_err)?;
+            continue;
+        }
         if !matches!(decl, Declarator::Simple(_)) {
             writeln!(
                 out,
-                "        // xcdr2: array member '{name}' not supported (skip)"
+                "        // xcdr2: non-array/non-simple member '{name}' not supported (skip)"
             )
             .map_err(fmt_err)?;
             continue;
@@ -3351,16 +4331,43 @@ fn emit_mutable_member_encode(
         if is_optional {
             // Mutable + optional: skip EMHEADER if absent.
             writeln!(out, "        if (zd_v.{name}().has_value()) {{").map_err(fmt_err)?;
-            emit_mutable_value_emit(
-                out,
-                &m.type_spec,
-                &format!("(*zd_v.{name}())"),
-                &id_expr,
-                mu_lit,
-                endian,
-                "            ",
-            )?;
+            // broad-audit P0-7: `@shared @optional` — the present value is the
+            // pointee of the inner shared_ptr, serialized by value.
+            if shared {
+                let rf = emit_shared_encode_ref(
+                    out,
+                    &m.type_spec,
+                    &format!("(*zd_v.{name}())"),
+                    "            ",
+                )?;
+                emit_mutable_value_emit(
+                    out,
+                    &m.type_spec,
+                    &rf,
+                    &id_expr,
+                    mu_lit,
+                    endian,
+                    "            ",
+                )?;
+            } else {
+                emit_mutable_value_emit(
+                    out,
+                    &m.type_spec,
+                    &format!("(*zd_v.{name}())"),
+                    &id_expr,
+                    mu_lit,
+                    endian,
+                    "            ",
+                )?;
+            }
             writeln!(out, "        }}").map_err(fmt_err)?;
+        } else if shared {
+            // broad-audit P0-7: @shared member — serialize the referenced value BY
+            // VALUE (deref the shared_ptr) with the identical EMHEADER framing as a
+            // non-@shared member (XTypes 1.3 §7.3.1.2.1.9).
+            let rf =
+                emit_shared_encode_ref(out, &m.type_spec, &format!("zd_v.{name}()"), "        ")?;
+            emit_mutable_value_emit(out, &m.type_spec, &rf, &id_expr, mu_lit, endian, "        ")?;
         } else {
             emit_mutable_value_emit(
                 out,
@@ -3380,43 +4387,70 @@ fn emit_mutable_member_encode(
 /// parameter whose body is the member's plain (positional) field encoding,
 /// origin-relative to the parameter body start (max_align 8 under XCDR1).
 /// Mirrors `emit_mutable_member_encode`'s id assignment so the parameter ids
-/// equal the EMHEADER ids of the XCDR2 path. LE only — PL_CDR1 IS the XCDR1
-/// framing; `encode_be` is always XCDR2.
+/// equal the EMHEADER ids of the XCDR2 path. `base_id` is the central-resolved
+/// member id (P0-3). LE only — PL_CDR1 IS the XCDR1 framing; `encode_be` is
+/// always XCDR2.
 fn emit_pl_cdr1_member_encode(
     out: &mut String,
     m: &Member,
-    next_id: &mut u32,
+    base_id: u32,
     endian: &str,
 ) -> Result<(), CppGenError> {
     let beb = if endian == "be" { "true" } else { "false" };
     let m = &normalize_member(m);
-    if !member_codegen_supported(m) {
-        for decl in &m.declarators {
-            *next_id += 1;
-            let name = &decl.name().text;
+    let is_optional = has_optional_annotation(&m.annotations);
+    let shared = has_shared_annotation(&m.annotations);
+    for (idx, decl) in m.declarators.iter().enumerate() {
+        // broad-audit P0-7: reject unsupported @shared shapes loudly.
+        reject_unsupported_shared(m, decl)?;
+        let name = escape_cpp_ident(&decl.name().text);
+        // Central-resolved id (lockstep with the XCDR2 EMHEADER ids); further
+        // declarators of the same member step up from it.
+        let this_id = base_id + idx as u32;
+        // broad-audit P0-6: an array member in an @mutable struct under XCDR1 /
+        // PL_CDR1. The member is a PID-framed parameter whose body is the plain
+        // array encoding (origin = the parameter body start); `pl_cdr1_member_end`
+        // records the unpadded body length. Symmetric to the XCDR2 LC=4 path — the
+        // member is no longer silently dropped.
+        if let Declarator::Array(arr) = decl {
+            writeln!(out, "            {{").map_err(fmt_err)?;
             writeln!(
                 out,
-                "            // xcdr1: @shared member '{name}' not supported (skip)"
+                "                auto zd_pm = ::dds::topic::xcdr2::pl_cdr1_member_begin(zd_out, 0x{this_id:x}u, {beb});"
             )
             .map_err(fmt_err)?;
+            writeln!(
+                out,
+                "                const size_t zd_origin = zd_pm.body_start; (void)zd_origin;"
+            )
+            .map_err(fmt_err)?;
+            let ok = emit_array_body_encode(
+                out,
+                &m.type_spec,
+                arr.sizes.len(),
+                &format!("zd_v.{name}()"),
+                endian,
+                "zd_origin",
+                "                ",
+            )?;
+            if !ok {
+                return Err(CppGenError::UnsupportedConstruct {
+                    construct: "array member in @mutable struct".into(),
+                    context: Some(name),
+                });
+            }
+            writeln!(
+                out,
+                "                ::dds::topic::xcdr2::pl_cdr1_member_end(zd_out, zd_pm, {beb});"
+            )
+            .map_err(fmt_err)?;
+            writeln!(out, "            }}").map_err(fmt_err)?;
+            continue;
         }
-        return Ok(());
-    }
-    let is_optional = has_optional_annotation(&m.annotations);
-    let id_override = find_uint_annotation(&m.annotations, "id");
-    for (idx, decl) in m.declarators.iter().enumerate() {
-        let name = &decl.name().text;
-        // Resolve the id and advance the counter on every path (lockstep with
-        // the XCDR2 EMHEADER ids), even when codegen skips the member body.
-        let this_id = match id_override {
-            Some(id) => id + idx as u32,
-            None => *next_id,
-        };
-        *next_id = this_id + 1;
         if !matches!(decl, Declarator::Simple(_)) {
             writeln!(
                 out,
-                "            // xcdr1: array member '{name}' not supported (skip)"
+                "            // xcdr1: non-array/non-simple member '{name}' not supported (skip)"
             )
             .map_err(fmt_err)?;
             continue;
@@ -3456,6 +4490,15 @@ fn emit_pl_cdr1_member_encode(
             "{ind}    const size_t zd_origin = zd_pm.body_start; (void)zd_origin;"
         )
         .map_err(fmt_err)?;
+        // broad-audit P0-7: @shared member — the PID-framed parameter body is the
+        // referenced value serialized BY VALUE (deref the shared_ptr; for
+        // `@shared @optional` `access` is already the `*optional` shared_ptr), byte-
+        // identical to the same non-@shared member (XTypes 1.3 §7.3.1.2.1.9).
+        let access = if shared {
+            emit_shared_encode_ref(out, &m.type_spec, &access, &format!("{ind}    "))?
+        } else {
+            access
+        };
         emit_value_write(out, &m.type_spec, &access, endian, "zd_origin", ind)?;
         writeln!(
             out,
@@ -3557,7 +4600,7 @@ fn emit_mutable_value_emit(
         TypeSpec::String(s) if !s.wide => {
             // Bounded narrow `string<N>` (DDS-XTypes §7.4.3): byte-length check.
             if let Some(b) = &s.bound {
-                let bv = const_expr_to_cpp(b);
+                let bv = bound_to_cpp(b);
                 writeln!(
                     out,
                     "{indent}if ({access}.size() > {bv}) throw std::length_error(\"bounded string length exceeds its IDL bound ({bv})\");"
@@ -3605,7 +4648,7 @@ fn emit_mutable_value_emit(
         TypeSpec::String(s) if s.wide => {
             // Bounded `wstring<N>` (DDS-XTypes §7.4.3): wide-char-length check.
             if let Some(b) = &s.bound {
-                let bv = const_expr_to_cpp(b);
+                let bv = bound_to_cpp(b);
                 writeln!(
                     out,
                     "{indent}if ({access}.size() > {bv}) throw std::length_error(\"bounded wstring length exceeds its IDL bound ({bv})\");"
@@ -3649,7 +4692,7 @@ fn emit_mutable_value_emit(
         TypeSpec::Sequence(seq) => {
             // Bounded `sequence<T, N>` (DDS-XTypes §7.4.3): over-bound = throw.
             if let Some(b) = &seq.bound {
-                let bv = const_expr_to_cpp(b);
+                let bv = bound_to_cpp(b);
                 writeln!(
                     out,
                     "{indent}if ({access}.size() > {bv}) throw std::length_error(\"bounded sequence length exceeds its IDL bound ({bv})\");"
@@ -3855,6 +4898,9 @@ fn emit_mutable_value_emit(
             };
             match ext {
                 Extensibility::Final => {
+                    // Inline @final member reads resolve in the nested type's
+                    // own module scope (P0-2).
+                    let _sg = enter_ref_scope(sc);
                     // LC=4: NEXTINT frame around the tight-packed (no DHEADER) body.
                     writeln!(
                         out,
@@ -3867,7 +4913,7 @@ fn emit_mutable_value_emit(
                     )
                     .map_err(fmt_err)?;
                     for sm in &def.members {
-                        let sm_name = &sm.declarators[0].name().text;
+                        let sm_name = escape_cpp_ident(&sm.declarators[0].name().text);
                         emit_value_write(
                             out,
                             &sm.type_spec,
@@ -4114,7 +5160,7 @@ fn emit_decode_fn(
         Extensibility::Final => {
             writeln!(out, "        const size_t zd_origin = 0;").map_err(fmt_err)?;
             writeln!(out, "        (void)zd_origin;").map_err(fmt_err)?;
-            for m in &s.members {
+            for m in &resolved_wire_members(s) {
                 emit_plain_member_decode(out, m, "zd_origin")?;
             }
         }
@@ -4138,7 +5184,7 @@ fn emit_decode_fn(
             writeln!(out, "        }}").map_err(fmt_err)?;
             writeln!(out, "        const size_t zd_origin = zd_pos;").map_err(fmt_err)?;
             writeln!(out, "        (void)zd_end;").map_err(fmt_err)?;
-            for m in &s.members {
+            for m in &resolved_wire_members(s) {
                 emit_plain_member_decode(out, m, "zd_origin")?;
             }
             // Skip trailing bytes (forward-compat with appendable extension);
@@ -4176,9 +5222,8 @@ fn emit_decode_fn(
             )
             .map_err(fmt_err)?;
             writeln!(out, "                switch (zd_ph.member_id) {{").map_err(fmt_err)?;
-            let mut zd_pl_id = 0u32;
-            for m in &s.members {
-                emit_pl_cdr1_member_decode_case(out, m, &mut zd_pl_id)?;
+            for (m, id) in resolved_wire_members(s).iter().zip(resolved_member_ids(s)) {
+                emit_pl_cdr1_member_decode_case(out, m, id)?;
             }
             writeln!(out, "                    default: break;").map_err(fmt_err)?;
             writeln!(out, "                }}").map_err(fmt_err)?;
@@ -4205,9 +5250,8 @@ fn emit_decode_fn(
             )
             .map_err(fmt_err)?;
             writeln!(out, "            switch (zd_h.member_id) {{").map_err(fmt_err)?;
-            let mut zd_next_id = 0u32;
-            for m in &s.members {
-                emit_mutable_member_decode_case(out, m, &mut zd_next_id)?;
+            for (m, id) in resolved_wire_members(s).iter().zip(resolved_member_ids(s)) {
+                emit_mutable_member_decode_case(out, m, id)?;
             }
             writeln!(out, "                default: {{").map_err(fmt_err)?;
             writeln!(
@@ -4280,109 +5324,26 @@ fn emit_decode_fn(
 
 fn emit_plain_member_decode(out: &mut String, m: &Member, origin: &str) -> Result<(), CppGenError> {
     let m = &normalize_member(m);
-    if !member_codegen_supported(m) {
-        for decl in &m.declarators {
-            let name = &decl.name().text;
-            writeln!(
-                out,
-                "        // xcdr2: @shared member '{name}' not supported (skip)"
-            )
-            .map_err(fmt_err)?;
-        }
-        return Ok(());
-    }
     let is_optional = has_optional_annotation(&m.annotations);
     for decl in &m.declarators {
-        let name = &decl.name().text;
-        // 1-D fixed array of a leaf type — read N elements in place (symmetric to
-        // the plain-encode array path). Multi-dim / array-of-struct: follow-up.
+        // broad-audit P0-7: reject unsupported @shared shapes loudly. Plain @shared
+        // decodes the value BY VALUE and assigns it through the value-typed setter
+        // overload (see `emit_struct_member_accessors`), which wraps it in a fresh
+        // shared_ptr (XTypes 1.3 §7.3.1.2.1.9 — @shared is in-memory sharing only).
+        reject_unsupported_shared(m, decl)?;
+        let name = escape_cpp_ident(&decl.name().text);
+        // Fixed array member (any dims): read the shared array body (symmetric to
+        // the plain-encode array path — 1-D leaf tight-packed, multi-dim primitive
+        // PARRAY tight-packed, non-primitive elements DHEADER-wrapped).
         if let Declarator::Array(arr) = decl {
-            let prim = matches!(m.type_spec, TypeSpec::Primitive(_));
-            let leaf_1d = arr.sizes.len() == 1
-                && matches!(m.type_spec, TypeSpec::Primitive(_) | TypeSpec::String(_));
-            let prim_read_expr = || -> String {
-                match &m.type_spec {
-                    TypeSpec::Primitive(PrimitiveType::Boolean) => {
-                        "::dds::topic::xcdr2::read_bool(zd_buf, zd_pos, zd_len)".to_string()
-                    }
-                    TypeSpec::Primitive(PrimitiveType::Octet) => {
-                        "::dds::topic::xcdr2::read_u8(zd_buf, zd_pos, zd_len)".to_string()
-                    }
-                    TypeSpec::Primitive(p) => format!(
-                        "::dds::topic::xcdr2::read_le_origin<{}>(zd_buf, zd_pos, zd_len, {origin}, zd_max_align, zd_be)",
-                        primitive_to_cpp(*p)
-                    ),
-                    TypeSpec::String(s) if s.wide => format!(
-                        "::dds::topic::xcdr2::read_wstring_origin(zd_buf, zd_pos, zd_len, {origin}, zd_max_align, zd_be)"
-                    ),
-                    _ => format!(
-                        "::dds::topic::xcdr2::read_string_origin(zd_buf, zd_pos, zd_len, {origin}, zd_max_align, zd_be)"
-                    ),
-                }
-            };
-            if leaf_1d {
-                let read_expr = prim_read_expr();
-                writeln!(out, "        {{").map_err(fmt_err)?;
-                writeln!(out, "            auto zd_arr = zd_v.{name}();").map_err(fmt_err)?;
-                writeln!(
-                    out,
-                    "            for (auto& zd_ae : zd_arr) {{ zd_ae = {read_expr}; }}"
-                )
-                .map_err(fmt_err)?;
-                writeln!(out, "            zd_v.{name}(zd_arr);").map_err(fmt_err)?;
-                writeln!(out, "        }}").map_err(fmt_err)?;
-            } else if prim && arr.sizes.len() >= 2 {
-                // Multi-dim PRIMITIVE array = PARRAY (Bug XV-arr): NO collection
-                // DHEADER (XTypes 1.3 §7.4.3.5 rule 8), symmetric to the encode.
-                // Read the row-major elements tight-packed directly.
-                let read_expr = prim_read_expr();
-                let n = arr.sizes.len();
-                writeln!(out, "        {{").map_err(fmt_err)?;
-                writeln!(out, "            auto zd_arr = zd_v.{name}();").map_err(fmt_err)?;
-                let mut acc = String::from("zd_arr");
-                let mut ind = String::from("            ");
-                for d in 0..n {
-                    let lv = format!("zd_a{d}");
-                    writeln!(out, "{ind}for (auto& {lv} : {acc}) {{").map_err(fmt_err)?;
-                    acc = lv;
-                    ind.push_str("    ");
-                }
-                writeln!(out, "{ind}{acc} = {read_expr};").map_err(fmt_err)?;
-                for _ in 0..n {
-                    ind.truncate(ind.len() - 4);
-                    writeln!(out, "{ind}}}").map_err(fmt_err)?;
-                }
-                writeln!(out, "            zd_v.{name}(zd_arr);").map_err(fmt_err)?;
-                writeln!(out, "        }}").map_err(fmt_err)?;
-            } else if matches!(&m.type_spec, TypeSpec::Scoped(s) if scoped_is_enum(s) || scoped_struct(s).is_some() || scoped_union(s).is_some())
-                || (matches!(m.type_spec, TypeSpec::String(_)) && arr.sizes.len() >= 2)
-            {
-                // Array of non-primitive elements (enum / struct / union, any dims;
-                // string only >=2-D): read the array DHEADER, then read N elements
-                // in place via N nested loops (symmetric to the encode; fixed size,
-                // no count). `emit_value_read` picks the per-element form: @final
-                // structs recurse inline; @appendable/@mutable structs and unions
-                // splice their own DHEADER-framed `topic_type_support<...>::decode`.
-                let n = arr.sizes.len();
-                writeln!(out, "        {{").map_err(fmt_err)?;
-                writeln!(out, "        const auto zd_arr_dh = ::dds::topic::xcdr2::dheader_read_r(zd_buf, zd_pos, zd_len, zd_be, zd_repr); (void)zd_arr_dh;").map_err(fmt_err)?;
-                writeln!(out, "        auto zd_arr = zd_v.{name}();").map_err(fmt_err)?;
-                let mut acc = String::from("zd_arr");
-                let mut ind = String::from("        ");
-                for d in 0..n {
-                    let lv = format!("zd_a{d}");
-                    writeln!(out, "{ind}for (auto& {lv} : {acc}) {{").map_err(fmt_err)?;
-                    acc = lv;
-                    ind.push_str("    ");
-                }
-                emit_value_read(out, &m.type_spec, &format!("{acc} ="), origin, &ind, false)?;
-                for _ in 0..n {
-                    ind.truncate(ind.len() - 4);
-                    writeln!(out, "{ind}}}").map_err(fmt_err)?;
-                }
-                writeln!(out, "        zd_v.{name}(zd_arr);").map_err(fmt_err)?;
-                writeln!(out, "        }}").map_err(fmt_err)?;
-            } else {
+            if !emit_array_body_decode(
+                out,
+                &m.type_spec,
+                arr.sizes.len(),
+                &name,
+                origin,
+                "        ",
+            )? {
                 writeln!(
                     out,
                     "        // xcdr2: array member '{name}' (1-D string only / unsupported elem) not supported (skip)"
@@ -4474,18 +5435,45 @@ fn emit_value_read(
             .map_err(fmt_err)?;
         }
         TypeSpec::String(s) if !s.wide => {
-            writeln!(
-                out,
-                "{indent}{setter}(::dds::topic::xcdr2::read_string_origin(zd_buf, zd_pos, zd_len, {origin}, zd_max_align, zd_be));"
-            )
-            .map_err(fmt_err)?;
+            // B1 follow-up (#22 decode-side parity): mirror the encode-side
+            // bound check (`emit_value_write` above) on decode — XTypes 1.3
+            // §7.4.3 requires the IDL bound enforced on BOTH sides, not just
+            // the wire's remaining-buffer check that `read_string_origin`
+            // already does.
+            if let Some(b) = &s.bound {
+                let bv = bound_to_cpp(b);
+                let id = next_nest_id();
+                let tmp = format!("zd_bc{id}");
+                writeln!(
+                    out,
+                    "{indent}{{ auto {tmp} = ::dds::topic::xcdr2::read_string_origin(zd_buf, zd_pos, zd_len, {origin}, zd_max_align, zd_be); if ({tmp}.size() > {bv}) throw std::length_error(\"decoded string length exceeds its IDL bound ({bv})\"); {setter}(std::move({tmp})); }}"
+                )
+                .map_err(fmt_err)?;
+            } else {
+                writeln!(
+                    out,
+                    "{indent}{setter}(::dds::topic::xcdr2::read_string_origin(zd_buf, zd_pos, zd_len, {origin}, zd_max_align, zd_be));"
+                )
+                .map_err(fmt_err)?;
+            }
         }
         TypeSpec::String(s) if s.wide => {
-            writeln!(
-                out,
-                "{indent}{setter}(::dds::topic::xcdr2::read_wstring_origin(zd_buf, zd_pos, zd_len, {origin}, zd_max_align, zd_be));"
-            )
-            .map_err(fmt_err)?;
+            if let Some(b) = &s.bound {
+                let bv = bound_to_cpp(b);
+                let id = next_nest_id();
+                let tmp = format!("zd_bc{id}");
+                writeln!(
+                    out,
+                    "{indent}{{ auto {tmp} = ::dds::topic::xcdr2::read_wstring_origin(zd_buf, zd_pos, zd_len, {origin}, zd_max_align, zd_be); if ({tmp}.size() > {bv}) throw std::length_error(\"decoded wstring length exceeds its IDL bound ({bv})\"); {setter}(std::move({tmp})); }}"
+                )
+                .map_err(fmt_err)?;
+            } else {
+                writeln!(
+                    out,
+                    "{indent}{setter}(::dds::topic::xcdr2::read_wstring_origin(zd_buf, zd_pos, zd_len, {origin}, zd_max_align, zd_be));"
+                )
+                .map_err(fmt_err)?;
+            }
         }
         TypeSpec::Sequence(seq) => {
             if matches!(&*seq.elem, TypeSpec::Primitive(PrimitiveType::Octet)) {
@@ -4497,6 +5485,18 @@ fn emit_value_read(
                     "{indent}    ::dds::topic::xcdr2::check_avail(zd_pos, zd_cnt, zd_len);"
                 )
                 .map_err(fmt_err)?;
+                // B1 follow-up (#22 decode-side parity): mirror the encode-side
+                // bound check — XTypes 1.3 §7.4.3 requires the IDL bound
+                // enforced on decode too, not just the wire's remaining-buffer
+                // check `check_avail` already does above.
+                if let Some(b) = &seq.bound {
+                    let bv = bound_to_cpp(b);
+                    writeln!(
+                        out,
+                        "{indent}    if (zd_cnt > {bv}) throw std::length_error(\"decoded sequence length exceeds its IDL bound ({bv})\");"
+                    )
+                    .map_err(fmt_err)?;
+                }
                 writeln!(
                     out,
                     "{indent}    std::vector<uint8_t> zd_seq(zd_buf + zd_pos, zd_buf + zd_pos + zd_cnt);"
@@ -4544,6 +5544,16 @@ fn emit_value_read(
                 writeln!(out, "{indent}    const auto zd_seq_dh = ::dds::topic::xcdr2::dheader_read_r(zd_buf, zd_pos, zd_len, zd_be, zd_repr); (void)zd_seq_dh;").map_err(fmt_err)?;
             }
             writeln!(out, "{indent}    auto zd_cnt = ::dds::topic::xcdr2::read_le_origin<uint32_t>(zd_buf, zd_pos, zd_len, {origin}, zd_max_align, zd_be);").map_err(fmt_err)?;
+            // B1 follow-up (#22 decode-side parity): mirror the encode-side
+            // bound check — XTypes 1.3 §7.4.3.
+            if let Some(b) = &seq.bound {
+                let bv = bound_to_cpp(b);
+                writeln!(
+                    out,
+                    "{indent}    if (zd_cnt > {bv}) throw std::length_error(\"decoded sequence length exceeds its IDL bound ({bv})\");"
+                )
+                .map_err(fmt_err)?;
+            }
             writeln!(out, "{indent}    std::vector<{elem_cpp_ty}> zd_seq;").map_err(fmt_err)?;
             writeln!(out, "{indent}    zd_seq.reserve(zd_cnt);").map_err(fmt_err)?;
             writeln!(
@@ -4580,11 +5590,12 @@ fn emit_value_read(
                 TypeSpec::Scoped(sc) if scoped_final_struct(sc).is_some() => {
                     if let Some(def) = scoped_final_struct(sc) {
                         let cpp_ty = scoped_to_cpp(sc);
+                        let _sg = enter_ref_scope(sc);
                         let var = format!("zd_se{}", next_nest_id());
                         let binner = format!("{indent}        ");
                         writeln!(out, "{binner}{cpp_ty} {var}{{}};").map_err(fmt_err)?;
                         for sm in &def.members {
-                            let sm_name = &sm.declarators[0].name().text;
+                            let sm_name = escape_cpp_ident(&sm.declarators[0].name().text);
                             emit_value_read(
                                 out,
                                 &sm.type_spec,
@@ -4719,6 +5730,16 @@ fn emit_value_read(
                 writeln!(out, "{inner}const auto zd_map_dh = ::dds::topic::xcdr2::dheader_read_r(zd_buf, zd_pos, zd_len, zd_be, zd_repr); (void)zd_map_dh;").map_err(fmt_err)?;
             }
             writeln!(out, "{inner}auto zd_mcnt = ::dds::topic::xcdr2::read_le_origin<uint32_t>(zd_buf, zd_pos, zd_len, {origin}, zd_max_align, zd_be);").map_err(fmt_err)?;
+            // B1 follow-up (#22 decode-side parity): mirror the encode-side
+            // bound check — XTypes 1.3 §7.4.3.
+            if let Some(b) = &m.bound {
+                let bv = bound_to_cpp(b);
+                writeln!(
+                    out,
+                    "{inner}if (zd_mcnt > {bv}) throw std::length_error(\"decoded map length exceeds its IDL bound ({bv})\");"
+                )
+                .map_err(fmt_err)?;
+            }
             writeln!(out, "{inner}std::map<{k_ty}, {v_ty}> {mapv};").map_err(fmt_err)?;
             writeln!(
                 out,
@@ -4771,6 +5792,9 @@ fn emit_value_read(
                 return Ok(());
             };
             let cpp_ty = scoped_to_cpp(sc);
+            // Switch to the nested type's module scope for the inline (@final)
+            // member reads (P0-2); `cpp_ty` was resolved in the outer scope.
+            let _sg = enter_ref_scope(sc);
             let id = next_nest_id();
             let var = format!("zd_ns{id}");
             let inner = format!("{indent}    ");
@@ -4779,7 +5803,7 @@ fn emit_value_read(
             match ext {
                 Extensibility::Final => {
                     for sm in &def.members {
-                        let sm_name = &sm.declarators[0].name().text;
+                        let sm_name = escape_cpp_ident(&sm.declarators[0].name().text);
                         emit_value_read(
                             out,
                             &sm.type_spec,
@@ -4810,6 +5834,8 @@ fn emit_value_read(
                 return Ok(());
             };
             let cpp_ty = scoped_to_cpp(sc);
+            // The union's own cases resolve in the union's module scope (P0-2).
+            let _sg = enter_ref_scope(sc);
             let id = next_nest_id();
             let var = format!("zd_nu{id}");
             let inner = format!("{indent}    ");
@@ -4881,24 +5907,41 @@ fn emit_value_read(
 fn emit_pl_cdr1_member_decode_case(
     out: &mut String,
     m: &Member,
-    next_id: &mut u32,
+    base_id: u32,
 ) -> Result<(), CppGenError> {
     let m = &normalize_member(m);
-    if !member_codegen_supported(m) {
-        for _ in &m.declarators {
-            *next_id += 1;
-        }
-        return Ok(());
-    }
-    let id_override = find_uint_annotation(&m.annotations, "id");
     let is_optional = has_optional_annotation(&m.annotations);
     for (idx, decl) in m.declarators.iter().enumerate() {
-        let name = &decl.name().text;
-        let this_id = match id_override {
-            Some(id) => id + idx as u32,
-            None => *next_id,
-        };
-        *next_id = this_id + 1;
+        // broad-audit P0-7: reject unsupported @shared shapes loudly. Plain @shared
+        // assigns the decoded value through the value-typed setter overload (wraps
+        // it in a fresh shared_ptr — XTypes 1.3 §7.3.1.2.1.9).
+        reject_unsupported_shared(m, decl)?;
+        let name = escape_cpp_ident(&decl.name().text);
+        let this_id = base_id + idx as u32;
+        // broad-audit P0-6: array member decode under XCDR1 / PL_CDR1. The PID
+        // header was already read by the outer loop (no NEXTINT under XCDR1); read
+        // the array body directly from the parameter body origin. Symmetric to the
+        // PL_CDR1 array encode.
+        if let Declarator::Array(arr) = decl {
+            writeln!(out, "                    case 0x{this_id:x}u: {{").map_err(fmt_err)?;
+            let ok = emit_array_body_decode(
+                out,
+                &m.type_spec,
+                arr.sizes.len(),
+                &name,
+                "zd_pl_origin",
+                "                        ",
+            )?;
+            if !ok {
+                return Err(CppGenError::UnsupportedConstruct {
+                    construct: "array member in @mutable struct".into(),
+                    context: Some(name),
+                });
+            }
+            writeln!(out, "                        break;").map_err(fmt_err)?;
+            writeln!(out, "                    }}").map_err(fmt_err)?;
+            continue;
+        }
         if !matches!(decl, Declarator::Simple(_)) {
             continue;
         }
@@ -4976,27 +6019,51 @@ fn emit_nested_span_decode(
 fn emit_mutable_member_decode_case(
     out: &mut String,
     m: &Member,
-    next_id: &mut u32,
+    base_id: u32,
 ) -> Result<(), CppGenError> {
     let m = &normalize_member(m);
-    if !member_codegen_supported(m) {
-        // Still consume id slots so the sequential counter stays aligned with
-        // the encoder (which advances on its own skip paths).
-        for _ in &m.declarators {
-            *next_id += 1;
-        }
-        return Ok(());
-    }
-    let id_override = find_uint_annotation(&m.annotations, "id");
     let is_optional = has_optional_annotation(&m.annotations);
     let _ = is_optional; // mutable optional: same path; absent member just skips this case.
     for (idx, decl) in m.declarators.iter().enumerate() {
-        let name = &decl.name().text;
-        let this_id = match id_override {
-            Some(id) => id + idx as u32,
-            None => *next_id,
-        };
-        *next_id = this_id + 1;
+        // broad-audit P0-7: reject unsupported @shared shapes loudly. Plain @shared
+        // assigns the decoded value through the value-typed setter overload (wraps
+        // it in a fresh shared_ptr — XTypes 1.3 §7.3.1.2.1.9).
+        reject_unsupported_shared(m, decl)?;
+        let name = escape_cpp_ident(&decl.name().text);
+        let this_id = base_id + idx as u32;
+        // broad-audit P0-6: array member decode. Symmetric to the LC=4 encode —
+        // the EMHEADER was already read by the outer loop; consume the separately-
+        // serialized NEXTINT (total array-body byte length, discarded here since
+        // the fixed dimensions bound the read), then read the array body from the
+        // NEXTINT-relative origin (tight-packed primitives / DHEADER-wrapped
+        // non-primitive elements).
+        if let Declarator::Array(arr) = decl {
+            let id_expr = format!("0x{this_id:x}u");
+            writeln!(out, "                case {id_expr}: {{").map_err(fmt_err)?;
+            writeln!(out, "                    auto zd_n = ::dds::topic::xcdr2::emheader_nextint_read(zd_buf, zd_pos, zd_len, zd_be); (void)zd_n;").map_err(fmt_err)?;
+            writeln!(
+                out,
+                "                    const size_t zd_body_origin = zd_pos; (void)zd_body_origin;"
+            )
+            .map_err(fmt_err)?;
+            let ok = emit_array_body_decode(
+                out,
+                &m.type_spec,
+                arr.sizes.len(),
+                &name,
+                "zd_body_origin",
+                "                    ",
+            )?;
+            if !ok {
+                return Err(CppGenError::UnsupportedConstruct {
+                    construct: "array member in @mutable struct".into(),
+                    context: Some(name),
+                });
+            }
+            writeln!(out, "                    break;").map_err(fmt_err)?;
+            writeln!(out, "                }}").map_err(fmt_err)?;
+            continue;
+        }
         if !matches!(decl, Declarator::Simple(_)) {
             continue;
         }
@@ -5031,13 +6098,31 @@ fn emit_mutable_member_decode_case(
                 // Read the string body directly from the EMHEADER body origin.
                 writeln!(out, "                    auto zd_body_origin = zd_pos;")
                     .map_err(fmt_err)?;
-                writeln!(out, "                    zd_v.{name}(::dds::topic::xcdr2::read_string_origin(zd_buf, zd_pos, zd_len, zd_body_origin, zd_max_align, zd_be));").map_err(fmt_err)?;
+                // B1 follow-up (#22 decode-side parity): mirror the encode-side
+                // bound check — XTypes 1.3 §7.4.3.
+                if let Some(b) = &s.bound {
+                    let bv = bound_to_cpp(b);
+                    writeln!(out, "                    auto zd_bcs = ::dds::topic::xcdr2::read_string_origin(zd_buf, zd_pos, zd_len, zd_body_origin, zd_max_align, zd_be);").map_err(fmt_err)?;
+                    writeln!(out, "                    if (zd_bcs.size() > {bv}) throw std::length_error(\"decoded string length exceeds its IDL bound ({bv})\");").map_err(fmt_err)?;
+                    writeln!(out, "                    zd_v.{name}(std::move(zd_bcs));")
+                        .map_err(fmt_err)?;
+                } else {
+                    writeln!(out, "                    zd_v.{name}(::dds::topic::xcdr2::read_string_origin(zd_buf, zd_pos, zd_len, zd_body_origin, zd_max_align, zd_be));").map_err(fmt_err)?;
+                }
             }
             TypeSpec::String(s) if s.wide => {
                 // EMHEADER LC=5 (Bug XV-mut): wstring octet-length prefix = NEXTINT.
                 writeln!(out, "                    auto zd_body_origin = zd_pos;")
                     .map_err(fmt_err)?;
-                writeln!(out, "                    zd_v.{name}(::dds::topic::xcdr2::read_wstring_origin(zd_buf, zd_pos, zd_len, zd_body_origin, zd_max_align, zd_be));").map_err(fmt_err)?;
+                if let Some(b) = &s.bound {
+                    let bv = bound_to_cpp(b);
+                    writeln!(out, "                    auto zd_bcw = ::dds::topic::xcdr2::read_wstring_origin(zd_buf, zd_pos, zd_len, zd_body_origin, zd_max_align, zd_be);").map_err(fmt_err)?;
+                    writeln!(out, "                    if (zd_bcw.size() > {bv}) throw std::length_error(\"decoded wstring length exceeds its IDL bound ({bv})\");").map_err(fmt_err)?;
+                    writeln!(out, "                    zd_v.{name}(std::move(zd_bcw));")
+                        .map_err(fmt_err)?;
+                } else {
+                    writeln!(out, "                    zd_v.{name}(::dds::topic::xcdr2::read_wstring_origin(zd_buf, zd_pos, zd_len, zd_body_origin, zd_max_align, zd_be));").map_err(fmt_err)?;
+                }
             }
             TypeSpec::Sequence(seq) => {
                 // FINDING T1b: a sequence<primitive> is LC=4 (separate NEXTINT to
@@ -5056,6 +6141,16 @@ fn emit_mutable_member_decode_case(
                     writeln!(out, "                    {{ const auto zd_seq_dh = ::dds::topic::xcdr2::dheader_read_r(zd_buf, zd_pos, zd_len, zd_be, zd_repr); (void)zd_seq_dh; }}").map_err(fmt_err)?;
                 }
                 writeln!(out, "                    auto zd_cnt = ::dds::topic::xcdr2::read_le_origin<uint32_t>(zd_buf, zd_pos, zd_len, zd_body_origin, zd_max_align, zd_be);").map_err(fmt_err)?;
+                // B1 follow-up (#22 decode-side parity): mirror the encode-side
+                // bound check — XTypes 1.3 §7.4.3.
+                if let Some(b) = &seq.bound {
+                    let bv = bound_to_cpp(b);
+                    writeln!(
+                        out,
+                        "                    if (zd_cnt > {bv}) throw std::length_error(\"decoded sequence length exceeds its IDL bound ({bv})\");"
+                    )
+                    .map_err(fmt_err)?;
+                }
                 if matches!(&*seq.elem, TypeSpec::Primitive(PrimitiveType::Octet)) {
                     // sequence<octet>: raw byte block directly from the buffer.
                     writeln!(
@@ -5112,11 +6207,12 @@ fn emit_mutable_member_decode_case(
                         TypeSpec::Scoped(sc) if scoped_final_struct(sc).is_some() => {
                             if let Some(def) = scoped_final_struct(sc) {
                                 let cpp_ty = scoped_to_cpp(sc);
+                                let _sg = enter_ref_scope(sc);
                                 let var = format!("zd_se{}", next_nest_id());
                                 writeln!(out, "                        {cpp_ty} {var}{{}};")
                                     .map_err(fmt_err)?;
                                 for sm in &def.members {
-                                    let sm_name = &sm.declarators[0].name().text;
+                                    let sm_name = escape_cpp_ident(&sm.declarators[0].name().text);
                                     emit_value_read(
                                         out,
                                         &sm.type_spec,
@@ -5199,6 +6295,9 @@ fn emit_mutable_member_decode_case(
             TypeSpec::Scoped(sc) if scoped_struct(sc).is_some() => {
                 if let Some((def, ext)) = scoped_struct(sc) {
                     let cpp_ty = scoped_to_cpp(sc);
+                    // Inline @final member reads resolve in the nested type's own
+                    // module scope (P0-2); `cpp_ty` was resolved in the outer scope.
+                    let _sg = enter_ref_scope(sc);
                     let id = next_nest_id();
                     let var = format!("zd_ns{id}");
                     if matches!(ext, Extensibility::Final) {
@@ -5213,7 +6312,7 @@ fn emit_mutable_member_decode_case(
                     match ext {
                         Extensibility::Final => {
                             for sm in &def.members {
-                                let sm_name = &sm.declarators[0].name().text;
+                                let sm_name = escape_cpp_ident(&sm.declarators[0].name().text);
                                 emit_value_read(
                                     out,
                                     &sm.type_spec,
@@ -5261,6 +6360,16 @@ fn emit_mutable_member_decode_case(
                 // unconditionally, then read the count. (See encode arm above.)
                 writeln!(out, "                    {{ const auto zd_map_dh = ::dds::topic::xcdr2::dheader_read_r(zd_buf, zd_pos, zd_len, zd_be, zd_repr); (void)zd_map_dh; }}").map_err(fmt_err)?;
                 writeln!(out, "                    auto zd_mcnt = ::dds::topic::xcdr2::read_le_origin<uint32_t>(zd_buf, zd_pos, zd_len, zd_body_origin, zd_max_align, zd_be);").map_err(fmt_err)?;
+                // B1 follow-up (#22 decode-side parity): mirror the encode-side
+                // bound check — XTypes 1.3 §7.4.3.
+                if let Some(b) = &m.bound {
+                    let bv = bound_to_cpp(b);
+                    writeln!(
+                        out,
+                        "                    if (zd_mcnt > {bv}) throw std::length_error(\"decoded map length exceeds its IDL bound ({bv})\");"
+                    )
+                    .map_err(fmt_err)?;
+                }
                 writeln!(out, "                    std::map<{k_ty}, {v_ty}> {mapv};")
                     .map_err(fmt_err)?;
                 writeln!(
@@ -5355,10 +6464,76 @@ fn emit_key_hash_fn(
     )
     .map_err(fmt_err)?;
     writeln!(out, "        (void)zd_max_align;").map_err(fmt_err)?;
-    for m in &s.members {
-        if !has_key_annotation(&m.annotations) {
+    // XTypes 1.3 §7.6.8.3.1.b: KeyHolder members in ascending member-id order
+    // (explicit `@id(N)`, else positional index among the `@key` members) —
+    // NOT declaration order.
+    let zd_all_members = resolved_wire_members(s);
+    let key_members: Vec<&Member> = zd_all_members
+        .iter()
+        .filter(|m| has_key_annotation(&m.annotations))
+        .collect();
+    for m in sort_members_by_id(&key_members) {
+        let dealiased = normalize_member(m);
+        // A `@key` member whose (typedef-dealiased) type is a nested struct
+        // is NOT delegated to `emit_plain_member_encode` (whose Scoped-struct
+        // arm — via `emit_value_write` — encodes the WHOLE nested struct, and
+        // for @appendable/@mutable splices the struct's own DHEADER-framed
+        // encode). A KeyHolder is always the FLAT concatenation of that
+        // struct's own `@key` subset (XTypes 1.3 §7.6.8), independent of the
+        // struct's own extensibility — expand it with `emit_key_value_write`
+        // instead. `struct_def_raw` (unlike `scoped_struct`) has no
+        // "all-members-generically-encodable" gate, so a nested struct that
+        // itself contains a typedef-aliased member (previously making the
+        // whole outer member silently vanish from the KeyHash) is still
+        // found and expanded here.
+        let is_struct_key =
+            matches!(&dealiased.type_spec, TypeSpec::Scoped(sc) if struct_def_raw(sc).is_some());
+        if is_struct_key {
+            for decl in &dealiased.declarators {
+                let name = escape_cpp_ident(&decl.name().text);
+                match decl {
+                    Declarator::Simple(_) => {
+                        emit_key_value_write(
+                            out,
+                            &dealiased.type_spec,
+                            &format!("zd_v.{name}()"),
+                            "be",
+                            "zd_origin",
+                        )?;
+                    }
+                    // Array-of-struct `@key` member (e.g. `@key Inner arr[3]`):
+                    // NOT delegated to `emit_plain_member_encode` (whose
+                    // array-of-struct branch wraps a DHEADER and encodes each
+                    // element's WHOLE struct via `emit_value_write` — wrong on
+                    // both counts for a KeyHolder, which is always the FLAT,
+                    // un-framed concatenation of key bytes, XTypes 1.3
+                    // §7.6.8). N nested range-for loops (row-major, same
+                    // shape as the primitive multi-dim array path above) feed
+                    // each element straight into `emit_key_value_write`,
+                    // which expands it to just its own `@key` subset — same
+                    // fix as the Simple-declarator case, extended over the
+                    // array's elements instead of skipping it.
+                    Declarator::Array(arr) => {
+                        let n = arr.sizes.len();
+                        let mut acc = format!("zd_v.{name}()");
+                        for d in 0..n {
+                            let lv = format!("zd_akey{d}");
+                            writeln!(out, "        for (const auto& {lv} : {acc}) {{")
+                                .map_err(fmt_err)?;
+                            acc = lv;
+                        }
+                        emit_key_value_write(out, &dealiased.type_spec, &acc, "be", "zd_origin")?;
+                        for _ in 0..n {
+                            writeln!(out, "        }}").map_err(fmt_err)?;
+                        }
+                    }
+                }
+            }
             continue;
         }
+        // Primitive / string / enum / union / bitholder / sequence / array
+        // `@key` members: the investigation found the existing generic
+        // per-field encoder already correct for these shapes — reuse it.
         emit_plain_member_encode(out, m, "be", "zd_origin")?;
     }
     // XTypes 1.3 §7.6.8.4: holder ≤ 16 octets -> zero-pad; otherwise MD5.

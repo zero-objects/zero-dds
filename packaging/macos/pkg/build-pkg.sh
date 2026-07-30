@@ -4,7 +4,7 @@
 # Spec: zerodds-deployment-1.0.md §3.2.2.
 set -euo pipefail
 
-VERSION="${1:-1.0.0-rc.1}"
+VERSION="${1:-1.0.0-rc.7}"
 ARCH="${2:-universal2}"
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT

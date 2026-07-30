@@ -121,6 +121,10 @@ fn l3_4_csharp_binding() {
         return;
     }
     let root = workspace_root();
+    // `dotnet test` builds ZeroDDS.Cdr into its shared obj/ output, which races
+    // with the idl-csharp / endpoint-e2e `dotnet build`s across parallel test
+    // binaries (CS2012). Serialize via the cross-process build lock.
+    let _guard = zerodds_dotnet_build_lock::dotnet_build_guard();
     let status = Command::new("dotnet")
         .args(["test", "--nologo"])
         .current_dir(root.join("crates/cs/csharp/ZeroDDS.Cdr.Tests"))

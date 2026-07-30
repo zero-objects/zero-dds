@@ -1,6 +1,6 @@
 {
   "name": "@zerodds/wasm",
-  "version": "0.0.0",
+  "version": "1.0.0-rc.7",
   "description": "ZeroDDS TypeScript binding for the browser (WASM XCDR2 codec + DDS-TS Annex C DCPS-over-WebSocket runtime).",
   "type": "module",
   "main": "dist/index.js",

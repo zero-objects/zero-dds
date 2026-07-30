@@ -32,7 +32,10 @@ pub struct DataWriterQos {
     pub durability_service: DurabilityServiceQosPolicy,
     /// Deadline — default INFINITE.
     pub deadline: DeadlineQosPolicy,
-    /// LatencyBudget — hint, no match effect (Spec §2.2.3.10).
+    /// LatencyBudget — RxO-matched (Spec §2.2.3.10.4): the runtime matcher
+    /// rejects a pairing where offered.duration > requested.duration
+    /// (OFFERED_INCOMPATIBLE_QOS). See
+    /// `zerodds_qos::LatencyBudgetQosPolicy::is_compatible_with`.
     pub latency_budget: LatencyBudgetQosPolicy,
     /// Liveliness — default Automatic / INFINITE.
     pub liveliness: LivelinessQosPolicy,
@@ -118,7 +121,8 @@ pub struct DataReaderQos {
     pub durability: DurabilityQosPolicy,
     /// Deadline — default INFINITE.
     pub deadline: DeadlineQosPolicy,
-    /// LatencyBudget — hint, no match effect.
+    /// LatencyBudget — RxO-matched (Spec §2.2.3.10.4): rejected when
+    /// offered.duration > requested.duration (REQUESTED_INCOMPATIBLE_QOS).
     pub latency_budget: LatencyBudgetQosPolicy,
     /// Liveliness — default Automatic / INFINITE.
     pub liveliness: LivelinessQosPolicy,

@@ -887,12 +887,24 @@ impl Resolver {
             TypeDecl::Constr(c) => match c {
                 ConstrTypeDecl::Struct(StructDcl::Def(d)) => {
                     self.insert_typed(scope, path, &d.name, SymbolKind::StructDef);
+                    let names: Vec<&Identifier> = d
+                        .members
+                        .iter()
+                        .flat_map(|m| m.declarators.iter().map(crate::ast::Declarator::name))
+                        .collect();
+                    self.check_member_case_collisions(&names);
                 }
                 ConstrTypeDecl::Struct(StructDcl::Forward(f)) => {
                     self.insert_typed(scope, path, &f.name, SymbolKind::StructForward);
                 }
                 ConstrTypeDecl::Union(UnionDcl::Def(d)) => {
                     self.insert_typed(scope, path, &d.name, SymbolKind::UnionDef);
+                    let names: Vec<&Identifier> = d
+                        .cases
+                        .iter()
+                        .map(|c| c.element.declarator.name())
+                        .collect();
+                    self.check_member_case_collisions(&names);
                 }
                 ConstrTypeDecl::Union(UnionDcl::Forward(f)) => {
                     self.insert_typed(scope, path, &f.name, SymbolKind::UnionForward);
@@ -958,6 +970,32 @@ impl Resolver {
         };
         if let Err(e) = scope.insert(ident, sym) {
             self.errors.push(e);
+        }
+    }
+
+    /// §7.2.3 — two members of the same aggregate whose identifiers differ only
+    /// in case (e.g. `foo` and `Foo`) are a collision, not two distinct members:
+    /// several target languages (C#, Java) fold both onto one name. Reject such a
+    /// pair LOUD as a semantic error, so the codegen backends only ever see
+    /// collision-free, escapable member names — this closes the root cause of the
+    /// per-language duplicate-name defects (A36/A37/A41). The `§7.2.3.2` escape
+    /// prefix is stripped before the comparison.
+    fn check_member_case_collisions(&mut self, names: &[&Identifier]) {
+        let mut seen: Vec<&Identifier> = Vec::with_capacity(names.len());
+        for ident in names {
+            let key = strip_escape(&ident.text);
+            if let Some(prev) = seen
+                .iter()
+                .find(|p| strip_escape(&p.text).eq_ignore_ascii_case(key))
+            {
+                self.errors.push(ResolverError::CaseConflict {
+                    name: ident.text.clone(),
+                    existing: prev.text.clone(),
+                    span: ident.span,
+                });
+            } else {
+                seen.push(ident);
+            }
         }
     }
 
@@ -1321,6 +1359,63 @@ mod tests {
         assert!(r.root.lookup("Foo").is_some());
         assert!(r.root.lookup("FOO").is_some());
         assert!(r.root.lookup("foo").is_some());
+    }
+
+    // ---- A40 §7.2.3 member-case-collision gate ---------------------------
+
+    #[test]
+    fn struct_members_differing_only_in_case_are_rejected() {
+        let ast = parse_to_ast("struct S { long foo; long Foo; };");
+        let mut r = Resolver::new();
+        r.build(&ast);
+        let saw = r.errors.iter().any(|e| {
+            matches!(e, ResolverError::CaseConflict { name, existing, .. }
+                if name == "Foo" && existing == "foo")
+        });
+        assert!(saw, "expected CaseConflict for foo/Foo, got {:?}", r.errors);
+    }
+
+    #[test]
+    fn struct_members_multi_declarator_case_collision_rejected() {
+        // Both declarators of one member statement participate in the check.
+        let ast = parse_to_ast("struct S { long a, A; };");
+        let mut r = Resolver::new();
+        r.build(&ast);
+        assert!(
+            r.errors
+                .iter()
+                .any(|e| matches!(e, ResolverError::CaseConflict { .. })),
+            "expected CaseConflict for a/A, got {:?}",
+            r.errors
+        );
+    }
+
+    #[test]
+    fn union_case_members_differing_only_in_case_are_rejected() {
+        let ast = parse_to_ast("union U switch (long) { case 1: long foo; case 2: long Foo; };");
+        let mut r = Resolver::new();
+        r.build(&ast);
+        assert!(
+            r.errors
+                .iter()
+                .any(|e| matches!(e, ResolverError::CaseConflict { .. })),
+            "expected CaseConflict for union foo/Foo, got {:?}",
+            r.errors
+        );
+    }
+
+    #[test]
+    fn struct_members_distinct_names_pass_the_gate() {
+        let ast = parse_to_ast("struct S { long foo; long bar; long baz; };");
+        let mut r = Resolver::new();
+        r.build(&ast);
+        assert!(
+            !r.errors
+                .iter()
+                .any(|e| matches!(e, ResolverError::CaseConflict { .. })),
+            "no case conflict expected, got {:?}",
+            r.errors
+        );
     }
 
     #[test]

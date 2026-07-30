@@ -1,0 +1,100 @@
+@PACKAGE_INIT@
+
+# find_package(zerodds) config-mode entry point. The `zerodds-c` artifact is
+# built by `cargo rustc`, not CMake's own compiler driver, so it was
+# installed as plain files (library + headers) rather than through
+# install(EXPORT ...) — this file re-creates the IMPORTED targets a
+# from-source build (root CMakeLists.txt) provides, so a downstream
+# `find_package(zerodds) + target_link_libraries(... zerodds::zerodds-c)`
+# consumer sees the identical target names either way.
+
+include(CMakeFindDependencyMacro)
+
+set(ZERODDS_LIBRARY_PREFIX "@ZERODDS_LIBRARY_PREFIX@")
+set(ZERODDS_STATIC_LIBRARY_EXTENSION "@ZERODDS_STATIC_LIBRARY_EXTENSION@")
+set(ZERODDS_SHARED_LIBRARY_EXTENSION "@ZERODDS_SHARED_LIBRARY_EXTENSION@")
+set(ZERODDS_WAS_SHARED @BUILD_SHARED_LIBS@)
+set(ZERODDS_HAD_CPP @ZERODDS_BUILD_CPP@)
+set(ZERODDS_HAD_IDLC @ZERODDS_BUILD_IDLC@)
+
+set_and_check(ZERODDS_INSTALL_INCLUDEDIR "@PACKAGE_CMAKE_INSTALL_INCLUDEDIR@")
+set_and_check(ZERODDS_INSTALL_LIBDIR "@PACKAGE_CMAKE_INSTALL_LIBDIR@")
+set_and_check(ZERODDS_INSTALL_BINDIR "@PACKAGE_CMAKE_INSTALL_BINDIR@")
+
+if(NOT TARGET zerodds::zerodds-c)
+  # The import library (Windows) and the static library share the same
+  # `.lib` extension; the DLL lives in bin/ (P0-5 install split), the .so/.dylib
+  # and the static .a live in lib/.
+  set(_zerodds_c_static "${ZERODDS_INSTALL_LIBDIR}/${ZERODDS_LIBRARY_PREFIX}zerodds.${ZERODDS_STATIC_LIBRARY_EXTENSION}")
+  if(WIN32)
+    set(_zerodds_c_shared "${ZERODDS_INSTALL_BINDIR}/${ZERODDS_LIBRARY_PREFIX}zerodds.${ZERODDS_SHARED_LIBRARY_EXTENSION}")
+  else()
+    set(_zerodds_c_shared "${ZERODDS_INSTALL_LIBDIR}/${ZERODDS_LIBRARY_PREFIX}zerodds.${ZERODDS_SHARED_LIBRARY_EXTENSION}")
+  endif()
+
+  # Decide shared vs static from what the staging tree actually contains, so a
+  # package that ships BOTH libs (Unix: libzerodds.so + libzerodds.a) links the
+  # shared one, while a static-only or shared-only tree Just Works. The
+  # build-time choice (ZERODDS_WAS_SHARED) is the tie-breaker when the
+  # file-presence probe is ambiguous (e.g. Windows, where the import lib and a
+  # static lib would collide on the same `zerodds.lib` name).
+  set(_zerodds_use_shared ${ZERODDS_WAS_SHARED})
+  if(EXISTS "${_zerodds_c_shared}" AND NOT EXISTS "${_zerodds_c_static}")
+    set(_zerodds_use_shared TRUE)
+  elseif(EXISTS "${_zerodds_c_static}" AND NOT EXISTS "${_zerodds_c_shared}")
+    set(_zerodds_use_shared FALSE)
+  endif()
+
+  if(_zerodds_use_shared)
+    add_library(zerodds::zerodds-c SHARED IMPORTED)
+    set_target_properties(zerodds::zerodds-c PROPERTIES IMPORTED_LOCATION "${_zerodds_c_shared}")
+    if(WIN32)
+      # Linking a Windows DLL consumer goes through the import library.
+      set_target_properties(zerodds::zerodds-c PROPERTIES IMPORTED_IMPLIB "${_zerodds_c_static}")
+    endif()
+  else()
+    add_library(zerodds::zerodds-c STATIC IMPORTED)
+    set_target_properties(zerodds::zerodds-c PROPERTIES
+      IMPORTED_LOCATION "${_zerodds_c_static}"
+      IMPORTED_IMPLIB "${_zerodds_c_static}"
+    )
+  endif()
+  unset(_zerodds_use_shared)
+  set_target_properties(zerodds::zerodds-c PROPERTIES
+    INTERFACE_INCLUDE_DIRECTORIES "${ZERODDS_INSTALL_INCLUDEDIR}"
+  )
+  if(WIN32)
+    set_target_properties(zerodds::zerodds-c PROPERTIES
+      INTERFACE_LINK_LIBRARIES "ntdll;ws2_32;bcrypt"
+    )
+  endif()
+  unset(_zerodds_c_static)
+  unset(_zerodds_c_shared)
+endif()
+
+if(ZERODDS_HAD_CPP AND NOT TARGET zerodds::zerodds-cpp)
+  add_library(zerodds::zerodds-cpp INTERFACE IMPORTED)
+  set_target_properties(zerodds::zerodds-cpp PROPERTIES
+    INTERFACE_INCLUDE_DIRECTORIES "${ZERODDS_INSTALL_INCLUDEDIR}"
+    INTERFACE_LINK_LIBRARIES "zerodds::zerodds-c"
+  )
+endif()
+
+if(ZERODDS_HAD_IDLC AND NOT TARGET zerodds::zerodds-idlc)
+  if(WIN32)
+    set(_zerodds_idlc_ext ".exe")
+  endif()
+  add_executable(zerodds::zerodds-idlc IMPORTED)
+  set_target_properties(zerodds::zerodds-idlc PROPERTIES
+    IMPORTED_LOCATION "${ZERODDS_INSTALL_BINDIR}/zerodds-idlc${_zerodds_idlc_ext}"
+  )
+  unset(_zerodds_idlc_ext)
+endif()
+
+# zerodds_idlc_generate() — installed alongside this file. Re-including is a
+# no-op guard (the function only (re)builds zerodds::zerodds-idlc from source
+# if that target does not already exist, which it does not here since it was
+# just imported above when ZERODDS_HAD_IDLC).
+include("${CMAKE_CURRENT_LIST_DIR}/zerodds_idlc_generate.cmake")
+
+check_required_components(zerodds)

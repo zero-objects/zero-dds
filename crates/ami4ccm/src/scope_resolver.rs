@@ -225,6 +225,7 @@ mod tests {
             definitions: defs,
             annotations: alloc::vec::Vec::new(),
             span: Span::SYNTHETIC,
+            reopen_spans: alloc::vec![Span::SYNTHETIC],
         })
     }
 

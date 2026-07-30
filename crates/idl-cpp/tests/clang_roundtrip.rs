@@ -125,6 +125,61 @@ fn run_clang_exec(cpp: &str, main_src: &str) -> Result<(), String> {
     }
 }
 
+/// Broad-audit P0-5 (#2): a `@non_serialized` member keeps its C++ field but is
+/// on NO wire form. Real clang++ compile + run: the C++ class exposes `secret()`
+/// (in-memory ABI slot kept), yet the encoded bytes are exactly `a`+`b` (8 bytes
+/// for @final) and independent of `secret`; decode leaves the field at its
+/// default. Exercises the `emitter.rs` (`resolved_wire_members`) path.
+#[test]
+#[ignore = "requires clang++ in PATH"]
+fn non_serialized_absent_from_wire_p0_5_roundtrips_through_clang() {
+    if !clang_available() {
+        println!("clang not available, skipping");
+        return;
+    }
+    let src = "module conf { @final struct S { long a; @non_serialized long secret; long b; }; };";
+    let ast = zerodds_idl::parse(src, &ParserConfig::default()).expect("parse");
+    let cpp = generate_cpp_header(&ast, &CppGenOptions::default()).expect("gen");
+    // The field stays in the generated C++ class (in-memory ABI slot).
+    assert!(
+        cpp.contains("secret_;"),
+        "the @non_serialized field must remain in the C++ class:\n{cpp}"
+    );
+    let main = r#"
+#include "gen.hpp"
+#include <cassert>
+#include <cstring>
+using namespace dds::topic;
+int main() {
+    conf::S s; s.a(1); s.secret(999); s.b(2);
+    auto bytes = topic_type_support<conf::S>::encode(s);
+    // @final: a(4) + b(4) = 8 bytes; secret is NOT on the wire.
+    assert(bytes.size() == 8);
+    int32_t wa, wb;
+    std::memcpy(&wa, bytes.data(), 4);
+    std::memcpy(&wb, bytes.data() + 4, 4);
+    assert(wa == 1 && wb == 2);
+
+    // Changing secret must not change any wire byte.
+    conf::S s2; s2.a(1); s2.secret(-424242); s2.b(2);
+    auto bytes2 = topic_type_support<conf::S>::encode(s2);
+    assert(bytes2.size() == bytes.size());
+    assert(std::memcmp(bytes.data(), bytes2.data(), bytes.size()) == 0);
+
+    // Decode reads only the wire members; `a` and `b` round-trip. `secret` is
+    // never on the wire, so it takes the decoder's default-constructed value
+    // (implementation-defined for a plain C++ member) — not asserted here.
+    auto back = topic_type_support<conf::S>::decode(
+        bytes.data(), bytes.size(), xcdr2::XcdrVersion::Xcdr2);
+    assert(back.a() == 1 && back.b() == 2);
+    return 0;
+}
+"#;
+    if let Err(e) = run_clang_exec(&cpp, main) {
+        panic!("@non_serialized C++ roundtrip failed:\n{e}");
+    }
+}
+
 /// Bug G: a self-referential recursive type must encode + decode a nested tree
 /// back to the original (no crash, no data loss). XTypes §7.4.5.
 #[test]

@@ -477,6 +477,18 @@ impl<'a, 'b> ValueStreamReader<'a, 'b> {
             }
             0x7FFF_FF06 => {
                 let count = self.inner.read_u32()? as usize;
+                // Every Repository ID needs >= 4 bytes (its own CDR
+                // string length prefix). Reject before
+                // `Vec::with_capacity` — mirrors
+                // `crates/cdr/src/composite.rs`'s
+                // `len > reader.remaining()` guard.
+                if count > self.inner.remaining() / 4 {
+                    return Err(zerodds_cdr::DecodeError::LengthExceeded {
+                        announced: count,
+                        remaining: self.inner.remaining(),
+                        offset: self.inner.position(),
+                    });
+                }
                 let mut ids = Vec::with_capacity(count);
                 for _ in 0..count {
                     ids.push(self.inner.read_string()?);
@@ -485,6 +497,13 @@ impl<'a, 'b> ValueStreamReader<'a, 'b> {
             }
             0x7FFF_FF0A => {
                 let count = self.inner.read_u32()? as usize;
+                if count > self.inner.remaining() / 4 {
+                    return Err(zerodds_cdr::DecodeError::LengthExceeded {
+                        announced: count,
+                        remaining: self.inner.remaining(),
+                        offset: self.inner.position(),
+                    });
+                }
                 let mut ids = Vec::with_capacity(count);
                 for _ in 0..count {
                     ids.push(self.inner.read_string()?);
@@ -686,5 +705,70 @@ mod object_reference_tests {
         let bytes = w.into_bytes();
         let mut r = BufferReader::new(&bytes, Endianness::Little);
         assert_eq!(ObjectReference::decode(&mut r).unwrap(), obj);
+    }
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod value_stream_tests {
+    use super::*;
+    use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
+
+    // -------------------------------------------------------------
+    // Buffer-cap hardening — a wire-supplied Repository-ID-list count
+    // must be rejected cleanly (no OOM, no panic) before
+    // `Vec::with_capacity` runs. Mirrors the established
+    // `len > reader.remaining()` guard in
+    // crates/cdr/src/composite.rs.
+    // -------------------------------------------------------------
+
+    #[test]
+    fn value_tag_list_rejects_oversized_count() {
+        let mut w = BufferWriter::new(Endianness::Big);
+        w.write_u32(0x7FFF_FF06).unwrap(); // list-of-repository-ids tag
+        // Announce a huge id count, but supply no id bytes.
+        w.write_u32(1_000_000_000).unwrap();
+        let bytes = w.into_bytes();
+        let mut r = BufferReader::new(&bytes, Endianness::Big);
+        let mut vsr = ValueStreamReader::new(&mut r);
+        let res = vsr.read_value_tag_full();
+        assert!(
+            matches!(res, Err(zerodds_cdr::DecodeError::LengthExceeded { .. })),
+            "expected clean rejection, got {res:?}"
+        );
+    }
+
+    #[test]
+    fn value_tag_chunked_list_rejects_oversized_count() {
+        let mut w = BufferWriter::new(Endianness::Big);
+        w.write_u32(0x7FFF_FF0A).unwrap(); // chunked list-of-repository-ids tag
+        w.write_u32(1_000_000_000).unwrap();
+        let bytes = w.into_bytes();
+        let mut r = BufferReader::new(&bytes, Endianness::Big);
+        let mut vsr = ValueStreamReader::new(&mut r);
+        let res = vsr.read_value_tag_full();
+        assert!(
+            matches!(res, Err(zerodds_cdr::DecodeError::LengthExceeded { .. })),
+            "expected clean rejection, got {res:?}"
+        );
+    }
+
+    #[test]
+    fn value_tag_list_within_bound_still_round_trips() {
+        let mut w = BufferWriter::new(Endianness::Big);
+        let mut vsw = ValueStreamWriter::new(&mut w);
+        vsw.write_value_tag_multi(&["IDL:demo/A:1.0", "IDL:demo/B:1.0"])
+            .unwrap();
+        let bytes = w.into_bytes();
+        let mut r = BufferReader::new(&bytes, Endianness::Big);
+        let mut vsr = ValueStreamReader::new(&mut r);
+        let header = vsr.read_value_tag_full().unwrap();
+        assert_eq!(
+            header,
+            ValueTagHeader::List(alloc::vec![
+                "IDL:demo/A:1.0".to_string(),
+                "IDL:demo/B:1.0".to_string()
+            ])
+        );
     }
 }

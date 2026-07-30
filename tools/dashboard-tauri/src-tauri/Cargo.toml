@@ -1,6 +1,6 @@
 [package]
 name = "zerodds-dashboard-tauri"
-version = "1.0.0-rc.3"
+version = "1.0.0-rc.7"
 description = "ZeroDDS live monitoring dashboard, Tauri 2.0 native shell. Embeds the zerodds-dashboard HTTP backend in-process and renders the SPA in a native window."
 edition = "2024"
 rust-version = "1.88"

@@ -11,6 +11,7 @@ using System.Collections.Generic;
 using System.Text;
 using Xunit;
 using ZeroDDS.Cdr;
+using Omg.Types; // ExtensibilityKind
 
 namespace ZeroDDS.Cdr.Tests;
 

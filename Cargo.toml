@@ -13,12 +13,26 @@ members = [
     "crates/rtps",
     "crates/discovery",
     "crates/idl",
+    "crates/idl-compose",
     "crates/idl-cpp",
+    "crates/idl-d",
+    "crates/idl-elixir",
     "crates/idl-csharp",
+    "crates/idl-ada",
+    "crates/idl-nim",
+    "crates/idl-ocaml",
+    "crates/idl-julia",
+    "crates/idl-lua",
+    "crates/idl-go",
+    "crates/endpoint-e2e",
+    "crates/dotnet-build-lock",
+    "crates/idl-zig",
     "crates/idl-java",
     "crates/idl-python",
     "crates/idl-rust",
     "crates/idl-ts",
+    "crates/idl-swift",
+    "crates/zerodds-build",
     "crates/corba-rust",
     "crates/java-omgdds",
     "crates/time-service",
@@ -123,6 +137,7 @@ members = [
     "endpoints/golden-gen",
     "endpoints/codegen",
     "endpoints/xrce-agent-demo",
+    "endpoints/rust",
     "crates/rpc",
     "crates/security",
     "crates/security-pki",
@@ -193,6 +208,9 @@ members = [
     # bridge daemons (ws/mqtt/coap/amqp/grpc/corba): TLS + auth modes
     # + topic ACL.
     "crates/bridge-security",
+    # OMG dds-rtps interop-suite `shape_main` reference client (BUILD +
+    # LOCAL-VALIDATE phase — github.com/omg-dds/dds-rtps not yet touched).
+    "tools/omg-shape-main",
 ]
 # The Tauri shell is a sub-project with its own toolchain (tauri-cli +
 # platform deps). It is not built via the cargo workspace.
@@ -201,7 +219,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "1.0.0-rc.6"
+version = "1.0.0-rc.7"
 edition = "2024"
 rust-version = "1.88"
 license = "Apache-2.0"

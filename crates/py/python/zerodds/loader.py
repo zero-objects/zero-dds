@@ -134,6 +134,22 @@ def _bind(lib: ctypes.CDLL) -> ctypes.CDLL:
     ]
     lib.zerodds_writer_create.restype = p_w
 
+    # F-TYPES-3 / #24: typed create carrying the generated dataclass's serialized
+    # COMPLETE TypeObject (zerodds.idl.type_object_of). The runtime registers it
+    # and derives + advertises the cross-binding TypeIdentifier before the writer
+    # is published (no None-window). (rt, topic, type, reliable, is_keyed,
+    # type_object*, len).
+    lib.zerodds_writer_create_typed.argtypes = [
+        p_rt,
+        ctypes.c_char_p,
+        ctypes.c_char_p,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.POINTER(ctypes.c_uint8),
+        ctypes.c_size_t,
+    ]
+    lib.zerodds_writer_create_typed.restype = p_w
+
     lib.zerodds_writer_write.argtypes = [
         p_w,
         ctypes.POINTER(ctypes.c_uint8),
@@ -159,6 +175,19 @@ def _bind(lib: ctypes.CDLL) -> ctypes.CDLL:
         ctypes.c_int,
     ]
     lib.zerodds_reader_create.restype = p_r
+
+    # F-TYPES-3 / #24: reader-side typed create — mirror of
+    # zerodds_writer_create_typed.
+    lib.zerodds_reader_create_typed.argtypes = [
+        p_rt,
+        ctypes.c_char_p,
+        ctypes.c_char_p,
+        ctypes.c_int,
+        ctypes.c_int,
+        ctypes.POINTER(ctypes.c_uint8),
+        ctypes.c_size_t,
+    ]
+    lib.zerodds_reader_create_typed.restype = p_r
 
     lib.zerodds_reader_take.argtypes = [
         p_r,
@@ -276,16 +305,36 @@ class Writer:
         topic: str,
         type_name: Optional[str] = None,
         reliable: bool = True,
+        type_object: Optional[bytes] = None,
+        is_keyed: bool = False,
     ) -> None:
         if type_name is None:
             type_name = topic
         lib = runtime._lib
-        ptr = lib.zerodds_writer_create(
-            runtime._ptr,
-            topic.encode("utf-8"),
-            type_name.encode("utf-8"),
-            ctypes.c_int(1 if reliable else 0),
-        )
+        # F-TYPES-3 / #24: when the caller passes the generated type's serialized
+        # COMPLETE TypeObject (`zerodds.idl.type_object_of(MyStruct)`), create via
+        # the typed path so the endpoint advertises the cross-binding
+        # TypeIdentifier before it is published (no None-window against
+        # discovery). Absent it, fall back to the byte-oriented create (None).
+        if type_object:
+            buf_t = ctypes.c_uint8 * len(type_object)
+            buf = buf_t.from_buffer_copy(type_object)
+            ptr = lib.zerodds_writer_create_typed(
+                runtime._ptr,
+                topic.encode("utf-8"),
+                type_name.encode("utf-8"),
+                ctypes.c_int(1 if reliable else 0),
+                ctypes.c_int(1 if is_keyed else 0),
+                ctypes.cast(buf, ctypes.POINTER(ctypes.c_uint8)),
+                ctypes.c_size_t(len(type_object)),
+            )
+        else:
+            ptr = lib.zerodds_writer_create(
+                runtime._ptr,
+                topic.encode("utf-8"),
+                type_name.encode("utf-8"),
+                ctypes.c_int(1 if reliable else 0),
+            )
         if not ptr:
             raise ZeroDdsError(
                 f"zerodds_writer_create failed for topic={topic!r}"
@@ -340,16 +389,33 @@ class Reader:
         topic: str,
         type_name: Optional[str] = None,
         reliable: bool = True,
+        type_object: Optional[bytes] = None,
+        is_keyed: bool = False,
     ) -> None:
         if type_name is None:
             type_name = topic
         lib = runtime._lib
-        ptr = lib.zerodds_reader_create(
-            runtime._ptr,
-            topic.encode("utf-8"),
-            type_name.encode("utf-8"),
-            ctypes.c_int(1 if reliable else 0),
-        )
+        # F-TYPES-3 / #24: typed create when the generated type's serialized
+        # COMPLETE TypeObject is supplied — reader-side mirror of Writer.
+        if type_object:
+            buf_t = ctypes.c_uint8 * len(type_object)
+            buf = buf_t.from_buffer_copy(type_object)
+            ptr = lib.zerodds_reader_create_typed(
+                runtime._ptr,
+                topic.encode("utf-8"),
+                type_name.encode("utf-8"),
+                ctypes.c_int(1 if reliable else 0),
+                ctypes.c_int(1 if is_keyed else 0),
+                ctypes.cast(buf, ctypes.POINTER(ctypes.c_uint8)),
+                ctypes.c_size_t(len(type_object)),
+            )
+        else:
+            ptr = lib.zerodds_reader_create(
+                runtime._ptr,
+                topic.encode("utf-8"),
+                type_name.encode("utf-8"),
+                ctypes.c_int(1 if reliable else 0),
+            )
         if not ptr:
             raise ZeroDdsError(
                 f"zerodds_reader_create failed for topic={topic!r}"

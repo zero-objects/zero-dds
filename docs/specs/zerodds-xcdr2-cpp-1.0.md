@@ -200,6 +200,15 @@ L1-L4 gegen [`zerodds-xcdr2-bindings-conformance-1.0`](zerodds-xcdr2-bindings-co
 `crates/cpp/examples/topic_typed_smoke.cpp` ist der Referenz-Smoke
 (generierter `topic_type_support<Point>` + Pub/Sub-Loop).
 
+Lauffähige Deep-Examples (sync + async, Sensor-Telemetrie
+`Reading { id, value, label }`, über die C++-Facade byte-identisch):
+
+- Sync: [`endpoints/cpp/example_sync.cpp`](../../endpoints/cpp/example_sync.cpp)
+  — C++98-Poll-Loop über eine In-Memory-FIFO, voller Feld-Decode.
+- Async: [`endpoints/cpp/example_async.cpp`](../../endpoints/cpp/example_async.cpp)
+  — C++17-Reactor (`zerodds::AsyncReader` + `std::function`-Callback).
+- Quickstart: [`endpoints/cpp/QUICKSTART.md`](../../endpoints/cpp/QUICKSTART.md).
+
 ## §11 Errata + Open-Questions
 
 - **§11.1 wchar**: C++ `wchar_t` ist plattformabhaengig (4 Byte unter

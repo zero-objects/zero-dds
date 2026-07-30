@@ -26,7 +26,7 @@ Implementation:
 
 **Repo:** `crates/zerodds-c-api/src/xcdr2.rs` definiert `zerodds_typesupport_t` als `#[repr(C)]`-Struct in `crates/zerodds-c-api/include/zerodds/typesupport.h`.
 
-**Tests:** `crates/zerodds-c-api/tests/xcdr2_c_compile.rs` (11 tests) compilet generierten C-Code gegen Header.
+**Tests:** `crates/zerodds-c-api/tests/xcdr2_c_compile.rs` (12 tests) compilet generierten C-Code gegen Header.
 
 **Status:** done
 
@@ -132,6 +132,16 @@ Implementation:
 
 **Status:** done
 
+### §8 sync + async Deep-Examples + Quickstart
+
+**Spec:** §8 -- lauffähige sync/async Deep-Examples (Sensor-Telemetrie `Reading{id,value,label}`).
+
+**Repo:** `endpoints/c/examples/example_sync.c` (C89-Poll-Loop), `endpoints/c/examples/example_async.c` (C11-Reactor + Callback), `endpoints/c/QUICKSTART.md`.
+
+**Tests:** CI-Job `endpoints-native` → `make -C endpoints/c examples`; codepit-verifiziert (5/5 Feld-Decode, byte-identisch via `zdw`).
+
+**Status:** done
+
 ## §9 Errata + Edge-Cases
 
 ### §9.1 const-Strings via malloc/free
@@ -174,10 +184,48 @@ Implementation:
 
 **Status:** done
 
+### §9.5 Escaping reservierter Keywords
+
+**Spec:** in `zerodds-xcdr2-c-1.0` nicht explizit normiert (keine
+OMG-C-PSM-Spec, §1); hier getrackt, weil der C-Mode-Pfad bis 2026-07-28
+(github-triage #14) GAR KEINE Reserved-Word-Prüfung oder -Escaping hatte
+— ein IDL-Identifier, der mit einem C-Keyword kollidiert (`int`,
+`struct`, `default`, `register`, ...), erzeugte klaglos ungültiges C
+(`int32_t int;`). Der Voll-C++-Pfad (`idl4-cpp-1.0.en.md` §7.1.2) fing
+das immerhin per Hard-Reject ab -- C-Mode nicht einmal das.
+
+**Repo:** `crates/idl-cpp/src/c_keywords.rs` -- vollständige
+ISO/IEC-9899-C89..C23-Keyword-Tabelle (`C_RESERVED`) + `escape_c_ident`
+(Suffix-Underscore, die in C idiomatische Escaping-Konvention -- C hat
+keine Raw-Identifier-/Stropping-Syntax). Verdrahtet in
+`crates/idl-cpp/src/c_mode.rs` an jeder Stelle, an der ein blankes (nicht
+modul-präfigiertes) C-Token aus einem IDL-Namen emittiert wird:
+`c_identifier` (unscoped Struct-/Union-/Enum-/Bitmask-/Bitset-/
+Typedef-Typnamen), `union_case_field` (Union-Payload-Feldnamen), sowie
+jede Struct-/Union-Member-Feldnamen-Ableitung, die sowohl in der
+`typedef struct`-Deklaration als auch in den Encode-/Decode-/Free-/
+Key-Hash-Bodies verwendet wird (Deklaration und Feldzugriff bleiben so
+konsistent). Modul-präfigierte Compound-Tokens (`{c_name}_{enumerator}`)
+bleiben unverändert, da sie konstruktionsbedingt nie mit einem blanken
+Keyword kollidieren können.
+
+**Tests:** `crates/idl-cpp/src/c_mode.rs::tests::{struct_field_named_c_keyword_is_escaped,
+top_level_type_named_c_keyword_is_escaped,
+union_case_field_named_c_keyword_is_escaped,
+enum_value_named_c_keyword_stays_compound_and_valid}` +
+`crates/idl-cpp/src/c_keywords.rs::tests::*` (Listen-Abdeckung,
+Escape-Roundtrip, Alle-Keywords-Sweep) + `crates/zerodds-c-api/tests/xcdr2_c_compile.rs::v12_keyword_identifiers_compiles`
+(echter `-std=c99 -Wall -Werror`-Compile mit `gcc`/`clang` einer Union +
+Struct mit `int`/`register`/`static`/`for`-Identifiern -- belegt, dass
+der escapte Output tatsächlich valides C ist, nicht nur strukturell
+keyword-frei).
+
+**Status:** done
+
 ---
 
 ## Audit-Status
 
-14 done / 0 partial / 0 open / 1 n/a (informative) / 0 n/a (rejected).
+15 done / 0 partial / 0 open / 1 n/a (informative) / 0 n/a (rejected).
 
-Test-Lauf: `cargo test -p zerodds-c-api` -- unittest 68 + smoke_ffi 1 + xcdr2_c_codegen 12 + xcdr2_c_compile 11 + xcdr2_wire_vectors 13 = 105 Tests grün, 0 failed; `cargo test -p zerodds-conformance --test cross_language_xcdr2 l3_3_c_ffi_binding` -- 1 Test grün; `cargo test -p zerodds-cdr --test xcdr2_cross_vendor_fixtures` -- 15 Tests grün.
+Test-Lauf: `cargo test -p zerodds-c-api` -- unittest 68 + smoke_ffi 1 + xcdr2_c_codegen 12 + xcdr2_c_compile 12 + xcdr2_wire_vectors 13 = 106 Tests grün, 0 failed; `cargo test -p zerodds-conformance --test cross_language_xcdr2 l3_3_c_ffi_binding` -- 1 Test grün; `cargo test -p zerodds-cdr --test xcdr2_cross_vendor_fixtures` -- 15 Tests grün.

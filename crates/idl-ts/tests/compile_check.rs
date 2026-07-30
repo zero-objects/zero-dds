@@ -239,6 +239,56 @@ export function toJson(v: Value): string;
     Ok(())
 }
 
+/// Runs `tsc --noEmit --strict --noUnusedLocals` over a ready-made TypeScript
+/// source string with the `@zerodds/*` runtime stubs in place. Skips (returns
+/// `Ok`) when no `tsc` is on PATH.
+fn tsc_check_source(ts_source: &str) -> Result<(), String> {
+    if !tsc_available() {
+        eprintln!("WARNING: skipping TypeScript compile-check, no tsc in PATH");
+        return Ok(());
+    }
+    use std::io::Write;
+    let tmp = tempfile::tempdir().map_err(|e| e.to_string())?;
+    write_runtime_stubs(tmp.path())?;
+
+    let mut f =
+        std::fs::File::create(tmp.path().join("generated.ts")).map_err(|e| e.to_string())?;
+    write!(f, "{ts_source}").map_err(|e| e.to_string())?;
+
+    let tsconfig = r#"{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "isolatedModules": false
+  },
+  "include": ["generated.ts"]
+}
+"#;
+    std::fs::write(tmp.path().join("tsconfig.json"), tsconfig).map_err(|e| e.to_string())?;
+
+    let output = Command::new("tsc")
+        .arg("--project")
+        .arg(tmp.path().join("tsconfig.json"))
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!(
+            "tsc FAILED:\n--- source ---\n{ts_source}\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}"
+        ))
+    }
+}
+
 fn check_compiles_with(src: &str, with_amqp: bool) -> Result<(), String> {
     if !tsc_available() {
         eprintln!("WARNING: skipping TypeScript compile-check, no tsc in PATH");
@@ -267,6 +317,7 @@ fn check_compiles_with(src: &str, with_amqp: bool) -> Result<(), String> {
     "module": "esnext",
     "moduleResolution": "bundler",
     "strict": true,
+    "noUnusedLocals": true,
     "noEmit": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
@@ -318,6 +369,20 @@ fn compiles_module_nesting() {
 #[test]
 fn compiles_enum() {
     check_compiles("enum Color { RED, GREEN, BLUE };").expect("enum must compile");
+}
+
+/// #23-shape regression: an enum-only spec has no `TypeSupport` (only
+/// struct/union get one), so the generated file must not carry an unused
+/// `@zerodds/cdr` import (`Xcdr2Writer`/`Xcdr2Reader`/`DdsTopicType`/
+/// `EndianMode`) or unused `@zerodds/types` extras
+/// (`Char`/`WChar`/`LongDouble`/`DdsAny`/`DdsException`/`make*`). Before the
+/// `runtime_import_block` usage-gate this failed `tsc --noUnusedLocals`
+/// (TS6133/TS6196) even though `tsc --strict` alone passed it clean — the
+/// gap `noUnusedLocals: true` on this file's tsconfig now closes.
+#[test]
+fn compiles_enum_only_spec_under_no_unused_locals() {
+    check_compiles("enum Mode { MODE_IDLE, MODE_ACTIVE, MODE_FAULT };")
+        .expect("enum-only spec must compile clean under --noUnusedLocals");
 }
 
 #[test]
@@ -376,6 +441,59 @@ fn compiles_struct_with_any_member_gated() {
         .expect("struct with any member must compile (gated)");
 }
 
+/// Welle C.2 #14 — reserved-keyword escaping. IDL identifiers that collide
+/// with TS/ECMAScript reserved words (struct/interface/union/enum/bitset/
+/// bitmask/typedef names, module names, const names, RPC operation
+/// parameters) previously emitted syntactically invalid TypeScript
+/// (`export interface class { ... }` etc.). This must now `tsc --strict`
+/// clean.
+#[test]
+fn compiles_keyword_colliding_struct_and_field_names() {
+    check_compiles("struct class { long type; long function; };")
+        .expect("keyword-named struct/fields must compile");
+}
+
+#[test]
+fn compiles_keyword_colliding_type_reference() {
+    check_compiles("struct class { long a; }; struct Holder { class m; };")
+        .expect("reference to a keyword-named type must compile");
+}
+
+#[test]
+fn compiles_keyword_colliding_enum() {
+    check_compiles("enum class { class, type };").expect("keyword-named enum must compile");
+}
+
+#[test]
+fn compiles_keyword_colliding_union_and_module() {
+    check_compiles(
+        "module function { union class switch (long) { case 1: long a; case 2: double b; }; };",
+    )
+    .expect("keyword-named union/module must compile");
+}
+
+#[test]
+fn compiles_keyword_colliding_typedef_and_const() {
+    check_compiles("typedef long class; const long function = 5;")
+        .expect("keyword-named typedef/const must compile");
+}
+
+// NOTE: no `interface`-construct tsc compile-check here (and none existed
+// pre-existing in this file for *any* IDL interface, keyword-colliding or
+// not) — the `@zerodds/types` stub's `ServiceDescriptor` above is declared
+// non-generic, while real codegen emits `ServiceDescriptor<Client,
+// Handler>`. That stub/codegen mismatch is a pre-existing gap in this test
+// harness unrelated to keyword escaping (interface param-name escaping
+// itself IS covered — see
+// `keyword_interface_param_name_escapes_but_method_name_does_not` in
+// `src/lib.rs`, a string-content check that doesn't depend on the stub).
+
+#[test]
+fn compiles_keyword_colliding_bitset_and_bitmask() {
+    check_compiles("bitset class { bitfield<8> lo; }; bitmask function { A, B };")
+        .expect("keyword-named bitset/bitmask must compile");
+}
+
 /// TS-cluster + Bug N — the committed conformance fixtures that previously
 /// failed (union member, fixed arrays, enum member, the mixed combo with all of
 /// them inside a module) must now generate TypeScript that type-checks.
@@ -390,4 +508,47 @@ fn compiles_conformance_fixtures() {
             std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read fixture {f}: {e}"));
         check_compiles(&src).unwrap_or_else(|e| panic!("fixture {f} must compile: {e}"));
     }
+}
+
+/// Assembles the exact source the CLI writes for `--ts`: the emitter output
+/// followed by the shared TypeObject post-pass (`zerodds-idl-compose`'s
+/// `render_ts`). The emitter alone never carried the post-pass, so the older
+/// `check_compiles` tests could not see the P0-8 collision.
+fn combined_ts_source(src: &str) -> String {
+    let ast = zerodds_idl::parse(src, &ParserConfig::default()).expect("parse");
+    let mut out = generate_ts_source(&ast).expect("gen");
+    let blobs =
+        zerodds_idl_compose::typeobject::type_object_blobs(&ast).expect("lower TypeObjects");
+    out.push_str(&zerodds_idl_compose::typeobject::render_ts(&blobs));
+    out
+}
+
+/// P0-8 regression: an enum and a bitmask both emit `export const <Name> = {…}`
+/// in the value namespace. Before the `_TYPE_OBJECT` suffix the TypeObject
+/// post-pass re-declared those exact names (`tsc` TS2451 "Cannot redeclare
+/// block-scoped variable"), so the CLI's `--ts` output did not compile. The
+/// combined source must now type-check, and the TypeObject constants carry the
+/// suffix.
+#[test]
+fn compiles_enum_and_bitmask_with_typeobject_postpass() {
+    let src =
+        "enum NarrowEnum { A, B }; bitmask Flags { F0, F1 }; struct Point { long x; long y; };";
+    let combined = combined_ts_source(src);
+    // The value-namespace names the emitter owns appear exactly once each …
+    assert_eq!(
+        combined.matches("export const NarrowEnum = ").count(),
+        1,
+        "enum value export must not be re-declared by the post-pass:\n{combined}"
+    );
+    assert_eq!(
+        combined.matches("export const Flags = ").count(),
+        1,
+        "bitmask value export must not be re-declared by the post-pass:\n{combined}"
+    );
+    // … and the TypeObject bytes live under the suffixed identifier.
+    assert!(combined.contains("export const NarrowEnum_TYPE_OBJECT = new Uint8Array(["));
+    assert!(combined.contains("export const Flags_TYPE_OBJECT = new Uint8Array(["));
+    assert!(combined.contains("export const Point_TYPE_OBJECT = new Uint8Array(["));
+    // And the combination the CLI emits must actually type-check.
+    tsc_check_source(&combined).expect("combined emitter + TypeObject post-pass must compile");
 }

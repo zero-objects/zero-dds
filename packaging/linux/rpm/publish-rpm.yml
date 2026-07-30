@@ -39,8 +39,8 @@ jobs:
         run: |
           rpmdev-setuptree
           mkdir -p ~/rpmbuild/SOURCES
-          tar --transform 's,^,zerodds-1.0.0-rc.1/,' \
-              -czf ~/rpmbuild/SOURCES/zerodds-1.0.0-rc.1.tar.gz \
+          tar --transform 's,^,zerodds-1.0.0-rc.7/,' \
+              -czf ~/rpmbuild/SOURCES/zerodds-1.0.0-rc.7.tar.gz \
               --exclude target --exclude .git .
       - name: Build RPMs
         run: |

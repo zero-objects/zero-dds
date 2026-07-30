@@ -417,7 +417,22 @@ impl DomainParticipant {
             .map_err(|_| DdsError::PreconditionNotMet {
                 reason: "invalid dds.sec.log.* security logger configuration",
             })?;
-        let runtime = DcpsRuntime::start(domain_id, random_guid_prefix(), config)?;
+        // DDS-Security §9.3.3: when a security profile carries an
+        // identity-adjusted GUID prefix (wired via
+        // `RuntimeConfig::with_security_bundle`), the runtime MUST start with
+        // that prefix instead of a random candidate — the SPDP beacon,
+        // handshake `c.pdata` and all entity GUIDs must be consistent with the
+        // identity cert, or a foreign vendor's §9.3.3 check rejects the
+        // participant. Mirrors `zerodds-c-api::security_ffi::finish_secure_runtime`,
+        // which has always used the adjusted prefix on the FFI path — this
+        // wires the same behavior onto the public `zerodds-dcps` Rust API.
+        #[cfg(feature = "security")]
+        let prefix = config
+            .security_guid_prefix
+            .unwrap_or_else(random_guid_prefix);
+        #[cfg(not(feature = "security"))]
+        let prefix = random_guid_prefix();
+        let runtime = DcpsRuntime::start(domain_id, prefix, config)?;
         let builtin = Arc::new(BuiltinSubscriber::new());
         // Wire up the discovery hook: from now on the runtime pushes
         // SPDP/SEDP events into the 4 builtin readers.
@@ -1934,6 +1949,9 @@ mod tests {
                     ownership: zerodds_qos::OwnershipKind::Shared,
                     liveliness: zerodds_qos::LivelinessQosPolicy::default(),
                     deadline: zerodds_qos::DeadlineQosPolicy::default(),
+                    latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
+                    destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
+                    presentation: zerodds_qos::PresentationQosPolicy::default(),
                     partition: alloc::vec::Vec::new(),
                     user_data: alloc::vec::Vec::new(),
                     topic_data: alloc::vec::Vec::new(),
@@ -2013,7 +2031,10 @@ mod tests {
                         ownership_strength: 0,
                         liveliness: zerodds_qos::LivelinessQosPolicy::default(),
                         deadline: zerodds_qos::DeadlineQosPolicy::default(),
+                        latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
+                        destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
                         lifespan: zerodds_qos::LifespanQosPolicy::default(),
+                        presentation: zerodds_qos::PresentationQosPolicy::default(),
                         partition: alloc::vec::Vec::new(),
                         user_data: alloc::vec::Vec::new(),
                         topic_data: alloc::vec::Vec::new(),
@@ -2278,7 +2299,10 @@ mod tests {
                     ownership_strength: 0,
                     liveliness: zerodds_qos::LivelinessQosPolicy::default(),
                     deadline: zerodds_qos::DeadlineQosPolicy::default(),
+                    latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
+                    destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
                     lifespan: zerodds_qos::LifespanQosPolicy::default(),
+                    presentation: zerodds_qos::PresentationQosPolicy::default(),
                     partition: alloc::vec::Vec::new(),
                     user_data: alloc::vec::Vec::new(),
                     topic_data: alloc::vec::Vec::new(),
@@ -2306,6 +2330,9 @@ mod tests {
                     ownership: zerodds_qos::OwnershipKind::Shared,
                     liveliness: zerodds_qos::LivelinessQosPolicy::default(),
                     deadline: zerodds_qos::DeadlineQosPolicy::default(),
+                    latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
+                    destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
+                    presentation: zerodds_qos::PresentationQosPolicy::default(),
                     partition: alloc::vec::Vec::new(),
                     user_data: alloc::vec::Vec::new(),
                     topic_data: alloc::vec::Vec::new(),
@@ -2366,7 +2393,10 @@ mod tests {
                     ownership_strength: 0,
                     liveliness: zerodds_qos::LivelinessQosPolicy::default(),
                     deadline: zerodds_qos::DeadlineQosPolicy::default(),
+                    latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
+                    destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
                     lifespan: zerodds_qos::LifespanQosPolicy::default(),
+                    presentation: zerodds_qos::PresentationQosPolicy::default(),
                     partition: alloc::vec::Vec::new(),
                     user_data: alloc::vec::Vec::new(),
                     topic_data: alloc::vec::Vec::new(),

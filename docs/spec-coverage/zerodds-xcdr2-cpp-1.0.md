@@ -186,6 +186,16 @@ Implementation:
 
 **Status:** done
 
+### §10 sync + async Deep-Examples + Quickstart
+
+**Spec:** §10 -- lauffähige sync/async Deep-Examples (Sensor-Telemetrie `Reading{id,value,label}`).
+
+**Repo:** `endpoints/cpp/example_sync.cpp` (C++98-Poll-Loop), `endpoints/cpp/example_async.cpp` (C++17-Reactor + `std::function`), `endpoints/cpp/QUICKSTART.md`.
+
+**Tests:** CI-Job `endpoints-native` → `make -C endpoints/cpp examples`; codepit-verifiziert (5/5 Feld-Decode, byte-identisch via die C++-Facade über den `zdw`-Kern).
+
+**Status:** done
+
 ## §11 Errata + Open-Questions
 
 ### §11.1 wchar plattform-abhängig

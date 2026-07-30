@@ -168,6 +168,11 @@ let cfg = RuntimeConfig {
 let rt = DcpsRuntime::start(0, prefix, cfg)?;
 ```
 
+> ▶ Runnable example: [`security-governance-gate`](https://github.com/zero-objects/zero-dds-snippets/tree/master/security-governance-gate)
+> (parses this page's own Governance XML example and starts a real
+> `DcpsRuntime` with the gate wired — needs the `security` feature, see the
+> companion's `Cargo.toml`).
+
 After this, every outbound RTPS message gets SRTPS-wrapped per
 the governance rules; every inbound message gets unwrapped or
 dropped on policy violation.

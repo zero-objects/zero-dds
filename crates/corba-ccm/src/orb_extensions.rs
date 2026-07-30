@@ -551,6 +551,20 @@ impl PersistentRequestStore {
 // §18 Compression (Part 1) + Part 2 §12 ZIOP
 // ===========================================================================
 
+/// Cap for [`CompressionAlgorithm::decompress`] output (1 MiB).
+///
+/// # DoS posture
+///
+/// `decompress` runs a zlib/gzip/deflate `read_to_end` over
+/// attacker-controlled input. Without a bound, a small compressed
+/// payload (a "zip bomb") can expand to gigabytes and exhaust memory
+/// before the caller ever sees a result. This mirrors the cap
+/// convention in `rtps::fragment_assembler` (`DEFAULT_MAX_SAMPLE_BYTES`,
+/// 1 MiB) — dormant today (ZIOP is not wired to GIOP receive), but
+/// required before ZIOP decompression sits on a wire-facing path.
+#[cfg(feature = "std")]
+pub const MAX_DECOMPRESSED_BYTES: usize = 1024 * 1024;
+
 /// Spec §18 / Part 2 §12 — compression-algorithm identifier
 /// (the CORBA 3.3 ZIOP spec standardizes "vendor-defined" algorithms).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -638,34 +652,50 @@ impl CompressionAlgorithm {
 
     /// Spec §18 — decompresses `input` analogously to [`Self::compress`].
     ///
+    /// Output is capped at [`MAX_DECOMPRESSED_BYTES`] — see that
+    /// constant's doc for the DoS rationale. Input that decompresses
+    /// past the cap is rejected with
+    /// [`CompressionError::OutputTooLarge`] rather than allocating
+    /// without bound.
+    ///
     /// # Errors
-    /// I/O error, or [`CompressionError::Unsupported`] for LZMA.
+    /// I/O error, [`CompressionError::OutputTooLarge`] if the
+    /// decompressed size exceeds [`MAX_DECOMPRESSED_BYTES`], or
+    /// [`CompressionError::Unsupported`] for LZMA.
     #[cfg(feature = "std")]
     pub fn decompress(self, input: &[u8]) -> Result<Vec<u8>, CompressionError> {
-        use std::io::Read;
         match self {
-            Self::None => Ok(input.to_vec()),
-            Self::Zlib => {
-                let mut d = flate2::read::ZlibDecoder::new(input);
-                let mut out = Vec::new();
-                d.read_to_end(&mut out).map_err(CompressionError::from)?;
-                Ok(out)
+            Self::None => {
+                if input.len() > MAX_DECOMPRESSED_BYTES {
+                    return Err(CompressionError::OutputTooLarge);
+                }
+                Ok(input.to_vec())
             }
-            Self::Gzip => {
-                let mut d = flate2::read::GzDecoder::new(input);
-                let mut out = Vec::new();
-                d.read_to_end(&mut out).map_err(CompressionError::from)?;
-                Ok(out)
-            }
-            Self::Deflate => {
-                let mut d = flate2::read::DeflateDecoder::new(input);
-                let mut out = Vec::new();
-                d.read_to_end(&mut out).map_err(CompressionError::from)?;
-                Ok(out)
-            }
+            Self::Zlib => read_bounded(flate2::read::ZlibDecoder::new(input)),
+            Self::Gzip => read_bounded(flate2::read::GzDecoder::new(input)),
+            Self::Deflate => read_bounded(flate2::read::DeflateDecoder::new(input)),
             Self::Lzma => Err(CompressionError::Unsupported(Self::Lzma)),
         }
     }
+}
+
+/// Reads `r` to end, capped at [`MAX_DECOMPRESSED_BYTES`] + 1 bytes so the
+/// intermediate buffer never grows unbounded — [`Read::take`] stops the
+/// decompressor from producing more than the cap allows, and a full
+/// `cap + 1`-byte read is treated as "exceeded the cap" rather than
+/// silently truncated output.
+#[cfg(feature = "std")]
+fn read_bounded<R: std::io::Read>(r: R) -> Result<Vec<u8>, CompressionError> {
+    use std::io::Read;
+    let mut out = Vec::new();
+    let limit = MAX_DECOMPRESSED_BYTES as u64 + 1;
+    r.take(limit)
+        .read_to_end(&mut out)
+        .map_err(CompressionError::from)?;
+    if out.len() > MAX_DECOMPRESSED_BYTES {
+        return Err(CompressionError::OutputTooLarge);
+    }
+    Ok(out)
 }
 
 /// Error in the compression codec.
@@ -677,6 +707,9 @@ pub enum CompressionError {
     /// The algorithm is not covered in the current build
     /// (decision record: LZMA requires an extra `xz2`/`liblzma` build).
     Unsupported(CompressionAlgorithm),
+    /// Decompressed output exceeded [`MAX_DECOMPRESSED_BYTES`] — rejected
+    /// before allocating further (DoS cap, see that constant's doc).
+    OutputTooLarge,
 }
 
 #[cfg(feature = "std")]
@@ -684,6 +717,10 @@ impl core::fmt::Display for CompressionError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::Io(e) => write!(f, "compression io: {e}"),
+            Self::OutputTooLarge => write!(
+                f,
+                "decompressed output exceeds cap ({MAX_DECOMPRESSED_BYTES} bytes)"
+            ),
             Self::Unsupported(a) => write!(f, "compression unsupported: {a:?}"),
         }
     }
@@ -1144,6 +1181,36 @@ mod tests {
             .decompress(&compressed)
             .expect("decompress ok");
         assert_eq!(back, input);
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn compression_zlib_decompress_bomb_rejected() {
+        // A highly compressible input (all zeros) that expands past
+        // MAX_DECOMPRESSED_BYTES on decompress — the classic "zip bomb"
+        // shape: tiny wire payload, huge decompressed output. Must be
+        // rejected with OutputTooLarge, not allocated without bound.
+        let input = vec![0_u8; MAX_DECOMPRESSED_BYTES + 4096];
+        let compressed = CompressionAlgorithm::Zlib
+            .compress(&input)
+            .expect("compress ok");
+        assert!(compressed.len() < MAX_DECOMPRESSED_BYTES / 100);
+        let err = CompressionAlgorithm::Zlib
+            .decompress(&compressed)
+            .expect_err("must be rejected as too large");
+        assert!(matches!(err, CompressionError::OutputTooLarge));
+    }
+
+    #[cfg(feature = "std")]
+    #[test]
+    fn compression_none_decompress_bomb_rejected() {
+        // `None` has no expansion, but the cap must still reject
+        // oversized input consistently across all algorithm arms.
+        let input = vec![0_u8; MAX_DECOMPRESSED_BYTES + 1];
+        let err = CompressionAlgorithm::None
+            .decompress(&input)
+            .expect_err("must be rejected as too large");
+        assert!(matches!(err, CompressionError::OutputTooLarge));
     }
 
     #[cfg(feature = "std")]

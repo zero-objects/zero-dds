@@ -1,0 +1,1418 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 ZeroDDS Contributors
+
+//! Swift backend: string smoke tests (always) + a byte-identity test that
+//! compiles+runs the generated Swift and compares to the Rust goldens (gated on
+//! `swiftc` on PATH and `GOLDEN_DIR` pointing at golden_{le,be}.bin).
+
+#![allow(
+    clippy::expect_used,
+    clippy::unwrap_used,
+    clippy::panic,
+    clippy::print_stderr,
+    clippy::print_stdout
+)]
+
+use std::path::Path;
+use std::process::Command;
+
+use zerodds_idl::config::ParserConfig;
+use zerodds_idl_swift::{SwiftGenOptions, generate_swift_module};
+
+const GOLDEN_IDL: &str = "\
+@final struct Golden {
+    uint32 id;
+    uint16 kind;
+    octet flags;
+    float value;
+    uint64 stamp;
+    string label;
+    sequence<octet> raw;
+};";
+
+fn emit(src: &str) -> String {
+    let ast = zerodds_idl::parse(src, &ParserConfig::default()).expect("parse");
+    generate_swift_module(&ast, &SwiftGenOptions::default()).expect("gen")
+}
+
+/// swarm59 #21b: `module X { struct Y { ... }; }` used to be silently
+/// dropped (no `Definition::Module` arm at all) — the struct must now emit.
+#[test]
+fn module_wrapped_struct_is_emitted_not_dropped() {
+    let s = emit("module Telemetry { @final struct Reading { long value; }; };");
+    // #21: a module-wrapped type is emitted with its module-qualified name.
+    assert!(s.contains("public struct Telemetry_sReading {"), "{s}");
+    assert!(s.contains("public var value: Int32"), "{s}");
+}
+
+/// A reopened module (`module M {} ... module M {}`) must not lose either
+/// half's content once the AST builder merges the two occurrences.
+#[test]
+fn reopened_module_emits_both_structs() {
+    let s = emit(
+        "module M { @final struct A { long x; }; }; \
+         module M { @final struct B { long y; }; };",
+    );
+    // #21: both halves emit under the module-qualified name `M_*`.
+    assert!(s.contains("public struct M_sA {"), "{s}");
+    assert!(s.contains("public struct M_sB {"), "{s}");
+}
+
+/// #21 cross-module collision: two different modules each declaring `Reading`
+/// must emit distinct, module-qualified Swift structs, never a duplicate one.
+#[test]
+fn cross_module_same_name_types_are_qualified() {
+    let s = emit(
+        "module a { @final struct Reading { long v; }; }; \
+         module b { @final struct Reading { double w; }; };",
+    );
+    assert!(s.contains("public struct a_sReading {"), "{s}");
+    assert!(s.contains("public struct b_sReading {"), "{s}");
+    assert!(!s.contains("public struct Reading {"), "{s}");
+    assert!(s.contains("public var v: Int32"), "{s}");
+    assert!(s.contains("public var w: Double"), "{s}");
+}
+
+/// #21 cross-module reference: `module b`'s struct references `a::R`, which
+/// must resolve to the qualified type `a_R`, not the bare `R`.
+#[test]
+fn cross_module_reference_resolves_to_qualified_type() {
+    // Field named `inner` (not `r`): a field literally named `r` would shadow
+    // the generated decode's `Reader` variable `r` — a pre-existing Swift
+    // codegen concern unrelated to the #21 type-qualification fix under test.
+    let s = emit(
+        "module a { @final struct R { long v; }; }; \
+         module b { @final struct S { a::R inner; }; };",
+    );
+    assert!(s.contains("public struct a_sR {"), "{s}");
+    assert!(s.contains("public struct b_sS {"), "{s}");
+    // S's member `inner` has the qualified type a_R.
+    assert!(s.contains("public var inner: a_sR"), "{s}");
+}
+
+/// #21 compile gate: a two-module spec with a cross-module reference must
+/// produce compilable Swift.
+#[test]
+fn cross_module_reference_compiles_with_swiftc() {
+    if Command::new("swiftc").arg("--version").output().is_err() {
+        eprintln!("SKIP cross_module_reference_compiles_with_swiftc: `swiftc` not on PATH");
+        return;
+    }
+    let mut src = emit(
+        "module a { @final struct R { long v; }; }; \
+         module b { @final struct S { a::R inner; }; };",
+    );
+    src.push_str(
+        r##"
+let s = b_sS(inner: a_sR(v: 7))
+let _ = try s.marshalXCDR(.little)
+print("ok")
+"##,
+    );
+    let src = format!("import Foundation\n{src}");
+    let dir = std::env::temp_dir().join(format!("idlswift_xmod_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    let sf = dir.join("main.swift");
+    std::fs::write(&sf, &src).expect("write");
+    let build = Command::new("swiftc")
+        .arg(&sf)
+        .arg("-o")
+        .arg(dir.join("main_bin"))
+        .output()
+        .expect("swiftc");
+    assert!(
+        build.status.success(),
+        "swiftc failed:\n{}\n--- src ---\n{src}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let run = Command::new(dir.join("main_bin")).output().expect("run");
+    assert_eq!(String::from_utf8_lossy(&run.stdout).trim(), "ok");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn final_struct_emits_struct_and_marshal() {
+    let s = emit(GOLDEN_IDL);
+    assert!(s.contains("public struct Golden {"), "{s}");
+    assert!(s.contains("public var id: UInt32"), "{s}");
+    assert!(s.contains("public var kind: UInt16"), "{s}");
+    assert!(s.contains("public var flags: UInt8"), "{s}");
+    assert!(s.contains("public var value: Float"), "{s}");
+    assert!(s.contains("public var stamp: UInt64"), "{s}");
+    assert!(s.contains("public var label: String"), "{s}");
+    assert!(s.contains("public var raw: [UInt8]"), "{s}");
+    assert!(
+        s.contains("public func marshalXCDR(_ endian: Endianness) throws -> [UInt8] {"),
+        "{s}"
+    );
+    assert!(s.contains("w.putU32(id)"), "{s}");
+    assert!(s.contains("w.putF32(value)"), "{s}");
+    assert!(s.contains("w.putString(label)"), "{s}");
+    assert!(s.contains("w.putSeqU8(raw)"), "{s}");
+    assert!(!s.contains("let bb = body.bytes()"), "{s}");
+}
+
+#[test]
+fn appendable_struct_frames_a_dheader() {
+    let s = emit("@appendable struct S { uint32 a; };");
+    assert!(s.contains("let bb = body.bytes()"), "{s}");
+    assert!(s.contains("w.putU32(UInt32(bb.count))"), "{s}");
+    assert!(s.contains("w.putBytes(bb)"), "{s}");
+}
+
+const ENUM_IDL: &str = "\
+enum Mode { MODE_IDLE, MODE_ACTIVE, MODE_FAULT };
+@final struct S { Mode kind; uint32 tail; };";
+
+#[test]
+fn enum_emits_int32_enum_and_member_marshals() {
+    let s = emit(ENUM_IDL);
+    assert!(s.contains("public enum Mode: Int32 {"), "{s}");
+    assert!(s.contains("case MODE_FAULT = 2"), "{s}");
+    assert!(s.contains("public var kind: Mode"), "{s}");
+    // An enum member is a 32-bit signed integer on the wire (XTypes §7.4.5.1).
+    assert!(
+        s.contains("w.putU32(UInt32(bitPattern: kind.rawValue))"),
+        "{s}"
+    );
+}
+
+#[test]
+fn enum_member_is_byte_identical_i32() {
+    // Gated: needs swiftc (local macOS; codepit CI has no swiftc). S{ kind:
+    // MODE_FAULT(=2), tail: 0xDEADBEEF } -> i32 LE 02000000 + u32 LE efbeadde.
+    if Command::new("swiftc").arg("--version").output().is_err() {
+        eprintln!("SKIP enum byte test: `swiftc` not on PATH");
+        return;
+    }
+    let mut src = emit(ENUM_IDL);
+    src.push_str(
+        r##"
+func toHex(_ b: [UInt8]) -> String { b.map { String(format: "%02x", $0) }.joined() }
+let s = S(kind: .MODE_FAULT, tail: 0xDEADBEEF)
+print(toHex(try s.marshalXCDR(.little)))
+"##,
+    );
+    let src = format!("import Foundation\n{src}");
+    let dir = std::env::temp_dir().join(format!("idlswift_enum_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    let sf = dir.join("main.swift");
+    std::fs::write(&sf, &src).expect("write");
+    let build = Command::new("swiftc")
+        .arg(&sf)
+        .arg("-o")
+        .arg(dir.join("main_bin"))
+        .output()
+        .expect("swiftc");
+    assert!(
+        build.status.success(),
+        "swiftc failed:\n{}\n--- src ---\n{src}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let run = Command::new(dir.join("main_bin")).output().expect("run");
+    let stdout = String::from_utf8(run.stdout).expect("utf8");
+    assert_eq!(
+        stdout.lines().next().expect("le").trim(),
+        "02000000efbeadde"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+const NESTED_IDL: &str = "\
+@appendable struct Inner { unsigned short a; unsigned long b; };
+@appendable struct Outer { unsigned long id; Inner one; sequence<Inner> many; string label; };";
+
+#[test]
+fn nested_struct_emits_marshal_into() {
+    let z = emit(NESTED_IDL);
+    assert!(
+        z.contains("public func marshalInto(_ w: inout Writer)"),
+        "{z}"
+    );
+    assert!(z.contains("public var one: Inner"), "{z}");
+    assert!(z.contains("public var many: [Inner]"), "{z}");
+    assert!(z.contains("try one.marshalInto(&body)"), "{z}");
+    assert!(z.contains("try zdElem0.marshalInto(&zdSub0)"), "{z}");
+}
+
+#[test]
+fn nested_is_byte_identical_vs_rust_golden() {
+    // Gated: swiftc (local macOS; codepit CI has no swiftc).
+    let golden_dir = match std::env::var("GOLDEN_DIR") {
+        Ok(d) => d,
+        Err(_) => {
+            eprintln!("SKIP nested byte: GOLDEN_DIR unset");
+            return;
+        }
+    };
+    if Command::new("swiftc").arg("--version").output().is_err() {
+        eprintln!("SKIP nested byte: `swiftc` not on PATH");
+        return;
+    }
+    let mut src = emit(NESTED_IDL);
+    src.push_str(
+        r##"
+func toHex(_ b: [UInt8]) -> String { b.map { String(format: "%02x", $0) }.joined() }
+let inners = [Inner(a: 0xAAAA, b: 0xBBBBCCCC), Inner(a: 0xDDDD, b: 0xEEEEFFFF)]
+let o = Outer(id: 0xCAFEBABE, one: Inner(a: 0x1111, b: 0x22223333), many: inners, label: "nested")
+print(toHex(try o.marshalXCDR(.little)))
+print(toHex(try o.marshalXCDR(.big)))
+"##,
+    );
+    let src = format!("import Foundation\n{src}");
+    let dir = std::env::temp_dir().join(format!("idlswift_nested_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    let sf = dir.join("main.swift");
+    std::fs::write(&sf, &src).expect("write");
+    let build = Command::new("swiftc")
+        .arg(&sf)
+        .arg("-o")
+        .arg(dir.join("main_bin"))
+        .output()
+        .expect("swiftc");
+    assert!(
+        build.status.success(),
+        "swiftc failed:\n{}\n--- src ---\n{src}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let run = Command::new(dir.join("main_bin")).output().expect("run");
+    let stdout = String::from_utf8(run.stdout).expect("utf8");
+    let mut lines = stdout.lines();
+    assert_eq!(
+        lines.next().expect("le").trim(),
+        hex_of(Path::new(&golden_dir).join("golden_nested_le.bin"))
+    );
+    assert_eq!(
+        lines.next().expect("be").trim(),
+        hex_of(Path::new(&golden_dir).join("golden_nested_be.bin"))
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn byte_identity_vs_rust_goldens() {
+    let golden_dir = match std::env::var("GOLDEN_DIR") {
+        Ok(d) => d,
+        Err(_) => {
+            eprintln!("SKIP byte_identity: GOLDEN_DIR unset");
+            return;
+        }
+    };
+    if Command::new("swiftc").arg("--version").output().is_err() {
+        eprintln!("SKIP byte_identity: `swiftc` not on PATH");
+        return;
+    }
+
+    let mut src = emit(GOLDEN_IDL);
+    src.push_str(
+        r#"
+func toHex(_ b: [UInt8]) -> String {
+    b.map { String(format: "%02x", $0) }.joined()
+}
+import Foundation
+let g = Golden(
+    id: 0xA1B2C3D4, kind: 0x1234, flags: 0x5A, value: 3.5,
+    stamp: 0x0102030405060708, label: "bay-12", raw: [0xDE, 0xAD, 0xBE, 0xEF]
+)
+print(toHex(try g.marshalXCDR(.little)))
+print(toHex(try g.marshalXCDR(.big)))
+"#,
+    );
+    // Foundation import must precede code; hoist it to the top.
+    let src = src.replacen("\nimport Foundation\n", "\n", 1);
+    let src = format!("import Foundation\n{src}");
+
+    let dir = std::env::temp_dir().join(format!("idlswift_golden_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    let sf = dir.join("main.swift");
+    std::fs::write(&sf, &src).expect("write");
+
+    let build = Command::new("swiftc")
+        .arg(&sf)
+        .arg("-o")
+        .arg(dir.join("main_bin"))
+        .output()
+        .expect("swiftc");
+    assert!(
+        build.status.success(),
+        "swiftc failed:\n{}\n--- src ---\n{src}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let run = Command::new(dir.join("main_bin")).output().expect("run");
+    assert!(
+        run.status.success(),
+        "run failed:\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let stdout = String::from_utf8(run.stdout).expect("utf8");
+    let mut lines = stdout.lines();
+    let got_le = lines.next().expect("le").trim().to_string();
+    let got_be = lines.next().expect("be").trim().to_string();
+
+    assert_eq!(
+        got_le,
+        hex_of(Path::new(&golden_dir).join("golden_le.bin")),
+        "LE wire"
+    );
+    assert_eq!(
+        got_be,
+        hex_of(Path::new(&golden_dir).join("golden_be.bin")),
+        "BE wire"
+    );
+}
+
+const TYPEDEF_IDL: &str = "\
+typedef unsigned long Id;
+typedef Id AliasId;
+typedef string Label;
+typedef sequence<octet> Blob;
+@final struct Rec { AliasId id; Label name; Blob data; };";
+
+#[test]
+fn typedef_resolves_to_underlying_type() {
+    let s = emit(TYPEDEF_IDL);
+    assert!(s.contains("public var name: String"), "{s}");
+    assert!(s.contains("public var data: [UInt8]"), "{s}");
+}
+
+#[test]
+fn typedef_is_byte_identical_vs_rust_golden() {
+    let golden_dir = match std::env::var("GOLDEN_DIR") {
+        Ok(d) => d,
+        Err(_) => {
+            eprintln!("SKIP typedef byte: GOLDEN_DIR unset");
+            return;
+        }
+    };
+    if Command::new("swiftc").arg("--version").output().is_err() {
+        eprintln!("SKIP typedef byte: `swiftc` not on PATH");
+        return;
+    }
+    let mut src = emit(TYPEDEF_IDL);
+    src.push_str(
+        r##"
+func toHex(_ b: [UInt8]) -> String { b.map { String(format: "%02x", $0) }.joined() }
+let r = Rec(id: 0xCAFEBABE, name: "typedef", data: [1, 2, 3])
+print(toHex(try r.marshalXCDR(.little)))
+print(toHex(try r.marshalXCDR(.big)))
+"##,
+    );
+    let src = format!("import Foundation\n{src}");
+    let dir = std::env::temp_dir().join(format!("idlswift_typedef_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    let sf = dir.join("main.swift");
+    std::fs::write(&sf, &src).expect("write");
+    let build = Command::new("swiftc")
+        .arg(&sf)
+        .arg("-o")
+        .arg(dir.join("main_bin"))
+        .output()
+        .expect("swiftc");
+    assert!(
+        build.status.success(),
+        "swiftc failed:\n{}\n--- src ---\n{src}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let run = Command::new(dir.join("main_bin")).output().expect("run");
+    let stdout = String::from_utf8(run.stdout).expect("utf8");
+    let mut lines = stdout.lines();
+    assert_eq!(
+        lines.next().expect("le").trim(),
+        hex_of(Path::new(&golden_dir).join("golden_typedef_le.bin"))
+    );
+    assert_eq!(
+        lines.next().expect("be").trim(),
+        hex_of(Path::new(&golden_dir).join("golden_typedef_be.bin"))
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+const ARRAY_IDL: &str = "\
+@final struct Arr { long xs[3]; short m[2][2]; octet bs[4]; };";
+
+#[test]
+fn array_emits_fixed_arrays_and_loops() {
+    let s = emit(ARRAY_IDL);
+    assert!(s.contains("public var xs: [Int32]"), "{s}");
+    assert!(s.contains("public var m: [[Int16]]"), "{s}");
+    assert!(s.contains("public var bs: [UInt8]"), "{s}");
+    assert!(s.contains("for zdi0 in 0..<3"), "{s}");
+    assert!(s.contains("for zdi1 in 0..<2"), "{s}");
+}
+
+#[test]
+fn array_is_byte_identical_vs_rust_golden() {
+    let golden_dir = match std::env::var("GOLDEN_DIR") {
+        Ok(d) => d,
+        Err(_) => {
+            eprintln!("SKIP array byte: GOLDEN_DIR unset");
+            return;
+        }
+    };
+    if Command::new("swiftc").arg("--version").output().is_err() {
+        eprintln!("SKIP array byte: `swiftc` not on PATH");
+        return;
+    }
+    let mut src = emit(ARRAY_IDL);
+    src.push_str(
+        r##"
+func toHex(_ b: [UInt8]) -> String { b.map { String(format: "%02x", $0) }.joined() }
+let a = Arr(xs: [0x11111111, 0x22222222, 0x33333333], m: [[0x0102, 0x0304], [0x0506, 0x0708]], bs: [0xAA, 0xBB, 0xCC, 0xDD])
+print(toHex(try a.marshalXCDR(.little)))
+print(toHex(try a.marshalXCDR(.big)))
+"##,
+    );
+    let src = format!("import Foundation\n{src}");
+    let dir = std::env::temp_dir().join(format!("idlswift_array_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    let sf = dir.join("main.swift");
+    std::fs::write(&sf, &src).expect("write");
+    let build = Command::new("swiftc")
+        .arg(&sf)
+        .arg("-o")
+        .arg(dir.join("main_bin"))
+        .output()
+        .expect("swiftc");
+    assert!(
+        build.status.success(),
+        "swiftc failed:\n{}\n--- src ---\n{src}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let run = Command::new(dir.join("main_bin")).output().expect("run");
+    let stdout = String::from_utf8(run.stdout).expect("utf8");
+    let mut lines = stdout.lines();
+    assert_eq!(
+        lines.next().expect("le").trim(),
+        hex_of(Path::new(&golden_dir).join("golden_array_le.bin"))
+    );
+    assert_eq!(
+        lines.next().expect("be").trim(),
+        hex_of(Path::new(&golden_dir).join("golden_array_be.bin"))
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+const UNION_IDL: &str = "\
+@final union U switch (long) { case 1: unsigned long a; case 2: unsigned short b; default: octet c; };";
+
+#[test]
+fn union_emits_case_dispatch() {
+    let s = emit(UNION_IDL);
+    assert!(s.contains("public var disc: Int32"), "{s}");
+    assert!(s.contains("switch disc {"), "{s}");
+    assert!(s.contains("case 1:"), "{s}");
+    assert!(s.contains("case 2:"), "{s}");
+    assert!(s.contains("default:"), "{s}");
+}
+
+#[test]
+fn union_is_byte_identical_vs_rust_golden() {
+    let golden_dir = match std::env::var("GOLDEN_DIR") {
+        Ok(d) => d,
+        Err(_) => {
+            eprintln!("SKIP union byte: GOLDEN_DIR unset");
+            return;
+        }
+    };
+    if Command::new("swiftc").arg("--version").output().is_err() {
+        eprintln!("SKIP union byte: `swiftc` not on PATH");
+        return;
+    }
+    let mut src = emit(UNION_IDL);
+    src.push_str(
+        r##"
+func toHex(_ b: [UInt8]) -> String { b.map { String(format: "%02x", $0) }.joined() }
+let u = U(disc: 2, a: 0, b: 0x1234, c: 0)
+print(toHex(try u.marshalXCDR(.little)))
+print(toHex(try u.marshalXCDR(.big)))
+"##,
+    );
+    let src = format!("import Foundation\n{src}");
+    let dir = std::env::temp_dir().join(format!("idlswift_union_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    let sf = dir.join("main.swift");
+    std::fs::write(&sf, &src).expect("write");
+    let build = Command::new("swiftc")
+        .arg(&sf)
+        .arg("-o")
+        .arg(dir.join("main_bin"))
+        .output()
+        .expect("swiftc");
+    assert!(
+        build.status.success(),
+        "swiftc failed:\n{}\n--- src ---\n{src}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let run = Command::new(dir.join("main_bin")).output().expect("run");
+    let stdout = String::from_utf8(run.stdout).expect("utf8");
+    let mut lines = stdout.lines();
+    assert_eq!(
+        lines.next().expect("le").trim(),
+        hex_of(Path::new(&golden_dir).join("golden_union_le.bin"))
+    );
+    assert_eq!(
+        lines.next().expect("be").trim(),
+        hex_of(Path::new(&golden_dir).join("golden_union_be.bin"))
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+const MAP_IDL: &str = "\
+@final struct HasMap { map<long, unsigned long> m; };";
+
+#[test]
+fn map_emits_sorted_marshal() {
+    let s = emit(MAP_IDL);
+    assert!(s.contains("public var m: [Int32: UInt32]"), "{s}");
+    assert!(s.contains(".keys.sorted()"), "{s}");
+}
+
+#[test]
+fn map_is_byte_identical_vs_rust_golden() {
+    let golden_dir = match std::env::var("GOLDEN_DIR") {
+        Ok(d) => d,
+        Err(_) => {
+            eprintln!("SKIP map byte: GOLDEN_DIR unset");
+            return;
+        }
+    };
+    if Command::new("swiftc").arg("--version").output().is_err() {
+        eprintln!("SKIP map byte: `swiftc` not on PATH");
+        return;
+    }
+    let mut src = emit(MAP_IDL);
+    src.push_str(
+        r##"
+func toHex(_ b: [UInt8]) -> String { b.map { String(format: "%02x", $0) }.joined() }
+let h = HasMap(m: [1: 0x11111111, 2: 0x22222222])
+print(toHex(try h.marshalXCDR(.little)))
+print(toHex(try h.marshalXCDR(.big)))
+"##,
+    );
+    let src = format!("import Foundation\n{src}");
+    let dir = std::env::temp_dir().join(format!("idlswift_map_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    let sf = dir.join("main.swift");
+    std::fs::write(&sf, &src).expect("write");
+    let build = Command::new("swiftc")
+        .arg(&sf)
+        .arg("-o")
+        .arg(dir.join("main_bin"))
+        .output()
+        .expect("swiftc");
+    assert!(
+        build.status.success(),
+        "swiftc failed:\n{}\n--- src ---\n{src}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let run = Command::new(dir.join("main_bin")).output().expect("run");
+    let stdout = String::from_utf8(run.stdout).expect("utf8");
+    let mut lines = stdout.lines();
+    assert_eq!(
+        lines.next().expect("le").trim(),
+        hex_of(Path::new(&golden_dir).join("golden_map_le.bin"))
+    );
+    assert_eq!(
+        lines.next().expect("be").trim(),
+        hex_of(Path::new(&golden_dir).join("golden_map_be.bin"))
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+const MUTABLE_IDL: &str = "\
+@mutable struct M { @id(10) unsigned long x; @id(20) string s; @id(30) unsigned short k; };";
+
+#[test]
+fn mutable_emits_emheader_framing() {
+    let s = emit(MUTABLE_IDL);
+    assert!(s.contains("body.putU32(0x4000000a)"), "{s}");
+}
+
+#[test]
+fn mutable_is_byte_identical_vs_rust_golden() {
+    let golden_dir = match std::env::var("GOLDEN_DIR") {
+        Ok(d) => d,
+        Err(_) => {
+            eprintln!("SKIP mutable byte: GOLDEN_DIR unset");
+            return;
+        }
+    };
+    if Command::new("swiftc").arg("--version").output().is_err() {
+        eprintln!("SKIP mutable byte: `swiftc` not on PATH");
+        return;
+    }
+    let mut src = emit(MUTABLE_IDL);
+    src.push_str(
+        r##"
+func toHex(_ b: [UInt8]) -> String { b.map { String(format: "%02x", $0) }.joined() }
+let m = M(x: 0xDEADBEEF, s: "mut", k: 0x0777)
+print(toHex(try m.marshalXCDR(.little)))
+print(toHex(try m.marshalXCDR(.big)))
+"##,
+    );
+    let src = format!("import Foundation\n{src}");
+    let dir = std::env::temp_dir().join(format!("idlswift_mutable_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    let sf = dir.join("main.swift");
+    std::fs::write(&sf, &src).expect("write");
+    let build = Command::new("swiftc")
+        .arg(&sf)
+        .arg("-o")
+        .arg(dir.join("main_bin"))
+        .output()
+        .expect("swiftc");
+    assert!(
+        build.status.success(),
+        "swiftc failed:\n{}\n--- src ---\n{src}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let run = Command::new(dir.join("main_bin")).output().expect("run");
+    let stdout = String::from_utf8(run.stdout).expect("utf8");
+    let mut lines = stdout.lines();
+    assert_eq!(
+        lines.next().expect("le").trim(),
+        hex_of(Path::new(&golden_dir).join("golden_mutable_le.bin"))
+    );
+    assert_eq!(
+        lines.next().expect("be").trim(),
+        hex_of(Path::new(&golden_dir).join("golden_mutable_be.bin"))
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+const WIDE_IDL: &str = "\
+@final struct W { wchar c; wstring s; };";
+const LD_IDL: &str = "\
+@final struct L { long double d; };";
+
+fn run_swift(idl: &str, ctor: &str, stem: &str) {
+    let golden_dir = match std::env::var("GOLDEN_DIR") {
+        Ok(d) => d,
+        Err(_) => {
+            eprintln!("SKIP {stem}: GOLDEN_DIR unset");
+            return;
+        }
+    };
+    if Command::new("swiftc").arg("--version").output().is_err() {
+        eprintln!("SKIP {stem}: `swiftc` not on PATH");
+        return;
+    }
+    let mut src = emit(idl);
+    src.push_str(&format!("\nfunc toHex(_ b: [UInt8]) -> String {{ b.map {{ String(format: \"%02x\", $0) }}.joined() }}\nlet v = {ctor}\nprint(toHex(try v.marshalXCDR(.little)))\nprint(toHex(try v.marshalXCDR(.big)))\n"));
+    let src = format!("import Foundation\n{src}");
+    let dir = std::env::temp_dir().join(format!("idlswift_{stem}_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    let sf = dir.join("main.swift");
+    std::fs::write(&sf, &src).expect("write");
+    let build = Command::new("swiftc")
+        .arg(&sf)
+        .arg("-o")
+        .arg(dir.join("main_bin"))
+        .output()
+        .expect("swiftc");
+    assert!(
+        build.status.success(),
+        "swiftc failed:\n{}\n--- src ---\n{src}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let run = Command::new(dir.join("main_bin")).output().expect("run");
+    let stdout = String::from_utf8(run.stdout).expect("utf8");
+    let mut lines = stdout.lines();
+    assert_eq!(
+        lines.next().expect("le").trim(),
+        hex_of(Path::new(&golden_dir).join(format!("golden_{stem}_le.bin")))
+    );
+    assert_eq!(
+        lines.next().expect("be").trim(),
+        hex_of(Path::new(&golden_dir).join(format!("golden_{stem}_be.bin")))
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn wide_is_byte_identical_vs_rust_golden() {
+    run_swift(WIDE_IDL, "W(c: 0x03A9, s: \"w\u{03c0}\")", "wide");
+}
+#[test]
+fn longdouble_is_byte_identical_vs_rust_golden() {
+    run_swift(LD_IDL, "L(d: 1.1)", "longdouble");
+}
+
+const KEYHASH_IDL: &str = "\
+@final struct K { @key long a; @key unsigned short b; long c; };";
+
+#[test]
+fn keyhash_is_byte_identical_vs_rust_golden() {
+    let golden_dir = match std::env::var("GOLDEN_DIR") {
+        Ok(d) => d,
+        Err(_) => {
+            eprintln!("SKIP keyhash: GOLDEN_DIR unset");
+            return;
+        }
+    };
+    if Command::new("swiftc").arg("--version").output().is_err() {
+        eprintln!("SKIP keyhash: `swiftc` not on PATH");
+        return;
+    }
+    let mut src = emit(KEYHASH_IDL);
+    src.push_str("\nfunc toHex(_ b: [UInt8]) -> String { b.map { String(format: \"%02x\", $0) }.joined() }\nlet k = K(a: 0x01020304, b: 0x0506, c: 0)\nprint(toHex(try k.keyHash()))\n");
+    let src = format!("import Foundation\n{src}");
+    let dir = std::env::temp_dir().join(format!("idlswift_kh_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    let sf = dir.join("main.swift");
+    std::fs::write(&sf, &src).expect("write");
+    let build = Command::new("swiftc")
+        .arg(&sf)
+        .arg("-o")
+        .arg(dir.join("main_bin"))
+        .output()
+        .expect("swiftc");
+    assert!(
+        build.status.success(),
+        "swiftc failed:\n{}\n--- src ---\n{src}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let run = Command::new(dir.join("main_bin")).output().expect("run");
+    let stdout = String::from_utf8(run.stdout).expect("utf8");
+    assert_eq!(
+        stdout.lines().next().expect("h").trim(),
+        hex_of(Path::new(&golden_dir).join("golden_keyhash.bin"))
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+fn hex_of(p: std::path::PathBuf) -> String {
+    std::fs::read(&p)
+        .unwrap_or_else(|_| panic!("read {}", p.display()))
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
+/// Decode roundtrip: `marshal(unmarshal(golden)) == golden` for LE and BE.
+/// Proves the generated `unmarshalXCDR` is the exact inverse of `marshalXCDR`.
+fn run_roundtrip(idl: &str, ty: &str, le_file: &str, be_file: &str) {
+    let golden_dir = match std::env::var("GOLDEN_DIR") {
+        Ok(d) => d,
+        Err(_) => {
+            eprintln!("SKIP roundtrip {ty}: GOLDEN_DIR unset");
+            return;
+        }
+    };
+    if Command::new("swiftc").arg("--version").output().is_err() {
+        eprintln!("SKIP roundtrip {ty}: `swiftc` not on PATH");
+        return;
+    }
+    let le = hex_of(Path::new(&golden_dir).join(le_file));
+    let be = hex_of(Path::new(&golden_dir).join(be_file));
+    let mut src = emit(idl);
+    src.push_str(&format!(
+        r##"
+func toHex(_ b: [UInt8]) -> String {{ b.map {{ String(format: "%02x", $0) }}.joined() }}
+func fromHex(_ s: String) -> [UInt8] {{
+    var r = [UInt8](); var i = s.startIndex
+    while i < s.endIndex {{ let j = s.index(i, offsetBy: 2); r.append(UInt8(s[i..<j], radix: 16)!); i = j }}
+    return r
+}}
+print(toHex(try {ty}.unmarshalXCDR(fromHex("{le}"), .little).marshalXCDR(.little)))
+print(toHex(try {ty}.unmarshalXCDR(fromHex("{be}"), .big).marshalXCDR(.big)))
+"##
+    ));
+    let src = format!("import Foundation\n{src}");
+    let dir = std::env::temp_dir().join(format!("idlswift_rt_{ty}_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    let sf = dir.join("main.swift");
+    std::fs::write(&sf, &src).expect("write");
+    let build = Command::new("swiftc")
+        .arg(&sf)
+        .arg("-o")
+        .arg(dir.join("main_bin"))
+        .output()
+        .expect("swiftc");
+    assert!(
+        build.status.success(),
+        "swiftc failed:\n{}\n--- src ---\n{src}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let run = Command::new(dir.join("main_bin")).output().expect("run");
+    let stdout = String::from_utf8(run.stdout).expect("utf8");
+    let mut lines = stdout.lines();
+    assert_eq!(lines.next().expect("le").trim(), le, "LE roundtrip {ty}");
+    assert_eq!(lines.next().expect("be").trim(), be, "BE roundtrip {ty}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn decode_roundtrip_final() {
+    run_roundtrip(GOLDEN_IDL, "Golden", "golden_le.bin", "golden_be.bin");
+}
+#[test]
+fn decode_roundtrip_nested() {
+    run_roundtrip(
+        NESTED_IDL,
+        "Outer",
+        "golden_nested_le.bin",
+        "golden_nested_be.bin",
+    );
+}
+#[test]
+fn decode_roundtrip_array() {
+    run_roundtrip(
+        ARRAY_IDL,
+        "Arr",
+        "golden_array_le.bin",
+        "golden_array_be.bin",
+    );
+}
+#[test]
+fn decode_roundtrip_union() {
+    run_roundtrip(UNION_IDL, "U", "golden_union_le.bin", "golden_union_be.bin");
+}
+#[test]
+fn decode_roundtrip_map() {
+    run_roundtrip(MAP_IDL, "HasMap", "golden_map_le.bin", "golden_map_be.bin");
+}
+#[test]
+fn decode_roundtrip_mutable() {
+    run_roundtrip(
+        MUTABLE_IDL,
+        "M",
+        "golden_mutable_le.bin",
+        "golden_mutable_be.bin",
+    );
+}
+#[test]
+fn decode_roundtrip_wide() {
+    run_roundtrip(WIDE_IDL, "W", "golden_wide_le.bin", "golden_wide_be.bin");
+}
+#[test]
+fn decode_roundtrip_longdouble() {
+    run_roundtrip(
+        LD_IDL,
+        "L",
+        "golden_longdouble_le.bin",
+        "golden_longdouble_be.bin",
+    );
+}
+
+const KEYHASH_MD5_IDL: &str = "\
+@final struct KL { @key long a; @key long b; @key long c; @key long d; @key long e; };";
+
+#[test]
+fn keyhash_md5_is_byte_identical_vs_rust_golden() {
+    // 5×@key long = 20 bytes > 16 → MD5 branch (XTypes §7.6.8.4). Local swiftc.
+    let golden_dir = match std::env::var("GOLDEN_DIR") {
+        Ok(d) => d,
+        Err(_) => {
+            eprintln!("SKIP keyhash_md5: GOLDEN_DIR unset");
+            return;
+        }
+    };
+    if Command::new("swiftc").arg("--version").output().is_err() {
+        eprintln!("SKIP keyhash_md5: `swiftc` not on PATH");
+        return;
+    }
+    let mut src = emit(KEYHASH_MD5_IDL);
+    src.push_str("\nfunc toHex(_ b: [UInt8]) -> String { b.map { String(format: \"%02x\", $0) }.joined() }\nlet k = KL(a: 0x01020304, b: 0x05060708, c: 0x090A0B0C, d: 0x0D0E0F10, e: 0x11121314)\nprint(toHex(try k.keyHash()))\n");
+    let src = format!("import Foundation\n{src}");
+    let dir = std::env::temp_dir().join(format!("idlswift_kh_md5_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    let sf = dir.join("main.swift");
+    std::fs::write(&sf, &src).expect("write");
+    let build = Command::new("swiftc")
+        .arg(&sf)
+        .arg("-o")
+        .arg(dir.join("main_bin"))
+        .output()
+        .expect("swiftc");
+    assert!(
+        build.status.success(),
+        "swiftc failed:\n{}\n--- src ---\n{src}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let run = Command::new(dir.join("main_bin")).output().expect("run");
+    let stdout = String::from_utf8(run.stdout).expect("utf8");
+    assert_eq!(
+        stdout.lines().next().expect("h").trim(),
+        hex_of(Path::new(&golden_dir).join("golden_keyhash_md5.bin"))
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// --- Regression: nested-struct `@key` member must expand to only the inner
+// struct's own `@key` members (XTypes 1.3 §7.6.8), not its full member set.
+// Before the fix, `Outer`'s `keyHash()` called `Inner.marshalInto`, which
+// serializes `x`, `ignored`, AND `y` — leaking the non-key `ignored` field
+// into the KeyHash.
+
+const NESTED_KEY_SUBSET_IDL: &str = "\
+@final struct Inner { @key long x; long ignored; @key long y; };
+@final struct Outer { @key Inner i; };";
+
+#[test]
+fn nested_key_member_excludes_non_key_fields() {
+    let o = emit(NESTED_KEY_SUBSET_IDL);
+    // `Inner` also has its own `@key` members (x, y), so it emits its own
+    // `keyHash()` too — take the LAST occurrence (Outer's, since Outer is
+    // emitted after Inner) rather than the first.
+    let key_hash = o
+        .rsplit("public func keyHash() throws -> [UInt8] {")
+        .next()
+        .expect("Outer struct should emit a keyHash() function");
+    // Bug A fix: the inner struct's own `@key` fields x and y are written
+    // directly (the marshal never calls `Inner.marshalInto`, which would
+    // pull in `ignored` too).
+    assert!(
+        !key_hash.contains("i.marshalInto"),
+        "keyHash must not call the nested struct's full marshalInto: {o}"
+    );
+    assert!(
+        key_hash.contains("i.x") && key_hash.contains("i.y"),
+        "keyHash must encode the nested struct's own @key fields x and y: {o}"
+    );
+    assert!(
+        !key_hash.contains("i.ignored"),
+        "keyHash must NOT encode the nested struct's non-key field `ignored`: {o}"
+    );
+}
+
+// --- Regression: `uses_md5` must be given a real `structs` map so a small
+// struct-typed `@key` member (whose static max size is <=16 bytes) takes the
+// zero-pad branch, not MD5 (Bug B: an empty structs map makes `atom_size`
+// unconditionally fail to resolve the struct, forcing MD5 for ANY
+// struct-typed key regardless of actual size).
+
+const NESTED_SMALL_KEY_IDL: &str = "\
+@final struct Inner { @key octet a; };
+@final struct Outer { @key Inner i; };";
+
+#[test]
+fn small_nested_struct_key_takes_zero_pad_branch_not_md5() {
+    let o = emit(NESTED_SMALL_KEY_IDL);
+    // `Inner` also emits its own trivial `keyHash()` (single `@key octet`);
+    // take the LAST occurrence (Outer's) rather than the first.
+    let key_hash = o
+        .rsplit("public func keyHash() throws -> [UInt8] {")
+        .next()
+        .expect("Outer struct should emit a keyHash() function");
+    // Inner has a single @key octet -> KeyHolder max size 1 byte <= 16 ->
+    // zero-pad branch ([UInt8](repeating: 0, ...)), NOT the MD5 branch.
+    assert!(
+        key_hash.contains("repeating: 0, count: 16"),
+        "a 1-byte nested-struct key must take the zero-pad branch: {o}"
+    );
+    assert!(
+        !key_hash.contains("Insecure.MD5"),
+        "a 1-byte nested-struct key must NOT take the MD5 branch: {o}"
+    );
+    assert!(key_hash.contains("i.a"), "{o}");
+}
+
+const KEYWORD_IDL: &str = "\
+enum Self { guard, protocol, extension };
+@final struct class {
+    long var;
+    unsigned short for;
+    Self func;
+};";
+
+#[test]
+fn keyword_colliding_identifiers_are_backtick_escaped() {
+    let s = emit(KEYWORD_IDL);
+    assert!(s.contains("public enum `Self`: Int32 {"), "{s}");
+    assert!(s.contains("case `guard` = 0"), "{s}");
+    assert!(s.contains("case `protocol` = 1"), "{s}");
+    assert!(s.contains("case `extension` = 2"), "{s}");
+    assert!(s.contains("public struct `class` {"), "{s}");
+    assert!(s.contains("public var `var`: Int32"), "{s}");
+    assert!(s.contains("public var `for`: UInt16"), "{s}");
+    assert!(s.contains("public var `func`: `Self`"), "{s}");
+    // No bare (unescaped) keyword ever appears as a declaration/type token.
+    assert!(!s.contains("public enum Self:"), "{s}");
+    assert!(!s.contains("public struct class {"), "{s}");
+}
+
+#[test]
+fn keyword_colliding_identifiers_compile_with_swiftc() {
+    if Command::new("swiftc").arg("--version").output().is_err() {
+        eprintln!("SKIP keyword_colliding_identifiers_compile_with_swiftc: `swiftc` not on PATH");
+        return;
+    }
+    let mut src = emit(KEYWORD_IDL);
+    src.push_str(
+        "\nlet v = `class`(var: 1, for: 2, func: .guard)\n_ = try v.marshalXCDR(.little)\nlet r = try `class`.unmarshalXCDR(v.marshalXCDR(.little), .little)\nprecondition(r.var == 1)\n",
+    );
+    let src = format!("import Foundation\n{src}");
+    let dir = std::env::temp_dir().join(format!("idlswift_kw_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    let sf = dir.join("main.swift");
+    std::fs::write(&sf, &src).expect("write");
+    let build = Command::new("swiftc")
+        .arg(&sf)
+        .arg("-o")
+        .arg(dir.join("main_bin"))
+        .output()
+        .expect("swiftc");
+    assert!(
+        build.status.success(),
+        "swiftc failed:\n{}\n--- src ---\n{src}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let run = Command::new(dir.join("main_bin")).output().expect("run");
+    assert!(run.status.success(), "runtime precondition failed");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ===========================================================================
+// Section-F Wave-1: bitset/bitmask, @optional, fixed<d,s>, sequence-arbitrary,
+// @verbatim. Always-on source-asserts + swiftc-gated compile-and-run tests
+// whose expected wire hex is derived from the spec IN the test (no oracle).
+// swift = macOS-only (swiftc); no Linux CI toolchain. Run locally on the Mac.
+// ===========================================================================
+
+/// Compiles `import Foundation` + `emit(idl)` + a `toHex` helper + `body` with
+/// `swiftc`, runs it, and returns the trimmed stdout lines. `None` (skip) if
+/// `swiftc` is not on PATH.
+fn swiftc_lines(idl: &str, body: &str, tag: &str) -> Option<Vec<String>> {
+    if Command::new("swiftc").arg("--version").output().is_err() {
+        eprintln!("SKIP {tag}: `swiftc` not on PATH");
+        return None;
+    }
+    let mut src = emit(idl);
+    src.push_str(
+        "\nfunc toHex(_ b: [UInt8]) -> String { b.map { String(format: \"%02x\", $0) }.joined() }\n",
+    );
+    src.push_str(body);
+    let src = format!("import Foundation\n{src}");
+    let dir = std::env::temp_dir().join(format!("idlswift_{tag}_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    let sf = dir.join("main.swift");
+    std::fs::write(&sf, &src).expect("write");
+    let build = Command::new("swiftc")
+        .arg(&sf)
+        .arg("-o")
+        .arg(dir.join("main_bin"))
+        .output()
+        .expect("swiftc");
+    assert!(
+        build.status.success(),
+        "swiftc failed:\n{}\n--- src ---\n{src}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let run = Command::new(dir.join("main_bin")).output().expect("run");
+    assert!(
+        run.status.success(),
+        "run failed:\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let out = String::from_utf8(run.stdout).expect("utf8");
+    let lines: Vec<String> = out.lines().map(|l| l.trim().to_string()).collect();
+    let _ = std::fs::remove_dir_all(&dir);
+    Some(lines)
+}
+
+// ---- bitset -------------------------------------------------------------
+
+const BITSET_IDL: &str = "bitset Flags { bitfield<4> a; bitfield<8> b; };";
+
+#[test]
+fn bitset_emits_holder_struct_and_accessors() {
+    let s = emit(BITSET_IDL);
+    // 4 + 8 = 12 bits → UInt16 backing (XTypes §7.4.7).
+    assert!(s.contains("public struct Flags {"), "{s}");
+    assert!(s.contains("public var storage: UInt16 = 0"), "{s}");
+    assert!(s.contains("public func a() -> UInt16"), "{s}");
+    assert!(s.contains("public func b() -> UInt16"), "{s}");
+    assert!(
+        s.contains("public func marshalInto(_ w: inout Writer) throws { w.putU16(storage) }"),
+        "{s}"
+    );
+    assert!(
+        s.contains("public static func unmarshalFrom(_ r: inout Reader) throws -> Flags"),
+        "{s}"
+    );
+}
+
+#[test]
+fn bitset_wire_is_backing_int() {
+    // storage 0xABCD as a UInt16 → LE "cdab", BE "abcd"; round-trips.
+    let body = r#"
+var f = Flags(storage: 0xABCD)
+print(toHex(try f.marshalXCDR(.little)))
+print(toHex(try f.marshalXCDR(.big)))
+print(toHex(try Flags.unmarshalXCDR(f.marshalXCDR(.little), .little).marshalXCDR(.little)))
+"#;
+    let Some(l) = swiftc_lines(BITSET_IDL, body, "bitset") else {
+        return;
+    };
+    assert_eq!(l[0], "cdab", "LE");
+    assert_eq!(l[1], "abcd", "BE");
+    assert_eq!(l[2], "cdab", "round-trip");
+}
+
+// ---- bitmask ------------------------------------------------------------
+
+const BITMASK_IDL: &str = "bitmask Perms { PERM_READ, PERM_WRITE, PERM_EXEC };";
+
+#[test]
+fn bitmask_emits_holder_and_constants() {
+    let s = emit(BITMASK_IDL);
+    // Default @bit_bound = 32 → UInt32 backing (XTypes §7.3.1.2.1.1).
+    assert!(s.contains("public struct Perms {"), "{s}");
+    assert!(s.contains("public var storage: UInt32 = 0"), "{s}");
+    assert!(
+        s.contains("public static let PERM_READ: UInt32 = UInt32(1) << 0"),
+        "{s}"
+    );
+    assert!(
+        s.contains("public static let PERM_EXEC: UInt32 = UInt32(1) << 2"),
+        "{s}"
+    );
+    assert!(
+        s.contains("public func marshalInto(_ w: inout Writer) throws { w.putU32(storage) }"),
+        "{s}"
+    );
+}
+
+#[test]
+fn bitmask_wire_is_backing_uint32() {
+    // PERM_READ | PERM_EXEC = 0x05 → LE "05000000", BE "00000005"; round-trips.
+    let body = r#"
+var p = Perms(storage: Perms.PERM_READ | Perms.PERM_EXEC)
+print(toHex(try p.marshalXCDR(.little)))
+print(toHex(try p.marshalXCDR(.big)))
+print(toHex(try Perms.unmarshalXCDR(p.marshalXCDR(.big), .big).marshalXCDR(.big)))
+"#;
+    let Some(l) = swiftc_lines(BITMASK_IDL, body, "bitmask") else {
+        return;
+    };
+    assert_eq!(l[0], "05000000", "LE");
+    assert_eq!(l[1], "00000005", "BE");
+    assert_eq!(l[2], "00000005", "round-trip");
+}
+
+#[test]
+fn bitmask_bit_bound_narrows_backing() {
+    let s = emit("@bit_bound(8) bitmask Small { A, B };");
+    assert!(s.contains("public var storage: UInt8 = 0"), "{s}");
+    assert!(
+        s.contains("public func marshalInto(_ w: inout Writer) throws { w.putU8(storage) }"),
+        "{s}"
+    );
+}
+
+// ---- fixed<d,s> ---------------------------------------------------------
+
+const FIXED_IDL: &str = "@final struct HasFixed { fixed<5,2> price; };";
+
+#[test]
+fn fixed_emits_bcd_field_and_prelude() {
+    let s = emit(FIXED_IDL);
+    assert!(s.contains("public var price: [UInt8]"), "{s}");
+    assert!(s.contains("w.putBytes(price)"), "{s}");
+    assert!(
+        s.contains("func zdFixedEnc(_ s: String, _ P: Int, _ S: Int) -> [UInt8]"),
+        "{s}"
+    );
+}
+
+#[test]
+fn fixed_wire_is_packed_bcd() {
+    // fixed<5,2> 123.45 → BCD "12 34 5c" (odd P, no pad, CORBA §9.3.2.7).
+    // Raw BCD bytes: identical for LE and BE (no byte-swap, no length prefix).
+    let body = r#"
+var h = HasFixed(price: zdFixedEnc("123.45", 5, 2))
+print(toHex(try h.marshalXCDR(.little)))
+print(toHex(try h.marshalXCDR(.big)))
+print(toHex(try HasFixed.unmarshalXCDR(h.marshalXCDR(.little), .little).marshalXCDR(.little)))
+"#;
+    let Some(l) = swiftc_lines(FIXED_IDL, body, "fixed") else {
+        return;
+    };
+    assert_eq!(l[0], "12345c", "LE");
+    assert_eq!(l[1], "12345c", "BE");
+    assert_eq!(l[2], "12345c", "round-trip");
+}
+
+#[test]
+fn fixed_even_p_keeps_msd() {
+    // fixed<4,0> 1234 → BCD "01 23 4c" (leading pad nibble; even P keeps MSD).
+    let body = r#"
+var h = HasFixed(price: zdFixedEnc("1234", 4, 0))
+print(toHex(try h.marshalXCDR(.little)))
+"#;
+    let Some(l) = swiftc_lines(
+        "@final struct HasFixed { fixed<4,0> price; };",
+        body,
+        "fixed40",
+    ) else {
+        return;
+    };
+    assert_eq!(l[0], "01234c");
+}
+
+// ---- sequence-arbitrary -------------------------------------------------
+
+const SEQARB_IDL: &str = "@final struct S { sequence<long> xs; };";
+
+#[test]
+fn sequence_arbitrary_emits_count_and_loop() {
+    let s = emit(SEQARB_IDL);
+    assert!(s.contains("public var xs: [Int32]"), "{s}");
+    assert!(s.contains("w.putU32(UInt32(xs.count))"), "{s}");
+    assert!(s.contains("for zdElem0 in xs"), "{s}");
+}
+
+#[test]
+fn sequence_arbitrary_wire_count_plus_elements() {
+    // [0x01020304, 0x05060708] → u32 count 2 + two i32 elements, no DHEADER.
+    let body = r#"
+var s = S(xs: [0x01020304, 0x05060708])
+print(toHex(try s.marshalXCDR(.little)))
+print(toHex(try s.marshalXCDR(.big)))
+print(toHex(try S.unmarshalXCDR(s.marshalXCDR(.little), .little).marshalXCDR(.little)))
+"#;
+    let Some(l) = swiftc_lines(SEQARB_IDL, body, "seqarb") else {
+        return;
+    };
+    assert_eq!(l[0], "020000000403020108070605", "LE");
+    assert_eq!(l[1], "000000020102030405060708", "BE");
+    assert_eq!(l[2], "020000000403020108070605", "round-trip");
+}
+
+#[test]
+fn sequence_of_enum_is_arbitrary_path() {
+    // A `sequence<enum>` must now emit (was rejected pre-Wave-1).
+    let s = emit("enum E { E0, E1 }; @final struct SE { sequence<E> es; };");
+    assert!(s.contains("public var es: [E]"), "{s}");
+    assert!(s.contains("for zdElem0 in es"), "{s}");
+    assert!(s.contains("w.putU32(UInt32(es.count))"), "{s}");
+}
+
+// ---- @optional ----------------------------------------------------------
+
+const OPT_IDL: &str = "@final struct Opt { uint32 a; @optional uint32 b; };";
+
+#[test]
+fn optional_emits_presence_flag() {
+    let s = emit(OPT_IDL);
+    assert!(s.contains("public var b_present: Bool = false"), "{s}");
+    assert!(
+        s.contains("w.putU8(b_present ? 1 : 0)\n        if b_present {"),
+        "{s}"
+    );
+    assert!(s.contains("let b_present: Bool = r.getBool()"), "{s}");
+}
+
+#[test]
+fn optional_final_wire_present_and_absent() {
+    // present: u32 a, u8 flag=1, pad(3), u32 b. absent: u32 a, u8 flag=0.
+    let body = r#"
+var p = Opt(a: 0x11223344)
+p.b_present = true
+p.b = 0xAABBCCDD
+print(toHex(try p.marshalXCDR(.little)))
+print(toHex(try p.marshalXCDR(.big)))
+var q = Opt(a: 0x11223344)
+q.b_present = false
+print(toHex(try q.marshalXCDR(.little)))
+print(toHex(try Opt.unmarshalXCDR(p.marshalXCDR(.little), .little).marshalXCDR(.little)))
+print(toHex(try Opt.unmarshalXCDR(q.marshalXCDR(.little), .little).marshalXCDR(.little)))
+"#;
+    let Some(l) = swiftc_lines(OPT_IDL, body, "opt") else {
+        return;
+    };
+    assert_eq!(l[0], "4433221101000000ddccbbaa", "present LE");
+    assert_eq!(l[1], "1122334401000000aabbccdd", "present BE");
+    assert_eq!(l[2], "4433221100", "absent LE");
+    assert_eq!(l[3], "4433221101000000ddccbbaa", "present round-trip");
+    assert_eq!(l[4], "4433221100", "absent round-trip");
+}
+
+#[test]
+fn optional_appendable_round_trips() {
+    // Appendable body is DHEADER-framed; verify decode∘encode identity for
+    // both present and absent, without hand-computing the DHEADER length.
+    let idl = "@appendable struct OptA { uint32 a; @optional uint32 b; };";
+    let body = r#"
+var p = OptA(a: 0xCAFEBABE)
+p.b_present = true
+p.b = 0x01020304
+let pe = try p.marshalXCDR(.little)
+print(toHex(pe))
+print(toHex(try OptA.unmarshalXCDR(pe, .little).marshalXCDR(.little)))
+var q = OptA(a: 0xCAFEBABE)
+q.b_present = false
+let qe = try q.marshalXCDR(.little)
+print(toHex(qe))
+print(toHex(try OptA.unmarshalXCDR(qe, .little).marshalXCDR(.little)))
+"#;
+    let Some(l) = swiftc_lines(idl, body, "opta") else {
+        return;
+    };
+    assert_eq!(l[0], l[1], "present round-trip");
+    assert_eq!(l[2], l[3], "absent round-trip");
+}
+
+// ---- @verbatim ----------------------------------------------------------
+
+#[test]
+fn verbatim_placements_inject_text() {
+    let s = emit(
+        "@verbatim(language=\"swift\", placement=BEGIN_FILE, text=\"// zd-begin-file\")\n\
+         @verbatim(language=\"swift\", placement=BEFORE_DECLARATION, text=\"// zd-before\")\n\
+         @verbatim(language=\"swift\", placement=BEGIN_DECLARATION, text=\"// zd-begin-decl\")\n\
+         @verbatim(language=\"swift\", placement=END_DECLARATION, text=\"// zd-end-decl\")\n\
+         @verbatim(language=\"swift\", placement=AFTER_DECLARATION, text=\"// zd-after\")\n\
+         @verbatim(language=\"swift\", placement=END_FILE, text=\"// zd-end-file\")\n\
+         @final struct V { uint32 a; };",
+    );
+    for marker in [
+        "// zd-begin-file",
+        "// zd-before",
+        "// zd-begin-decl",
+        "// zd-end-decl",
+        "// zd-after",
+        "// zd-end-file",
+    ] {
+        assert!(s.contains(marker), "missing {marker}:\n{s}");
+    }
+    // Ordering: begin-file/before-decl before the struct; begin-decl after the
+    // opening brace; after-decl/end-file trail the type.
+    let sidx = s.find("public struct V {").expect("struct");
+    assert!(s.find("// zd-begin-file").unwrap() < sidx, "{s}");
+    assert!(s.find("// zd-before").unwrap() < sidx, "{s}");
+    assert!(s.find("// zd-begin-decl").unwrap() > sidx, "{s}");
+    assert!(s.find("// zd-end-file").unwrap() > sidx, "{s}");
+}
+
+#[test]
+fn verbatim_language_filter_excludes_other_langs() {
+    // A non-Swift language tag must NOT leak into the Swift output.
+    let s = emit(
+        "@verbatim(language=\"java\", placement=BEFORE_DECLARATION, text=\"// java-only\")\n\
+         @final struct V { uint32 a; };",
+    );
+    assert!(!s.contains("// java-only"), "{s}");
+    // The wildcard `*` still matches Swift.
+    let s2 = emit(
+        "@verbatim(placement=BEFORE_DECLARATION, text=\"// wildcard\")\n\
+         @final struct V { uint32 a; };",
+    );
+    assert!(s2.contains("// wildcard"), "{s2}");
+}
+
+#[test]
+fn verbatim_output_still_compiles() {
+    let idl = "@verbatim(language=\"swift\", placement=BEGIN_FILE, text=\"// zd file header\")\n\
+         @verbatim(language=\"swift\", placement=BEGIN_DECLARATION, text=\"// zd inside struct\")\n\
+         @final struct V { uint32 a; };";
+    let body = r#"
+var v = V(a: 0x2A)
+print(toHex(try v.marshalXCDR(.little)))
+"#;
+    let Some(l) = swiftc_lines(idl, body, "verbatim") else {
+        return;
+    };
+    assert_eq!(l[0], "2a000000");
+}

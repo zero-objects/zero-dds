@@ -5,6 +5,15 @@
 //! XCDR2 encode: a `sequence<T, N>` / `string<N>` value longer than its declared
 //! bound is rejected on encode (throws — strict vendors reject on the wire).
 //! `<stdexcept>` is pulled in only when a bounded collection is present.
+//!
+//! B1 follow-up (#22 decode-side parity): the encode-side checks above have
+//! no decode-side counterpart — a bounded field decoded a well-formed but
+//! oversized wire value without complaint (untrusted-input DoS vector,
+//! XTypes 1.3 §7.4.3 requires enforcement on BOTH sides). The tests below
+//! prove the mirrored decode-side check is emitted for every representation
+//! path (`@final`/`@appendable` via `emit_value_read`, `@mutable` via
+//! `emit_mutable_member_decode_case`, PL_CDR1 union members via
+//! `emit_pl_cdr1_member_decode_case`, which itself calls `emit_value_read`).
 
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, missing_docs)]
 
@@ -48,6 +57,101 @@ fn bounded_string_byte_length_check() {
     assert!(
         cpp.contains(".size() > 16") && cpp.contains("bounded string length"),
         "bounded string<16> must throw on byte-length over-bound:\n{cpp}"
+    );
+}
+
+#[test]
+fn decode_rejects_over_bound_string_final() {
+    let cpp = gen_cpp("@final struct Named { string<16> name; };");
+    assert!(
+        cpp.contains("if (zd_bc")
+            && cpp.contains("decoded string length exceeds its IDL bound (16)"),
+        "decode of bounded string<16> must throw on over-bound decode:\n{cpp}"
+    );
+}
+
+#[test]
+fn decode_rejects_over_bound_wstring_final() {
+    let cpp = gen_cpp("@final struct Named { wstring<16> name; };");
+    assert!(
+        cpp.contains("decoded wstring length exceeds its IDL bound (16)"),
+        "decode of bounded wstring<16> must throw on over-bound decode:\n{cpp}"
+    );
+}
+
+#[test]
+fn decode_rejects_over_bound_sequence_final() {
+    let cpp = gen_cpp("@final struct Cap { sequence<octet, 4> data; };");
+    assert!(
+        cpp.contains("if (zd_cnt > 4)")
+            && cpp.contains("decoded sequence length exceeds its IDL bound (4)"),
+        "decode of bounded sequence<octet,4> must throw on over-bound decode:\n{cpp}"
+    );
+}
+
+#[test]
+fn decode_rejects_over_bound_sequence_of_struct() {
+    // Non-octet-element sequence path (general decode loop, not the
+    // sequence<octet> fast path) must also carry the bound check.
+    let cpp = gen_cpp(
+        "@final struct Pt { long x; long y; }; @final struct Cap { sequence<Pt, 3> pts; };",
+    );
+    assert!(
+        cpp.contains("if (zd_cnt > 3)")
+            && cpp.contains("decoded sequence length exceeds its IDL bound (3)"),
+        "decode of bounded sequence<Pt,3> must throw on over-bound decode:\n{cpp}"
+    );
+}
+
+#[test]
+fn decode_rejects_over_bound_map() {
+    let cpp = gen_cpp("@final struct M { map<string, long, 2> vals; };");
+    assert!(
+        cpp.contains("if (zd_mcnt > 2)")
+            && cpp.contains("decoded map length exceeds its IDL bound (2)"),
+        "decode of bounded map<string,long,2> must throw on over-bound decode:\n{cpp}"
+    );
+}
+
+#[test]
+fn decode_rejects_over_bound_string_mutable() {
+    let cpp = gen_cpp("@mutable struct Named { string<8> name; };");
+    assert!(
+        cpp.contains("zd_bcs") && cpp.contains("decoded string length exceeds its IDL bound (8)"),
+        "@mutable decode path must carry the same bound check as @final:\n{cpp}"
+    );
+}
+
+#[test]
+fn decode_rejects_over_bound_sequence_mutable() {
+    let cpp = gen_cpp("@mutable struct Cap { sequence<octet, 4> data; };");
+    let checks = cpp
+        .matches("decoded sequence length exceeds its IDL bound (4)")
+        .count();
+    assert!(
+        checks >= 1,
+        "@mutable decode path must carry the sequence bound check:\n{cpp}"
+    );
+}
+
+#[test]
+fn decode_rejects_over_bound_string_pl_cdr1_union() {
+    // PL_CDR1 union member decode (emit_pl_cdr1_member_decode_case) routes
+    // through the shared emit_value_read — proves it inherits the check for
+    // free, same as the Rust "single shared emit path" design.
+    let cpp = gen_cpp("union U switch (long) { case 1: string<8> s; };");
+    assert!(
+        cpp.contains("decoded string length exceeds its IDL bound (8)"),
+        "PL_CDR1 union member decode must carry the bound check:\n{cpp}"
+    );
+}
+
+#[test]
+fn unbounded_decode_no_bound_check() {
+    let cpp = gen_cpp("@final struct Free { string name; sequence<long> vals; };");
+    assert!(
+        !cpp.contains("exceeds its IDL bound"),
+        "unbounded string/sequence must NOT get a decode-side bound check:\n{cpp}"
     );
 }
 

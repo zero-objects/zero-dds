@@ -14,9 +14,15 @@
 use std::net::UdpSocket;
 
 use zerodds_cdr::{BufferReader, BufferWriter, Endianness};
-use zerodds_xrce::SerialNumber16;
 use zerodds_xrce::header::{MessageHeader, SessionId, StreamId};
-use zerodds_xrce::submessages::{DataFormat, DataPayload, Message, SubmessageId, WriteDataPayload};
+use zerodds_xrce::object_kind::ObjectKind;
+use zerodds_xrce::submessages::{DataPayload, Message, SubmessageId, WriteDataPayload};
+use zerodds_xrce::{BaseObjectRequest, ObjectId, SerialNumber16};
+
+/// The DataReader the hub reads from / pushes DATA for (§7.2.1 ObjectId).
+fn reader_object_id() -> ObjectId {
+    ObjectId::new(0x001, ObjectKind::DataReader).expect("reader id")
+}
 
 /// The fixed SensorReading sample body (XCDR2, LE).
 fn sample_body() -> Vec<u8> {
@@ -45,14 +51,21 @@ fn recv(port: u16, count: usize) {
             .iter()
             .find(|s| s.header.submessage_id == SubmessageId::WriteData)
             .expect("WRITE_DATA");
+        // Conformant DDS-XRCE WRITE_DATA: the BaseObjectRequest (request_id +
+        // object_id) precedes the sample, so the hub can map the frame to the
+        // target DataWriter before touching the payload (§8.3.5.8 / §7.7.8).
         let wd = WriteDataPayload::try_from_submessage(sm).expect("wd");
-        let mut r = BufferReader::new(&wd.representation, Endianness::Little).xcdr2();
+        let target = wd.base.object_id;
+        let mut r = BufferReader::new(&wd.serialized_data, Endianness::Little).xcdr2();
         let id = r.read_u32().expect("id");
         let _ = (r.read_u16(), r.read_u8(), r.read_u32(), r.read_u64());
         let label = r.read_string().expect("label");
         assert_eq!(id, 0xA1B2_C3D4);
         assert_eq!(label, "bay-12");
-        println!("AGENT OK: WRITE_DATA from {from} decoded (id=0x{id:08X} label={label})");
+        println!(
+            "AGENT OK: WRITE_DATA from {from} for object 0x{:04X} decoded (id=0x{id:08X} label={label})",
+            target.raw()
+        );
     }
     println!("hub: {count} sample(s) received");
 }
@@ -64,9 +77,15 @@ fn send(host: &str, port: u16) {
         SerialNumber16(1),
     )
     .expect("header");
+    // Conformant DDS-XRCE DATA (agent -> client, §8.3.5.10): request_id echoes
+    // the client's READ_DATA request, object_id identifies the source
+    // DataReader — both precede the sample.
     let sm = DataPayload {
-        representation: sample_body(),
-        data_format: DataFormat::Sample,
+        base: BaseObjectRequest {
+            request_id: [0x00, 0x01],
+            object_id: reader_object_id(),
+        },
+        serialized_data: sample_body(),
     }
     .into_submessage()
     .expect("submessage");

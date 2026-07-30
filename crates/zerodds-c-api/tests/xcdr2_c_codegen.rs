@@ -89,7 +89,8 @@ fn v6_codegen_sequence_string() {
 #[test]
 fn v7_codegen_nested_modules() {
     let h = gen_c("module Outer { module Inner { @final struct S { long x; }; }; };");
-    assert!(h.contains("typedef struct Outer_Inner_S_s"));
+    // Injective scope encoding: `Outer::Inner::S` -> `Outer_sInner_sS`.
+    assert!(h.contains("typedef struct Outer_sInner_sS_s"));
     assert!(h.contains("\"Outer::Inner::S\""));
 }
 

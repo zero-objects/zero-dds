@@ -196,6 +196,16 @@ Implementation:
 
 **Status:** done
 
+### §10 sync + async Deep-Examples + Byte-Identität + Quickstart
+
+**Spec:** §10 -- lauffähige sync/async Deep-Examples (Sensor-Telemetrie `Reading{Id,Value,Label}`).
+
+**Repo:** `endpoints/csharp/Zerodds.cs` (pure-C#-Wire-Core), `ExampleSync.cs` (Poll-Loop), `ExampleAsync.cs` (`IAsyncEnumerable` + `await foreach`), `ByteIdentity.cs`, `endpoints/csharp/QUICKSTART.md`.
+
+**Tests:** CI-Job `endpoints-csharp` (neu) → `dotnet run` ByteIdentity (Golden LE+BE) + ExampleSync + ExampleAsync; codepit-verifiziert (dotnet 8.0.423, 40 Byte byte-identisch LE+BE, sync+async 5/5).
+
+**Status:** done
+
 ## §11 Errata + Open-Questions
 
 ### §11.1 `Span<byte>` vs `byte[]`

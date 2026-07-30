@@ -234,7 +234,35 @@ fn ffi_runtime_create_secure_ca_self_signed() {
     run_e2e(true);
 }
 
+/// GitHub #11 regression: the §9.3.3 GUID-prefix guard added in
+/// `DcpsRuntime::start` must NOT break the secured FFI path. `finish_secure_runtime`
+/// now sets `security_guid_prefix` to the identity-adjusted prefix it also passes
+/// to `start`, so the guard is satisfied and `create_secure` still returns a
+/// runtime. If the FFI wiring regressed, `rt` would be NULL here.
+#[test]
+fn ffi_secure_runtime_constructs_post_guid_guard_gh11() {
+    with_secure_runtime(false, |rt| {
+        assert!(
+            !rt.is_null(),
+            "GH#11: §9.3.3 GUID-prefix guard must not break the secured FFI path"
+        );
+    });
+}
+
 fn run_e2e(ca_self_sign: bool) {
+    with_secure_runtime(ca_self_sign, |rt| {
+        assert!(
+            !rt.is_null(),
+            "zerodds_runtime_create_secure must return a runtime"
+        );
+    });
+}
+
+/// Mint fixtures, build a secure config, call `zerodds_runtime_create_secure`,
+/// hand the (possibly NULL) runtime pointer to `check`, then destroy both the
+/// runtime and the config. Skips (without calling `check`) when openssl is
+/// unavailable, so the whole flow is Linux/openssl-gated.
+fn with_secure_runtime(ca_self_sign: bool, check: impl FnOnce(*mut ZeroDdsRuntime)) {
     if !openssl_available() {
         println!("[skip] openssl not on PATH — security FFI e2e cannot run");
         return;
@@ -287,13 +315,11 @@ fn run_e2e(ca_self_sign: bool) {
     // Domain 0 matches the `<domain_rule>` in governance.xml.
     // SAFETY: cfg is a valid builder pointer; create_secure does not consume cfg.
     let rt: *mut ZeroDdsRuntime = unsafe { zerodds_runtime_create_secure(0, cfg) };
-    assert!(
-        !rt.is_null(),
-        "zerodds_runtime_create_secure must return a runtime"
-    );
+    check(rt);
 
     // SAFETY: rt comes from create_secure, cfg from config_create — both not yet
-    // freed; each pointer is destroyed exactly once.
+    // freed; each pointer is destroyed exactly once. `zerodds_runtime_destroy`
+    // tolerates a NULL pointer, so this is sound even if `create_secure` failed.
     unsafe {
         zerodds_runtime_destroy(rt);
         zerodds_security_config_destroy(cfg);

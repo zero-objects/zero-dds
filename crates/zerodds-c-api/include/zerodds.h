@@ -1522,6 +1522,38 @@ struct zerodds_ZeroDdsWriter *zerodds_writer_create_kind(struct zerodds_ZeroDdsR
                                                          int is_keyed);
 
 /**
+ * Creates a DataWriter that advertises its type via a serialized COMPLETE
+ * `TypeObject` (F-TYPES-3 / #24).
+ *
+ * Unlike [`zerodds_writer_create`]/[`zerodds_writer_create_kind`] — which are
+ * byte-oriented and advertise `TypeIdentifier::None` — this typed variant
+ * deserializes `type_object_bytes`, derives the strongly-hashed
+ * `TypeIdentifier`, registers the object into the shared TypeLookup registry
+ * and sets the writer slot's `type_identifier` from it **before the endpoint
+ * is published** (via `register_user_writer_kind`). There is therefore no
+ * discovery window in which the endpoint is matchable while still carrying
+ * `None` — the reason for a typed create instead of a post-create setter,
+ * which would race SEDP.
+ *
+ * `type_object_bytes` is the `zerodds_types::TypeObject::to_bytes_le` form the
+ * IDL codegen emits (see `idlc cpp`'s generated `type_object()`). `is_keyed`
+ * mirrors [`zerodds_writer_create_kind`] and must match the type's `@key`
+ * presence (Spec §9.3.1.2 Table 9.1). Returns NULL on invalid arguments, a
+ * malformed TypeObject, or registration failure.
+ *
+ * # Safety
+ * Like [`zerodds_writer_create_kind`], plus: `type_object_bytes` must point to
+ * `len` readable bytes (NULL / `len == 0` is rejected with NULL).
+ */
+struct zerodds_ZeroDdsWriter *zerodds_writer_create_typed(struct zerodds_ZeroDdsRuntime *runtime,
+                                                          const char *topic_name,
+                                                          const char *type_name,
+                                                          int reliable,
+                                                          int is_keyed,
+                                                          const uint8_t *type_object_bytes,
+                                                          uintptr_t len);
+
+/**
  * Writes a sample. `payload` points to already-CDR-encoded bytes.
  *
  * # Safety
@@ -1647,6 +1679,26 @@ struct zerodds_ZeroDdsReader *zerodds_reader_create_kind(struct zerodds_ZeroDdsR
                                                          const char *type_name,
                                                          int reliable,
                                                          int is_keyed);
+
+/**
+ * Creates a DataReader that advertises its type via a serialized COMPLETE
+ * `TypeObject` (F-TYPES-3 / #24). Reader-side mirror of
+ * [`zerodds_writer_create_typed`]: deserializes `type_object_bytes`, registers
+ * the object into the shared TypeLookup registry, derives the strongly-hashed
+ * `TypeIdentifier` and sets the reader slot's `type_identifier` from it before
+ * the endpoint is published — no `None`-window against discovery.
+ *
+ * # Safety
+ * Like [`zerodds_reader_create_kind`], plus: `type_object_bytes` must point to
+ * `len` readable bytes (NULL / `len == 0` is rejected with NULL).
+ */
+struct zerodds_ZeroDdsReader *zerodds_reader_create_typed(struct zerodds_ZeroDdsRuntime *runtime,
+                                                          const char *topic_name,
+                                                          const char *type_name,
+                                                          int reliable,
+                                                          int is_keyed,
+                                                          const uint8_t *type_object_bytes,
+                                                          uintptr_t len);
 
 /**
  * Tries to read a sample.
@@ -3152,6 +3204,37 @@ struct zerodds_ZeroDdsDataWriter *zerodds_pub_create_datawriter(struct zerodds_Z
                                                                 const struct zerodds_ZeroDdsDataWriterQos *qos);
 
 /**
+ * Creates a DataWriter over the topic that advertises its type via a
+ * serialized COMPLETE `TypeObject` (F-TYPES-3 / #24).
+ *
+ * Topic-path mirror of the flat [`crate::zerodds_writer_create_typed`]: this is
+ * the variant the C#/Java bindings' generated TypeSupport calls, carrying the
+ * `byte[]` TypeObject constant `idlc csharp`/`idlc java` emit. Unlike
+ * [`zerodds_pub_create_datawriter`] — which advertises
+ * `TypeIdentifier::default()` (== None) — it deserializes `type_object_bytes`,
+ * registers the object into the shared TypeLookup registry via
+ * [`crate::register_type_object_from_bytes`], derives the strongly-hashed
+ * `TypeIdentifier` and sets the writer slot's `type_identifier` from it
+ * **before the endpoint is published** (via `register_user_writer`). There is
+ * therefore no discovery window in which the endpoint is matchable while still
+ * carrying `None`.
+ *
+ * The derived identifier is byte-identical to the flat create's and to Path A's
+ * `T::TYPE_IDENTIFIER` for the same TypeObject. `qos` is honored exactly as in
+ * [`zerodds_pub_create_datawriter`] (PARTITION / HISTORY etc.). Returns NULL on
+ * invalid arguments, a malformed TypeObject, or registration failure.
+ *
+ * # Safety
+ * Like [`zerodds_pub_create_datawriter`], plus: `type_object_bytes` must point
+ * to `len` readable bytes (NULL / `len == 0` is rejected with NULL).
+ */
+struct zerodds_ZeroDdsDataWriter *zerodds_pub_create_datawriter_typed(struct zerodds_ZeroDdsPublisher *pub_,
+                                                                      struct zerodds_ZeroDdsTopic *topic,
+                                                                      const struct zerodds_ZeroDdsDataWriterQos *qos,
+                                                                      const uint8_t *type_object_bytes,
+                                                                      uintptr_t len);
+
+/**
  * Deletes a DataWriter.
  *
  * # Safety
@@ -3532,6 +3615,26 @@ int zerodds_sub_notify_datareaders(struct zerodds_ZeroDdsSubscriber *sub);
 struct zerodds_ZeroDdsDataReader *zerodds_sub_create_datareader(struct zerodds_ZeroDdsSubscriber *sub,
                                                                 struct zerodds_ZeroDdsTopic *topic,
                                                                 const struct zerodds_ZeroDdsDataReaderQos *qos);
+
+/**
+ * Creates a DataReader over the topic that advertises its type via a
+ * serialized COMPLETE `TypeObject` (F-TYPES-3 / #24). Topic-path mirror of the
+ * flat [`crate::zerodds_reader_create_typed`] and reader-side twin of
+ * [`zerodds_pub_create_datawriter_typed`]: deserializes `type_object_bytes`,
+ * registers the object into the shared TypeLookup registry, derives the
+ * strongly-hashed `TypeIdentifier` and sets the reader slot's
+ * `type_identifier` from it before the endpoint is published — no `None`-window
+ * against discovery. This is the variant the C#/Java bindings call.
+ *
+ * # Safety
+ * Like [`zerodds_sub_create_datareader`], plus: `type_object_bytes` must point
+ * to `len` readable bytes (NULL / `len == 0` is rejected with NULL).
+ */
+struct zerodds_ZeroDdsDataReader *zerodds_sub_create_datareader_typed(struct zerodds_ZeroDdsSubscriber *sub,
+                                                                      struct zerodds_ZeroDdsTopic *topic,
+                                                                      const struct zerodds_ZeroDdsDataReaderQos *qos,
+                                                                      const uint8_t *type_object_bytes,
+                                                                      uintptr_t len);
 
 /**
  * Creates a DataReader on a ContentFilteredTopic.

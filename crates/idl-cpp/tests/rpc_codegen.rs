@@ -235,10 +235,24 @@ fn empty_idl_exception_still_inherits_remote_exception() {
 }
 
 #[test]
-fn idl_exception_with_reserved_name_is_rejected() {
-    let e = except_decl("class", vec![]);
-    let res = emit_remote_exception_class(&e);
-    assert!(res.is_err());
+fn idl_exception_with_reserved_name_is_escaped() {
+    // Issue #14: a reserved-word exception name is ESCAPED (trailing `_`),
+    // not rejected.
+    let e = except_decl("class", vec![member(long_t(), "int")]);
+    let s = emit_remote_exception_class(&e).unwrap();
+    assert!(
+        s.contains("class class_ : public ::dds::rpc::RemoteException"),
+        "reserved exception name must be escaped:\n{s}"
+    );
+    // Member `int` -> accessor `int_()`, storage `int_field` (never `int__`).
+    assert!(
+        s.contains("int_()"),
+        "reserved member accessor must be escaped:\n{s}"
+    );
+    assert!(
+        !s.contains("int__"),
+        "must not emit a reserved __ identifier:\n{s}"
+    );
 }
 
 #[test]

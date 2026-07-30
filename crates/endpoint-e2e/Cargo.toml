@@ -1,0 +1,37 @@
+[package]
+name = "zerodds-endpoint-e2e"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Live cross-language ping-pong E2E: native endpoint apps (idlc-generated types + endpoint SDK) exchange typed samples with a Rust XRCE peer."
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+zerodds-cdr = { path = "../cdr" }
+zerodds-xrce = { path = "../xrce" }
+
+[dev-dependencies]
+zerodds-dotnet-build-lock = { path = "../dotnet-build-lock" }
+zerodds-idl = { path = "../idl" }
+zerodds-idl-go = { path = "../idl-go" }
+zerodds-idl-nim = { path = "../idl-nim" }
+zerodds-idl-d = { path = "../idl-d" }
+zerodds-idl-swift = { path = "../idl-swift" }
+zerodds-idl-julia = { path = "../idl-julia" }
+zerodds-idl-lua = { path = "../idl-lua" }
+zerodds-idl-zig = { path = "../idl-zig" }
+zerodds-idl-ocaml = { path = "../idl-ocaml" }
+zerodds-idl-elixir = { path = "../idl-elixir" }
+zerodds-idl-ada = { path = "../idl-ada" }
+zerodds-idl-cpp = { path = "../idl-cpp" }
+zerodds-idl-csharp = { path = "../idl-csharp" }
+zerodds-idl-java = { path = "../idl-java" }
+zerodds-idl-python = { path = "../idl-python" }

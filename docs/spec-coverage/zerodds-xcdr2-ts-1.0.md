@@ -206,6 +206,16 @@ Implementation:
 
 **Status:** done
 
+### §10 sync + async Deep-Examples (via Node-Runtime)
+
+**Spec:** §10 -- lauffähige sync/async Deep-Examples (Sensor-Telemetrie `Reading{id,value,label}`).
+
+**Repo:** `endpoints/node/example_sync.js` (Poll-Loop), `endpoints/node/example_async.js` (async-Iterator), `endpoints/node/QUICKSTART.md`. Der TS-Wire ist byte-identisch mit dem JS-Wire; die getypte Runtime lebt in `crates/ts-node/src/cdr/{writer,reader}.ts` (`@zerodds/cdr`). Ein separater `endpoints/ts`-Tree wäre eine vierte Kopie derselben Byte-Form (bewusst nicht dupliziert).
+
+**Tests:** CI-Job `endpoints-node` führt beide Deep-Examples aus (byte-identisch gegen die Rust-Golden); `@zerodds/cdr` hat eigene TS-Tests.
+
+**Status:** done
+
 ## §11 Errata + Open-Questions
 
 ### §11.1 Number Präzision

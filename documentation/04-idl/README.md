@@ -2,7 +2,9 @@
 
 ZeroDDS uses [OMG IDL 4.2][idl] as the wire-type definition
 language. Types you write in `.idl` are compiled by `zerodds-idlc`
-into Rust / C++ / C# / Java / TypeScript / Python stubs.
+into stubs across 17 codegen backends: C / Rust / C++ / C# / Java /
+TypeScript / Python / Go / Ada / Zig / Nim / D / Elixir / OCaml /
+Julia / Lua / Swift.
 
 ## Sub-stations
 

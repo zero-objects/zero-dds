@@ -1,0 +1,6 @@
+// Included header IDL — the whole point of the depfile test: a change here must
+// retrigger regeneration of every IDL that #includes it.
+struct Common {
+    long id;
+    string label;
+};

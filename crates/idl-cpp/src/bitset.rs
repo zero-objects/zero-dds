@@ -40,6 +40,7 @@ use zerodds_idl::ast::{
 };
 
 use crate::error::CppGenError;
+use crate::type_map::escape_cpp_ident;
 
 const MAX_BIT_BOUND: u32 = 64;
 
@@ -78,6 +79,10 @@ pub(crate) fn emit_bitmask(
         });
     }
     let underlying = underlying_type_for(bit_bound);
+    // Reserved-word escape the emitted C++ identifier (matches the abs_path
+    // registry entry so references resolve). Raw `b.name.text` is kept only for
+    // the diagnostics above.
+    let name = escape_cpp_ident(name);
 
     writeln!(out, "{indent}/** IDL `@bit_bound({bit_bound})` */").map_err(fmt_err)?;
     writeln!(out, "{indent}enum class {name} : {underlying} {{").map_err(fmt_err)?;
@@ -85,7 +90,8 @@ pub(crate) fn emit_bitmask(
     for v in &b.values {
         let pos = extract_int_annotation(&v.annotations, "position").unwrap_or(next_pos);
         next_pos = pos.saturating_add(1);
-        writeln!(out, "{inner}{} = 1ULL << {pos},", v.name.text).map_err(fmt_err)?;
+        let v_name = escape_cpp_ident(&v.name.text);
+        writeln!(out, "{inner}{v_name} = 1ULL << {pos},").map_err(fmt_err)?;
     }
     writeln!(out, "{indent}}};").map_err(fmt_err)?;
 
@@ -175,6 +181,8 @@ pub(crate) fn emit_bitset(
         entries.push((f.name.as_ref().map(|i| i.text.as_str()), width, offset));
     }
 
+    // Reserved-word escape the emitted C++ struct name (raw kept for diagnostics).
+    let name = escape_cpp_ident(name);
     writeln!(out, "{indent}struct {name} {{").map_err(fmt_err)?;
     writeln!(out, "{inner}uint64_t value{{}};").map_err(fmt_err)?;
     writeln!(out).map_err(fmt_err)?;
@@ -182,6 +190,7 @@ pub(crate) fn emit_bitset(
         let Some(fname) = field_name else {
             continue; // do not expose anonymous padding bitfields
         };
+        let fname = escape_cpp_ident(fname);
         let mask: u64 = if *width >= 64 {
             u64::MAX
         } else {

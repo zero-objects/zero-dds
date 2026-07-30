@@ -287,7 +287,8 @@ pub unsafe extern "C" fn zerodds_runtime_create_secure(
         }
     };
 
-    finish_secure_runtime(domain_id, profile)
+    // General FFI path: XCDR2-first writer encap (matches the plain path + apps).
+    finish_secure_runtime(domain_id, profile, secured_data_representation_offer())
 }
 
 /// Creates a ZeroDDS runtime with DDS-Security from an **SROS2 enclave**
@@ -312,7 +313,13 @@ pub unsafe extern "C" fn zerodds_runtime_create_secure_from_env(
     participant_guid[12..].copy_from_slice(&[0x00, 0x00, 0x01, 0xC1]);
 
     match SecurityProfile::from_env(participant_guid) {
-        Ok(Some(profile)) => finish_secure_runtime(domain_id, profile),
+        // SROS2/rmw path: keep `ros_defaults()` XCDR1-first writer encap so
+        // rmw_zerodds stays wire-compatible with default rmw readers.
+        Ok(Some(profile)) => finish_secure_runtime(
+            domain_id,
+            profile,
+            RuntimeConfig::ros_defaults().data_representation_offer,
+        ),
         Ok(None) => {
             eprintln!(
                 "zerodds_runtime_create_secure_from_env: ZERODDS_SECURITY_DIR not set — \
@@ -327,10 +334,36 @@ pub unsafe extern "C" fn zerodds_runtime_create_secure_from_env(
     }
 }
 
+/// Data-representation offer for the general [`zerodds_runtime_create_secure`]
+/// path (roundtrip bench, codegen backends, direct FFI apps).
+///
+/// XCDR2 is FIRST — the byte-oriented FFI writer derives its emitted
+/// encapsulation header from the offer's first element, and these apps
+/// serialize XCDR2 bodies, matching the plain `zerodds_runtime_create` default
+/// (offer `[XCDR2]`). XCDR1 stays in the SET so the reader still accepts foreign
+/// XCDR1 writers (Cyclone / rmw_*) config-free — the cross-vendor acceptance the
+/// secured path needs. Kept separate from the SROS2/rmw `from_env` path, which
+/// keeps `ros_defaults()` (XCDR1-first) so rmw_zerodds writers stay
+/// wire-compatible with default rmw readers that offer XCDR1 only.
+fn secured_data_representation_offer() -> alloc::vec::Vec<i16> {
+    use zerodds_rtps::publication_data::data_representation as dr;
+    alloc::vec![dr::XCDR2, dr::XCDR]
+}
+
 /// Shared tail of [`zerodds_runtime_create_secure`] +
 /// [`zerodds_runtime_create_secure_from_env`]: joinability gate, start the runtime with
 /// an identity-adjusted GUID prefix, enable the auth builtins.
-fn finish_secure_runtime(domain_id: u32, profile: SecurityProfile) -> *mut ZeroDdsRuntime {
+///
+/// `data_rep_offer` is the runtime data-representation offer. It is passed by
+/// the caller (rather than hardcoded) because the two entry points need
+/// different offer ORDERING: the general FFI path emits XCDR2-first (see
+/// [`secured_data_representation_offer`]), the SROS2/rmw `from_env` path keeps
+/// `ros_defaults()`' XCDR1-first ordering for rmw wire compatibility.
+fn finish_secure_runtime(
+    domain_id: u32,
+    profile: SecurityProfile,
+    data_rep_offer: alloc::vec::Vec<i16>,
+) -> *mut ZeroDdsRuntime {
     // DDS-Security §8.4.2.9.3 `check_create_participant`: consult BOTH governance
     // and permissions. With `enable_join_access_control=TRUE` the participant may
     // create iff its permissions grant an `<allow_rule>` whose `<domains>` covers
@@ -356,14 +389,6 @@ fn finish_secure_runtime(domain_id: u32, profile: SecurityProfile) -> *mut ZeroD
         return ptr::null_mut();
     }
 
-    // A5: this is the secured `rmw_zerodds` entry point (SROS2 enclave), so it
-    // gets the same ROS-2 out-of-the-box profile as the plain path — the reader
-    // offers XCDR1+XCDR2 to match rmw_cyclonedds/rmw_fastrtps writers config-free.
-    let rt_cfg = RuntimeConfig {
-        security: Some(Arc::clone(&profile.gate)),
-        ..RuntimeConfig::ros_defaults()
-    };
-
     // DDS-Security §9.3.3: the runtime MUST run with the identity-adjusted
     // GUID prefix (not the random candidate), so that the SPDP beacon,
     // handshake c.pdata and all entity GUIDs are consistent + cross-vendor
@@ -371,6 +396,22 @@ fn finish_secure_runtime(domain_id: u32, profile: SecurityProfile) -> *mut ZeroD
     let mut adjusted_prefix_bytes = [0u8; 12];
     adjusted_prefix_bytes.copy_from_slice(&profile.adjusted_participant_guid[..12]);
     let prefix = zerodds_rtps::wire_types::GuidPrefix::from_bytes(adjusted_prefix_bytes);
+
+    // A5: this is the secured `rmw_zerodds` entry point (SROS2 enclave), so it
+    // gets the same ROS-2 out-of-the-box profile as the plain path — the reader
+    // offers XCDR1+XCDR2 to match rmw_cyclonedds/rmw_fastrtps writers config-free.
+    // `security_guid_prefix` MUST match the identity-derived `prefix` we pass to
+    // `DcpsRuntime::start`, or the §9.3.3 GUID-prefix guard rejects the runtime.
+    // `data_rep_offer` param: general FFI path passes XCDR2-first (honest encap
+    // for the app's XCDR2 bodies — old ros_defaults() XCDR1-first stamped an
+    // XCDR1 header on XCDR2 bodies → typed reader misparse → 0 secured samples);
+    // SROS2/rmw `from_env` keeps ros_defaults() XCDR1-first for rmw compatibility.
+    let rt_cfg = RuntimeConfig {
+        security: Some(Arc::clone(&profile.gate)),
+        security_guid_prefix: Some(prefix),
+        data_representation_offer: data_rep_offer,
+        ..RuntimeConfig::ros_defaults()
+    };
 
     let rt = match DcpsRuntime::start(domain_id as i32, prefix, rt_cfg) {
         Ok(r) => r,
@@ -407,6 +448,42 @@ fn finish_secure_runtime(domain_id: u32, profile: SecurityProfile) -> *mut ZeroD
 #[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn secured_runtime_offers_xcdr2_first() {
+        // Regression: `finish_secure_runtime` used `RuntimeConfig::ros_defaults()`,
+        // whose offer is `[XCDR1, XCDR2]`. The FFI writer derives its encap header
+        // from the offer's FIRST element, so the secured writer stamped an XCDR1
+        // (0x0001) encapsulation on XCDR2 bodies → readers reported
+        // representation=XCDR1 → typed decode misparsed → secured
+        // zerodds<->zerodds delivered 0 samples (plain path, XCDR2-first, worked).
+        use zerodds_rtps::publication_data::data_representation as dr;
+        let offer = secured_data_representation_offer();
+        assert_eq!(
+            offer.first().copied(),
+            Some(dr::XCDR2),
+            "secured writer must emit an XCDR2-first encapsulation header \
+             (XCDR1-first stamps the wrong representation on XCDR2 bodies → 0 samples)"
+        );
+        assert!(
+            offer.contains(&dr::XCDR),
+            "the offer SET must still advertise XCDR1 for cross-vendor / ROS reader acceptance"
+        );
+        // The SROS2/rmw `from_env` path deliberately keeps `ros_defaults()`
+        // XCDR1-first ordering (rmw wire compatibility) — the two paths differ
+        // on purpose. Guard that they really are ordered differently.
+        let ros = zerodds_dcps::runtime::RuntimeConfig::ros_defaults().data_representation_offer;
+        assert_eq!(
+            ros.first().copied(),
+            Some(dr::XCDR),
+            "ros_defaults() is expected XCDR1-first; the general secured path overrides it"
+        );
+        assert_ne!(
+            offer.first().copied(),
+            ros.first().copied(),
+            "general vs SROS2 secured paths must keep their distinct writer encap ordering"
+        );
+    }
 
     #[test]
     fn config_create_destroy_roundtrip() {

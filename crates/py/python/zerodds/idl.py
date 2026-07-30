@@ -1115,6 +1115,7 @@ def idl_struct(
     typename: str,
     extensibility: str = "final",
     member_ids: "list[int] | None" = None,
+    non_serialized: "list[str] | None" = None,
 ) -> Callable[[Type[T]], Type[T]]:
     """Decorator. Turns a `@dataclass` into a ZeroDDS IDL type.
 
@@ -1200,8 +1201,16 @@ def idl_struct(
                     ) from exc
             return annot
 
+        # `@non_serialized` members (XTypes 1.3 §7.2.4.4.2 — broad-audit P0-5,
+        # #2) keep their dataclass field (in-memory) but are absent from every
+        # wire form AND from both TypeObjects. They are excluded from `kinds`
+        # here, so encode/decode and the member-id lockstep skip them entirely;
+        # on decode the field takes its dataclass default.
+        _non_serialized = set(non_serialized or ())
         kinds: list[tuple[str, _IdlKind]] = []
         for f in fields(cls):
+            if f.name in _non_serialized:
+                continue
             kinds.append((f.name, _kind_from_annotation(_resolve(f.type))))
 
         framed = extensibility in ("appendable", "mutable")
@@ -1302,3 +1311,18 @@ def type_name_of(cls_or_obj: Any) -> str:
     if name is None:
         raise TypeError(f"{cls.__name__} hat keinen @idl_struct(typename=...)-Decorator")
     return name  # type: ignore[return-value]
+
+
+def type_object_of(cls_or_obj: Any) -> bytes:
+    """Returns the serialized COMPLETE ``TypeObject`` (XTypes 1.3 §7.3.4) of a
+    generated IDL type — the ``<Class>.TYPE_OBJECT`` byte constant ``idlc
+    python`` emits from the shared ``zerodds_idl::semantics`` source
+    (F-TYPES-3 / #24). Byte-identical to every other ZeroDDS binding's
+    TypeObject for the same IDL, so its MD5-14 hash is the cross-binding
+    ``TypeIdentifier``. Returns ``b""`` for a type without an emitted TypeObject
+    (union / fixed / any member) — callers then use the byte-oriented create.
+
+    Handed to ``zerodds_writer_create_typed`` / ``zerodds_reader_create_typed``
+    (see :mod:`zerodds.loader`) so the endpoint advertises the identifier."""
+    cls: Any = cls_or_obj if isinstance(cls_or_obj, type) else type(cls_or_obj)
+    return bytes(getattr(cls, "TYPE_OBJECT", b""))

@@ -64,7 +64,9 @@ use crate::type_object::{CompleteTypeObject, TypeObject};
 
 use super::builder::{DynamicTypeBuilder, DynamicTypeBuilderFactory};
 use super::collection;
-use super::descriptor::{ExtensibilityKind, MemberDescriptor, TypeDescriptor, TypeKind};
+use super::descriptor::{
+    ExtensibilityKind, MemberDescriptor, TryConstructKind, TypeDescriptor, TypeKind,
+};
 use super::error::DynamicError;
 use super::type_::DynamicType;
 
@@ -502,7 +504,10 @@ impl DynamicType {
         let mut member_seq: Vec<CompleteStructMember> =
             Vec::with_capacity(self.member_count() as usize);
         for m in self.members() {
-            let mut flags_bits: u16 = 0;
+            // TryConstruct bits are always present (§7.3.1.2.1.1): the default
+            // DISCARD encodes as TRY_CONSTRUCT1, matching the vendors.
+            let mut flags_bits: u16 =
+                try_construct_to_member_flag_bits(m.descriptor().try_construct);
             if m.descriptor().is_key {
                 flags_bits |= StructMemberFlag::IS_KEY;
             }
@@ -520,9 +525,15 @@ impl DynamicType {
                 member_flags: StructMemberFlag(flags_bits),
                 member_type_id: descriptor_to_type_identifier(m.descriptor().member_type.as_ref())?,
             };
+            // Carry the member default so a USE_DEFAULT reader can recover it
+            // from the complete TypeObject (§7.2.4.4.4.4.9).
+            let ann_builtin = AppliedBuiltinMemberAnnotations {
+                default_value: m.descriptor().default_value.clone(),
+                ..AppliedBuiltinMemberAnnotations::default()
+            };
             let detail = CompleteMemberDetail {
                 name: m.name().to_string(),
-                ann_builtin: AppliedBuiltinMemberAnnotations::default(),
+                ann_builtin,
                 ann_custom: OptionalAppliedAnnotationSeq::default(),
             };
             member_seq.push(CompleteStructMember { common, detail });
@@ -550,6 +561,34 @@ const fn flag_bits_to_extensibility(flags: u16) -> ExtensibilityKind {
         ExtensibilityKind::Mutable
     } else {
         ExtensibilityKind::Appendable
+    }
+}
+
+/// Decodes the TryConstruct member-flag bits into a `TryConstructKind`
+/// (XTypes 1.3 §7.3.1.2.1.1, `bits[0..2]`): USE_DEFAULT = `TRY_CONSTRUCT2`
+/// (`10`), TRIM = both (`11`), everything else (incl. `01` and the undefined
+/// `00`) = DISCARD. This is the decode-side counterpart to
+/// `TryConstruct::to_member_flag_bits` in the builder.
+const fn try_construct_from_member_flags(flags: u16) -> TryConstructKind {
+    match flags & (StructMemberFlag::TRY_CONSTRUCT1 | StructMemberFlag::TRY_CONSTRUCT2) {
+        StructMemberFlag::TRY_CONSTRUCT2 => TryConstructKind::UseDefault,
+        x if x == StructMemberFlag::TRY_CONSTRUCT1 | StructMemberFlag::TRY_CONSTRUCT2 => {
+            TryConstructKind::Trim
+        }
+        _ => TryConstructKind::Discard,
+    }
+}
+
+/// Encodes a `TryConstructKind` back into the two member-flag bits
+/// (§7.3.1.2.1.1): DISCARD = `TRY_CONSTRUCT1` (`01`), USE_DEFAULT =
+/// `TRY_CONSTRUCT2` (`10`), TRIM = both (`11`).
+const fn try_construct_to_member_flag_bits(kind: TryConstructKind) -> u16 {
+    match kind {
+        TryConstructKind::Discard => StructMemberFlag::TRY_CONSTRUCT1,
+        TryConstructKind::UseDefault => StructMemberFlag::TRY_CONSTRUCT2,
+        TryConstructKind::Trim => {
+            StructMemberFlag::TRY_CONSTRUCT1 | StructMemberFlag::TRY_CONSTRUCT2
+        }
     }
 }
 
@@ -946,6 +985,9 @@ fn resolve_minimal(
                 md.is_must_understand =
                     (mem.common.member_flags.0 & StructMemberFlag::IS_MUST_UNDERSTAND) != 0;
                 md.is_shared = (mem.common.member_flags.0 & StructMemberFlag::IS_EXTERNAL) != 0;
+                // @try_construct bits (§7.3.1.2.1.1). A Minimal TypeObject carries
+                // no member default, so USE_DEFAULT falls back to DISCARD on apply.
+                md.try_construct = try_construct_from_member_flags(mem.common.member_flags.0);
                 b.add_member_resolved(md, mt)?;
             }
             b.build()
@@ -1068,6 +1110,10 @@ fn complete_struct_to_builder_in(
         md.is_must_understand =
             (m.common.member_flags.0 & StructMemberFlag::IS_MUST_UNDERSTAND) != 0;
         md.is_shared = (m.common.member_flags.0 & StructMemberFlag::IS_EXTERNAL) != 0;
+        // @try_construct bits + member default (§7.3.1.2.1.1 / §7.2.4.4.4.4.9),
+        // so a USE_DEFAULT reader can recover the default on apply.
+        md.try_construct = try_construct_from_member_flags(m.common.member_flags.0);
+        md.default_value = m.detail.ann_builtin.default_value.clone();
         b.add_member_resolved(md, mt)?;
     }
     Ok(b)
@@ -1144,6 +1190,9 @@ fn complete_struct_to_builder(s: &CompleteStructType) -> Result<DynamicTypeBuild
         md.is_must_understand =
             (m.common.member_flags.0 & StructMemberFlag::IS_MUST_UNDERSTAND) != 0;
         md.is_shared = (m.common.member_flags.0 & StructMemberFlag::IS_EXTERNAL) != 0;
+        // @try_construct bits + member default (§7.3.1.2.1.1 / §7.2.4.4.4.4.9).
+        md.try_construct = try_construct_from_member_flags(m.common.member_flags.0);
+        md.default_value = m.detail.ann_builtin.default_value.clone();
         b.add_member(md)?;
     }
     Ok(b)
@@ -1372,6 +1421,88 @@ mod tests {
         let t2 = b.build().unwrap();
         // Deep equality on the type built by the bridge.
         assert!(t.equals(&t2), "roundtrip failed: {t:?} vs {t2:?}");
+    }
+
+    #[test]
+    fn decode_reads_try_construct_bits_from_complete_typeobject() {
+        use crate::builder::{TryConstruct, TypeObjectBuilder};
+        // Three struct members, one per TryConstructKind, decoded through the
+        // TypeObject → DynamicType bridge (§7.3.1.2.1.1).
+        let co = TypeObjectBuilder::struct_type("::T")
+            .member("keep", TypeIdentifier::String8Small { bound: 5 }, |m| {
+                m.try_construct(TryConstruct::Trim)
+            })
+            .member("drop", TypeIdentifier::String8Small { bound: 5 }, |m| m)
+            .member("fill", TypeIdentifier::String8Small { bound: 5 }, |m| {
+                m.try_construct(TryConstruct::UseDefault)
+                    .set_member_default("dflt")
+            })
+            .build_complete();
+        let to = TypeObject::Complete(CompleteTypeObject::Struct(co));
+        let dt = DynamicTypeBuilderFactory::create_type_w_type_object(&to)
+            .unwrap()
+            .build()
+            .unwrap();
+        assert_eq!(
+            dt.member_by_id(0).unwrap().descriptor().try_construct,
+            TryConstructKind::Trim
+        );
+        assert_eq!(
+            dt.member_by_id(1).unwrap().descriptor().try_construct,
+            TryConstructKind::Discard
+        );
+        assert_eq!(
+            dt.member_by_id(2).unwrap().descriptor().try_construct,
+            TryConstructKind::UseDefault
+        );
+        // The complete TypeObject also carries the member default for USE_DEFAULT.
+        assert_eq!(
+            dt.member_by_id(2)
+                .unwrap()
+                .descriptor()
+                .default_value
+                .as_deref(),
+            Some("dflt")
+        );
+    }
+
+    #[test]
+    fn decode_applies_try_construct_on_over_bound_set() {
+        use crate::builder::{TryConstruct, TypeObjectBuilder};
+        use crate::dynamic::DynamicData;
+        // End-to-end: decode a TypeObject, then drive the apply path (data.rs
+        // set → apply_try_construct) with an over-bound string per behaviour.
+        let co = TypeObjectBuilder::struct_type("::T")
+            .member("trim_it", TypeIdentifier::String8Small { bound: 5 }, |m| {
+                m.try_construct(TryConstruct::Trim)
+            })
+            .member("drop_it", TypeIdentifier::String8Small { bound: 5 }, |m| {
+                m.try_construct(TryConstruct::Discard)
+            })
+            .member(
+                "default_it",
+                TypeIdentifier::String8Small { bound: 5 },
+                |m| {
+                    m.try_construct(TryConstruct::UseDefault)
+                        .set_member_default("dflt")
+                },
+            )
+            .build_complete();
+        let to = TypeObject::Complete(CompleteTypeObject::Struct(co));
+        let dt = DynamicTypeBuilderFactory::create_type_w_type_object(&to)
+            .unwrap()
+            .build()
+            .unwrap();
+        let mut d = DynamicData::new(dt);
+        // TRIM: the 12-byte value is truncated to the 5-byte bound.
+        d.set_string_value(0, "toolongvalue").unwrap();
+        assert_eq!(d.get_string_value(0).unwrap(), "toolo");
+        // DISCARD: set returns Ok but the member stays unset.
+        d.set_string_value(1, "toolongvalue").unwrap();
+        assert!(d.get_string_value(1).is_err());
+        // USE_DEFAULT: the member takes the declared default.
+        d.set_string_value(2, "toolongvalue").unwrap();
+        assert_eq!(d.get_string_value(2).unwrap(), "dflt");
     }
 
     #[test]

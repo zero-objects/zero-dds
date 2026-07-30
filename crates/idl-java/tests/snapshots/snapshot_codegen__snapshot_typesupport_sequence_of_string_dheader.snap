@@ -20,6 +20,17 @@ public final class TagsTypeSupport implements org.zerodds.cdr.TopicTypeSupport<T
     public org.zerodds.cdr.ExtensibilityKind getExtensibility() { return org.zerodds.cdr.ExtensibilityKind.FINAL; }
 
     @Override
+    public byte[] typeObject() { return TYPE_OBJECT.clone(); }
+    private static final byte[] TYPE_OBJECT = new byte[] {
+        (byte) 0xf2, (byte) 0x51, (byte) 0x01, (byte) 0x00, (byte) 0x0d, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00, 
+        (byte) 0x05, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x54, (byte) 0x61, (byte) 0x67, (byte) 0x73, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00, 
+        (byte) 0x23, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x01, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x1b, (byte) 0x00, (byte) 0x00, (byte) 0x00, 
+        (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x01, (byte) 0x00, (byte) 0x80, (byte) 0xf3, (byte) 0x01, (byte) 0x00, (byte) 0x00, (byte) 0x70, 
+        (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x05, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x74, (byte) 0x61, (byte) 0x67, (byte) 0x73, 
+        (byte) 0x00, (byte) 0x00, (byte) 0x00, 
+    };
+
+    @Override
     public byte[] encode(Tags sample) { return encode(sample, org.zerodds.cdr.EndianMode.LITTLE_ENDIAN); }
 
     @Override

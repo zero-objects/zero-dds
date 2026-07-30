@@ -11,7 +11,7 @@ GPRBUILD   ?= gprbuild
 GPRCLEAN   ?= gprclean
 GOLDEN_DIR ?= build
 
-.PHONY: all test clean
+.PHONY: all test examples clean
 
 all:
 	$(GPRBUILD) -p -P zerodds_ada.gpr
@@ -19,6 +19,10 @@ all:
 test: all
 	build/test_byte_identity $(GOLDEN_DIR)/golden_le.bin $(GOLDEN_DIR)/golden_be.bin
 	build/test_udp_loopback
+
+examples: all
+	build/example_sync
+	build/example_async
 
 clean:
 	-$(GPRCLEAN) -P zerodds_ada.gpr

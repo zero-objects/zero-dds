@@ -30,6 +30,15 @@ Layer 3 (schema). Build-time tool, std-only, `forbid(unsafe_code)`.
 | `@key` | `encode_key_holder_be` implementation, member-id-sorted |
 | `@id(N)` | member ID for mutable extensibility and KeyHolder sorting |
 
+## Generated code dependencies
+
+In default mode, the emitted Rust module's `[dependencies]` are exactly
+`zerodds-cdr`, `zerodds-dcps`, `zerodds-types` — no direct dependency on
+`zerodds-sql-filter` is needed. `field_value` uses `zerodds_dcps::FilterValue`
+(the crate's re-export of the SQL-filter value type), the same convention
+`zerodds-cdr-derive`'s `#[derive(DdsType)]` already uses. In `cdr_only` mode
+(the CORBA/GIOP path, no `DdsType` impl) only `zerodds-cdr` is needed.
+
 ## Quickstart
 
 ```rust

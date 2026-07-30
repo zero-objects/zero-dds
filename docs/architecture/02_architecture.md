@@ -100,7 +100,7 @@ The workspace comprises the following crates. Each row marks the safety classifi
 
 | Crate | Type | Responsibility |
 |---|---|---|
-| `zerodds-idlc` | bin | IDL4 compiler, backends: C, C++, C#, Java, Python, Rust. Uses `zerodds-idl` for parser/AST |
+| `zerodds-idlc` | bin | IDL4 compiler, 17 codegen backends: C, C++, C#, Java, Python, Rust, TypeScript, Go, Ada, Zig, Nim, D, Elixir, OCaml, Julia, Lua, Swift. Uses `zerodds-idl` for parser/AST |
 | `zerodds-admin` | bin | Admin CLI: domain inspector, QoS validator, discovery snapshot |
 | `zerodds-xmlc` | bin | DDS-XML validator, schema checker, deployment renderer |
 | `zerodds-dashboard` | bin | Tauri app for live monitoring, discovery graph, replay browser |

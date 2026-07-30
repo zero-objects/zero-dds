@@ -293,8 +293,11 @@ impl Subscriber {
                     reliable,
                     durability: qos.durability.kind,
                     deadline: qos.deadline,
+                    latency_budget: qos.latency_budget,
+                    destination_order: qos.destination_order,
                     liveliness: qos.liveliness,
                     ownership: qos.ownership.kind,
+                    presentation: qos.presentation,
                     partition: qos.partition.names.clone(),
                     user_data: qos.user_data.value.clone(),
                     topic_data: qos.topic_data.value.clone(),
@@ -308,6 +311,15 @@ impl Subscriber {
                 },
                 T::HAS_KEY,
             )?;
+            // Gap 2 (#24): auto-register the local TypeObject (if codegen/impl
+            // provides one) so the runtime's TypeLookup server can answer a
+            // peer's getTypes and the local match sites can resolve this
+            // reader's TYPE_IDENTIFIER structurally against the registry.
+            // Default `type_object()` is `None` → no-op; object emitter is a
+            // follow-up.
+            if let Some(obj) = T::type_object() {
+                let _ = rt.register_type_object(obj);
+            }
             let dr = DataReader::new_live(
                 topic.clone(),
                 qos,
@@ -2180,6 +2192,18 @@ impl<T: DdsType> DataReader<T> {
     /// Same as `read`.
     #[cfg(feature = "std")]
     pub fn read_next_instance(&self, previous: InstanceHandle) -> Result<Vec<Sample<T>>> {
+        // E1 bug 3 — a fresh reader (empty `InstanceTracker`) must discover
+        // instances here too. `next_handle_after` only ever sees instances
+        // already registered in `self.instances`; that registration
+        // previously happened only inside `read_instance`/`take_instance`,
+        // which this function reaches ONLY if `next_handle_after` already
+        // succeeded — a reader that has never called a plain
+        // `read`/`take`/`*_with_info` first therefore always saw an empty
+        // tracker and returned `Ok(vec![])` forever, even with samples
+        // sitting unread in the incoming channel. Ingest unconditionally
+        // BEFORE the lookup so a fresh reader discovers instances on the
+        // very first call.
+        self.ingest_into_cache()?;
         let Some(next) = self.instances.next_handle_after(previous) else {
             return Ok(Vec::new());
         };
@@ -2192,6 +2216,8 @@ impl<T: DdsType> DataReader<T> {
     /// Same as `take`.
     #[cfg(feature = "std")]
     pub fn take_next_instance(&self, previous: InstanceHandle) -> Result<Vec<Sample<T>>> {
+        // E1 bug 3 — see `read_next_instance`.
+        self.ingest_into_cache()?;
         let Some(next) = self.instances.next_handle_after(previous) else {
             return Ok(Vec::new());
         };

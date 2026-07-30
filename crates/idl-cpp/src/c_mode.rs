@@ -82,24 +82,76 @@
 
 #![allow(clippy::module_name_repetitions)]
 
+use core::cell::RefCell;
 use core::fmt::Write as _;
 use std::collections::{BTreeMap, BTreeSet};
 
 use zerodds_idl::ast::{
     Annotation, AnnotationParams, BitmaskDecl, BitsetDecl, Case, CaseLabel, ConstExpr,
     ConstrTypeDecl, Declarator, Definition, EnumDef, FloatingType, IntegerType, LiteralKind,
-    ModuleDef, PrimitiveType, ScopedName, Specification, StructDcl, StructDef, SwitchTypeSpec,
-    TypeDecl, TypeSpec, UnionDcl, UnionDef,
+    Member, ModuleDef, PrimitiveType, ScopedName, Specification, StructDcl, StructDef,
+    SwitchTypeSpec, TypeDecl, TypeSpec, UnionDcl, UnionDef,
 };
 use zerodds_idl::semantics::const_eval::{Symbol, SymbolTable, evaluate, evaluate_positive_int};
 
+use crate::c_keywords::escape_c_ident;
 use crate::error::CppGenError;
+
+thread_local! {
+    /// Current lexical module scope during C emission (outermost-first, raw IDL
+    /// module names). A member's `ScopedName` resolves its FQN bottom-up from
+    /// here (P0-2), exactly as `resolver.rs` does.
+    static C_CUR_SCOPE: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+}
+
+/// Snapshot of the current C-emission lexical scope.
+fn c_cur_scope() -> Vec<String> {
+    C_CUR_SCOPE.with(|c| c.borrow().clone())
+}
+
+/// Sets the current C-emission lexical scope.
+fn c_set_scope(scope: &[String]) {
+    C_CUR_SCOPE.with(|c| *c.borrow_mut() = scope.to_vec());
+}
+
+/// FQN (`Mod::Sub::Name`) — the raw IDL name used as every C registry key (P0-2).
+fn c_idl_fqn(scope: &[String], name: &str) -> String {
+    if scope.is_empty() {
+        name.to_string()
+    } else {
+        format!("{}::{name}", scope.join("::"))
+    }
+}
+
+/// Module scope of a `Mod::Sub::Name` FQN (drops the type's own simple name).
+fn c_module_scope(fqn: &str) -> Vec<String> {
+    let mut parts: Vec<String> = fqn.split("::").map(str::to_string).collect();
+    parts.pop();
+    parts
+}
+
+/// Restores `C_CUR_SCOPE` on drop — used to switch into a nested type's own
+/// module scope for the duration of an inline member-body emission.
+struct CScopeGuard(Vec<String>);
+impl Drop for CScopeGuard {
+    fn drop(&mut self) {
+        c_set_scope(&self.0);
+    }
+}
 
 /// Codegen-scoped type registry for the C backend (Bug C scope widening).
 /// Resolves a `Scoped` member to its referent kind so the emitter can pick the
 /// right C type name + XCDR2 codec instead of rejecting all non-flat members.
+///
+/// P0-2: every map below is keyed by the fully-qualified IDL name
+/// (`Mod::Sub::Type`), NOT the simple name — two same-named types in different
+/// modules must not collide. A reference resolves its lexical scope to an FQN via
+/// [`TypeReg::resolve_fqn`].
 #[derive(Default)]
 struct TypeReg {
+    /// FQN of EVERY named type (enum/struct/union/typedef/bitmask/bitset), so a
+    /// reference's lexical scope can be resolved to the correct declaration.
+    all: BTreeSet<String>,
     /// IDL simple enum name → its C identifier (module-prefixed).
     enums: BTreeMap<String, String>,
     /// IDL simple enum name → signed wire holder width in BYTES (1/2/4) from
@@ -136,6 +188,16 @@ struct TypeReg {
     /// other backend does (Bug C #43, const-array-bound). Enumerator ordinals
     /// are folded in too (case labels / bounds frequently reference them).
     consts: SymbolTable,
+    /// Named C typedefs for every collection (sequence/map) that appears as the
+    /// ELEMENT of another collection (`sequence<sequence<T>>`, `map<K,seq<V>>`,
+    /// …). In C two independently-written anonymous `struct { … }` specifiers are
+    /// DISTINCT, incompatible types even with identical members; gcc 14 makes the
+    /// resulting `-Wincompatible-pointer-types` a hard error (clang only warns).
+    /// A nested collection element therefore needs a SINGLE named type shared by
+    /// the field declaration, the `calloc` in the decoder and any user code.
+    /// `(typedef_name, resolved collection type-spec)`, ordered shallow→deep so a
+    /// typedef that references a shallower one is emitted after it.
+    nested_colls: Vec<(String, TypeSpec)>,
 }
 
 impl TypeReg {
@@ -143,7 +205,40 @@ impl TypeReg {
         let mut r = TypeReg::default();
         collect_types(defs, &[], &mut r);
         r.compute_recursive();
+        r.collect_nested_colls(defs);
         r
+    }
+
+    /// Populate `nested_colls`: every distinct sequence/map that occurs as the
+    /// element (or map key/value) of another collection. Walks all struct
+    /// members, union cases and typedef targets, resolving aliases first.
+    fn collect_nested_colls(&mut self, _defs: &[Definition]) {
+        let mut out: Vec<(u32, String, TypeSpec)> = Vec::new();
+        let mut seen: BTreeSet<String> = BTreeSet::new();
+        // Each root carries the module scope (from its owner's FQN key) it must
+        // be resolved in (P0-2).
+        let mut roots: Vec<(TypeSpec, Vec<String>)> = Vec::new();
+        for (fqn, (_, s)) in &self.structs {
+            let scope = c_module_scope(fqn);
+            for m in &s.members {
+                roots.push((m.type_spec.clone(), scope.clone()));
+            }
+        }
+        for (fqn, (_, u)) in &self.unions {
+            let scope = c_module_scope(fqn);
+            roots.push((switch_type_spec(&u.switch_type), scope.clone()));
+            for c in &u.cases {
+                roots.push((c.element.type_spec.clone(), scope.clone()));
+            }
+        }
+        for (fqn, ts) in &self.typedefs {
+            roots.push((ts.clone(), c_module_scope(fqn)));
+        }
+        for (ts, scope) in &roots {
+            collect_nested(self, ts, scope, false, &mut out, &mut seen);
+        }
+        out.sort_by_key(|(depth, _, _)| *depth);
+        self.nested_colls = out.into_iter().map(|(_, n, t)| (n, t)).collect();
     }
 
     /// Compute the set of struct/union names that participate in a reference
@@ -176,16 +271,18 @@ impl TypeReg {
         if !seen.insert(from.to_string()) {
             return false;
         }
+        // `from` is an FQN; its members reference types relative to its module.
+        let scope = c_module_scope(from);
         let mut refs: Vec<String> = Vec::new();
         if let Some((_, sdef)) = self.structs.get(from) {
             for m in &sdef.members {
-                self.collect_aggregate_refs(&m.type_spec, &mut refs);
+                self.collect_aggregate_refs(&m.type_spec, &scope, &mut refs);
             }
         }
         if let Some((_, udef)) = self.unions.get(from) {
-            self.collect_aggregate_refs(&switch_type_spec(&udef.switch_type), &mut refs);
+            self.collect_aggregate_refs(&switch_type_spec(&udef.switch_type), &scope, &mut refs);
             for c in &udef.cases {
-                self.collect_aggregate_refs(&c.element.type_spec, &mut refs);
+                self.collect_aggregate_refs(&c.element.type_spec, &scope, &mut refs);
             }
         }
         for r in refs {
@@ -199,24 +296,24 @@ impl TypeReg {
         false
     }
 
-    /// Collect the simple names of struct/union aggregates referenced by a
-    /// type-spec (through sequences, maps, and typedef aliases). Enums, bitsets,
-    /// bitmasks and primitives terminate (they cannot close a cycle).
+    /// Collect the FQNs of struct/union aggregates referenced by a type-spec
+    /// (through sequences, maps, and typedef aliases), resolved in `scope`. Enums,
+    /// bitsets, bitmasks and primitives terminate (they cannot close a cycle).
     /// zerodds-lint: recursion-depth 64 (bounded by AST nesting)
-    fn collect_aggregate_refs(&self, ts: &TypeSpec, out: &mut Vec<String>) {
-        let resolved = resolve_alias(self, ts);
+    fn collect_aggregate_refs(&self, ts: &TypeSpec, scope: &[String], out: &mut Vec<String>) {
+        let (resolved, rscope) = resolve_alias_scoped(self, ts, scope);
         match &resolved {
             TypeSpec::Scoped(sc) => {
-                if let Some(last) = scoped_last(sc) {
-                    if self.structs.contains_key(&last) || self.unions.contains_key(&last) {
-                        out.push(last);
+                if let Some(fqn) = self.resolve_fqn_in(sc, &rscope) {
+                    if self.structs.contains_key(&fqn) || self.unions.contains_key(&fqn) {
+                        out.push(fqn);
                     }
                 }
             }
-            TypeSpec::Sequence(seq) => self.collect_aggregate_refs(&seq.elem, out),
+            TypeSpec::Sequence(seq) => self.collect_aggregate_refs(&seq.elem, &rscope, out),
             TypeSpec::Map(m) => {
-                self.collect_aggregate_refs(&m.key, out);
-                self.collect_aggregate_refs(&m.value, out);
+                self.collect_aggregate_refs(&m.key, &rscope, out);
+                self.collect_aggregate_refs(&m.value, &rscope, out);
             }
             _ => {}
         }
@@ -224,6 +321,57 @@ impl TypeReg {
 
     fn is_recursive(&self, name: &str) -> bool {
         self.recursive.contains(name)
+    }
+
+    /// Resolves a member's `ScopedName` to the FQN of the declaration it binds
+    /// to, honouring the current lexical scope (`C_CUR_SCOPE`). See the C++
+    /// backend's `resolve_fqn` for the algorithm (§7.5.4 bottom-up + a
+    /// unique-suffix fallback that preserves the prior simple-name behaviour for
+    /// every non-colliding IDL).
+    fn resolve_fqn(&self, s: &ScopedName) -> Option<String> {
+        self.resolve_fqn_in(s, &c_cur_scope())
+    }
+
+    fn resolve_fqn_in(&self, s: &ScopedName, scope: &[String]) -> Option<String> {
+        let parts: Vec<String> = s.parts.iter().map(|p| p.text.clone()).collect();
+        if parts.is_empty() {
+            return None;
+        }
+        if s.absolute {
+            let cand = parts.join("::");
+            return if self.all.contains(&cand) {
+                Some(cand)
+            } else {
+                None
+            };
+        }
+        let mut base: Vec<String> = scope.to_vec();
+        loop {
+            let mut cand: Vec<String> = base.clone();
+            cand.extend(parts.iter().cloned());
+            let joined = cand.join("::");
+            if self.all.contains(&joined) {
+                return Some(joined);
+            }
+            if base.is_empty() {
+                break;
+            }
+            base.pop();
+        }
+        // Fallback: unique suffix match (behaviour identical to the prior
+        // simple-name lookup for every non-colliding name).
+        let suffix = parts.join("::");
+        let tail = format!("::{suffix}");
+        let mut hit: Option<String> = None;
+        for fqn in &self.all {
+            if *fqn == suffix || fqn.ends_with(&tail) {
+                if hit.is_some() {
+                    return None;
+                }
+                hit = Some(fqn.clone());
+            }
+        }
+        hit
     }
 }
 
@@ -237,8 +385,10 @@ fn collect_types(defs: &[Definition], scope: &[String], r: &mut TypeReg) {
                 collect_types(&m.definitions, &s, r);
             }
             Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Enum(e))) => {
+                let fqn = c_idl_fqn(scope, &e.name.text);
+                r.all.insert(fqn.clone());
                 r.enums
-                    .insert(e.name.text.clone(), c_identifier(scope, &e.name.text));
+                    .insert(fqn.clone(), c_identifier(scope, &e.name.text));
                 let ebound = extract_int_annotation_c(&e.annotations, "bit_bound")
                     .filter(|&v| (1..=32).contains(&v))
                     .unwrap_or(32);
@@ -249,7 +399,7 @@ fn collect_types(defs: &[Definition], scope: &[String], r: &mut TypeReg) {
                 } else {
                     4
                 };
-                r.enum_bytes.insert(e.name.text.clone(), ebytes);
+                r.enum_bytes.insert(fqn, ebytes);
                 // Register enumerator ordinals (both simple + scoped) so a
                 // const-expression that references an enumerator (array bound or
                 // union case label) resolves.
@@ -264,49 +414,52 @@ fn collect_types(defs: &[Definition], scope: &[String], r: &mut TypeReg) {
                 }
             }
             Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Struct(StructDcl::Def(s)))) => {
-                r.structs.insert(
-                    s.name.text.clone(),
-                    (c_identifier(scope, &s.name.text), s.clone()),
-                );
+                let fqn = c_idl_fqn(scope, &s.name.text);
+                r.all.insert(fqn.clone());
+                r.structs
+                    .insert(fqn, (c_identifier(scope, &s.name.text), s.clone()));
             }
             Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Union(UnionDcl::Def(u)))) => {
-                r.unions.insert(
-                    u.name.text.clone(),
-                    (c_identifier(scope, &u.name.text), u.clone()),
-                );
+                let fqn = c_idl_fqn(scope, &u.name.text);
+                r.all.insert(fqn.clone());
+                r.unions
+                    .insert(fqn, (c_identifier(scope, &u.name.text), u.clone()));
             }
             Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Bitmask(b))) => {
                 let holder = bitmask_holder_c_type(b);
-                r.bitmasks.insert(
-                    b.name.text.clone(),
-                    (c_identifier(scope, &b.name.text), holder),
-                );
+                let fqn = c_idl_fqn(scope, &b.name.text);
+                r.all.insert(fqn.clone());
+                r.bitmasks
+                    .insert(fqn, (c_identifier(scope, &b.name.text), holder));
             }
             Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Bitset(b))) => {
                 let holder = bitset_holder_c_type(b);
-                r.bitsets.insert(
-                    b.name.text.clone(),
-                    (c_identifier(scope, &b.name.text), holder),
-                );
+                let fqn = c_idl_fqn(scope, &b.name.text);
+                r.all.insert(fqn.clone());
+                r.bitsets
+                    .insert(fqn, (c_identifier(scope, &b.name.text), holder));
             }
             Definition::Type(TypeDecl::Typedef(td)) => {
                 for decl in &td.declarators {
                     match decl {
                         Declarator::Simple(n) => {
-                            r.typedefs.insert(n.text.clone(), td.type_spec.clone());
+                            let fqn = c_idl_fqn(scope, &n.text);
+                            r.all.insert(fqn.clone());
+                            r.typedefs.insert(fqn, td.type_spec.clone());
                         }
                         Declarator::Array(arr) => {
                             // `typedef long Matrix3[3][3];` — the alias carries
                             // both the element type AND fixed dims; a use site
                             // inherits the dims (#43, typedef-to-array).
-                            r.typedefs
-                                .insert(arr.name.text.clone(), td.type_spec.clone());
+                            let fqn = c_idl_fqn(scope, &arr.name.text);
+                            r.all.insert(fqn.clone());
+                            r.typedefs.insert(fqn.clone(), td.type_spec.clone());
                             let dims: Vec<u64> = arr
                                 .sizes
                                 .iter()
                                 .map(|sz| const_expr_to_u64_pre(&r.consts, sz).unwrap_or(0))
                                 .collect();
-                            r.typedef_arrays.insert(arr.name.text.clone(), dims);
+                            r.typedef_arrays.insert(fqn, dims);
                         }
                     }
                 }
@@ -327,23 +480,32 @@ fn collect_types(defs: &[Definition], scope: &[String], r: &mut TypeReg) {
     }
 }
 
-/// Resolve a TypeSpec through typedef chains to its effective type.
+/// Resolve a TypeSpec through typedef chains to its effective type, honouring
+/// lexical scope (P0-2). Returns the effective type AND the scope in which it is
+/// declared (so a still-`Scoped` result — a struct/union/enum — is resolved by
+/// the caller relative to the typedef's own module, not the reference site).
 /// zerodds-lint: recursion-depth 16
-fn resolve_alias(reg: &TypeReg, ts: &TypeSpec) -> TypeSpec {
+fn resolve_alias_scoped(reg: &TypeReg, ts: &TypeSpec, scope: &[String]) -> (TypeSpec, Vec<String>) {
     let mut cur = ts.clone();
+    let mut sc = scope.to_vec();
     for _ in 0..16 {
         let TypeSpec::Scoped(s) = &cur else { break };
-        let Some(last) = s.parts.last() else { break };
-        let Some(aliased) = reg.typedefs.get(&last.text).cloned() else {
+        let Some(fqn) = reg.resolve_fqn_in(s, &sc) else {
+            break;
+        };
+        let Some(aliased) = reg.typedefs.get(&fqn).cloned() else {
             break;
         };
         cur = aliased;
+        sc = c_module_scope(&fqn);
     }
-    cur
+    (cur, sc)
 }
 
-fn scoped_last(s: &ScopedName) -> Option<String> {
-    s.parts.last().map(|p| p.text.clone())
+/// Resolve a TypeSpec through typedef chains, using the current emission scope
+/// (`C_CUR_SCOPE`). Returns only the effective type.
+fn resolve_alias(reg: &TypeReg, ts: &TypeSpec) -> TypeSpec {
+    resolve_alias_scoped(reg, ts, &c_cur_scope()).0
 }
 
 fn unsupported(kind: &'static str) -> CppGenError {
@@ -356,7 +518,10 @@ fn unsupported(kind: &'static str) -> CppGenError {
 /// Codegen options (parallel to `CppGenOptions`).
 #[derive(Debug, Clone, Default)]
 pub struct CGenOptions {
-    /// Optional include-guard name (default: `ZERODDS_GENERATED_H`).
+    /// Optional include-guard name. When `None`, a guard unique to the header's
+    /// symbol set is derived (`ZERODDS_GENERATED_<hash>_H`) so two separately
+    /// generated headers do not swallow one another in a shared translation
+    /// unit (see [`Ctx::derive_guard`]).
     pub include_guard: Option<String>,
     /// Optional file-header comment.
     pub file_header: Option<String>,
@@ -380,6 +545,11 @@ pub fn generate_c_header(ast: &Specification, opts: &CGenOptions) -> Result<Stri
     ctx.emit_enums(&ast.definitions, &[]);
     // Bitset/bitmask holder typedefs + bitmask position constants (#43).
     ctx.emit_bits(&ast.definitions, &[]);
+    // Named typedefs for nested collections (`sequence<sequence<T>>`, …), emitted
+    // before the aggregate typedefs that reference them. Struct/union elements are
+    // spelled as `struct <C>_s*` (pointer to a not-yet-complete tag), so this does
+    // not depend on the aggregate typedefs having been emitted yet.
+    ctx.emit_nested_coll_typedefs()?;
     // Aggregate (struct + union) typedefs in by-value dependency order, so a
     // by-value embed sees its referent's complete C type, and a recursive type's
     // body helper sees its own typedef (#43, recursion / forward-decl). A
@@ -544,6 +714,8 @@ impl<'a> Ctx<'a> {
     /// { ... } _u; }` so struct members can embed it by value and the codec can
     /// switch on `_d` (#43, union). Called from the aggregate-typedef pre-pass.
     fn emit_union_typedef(&mut self, u: &UnionDef, scope: &[String]) -> Result<(), CppGenError> {
+        let _g = CScopeGuard(c_cur_scope());
+        c_set_scope(scope);
         let c_name = c_identifier(scope, &u.name.text);
         let disc_ts = switch_type_spec(&u.switch_type);
         let disc_c = c_type_for(self.reg, &disc_ts)?;
@@ -575,6 +747,8 @@ impl<'a> Ctx<'a> {
         u: &UnionDef,
         scope: &[String],
     ) -> Result<(), CppGenError> {
+        let _g = CScopeGuard(c_cur_scope());
+        c_set_scope(scope);
         let c_name = c_identifier(scope, &u.name.text);
         let dds_name = dds_type_name(scope, &u.name.text);
         let ext = extensibility_of(&u.annotations);
@@ -711,12 +885,57 @@ impl<'a> Ctx<'a> {
         Ok(())
     }
 
+    /// Deterministic include-guard macro for this header.
+    ///
+    /// A fixed guard (the old `ZERODDS_GENERATED_H`) makes the *second* of two
+    /// separately generated headers a no-op when both are `#include`d into the
+    /// same translation unit — its whole body is silently swallowed by the
+    /// already-defined guard (compose bug C-c). When the caller does not pin a
+    /// guard explicitly, derive one from the set of C symbols this header
+    /// defines: distinct IDL inputs then yield distinct guards (no swallow),
+    /// while re-including the *same* generated header still deduplicates
+    /// (identical symbol set → identical guard, the correct include-guard
+    /// behaviour). The hash is a toolchain-independent FNV-1a so the guard is
+    /// stable across Rust versions and reproducible in snapshot tests.
+    fn derive_guard(&self) -> String {
+        if let Some(g) = &self.opts.include_guard {
+            return g.clone();
+        }
+        // FNV-1a 64-bit over every emitted C identifier, in the deterministic
+        // order the `BTreeMap`/`BTreeSet` iterators already give.
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        let mut mix = |s: &str| {
+            for b in s.as_bytes() {
+                h ^= u64::from(*b);
+                h = h.wrapping_mul(0x0000_0100_0000_01b3);
+            }
+            // Separator so `{ "ab", "c" }` and `{ "a", "bc" }` differ.
+            h ^= 0xff;
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        };
+        for v in self.reg.enums.values() {
+            mix(v);
+        }
+        for v in self.reg.typedefs.keys() {
+            mix(v);
+        }
+        for (c, _) in self.reg.bitmasks.values() {
+            mix(c);
+        }
+        for (c, _) in self.reg.bitsets.values() {
+            mix(c);
+        }
+        for (c, _) in self.reg.structs.values() {
+            mix(c);
+        }
+        for (c, _) in self.reg.unions.values() {
+            mix(c);
+        }
+        format!("ZERODDS_GENERATED_{h:016X}_H")
+    }
+
     fn emit_preamble(&mut self) {
-        let guard = self
-            .opts
-            .include_guard
-            .clone()
-            .unwrap_or_else(|| "ZERODDS_GENERATED_H".to_string());
+        let guard = self.derive_guard();
         if let Some(h) = &self.opts.file_header {
             for line in h.lines() {
                 let _ = writeln!(self.out, "/* {line} */");
@@ -910,6 +1129,8 @@ impl<'a> Ctx<'a> {
         def: &StructDef,
         scope: &[String],
     ) -> Result<(), CppGenError> {
+        let _g = CScopeGuard(c_cur_scope());
+        c_set_scope(scope);
         let c_name = c_identifier(scope, &def.name.text);
         let _ = writeln!(self.out, "typedef struct {c_name}_s {{");
         for member in &def.members {
@@ -921,13 +1142,17 @@ impl<'a> Ctx<'a> {
                 // typedef-to-array alias contributes leading dims (#43).
                 let dims = effective_array_dims(self.reg, &member.type_spec, decl)?;
                 if dims.is_empty() {
-                    let _ = writeln!(self.out, "    {c_type} {field};", field = m_name.text);
+                    let _ = writeln!(
+                        self.out,
+                        "    {c_type} {field};",
+                        field = escape_c_ident(&m_name.text)
+                    );
                 } else {
                     let suffix: String = dims.iter().map(|n| format!("[{n}]")).collect();
                     let _ = writeln!(
                         self.out,
                         "    {c_type} {field}{suffix};",
-                        field = m_name.text
+                        field = escape_c_ident(&m_name.text)
                     );
                 }
                 // @optional: a presence companion flag (Bug C2: no longer
@@ -936,7 +1161,7 @@ impl<'a> Ctx<'a> {
                     let _ = writeln!(
                         self.out,
                         "    uint8_t {field}_present;",
-                        field = m_name.text
+                        field = escape_c_ident(&m_name.text)
                     );
                 }
             }
@@ -947,6 +1172,24 @@ impl<'a> Ctx<'a> {
         }
         let _ = writeln!(self.out, "}} {c_name}_t;");
         let _ = writeln!(self.out);
+        Ok(())
+    }
+
+    /// Emit a `typedef struct { … } zd_nested_…;` for every nested collection
+    /// (collected in `TypeReg::nested_colls`, ordered shallow→deep). Gives each
+    /// `sequence<sequence<T>>` / `map<K, seq<V>>` element a single shared C type
+    /// so the field declaration, the decoder `calloc` and user code agree — a
+    /// re-spelled anonymous struct would be a distinct, incompatible type (gcc 14
+    /// `-Wincompatible-pointer-types` error; clang only warns).
+    fn emit_nested_coll_typedefs(&mut self) -> Result<(), CppGenError> {
+        let colls = self.reg.nested_colls.clone();
+        for (name, ts) in &colls {
+            let body = nested_coll_body(self.reg, ts)?;
+            let _ = writeln!(self.out, "typedef {body} {name};");
+        }
+        if !colls.is_empty() {
+            let _ = writeln!(self.out);
+        }
         Ok(())
     }
 
@@ -964,9 +1207,9 @@ impl<'a> Ctx<'a> {
         let mut order: Vec<(String, Vec<String>, AggDef)> = Vec::new();
         collect_aggregates(defs, &[], &mut order);
         // Reject infinite-size by-value self/mutual recursion.
-        for (name, _, agg) in &order {
+        for (name, scope, agg) in &order {
             let mut seen = BTreeSet::new();
-            if self.by_value_reaches(agg, name, &mut seen) {
+            if self.by_value_reaches(agg, scope, name, &mut seen) {
                 return Err(CppGenError::UnsupportedConstruct {
                     construct: "infinite-size type: a struct/union member references its own \
                                 type by value (a self-reference is only legal heap-indirected, \
@@ -989,7 +1232,7 @@ impl<'a> Ctx<'a> {
             let mut progressed = false;
             let mut next: Vec<(String, Vec<String>, AggDef)> = Vec::new();
             for (name, scope, agg) in remaining.drain(..) {
-                let deps = self.by_value_agg_deps(&agg);
+                let deps = self.by_value_agg_deps(&agg, &scope);
                 if deps.iter().all(|d| emitted.contains(d) || d == &name) {
                     match &agg {
                         AggDef::Struct(s) => self.emit_struct_typedef(s, &scope)?,
@@ -1021,14 +1264,14 @@ impl<'a> Ctx<'a> {
     /// The simple names of aggregates a struct/union embeds BY VALUE (members
     /// that are directly a struct/union, or a fixed array / typedef-to-aggregate
     /// of one). Sequence/map element refs are pointers and excluded.
-    fn by_value_agg_deps(&self, agg: &AggDef) -> Vec<String> {
+    fn by_value_agg_deps(&self, agg: &AggDef, scope: &[String]) -> Vec<String> {
         let mut out = Vec::new();
         let push_ts = |ts: &TypeSpec, out: &mut Vec<String>| {
-            let resolved = resolve_alias(self.reg, ts);
+            let (resolved, rscope) = resolve_alias_scoped(self.reg, ts, scope);
             if let TypeSpec::Scoped(sc) = &resolved {
-                if let Some(last) = scoped_last(sc) {
-                    if self.reg.structs.contains_key(&last) || self.reg.unions.contains_key(&last) {
-                        out.push(last);
+                if let Some(fqn) = self.reg.resolve_fqn_in(sc, &rscope) {
+                    if self.reg.structs.contains_key(&fqn) || self.reg.unions.contains_key(&fqn) {
+                        out.push(fqn);
                     }
                 }
             }
@@ -1048,12 +1291,19 @@ impl<'a> Ctx<'a> {
         out
     }
 
-    /// True if `agg` can reach `target` following ONLY by-value member edges —
-    /// i.e. `target` is embedded (transitively) as a non-pointer field, which
-    /// makes the type infinite-size. `seen` guards the walk against cycles.
+    /// True if `agg` (declared in `scope`) can reach `target` (an FQN) following
+    /// ONLY by-value member edges — i.e. `target` is embedded (transitively) as a
+    /// non-pointer field, which makes the type infinite-size. `seen` guards the
+    /// walk against cycles.
     /// zerodds-lint: recursion-depth 256 (bounded by distinct type set)
-    fn by_value_reaches(&self, agg: &AggDef, target: &str, seen: &mut BTreeSet<String>) -> bool {
-        for dep in self.by_value_agg_deps(agg) {
+    fn by_value_reaches(
+        &self,
+        agg: &AggDef,
+        scope: &[String],
+        target: &str,
+        seen: &mut BTreeSet<String>,
+    ) -> bool {
+        for dep in self.by_value_agg_deps(agg, scope) {
             if dep == target {
                 return true;
             }
@@ -1072,7 +1322,7 @@ impl<'a> Ctx<'a> {
                         .map(|(_, u)| AggDef::Union(u.clone()))
                 });
             if let Some(next) = next {
-                if self.by_value_reaches(&next, target, seen) {
+                if self.by_value_reaches(&next, &c_module_scope(&dep), target, seen) {
                     return true;
                 }
             }
@@ -1086,20 +1336,23 @@ impl<'a> Ctx<'a> {
     /// buffer (`w_buf`/`w_len`/`w_cap`) / read cursor (`pos`) by pointer — so
     /// recursion happens at RUNTIME, not at codegen time (Bug G, C backend).
     fn emit_recursive_helpers(&mut self) -> Result<(), CppGenError> {
-        // Collect (c_name, AggDef) for recursive aggregates, in a stable order.
-        let mut recs: Vec<(String, AggDef)> = Vec::new();
+        // Collect (c_name, module-scope, AggDef) for recursive aggregates, in a
+        // stable order. The scope (from the FQN key) lets each body resolve its
+        // own member references correctly (P0-2).
+        let mut recs: Vec<(String, Vec<String>, AggDef)> = Vec::new();
         for name in self.reg.recursive.clone() {
+            let scope = c_module_scope(&name);
             if let Some((cn, s)) = self.reg.structs.get(&name).cloned() {
-                recs.push((cn, AggDef::Struct(s)));
+                recs.push((cn, scope, AggDef::Struct(s)));
             } else if let Some((cn, u)) = self.reg.unions.get(&name).cloned() {
-                recs.push((cn, AggDef::Union(u)));
+                recs.push((cn, scope, AggDef::Union(u)));
             }
         }
         if recs.is_empty() {
             return Ok(());
         }
         // Forward declarations (so mutually recursive bodies can call each other).
-        for (cn, _) in &recs {
+        for (cn, _, _) in &recs {
             let _ = writeln!(
                 self.out,
                 "static int {cn}_write_body(const {cn}_t* v, uint8_t** w_buf_pp, size_t* w_len_pp, size_t* w_cap_pp, int representation);"
@@ -1111,7 +1364,9 @@ impl<'a> Ctx<'a> {
         }
         let _ = writeln!(self.out);
         // Bodies.
-        for (cn, agg) in &recs {
+        for (cn, scope, agg) in &recs {
+            let _g = CScopeGuard(c_cur_scope());
+            c_set_scope(scope);
             self.emit_recursive_write_body(cn, agg)?;
             self.emit_recursive_read_body(cn, agg)?;
         }
@@ -1177,6 +1432,8 @@ impl<'a> Ctx<'a> {
     }
 
     fn emit_struct(&mut self, def: &StructDef, scope: &[String]) -> Result<(), CppGenError> {
+        let _g = CScopeGuard(c_cur_scope());
+        c_set_scope(scope);
         let ext = extensibility_of(&def.annotations);
         let c_name = c_identifier(scope, &def.name.text);
         let dds_name = dds_type_name(scope, &def.name.text);
@@ -1242,7 +1499,7 @@ impl<'a> Ctx<'a> {
         self.emit_free_body(&c_name, def);
         // ---- key_hash body ----
         if has_key {
-            self.emit_key_hash_body(&c_name, def);
+            self.emit_key_hash_body(&c_name, def)?;
         }
         Ok(())
     }
@@ -1353,9 +1610,12 @@ impl<'a> Ctx<'a> {
 
     fn emit_struct_body_writes(&mut self, def: &StructDef) -> Result<(), CppGenError> {
         for member in &def.members {
+            if is_non_serialized(&member.annotations) {
+                continue;
+            }
             let optional = is_optional(&member.annotations);
             for decl in &member.declarators {
-                let f = &decl.name().text;
+                let f = escape_c_ident(&decl.name().text);
                 let dims = effective_array_dims(self.reg, &member.type_spec, decl)?;
                 if optional {
                     // XCDR2 non-mutable optional: a boolean presence flag, then
@@ -1440,8 +1700,9 @@ impl<'a> Ctx<'a> {
 
     /// zerodds-lint: recursion-depth 64 (nested struct members; bounded by IDL)
     fn emit_member_write(&mut self, var: &str, type_spec: &TypeSpec) -> Result<(), CppGenError> {
-        // Resolve typedef aliases to the effective type first (Bug C).
-        let resolved = resolve_alias(self.reg, type_spec);
+        // Resolve typedef aliases to the effective type first (Bug C), tracking
+        // the scope the alias resolved into (P0-2).
+        let (resolved, rscope) = resolve_alias_scoped(self.reg, type_spec, &c_cur_scope());
         match &resolved {
             TypeSpec::Primitive(p) => self.emit_primitive_write(var, *p),
             TypeSpec::String(st) => {
@@ -1465,7 +1726,14 @@ impl<'a> Ctx<'a> {
             TypeSpec::Sequence(seq) => self.emit_sequence_write(var, &seq.elem, seq.bound.as_ref()),
             TypeSpec::Map(m) => self.emit_map_write(var, &m.key, &m.value, m.bound.as_ref()),
             TypeSpec::Scoped(sc) => {
-                let last = scoped_last(sc).ok_or_else(|| unsupported("empty scoped name"))?;
+                let last = self
+                    .reg
+                    .resolve_fqn_in(sc, &rscope)
+                    .ok_or_else(|| unsupported("unresolved scoped member (C backend)"))?;
+                // Nested aggregate bodies resolve THEIR members in the nested
+                // type's module scope (P0-2).
+                let _g = CScopeGuard(c_cur_scope());
+                c_set_scope(&c_module_scope(&last));
                 if self.reg.enums.contains_key(&last) {
                     // enum → signed wire holder of its @bit_bound width
                     // (XTypes §7.4.5.1). u8/u16 carry the byte image of the
@@ -1816,7 +2084,7 @@ impl<'a> Ctx<'a> {
         for member in &ndef.members {
             let optional = is_optional(&member.annotations);
             for decl in &member.declarators {
-                let f = &decl.name().text;
+                let f = escape_c_ident(&decl.name().text);
                 let dims = effective_array_dims(self.reg, &member.type_spec, decl)?;
                 if optional {
                     // Plain-CDR2 optional (XTypes §7.4.3): a boolean presence
@@ -1977,9 +2245,28 @@ impl<'a> Ctx<'a> {
         // (vendor-confirmed byte-identical to CycloneDDS). Explicit `@id(N)` sets
         // the id and resets the counter to N+1. (Previously the C backend rejected
         // auto-id @mutable members outright.)
+        let autoid_hash =
+            zerodds_idl::semantics::member_id::container_autoid_hash(&def.annotations);
         let mut auto_id: u32 = 0;
         for member in &def.members {
-            let id = id_annotation(&member.annotations).unwrap_or(auto_id);
+            // @non_serialized: no wire slot AND no id-counter step, so survivors
+            // compact exactly as the TypeObject builder does (P0-5, #2).
+            if is_non_serialized(&member.annotations) {
+                continue;
+            }
+            // P0-3: central resolver — explicit @id / @hashid / struct-level
+            // @autoid(HASH), else the sequential (prev+1) fallback. No positional
+            // counter for hashed ids, so the C wire ids match the TypeObject,
+            // C++ and Rust.
+            let id = zerodds_idl::semantics::member_id::resolved_member_id(
+                autoid_hash,
+                &member.annotations,
+                member
+                    .declarators
+                    .first()
+                    .map_or("", |d| d.name().text.as_str()),
+                auto_id,
+            );
             auto_id = id + 1;
             let dims_per_decl: Vec<Vec<u64>> = member
                 .declarators
@@ -1988,7 +2275,7 @@ impl<'a> Ctx<'a> {
                 .collect::<Result<_, _>>()?;
             let optional = is_optional(&member.annotations);
             for (decl, dims) in member.declarators.iter().zip(dims_per_decl.iter()) {
-                let f = format!("{base}{}", decl.name().text);
+                let f = format!("{base}{}", escape_c_ident(&decl.name().text));
                 let f = f.as_str();
                 // Bug XV-mut: pick the COMPACT length code (XTypes 1.3 §7.4.3.4.2)
                 // mirroring the Rust reference (`mutable_member_length_code`):
@@ -2051,9 +2338,28 @@ impl<'a> Ctx<'a> {
     /// `pl1_write_member` (PID header + body + pad-to-4). Ends with the sentinel.
     /// Mirrors `emit_mutable_member_writes_base`'s id assignment.
     fn emit_pl_cdr1_member_writes(&mut self, def: &StructDef) -> Result<(), CppGenError> {
+        let autoid_hash =
+            zerodds_idl::semantics::member_id::container_autoid_hash(&def.annotations);
         let mut auto_id: u32 = 0;
         for member in &def.members {
-            let id = id_annotation(&member.annotations).unwrap_or(auto_id);
+            // @non_serialized: skipped from the wire AND from the id counter, so
+            // survivors compact exactly as the TypeObject builder does (P0-5, #2).
+            if is_non_serialized(&member.annotations) {
+                continue;
+            }
+            // P0-3: central resolver — explicit @id / @hashid / struct-level
+            // @autoid(HASH), else the sequential (prev+1) fallback. No positional
+            // counter for hashed ids, so the C wire ids match the TypeObject,
+            // C++ and Rust.
+            let id = zerodds_idl::semantics::member_id::resolved_member_id(
+                autoid_hash,
+                &member.annotations,
+                member
+                    .declarators
+                    .first()
+                    .map_or("", |d| d.name().text.as_str()),
+                auto_id,
+            );
             auto_id = id + 1;
             let dims_per_decl: Vec<Vec<u64>> = member
                 .declarators
@@ -2062,7 +2368,7 @@ impl<'a> Ctx<'a> {
                 .collect::<Result<_, _>>()?;
             let optional = is_optional(&member.annotations);
             for (decl, dims) in member.declarators.iter().zip(dims_per_decl.iter()) {
-                let fname = decl.name().text.clone();
+                let fname = escape_c_ident(&decl.name().text);
                 let f = format!("s->{fname}");
                 if optional {
                     // PL_CDR1 optional: present -> emit the parameter; absent ->
@@ -2120,9 +2426,28 @@ impl<'a> Ctx<'a> {
         let _ = writeln!(self.out, "        if (pos + pl_blen > len) return -7;");
         let _ = writeln!(self.out, "        size_t pl_body_start = pos;");
         let _ = writeln!(self.out, "        switch (pl_id) {{");
+        let autoid_hash =
+            zerodds_idl::semantics::member_id::container_autoid_hash(&def.annotations);
         let mut auto_id: u32 = 0;
         for member in &def.members {
-            let id = id_annotation(&member.annotations).unwrap_or(auto_id);
+            // @non_serialized: skipped from the wire AND from the id counter, so
+            // survivors compact exactly as the TypeObject builder does (P0-5, #2).
+            if is_non_serialized(&member.annotations) {
+                continue;
+            }
+            // P0-3: central resolver — explicit @id / @hashid / struct-level
+            // @autoid(HASH), else the sequential (prev+1) fallback. No positional
+            // counter for hashed ids, so the C wire ids match the TypeObject,
+            // C++ and Rust.
+            let id = zerodds_idl::semantics::member_id::resolved_member_id(
+                autoid_hash,
+                &member.annotations,
+                member
+                    .declarators
+                    .first()
+                    .map_or("", |d| d.name().text.as_str()),
+                auto_id,
+            );
             auto_id = id + 1;
             let dims_per_decl: Vec<Vec<u64>> = member
                 .declarators
@@ -2131,7 +2456,7 @@ impl<'a> Ctx<'a> {
                 .collect::<Result<_, _>>()?;
             let optional = is_optional(&member.annotations);
             for (decl, dims) in member.declarators.iter().zip(dims_per_decl.iter()) {
-                let fname = decl.name().text.clone();
+                let fname = escape_c_ident(&decl.name().text);
                 let f = format!("s->{fname}");
                 let _ = writeln!(self.out, "        case {id}u: {{");
                 // Redirect the cursor to the parameter body (origin 0).
@@ -2285,9 +2610,12 @@ impl<'a> Ctx<'a> {
 
     fn emit_struct_body_reads(&mut self, def: &StructDef) -> Result<(), CppGenError> {
         for member in &def.members {
+            if is_non_serialized(&member.annotations) {
+                continue;
+            }
             let optional = is_optional(&member.annotations);
             for decl in &member.declarators {
-                let f = &decl.name().text;
+                let f = escape_c_ident(&decl.name().text);
                 let dims = effective_array_dims(self.reg, &member.type_spec, decl)?;
                 if optional {
                     let _ = writeln!(self.out, "    {{");
@@ -2347,7 +2675,7 @@ impl<'a> Ctx<'a> {
 
     /// zerodds-lint: recursion-depth 64 (nested struct members; bounded by IDL)
     fn emit_member_read(&mut self, var: &str, type_spec: &TypeSpec) -> Result<(), CppGenError> {
-        let resolved = resolve_alias(self.reg, type_spec);
+        let (resolved, rscope) = resolve_alias_scoped(self.reg, type_spec, &c_cur_scope());
         match &resolved {
             TypeSpec::Primitive(p) => {
                 let helper = primitive_helper(*p)?;
@@ -2373,18 +2701,46 @@ impl<'a> Ctx<'a> {
             }
             TypeSpec::String(st) => {
                 if st.wide {
-                    return self.emit_wstring_read(var);
+                    return self.emit_wstring_read(var, st.bound.as_ref());
                 }
                 let _ = writeln!(
                     self.out,
                     "    if (zerodds_xcdr2_c_read_string(buf, len, &pos, &({var}), zd_be) != 0) return -7;"
                 );
+                // B1 follow-up (#22 decode-side parity): mirror the encode-side
+                // bound check (emit_member_write above) — XTypes 1.3 §7.4.3
+                // requires the IDL bound enforced on decode too, not just the
+                // wire-format validation zerodds_xcdr2_c_read_string already
+                // does. -14: bounded collection decoded value exceeds its IDL
+                // bound (distinct from the generic -7 read-failure code).
+                //
+                // Moderate fix (deep review of #22 decode-bounds-cross-backend):
+                // `zerodds_xcdr2_c_read_string` is a shared runtime helper
+                // that already `malloc`s the string before returning it —
+                // unlike `emit_wstring_read`/`emit_sequence_read`/
+                // `emit_map_read` below, which read the wire length first and
+                // check the bound BEFORE allocating, this string path has no
+                // length available before calling the helper. Rather than
+                // change the shared header (used by every other C-mode read
+                // path), `free({var})` before rejecting — a rejected decode
+                // must not leak the allocation the helper already made.
+                if let Some(n) = self.eval_bound(st.bound.as_ref()) {
+                    let _ = writeln!(
+                        self.out,
+                        "    if (({var}) != NULL && strlen({var}) > {n}u) {{ free({var}); ({var}) = NULL; return -14; }}"
+                    );
+                }
                 Ok(())
             }
-            TypeSpec::Sequence(seq) => self.emit_sequence_read(var, &seq.elem),
-            TypeSpec::Map(m) => self.emit_map_read(var, &m.key, &m.value),
+            TypeSpec::Sequence(seq) => self.emit_sequence_read(var, &seq.elem, seq.bound.as_ref()),
+            TypeSpec::Map(m) => self.emit_map_read(var, &m.key, &m.value, m.bound.as_ref()),
             TypeSpec::Scoped(sc) => {
-                let last = scoped_last(sc).ok_or_else(|| unsupported("empty scoped name"))?;
+                let last = self
+                    .reg
+                    .resolve_fqn_in(sc, &rscope)
+                    .ok_or_else(|| unsupported("unresolved scoped member read (C backend)"))?;
+                let _g = CScopeGuard(c_cur_scope());
+                c_set_scope(&c_module_scope(&last));
                 if self.reg.enums.contains_key(&last) {
                     // Read the @bit_bound-width holder, sign-extend to the int32
                     // in-memory enum (XTypes §7.4.5.1).
@@ -2586,7 +2942,7 @@ impl<'a> Ctx<'a> {
         for member in &ndef.members {
             let optional = is_optional(&member.annotations);
             for decl in &member.declarators {
-                let f = &decl.name().text;
+                let f = escape_c_ident(&decl.name().text);
                 let dims = effective_array_dims(self.reg, &member.type_spec, decl)?;
                 if optional {
                     let _ = writeln!(self.out, "    {{");
@@ -2617,7 +2973,11 @@ impl<'a> Ctx<'a> {
     }
 
     /// Read an XCDR2 wstring into a freshly-malloc'd NUL-terminated `uint16_t*`.
-    fn emit_wstring_read(&mut self, var: &str) -> Result<(), CppGenError> {
+    fn emit_wstring_read(
+        &mut self,
+        var: &str,
+        bound: Option<&ConstExpr>,
+    ) -> Result<(), CppGenError> {
         let _ = writeln!(self.out, "    {{");
         let _ = writeln!(self.out, "        uint32_t ws_bytes = 0;");
         let _ = writeln!(
@@ -2625,6 +2985,11 @@ impl<'a> Ctx<'a> {
             "        if (zerodds_xcdr2_c_read_u32(buf, len, &pos, &ws_bytes, zd_be) != 0) return -7;"
         );
         let _ = writeln!(self.out, "        uint32_t ws_n = ws_bytes / 2u;");
+        // B1 follow-up (#22 decode-side parity): mirror the encode-side bound
+        // check (emit_wstring_write above) — XTypes 1.3 §7.4.3.
+        if let Some(n) = self.eval_bound(bound) {
+            let _ = writeln!(self.out, "        if (ws_n > {n}u) return -14;");
+        }
         let _ = writeln!(
             self.out,
             "        uint16_t* ws_p = (uint16_t*)malloc(((size_t)ws_n + 1) * sizeof(uint16_t));"
@@ -2647,9 +3012,10 @@ impl<'a> Ctx<'a> {
         var: &str,
         key: &TypeSpec,
         value: &TypeSpec,
+        bound: Option<&ConstExpr>,
     ) -> Result<(), CppGenError> {
-        let kc = c_type_for(self.reg, key)?;
-        let vc = c_type_for(self.reg, value)?;
+        let kc = c_elem_type(self.reg, key)?;
+        let vc = c_elem_type(self.reg, value)?;
         let _ = writeln!(self.out, "    {{");
         // Symmetric to the encoder: the map DHEADER is 4-aligned and present
         // ONLY for a non-primitive (key,value) element (XCDR2 §7.4.3.5).
@@ -2672,14 +3038,19 @@ impl<'a> Ctx<'a> {
             self.out,
             "        if (zerodds_xcdr2_c_read_u32(buf, len, &pos, &map_len, zd_be) != 0) return -7;"
         );
+        // B1 follow-up (#22 decode-side parity): mirror the encode-side bound
+        // check (emit_map_write above) — XTypes 1.3 §7.4.3.
+        if let Some(n) = self.eval_bound(bound) {
+            let _ = writeln!(self.out, "        if (map_len > {n}u) return -14;");
+        }
         let _ = writeln!(self.out, "        ({var}).len = map_len;");
         let _ = writeln!(
             self.out,
-            "        ({var}).keys = ({kc}*)calloc(map_len ? map_len : 1, sizeof({kc}));"
+            "        ({var}).keys = calloc(map_len ? map_len : 1, sizeof({kc}));"
         );
         let _ = writeln!(
             self.out,
-            "        ({var}).vals = ({vc}*)calloc(map_len ? map_len : 1, sizeof({vc}));"
+            "        ({var}).vals = calloc(map_len ? map_len : 1, sizeof({vc}));"
         );
         let _ = writeln!(
             self.out,
@@ -2785,7 +3156,12 @@ impl<'a> Ctx<'a> {
         Err(unsupported("non-integer union case label (C backend)"))
     }
 
-    fn emit_sequence_read(&mut self, var: &str, elem: &TypeSpec) -> Result<(), CppGenError> {
+    fn emit_sequence_read(
+        &mut self,
+        var: &str,
+        elem: &TypeSpec,
+        bound: Option<&ConstExpr>,
+    ) -> Result<(), CppGenError> {
         let _ = writeln!(self.out, "    {{");
         // XCDR2 §7.4.3.5: for non-primitive elements, a DHEADER (uint32 before
         // [count + elements]) is present — skip it. enum→int32 is primitive.
@@ -2804,11 +3180,19 @@ impl<'a> Ctx<'a> {
             self.out,
             "        if (zerodds_xcdr2_c_read_u32(buf, len, &pos, &seq_len, zd_be) != 0) return -7;"
         );
-        let elem_c = c_type_for(self.reg, elem)?;
+        // B1 follow-up (#22 decode-side parity): mirror the encode-side bound
+        // check (emit_sequence_write above) — XTypes 1.3 §7.4.3.
+        if let Some(n) = self.eval_bound(bound) {
+            let _ = writeln!(self.out, "        if (seq_len > {n}u) return -14;");
+        }
+        let elem_c = c_elem_type(self.reg, elem)?;
         let _ = writeln!(self.out, "        ({var}).len = seq_len;");
+        // `calloc` returns `void*`, which converts to any object-pointer type
+        // implicitly — no cast (an explicit cast to a re-spelled anonymous struct
+        // would be a distinct, incompatible pointer type under gcc 14).
         let _ = writeln!(
             self.out,
-            "        ({var}).elems = ({elem_c}*)calloc(seq_len ? seq_len : 1, sizeof({elem_c}));"
+            "        ({var}).elems = calloc(seq_len ? seq_len : 1, sizeof({elem_c}));"
         );
         let _ = writeln!(
             self.out,
@@ -2835,15 +3219,15 @@ impl<'a> Ctx<'a> {
     /// IDL primitives, and enum members (which become int32). Resolves through
     /// typedef aliases first.
     fn seq_elem_is_primitive(&self, elem: &TypeSpec) -> bool {
-        let resolved = resolve_alias(self.reg, elem);
+        let (resolved, rscope) = resolve_alias_scoped(self.reg, elem, &c_cur_scope());
         match &resolved {
             TypeSpec::Primitive(_) => true,
-            TypeSpec::Scoped(sc) => scoped_last(sc).is_some_and(|last| {
+            TypeSpec::Scoped(sc) => self.reg.resolve_fqn_in(sc, &rscope).is_some_and(|fqn| {
                 // enum (→int32), bitmask/bitset (→holder uint) all serialize as
                 // a plain primitive integer, so no element DHEADER.
-                self.reg.enums.contains_key(&last)
-                    || self.reg.bitmasks.contains_key(&last)
-                    || self.reg.bitsets.contains_key(&last)
+                self.reg.enums.contains_key(&fqn)
+                    || self.reg.bitmasks.contains_key(&fqn)
+                    || self.reg.bitsets.contains_key(&fqn)
             }),
             _ => false,
         }
@@ -2866,12 +3250,31 @@ impl<'a> Ctx<'a> {
     ) -> Result<(), CppGenError> {
         let _ = writeln!(self.out, "        switch ({mid_var}) {{");
         // Sequential auto-id (XTypes §7.3.4.3 default), mirroring the encoder.
+        let autoid_hash =
+            zerodds_idl::semantics::member_id::container_autoid_hash(&def.annotations);
         let mut auto_id: u32 = 0;
         for member in &def.members {
-            let id = id_annotation(&member.annotations).unwrap_or(auto_id);
+            // @non_serialized: skipped from the wire AND from the id counter, so
+            // survivors compact exactly as the TypeObject builder does (P0-5, #2).
+            if is_non_serialized(&member.annotations) {
+                continue;
+            }
+            // P0-3: central resolver — explicit @id / @hashid / struct-level
+            // @autoid(HASH), else the sequential (prev+1) fallback. No positional
+            // counter for hashed ids, so the C wire ids match the TypeObject,
+            // C++ and Rust.
+            let id = zerodds_idl::semantics::member_id::resolved_member_id(
+                autoid_hash,
+                &member.annotations,
+                member
+                    .declarators
+                    .first()
+                    .map_or("", |d| d.name().text.as_str()),
+                auto_id,
+            );
             auto_id = id + 1;
             for decl in &member.declarators {
-                let f = format!("{base}{}", decl.name().text);
+                let f = format!("{base}{}", escape_c_ident(&decl.name().text));
                 let dims = effective_array_dims(self.reg, &member.type_spec, decl)?;
                 let _ = writeln!(self.out, "        case {id}: {{");
                 self.emit_array_or_scalar_read(&f, &member.type_spec, &dims)?;
@@ -2895,7 +3298,7 @@ impl<'a> Ctx<'a> {
         for member in &def.members {
             let resolved = resolve_alias(self.reg, &member.type_spec);
             for decl in &member.declarators {
-                let f = &decl.name().text;
+                let f = escape_c_ident(&decl.name().text);
                 let dims =
                     effective_array_dims(self.reg, &member.type_spec, decl).unwrap_or_default();
                 if dims.is_empty() {
@@ -2969,7 +3372,7 @@ impl<'a> Ctx<'a> {
         }
     }
 
-    fn emit_key_hash_body(&mut self, c_name: &str, def: &StructDef) {
+    fn emit_key_hash_body(&mut self, c_name: &str, def: &StructDef) -> Result<(), CppGenError> {
         // Spec §7.6.8: collects  members in PlainCdr2BeKeyHolder, then
         // either zero-pad or MD5. We use the XCDR2 C helpers.
         let _ = writeln!(
@@ -2983,31 +3386,30 @@ impl<'a> Ctx<'a> {
         let _ = writeln!(self.out, "    uint8_t* kh_buf = NULL;");
         let _ = writeln!(self.out, "    size_t kh_len = 0;");
         let _ = writeln!(self.out, "    size_t kh_cap = 0;");
-        for member in &def.members {
-            if !is_key(&member.annotations) {
-                continue;
-            }
+        // XTypes 1.3 §7.6.8.3.1.b: KeyHolder members in ascending member-id
+        // order (explicit `@id(N)`, else positional index among the `@key`
+        // members) — NOT declaration order.
+        let key_members: Vec<&Member> = def
+            .members
+            .iter()
+            .filter(|m| is_key(&m.annotations))
+            .collect();
+        for member in sort_members_by_id(&key_members) {
             for decl in &member.declarators {
-                let f = &decl.name().text;
-                match &member.type_spec {
-                    TypeSpec::Primitive(p) => {
-                        let helper = match primitive_helper(*p) {
-                            Ok(h) => h,
-                            Err(_) => continue,
-                        };
-                        let _ = writeln!(
-                            self.out,
-                            "    if (zerodds_xcdr2_c_kh_write_{helper}(&kh_buf, &kh_len, &kh_cap, s->{f}) != 0) {{ free(kh_buf); return -1; }}"
-                        );
-                    }
-                    TypeSpec::String(_) => {
-                        let _ = writeln!(
-                            self.out,
-                            "    if (zerodds_xcdr2_c_kh_write_string(&kh_buf, &kh_len, &kh_cap, s->{f}) != 0) {{ free(kh_buf); return -1; }}"
-                        );
-                    }
-                    _ => {}
+                let f = escape_c_ident(&decl.name().text);
+                if !matches!(decl, Declarator::Simple(_)) {
+                    // A sequence/array-shaped `@key` member: the low-level
+                    // fixed-arity buffer builder used here has no
+                    // variable-length-collection key encoder. Loud codegen
+                    // error, not a silent zero-byte no-op.
+                    return Err(CppGenError::UnsupportedConstruct {
+                        construct: format!(
+                            "array/sequence @key member '{f}' (C mode has no variable-length KeyHolder encoder)"
+                        ),
+                        context: None,
+                    });
                 }
+                self.emit_key_field_write(&member.type_spec, &format!("s->{f}"))?;
             }
         }
         let _ = writeln!(
@@ -3018,6 +3420,106 @@ impl<'a> Ctx<'a> {
         let _ = writeln!(self.out, "    return 0;");
         let _ = writeln!(self.out, "}}");
         let _ = writeln!(self.out);
+        Ok(())
+    }
+
+    /// KeyHash-specific field writer (C mode). Dealiases typedef chains via
+    /// `resolve_alias` (the same helper the general C encoder uses) and, for
+    /// a nested-struct `@key` member, expands to that struct's own `@key`
+    /// subset (or ALL its members if it declares none — XTypes 1.3 §7.6.8),
+    /// in member-id order — replacing the previous unconditional `_ => {}`
+    /// silent no-op, which emitted ZERO key bytes for every non-primitive,
+    /// non-string `@key` shape (typedef, nested struct, enum, sequence,
+    /// array). Enum `@key` is now supported too (narrowed to its
+    /// `@bit_bound` wire width, matching the general C encoder's enum
+    /// convention). Anything the low-level buffer builder genuinely cannot
+    /// express here (union, bitmask/bitset, sequence, map, fixed, any, long
+    /// double) is now a LOUD codegen error instead of silence.
+    /// zerodds-lint: recursion-depth 16
+    fn emit_key_field_write(&mut self, ts: &TypeSpec, access: &str) -> Result<(), CppGenError> {
+        let (resolved, rscope) = resolve_alias_scoped(self.reg, ts, &c_cur_scope());
+        match &resolved {
+            TypeSpec::Primitive(p) => {
+                let helper = primitive_helper(*p)?;
+                let _ = writeln!(
+                    self.out,
+                    "    if (zerodds_xcdr2_c_kh_write_{helper}(&kh_buf, &kh_len, &kh_cap, {access}) != 0) {{ free(kh_buf); return -1; }}"
+                );
+                Ok(())
+            }
+            TypeSpec::String(_) => {
+                let _ = writeln!(
+                    self.out,
+                    "    if (zerodds_xcdr2_c_kh_write_string(&kh_buf, &kh_len, &kh_cap, {access}) != 0) {{ free(kh_buf); return -1; }}"
+                );
+                Ok(())
+            }
+            TypeSpec::Scoped(sc) => {
+                let Some(name) = self.reg.resolve_fqn_in(sc, &rscope) else {
+                    return Err(unsupported("unresolved @key member type (C mode)"));
+                };
+                // Nested key members resolve in the nested type's module (P0-2).
+                let _g = CScopeGuard(c_cur_scope());
+                c_set_scope(&c_module_scope(&name));
+                if let Some((_, sdef)) = self.reg.structs.get(&name).cloned() {
+                    // Nested-struct @key: expand to its own @key subset (or
+                    // ALL members if it declares none), in member-id order —
+                    // XTypes 1.3 §7.6.8, same rule as the outer loop.
+                    let nested_keys: Vec<Member> = sdef
+                        .members
+                        .iter()
+                        .filter(|m| is_key(&m.annotations))
+                        .cloned()
+                        .collect();
+                    let effective: Vec<Member> = if nested_keys.is_empty() {
+                        sdef.members.clone()
+                    } else {
+                        nested_keys
+                    };
+                    let refs: Vec<&Member> = effective.iter().collect();
+                    for m in sort_members_by_id(&refs) {
+                        for decl in &m.declarators {
+                            if !matches!(decl, Declarator::Simple(_)) {
+                                return Err(unsupported(
+                                    "array field inside a nested-struct @key (C mode)",
+                                ));
+                            }
+                            let field = &decl.name().text;
+                            self.emit_key_field_write(&m.type_spec, &format!("{access}.{field}"))?;
+                        }
+                    }
+                    Ok(())
+                } else if let Some(bytes) = self.reg.enum_bytes.get(&name).copied() {
+                    // enum @key: signed wire holder of its @bit_bound width
+                    // (XTypes §7.4.5.1), matching the general C encoder's
+                    // enum-member convention exactly (see the Scoped-enum arm
+                    // of the general member writer).
+                    let line = match bytes {
+                        1 => format!(
+                            "    if (zerodds_xcdr2_c_kh_write_u8(&kh_buf, &kh_len, &kh_cap, (uint8_t)({access})) != 0) {{ free(kh_buf); return -1; }}"
+                        ),
+                        2 => format!(
+                            "    if (zerodds_xcdr2_c_kh_write_u16(&kh_buf, &kh_len, &kh_cap, (uint16_t)({access})) != 0) {{ free(kh_buf); return -1; }}"
+                        ),
+                        _ => format!(
+                            "    if (zerodds_xcdr2_c_kh_write_i32(&kh_buf, &kh_len, &kh_cap, (int32_t)({access})) != 0) {{ free(kh_buf); return -1; }}"
+                        ),
+                    };
+                    let _ = writeln!(self.out, "{line}");
+                    Ok(())
+                } else {
+                    Err(CppGenError::UnsupportedConstruct {
+                        construct: format!(
+                            "@key member type '{name}' (union/bitmask/bitset/unresolved — C mode)"
+                        ),
+                        context: None,
+                    })
+                }
+            }
+            _ => Err(unsupported(
+                "@key member type (sequence/map/fixed/any/long-double — C mode)",
+            )),
+        }
     }
 }
 
@@ -3048,15 +3550,17 @@ fn collect_aggregates(
                 collect_aggregates(&m.definitions, &s, out);
             }
             Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Struct(StructDcl::Def(s)))) => {
+                // FQN name so the dependency graph keys match the registry keys
+                // (P0-2): two same-named structs in different modules stay distinct.
                 out.push((
-                    s.name.text.clone(),
+                    c_idl_fqn(scope, &s.name.text),
                     scope.to_vec(),
                     AggDef::Struct(s.clone()),
                 ));
             }
             Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Union(UnionDcl::Def(u)))) => {
                 out.push((
-                    u.name.text.clone(),
+                    c_idl_fqn(scope, &u.name.text),
                     scope.to_vec(),
                     AggDef::Union(u.clone()),
                 ));
@@ -3091,7 +3595,7 @@ fn switch_type_spec(s: &SwitchTypeSpec) -> TypeSpec {
 
 /// The C field name for a union case's member (the case's declarator name).
 fn union_case_field(case: &Case) -> String {
-    case.element.declarator.name().text.clone()
+    escape_c_ident(&case.element.declarator.name().text)
 }
 
 /// Join a scope + name with the given separator (`::` for IDL paths).
@@ -3107,13 +3611,19 @@ fn scope_join(scope: &[String], name: &str, sep: &str) -> String {
 }
 
 fn c_identifier(scope: &[String], name: &str) -> String {
+    // Flatten scope + name with the shared injective encoding
+    // ([`zerodds_idl::naming::encode_scoped`]): the scope separator (`_s`)
+    // and a literal underscore in a name (`_u`) are distinct, so `A::B_C`
+    // and `A_B::C` no longer collapse to `A_B_C` (the old `join("_")` was
+    // NOT collision-free). A bare (unscoped) name can additionally collide
+    // with a C keyword (`int`, `struct`, `default`, ...) — escape it. A
+    // scoped/prefixed name is a compound token that structurally can never
+    // equal a single bare keyword, so escaping there would be a no-op.
+    let encoded = zerodds_idl::naming::encode_scoped(scope, name);
     if scope.is_empty() {
-        name.to_string()
+        escape_c_ident(&encoded)
     } else {
-        let mut s = scope.join("_");
-        s.push('_');
-        s.push_str(name);
-        s
+        encoded
     }
 }
 
@@ -3127,25 +3637,23 @@ impl Extensibility {
     }
 }
 
+/// zerodds-lint: recursion-depth 1 (delegates to the semantic-layer normalizer of the same name; not self-recursive)
 fn extensibility_of(annotations: &[Annotation]) -> Extensibility {
-    for a in annotations {
-        if let Some(name) = a.name.parts.last() {
-            match name.text.as_str() {
-                "final" | "Final" => return Extensibility::Final,
-                "appendable" | "Appendable" => return Extensibility::Appendable,
-                "mutable" | "Mutable" => return Extensibility::Mutable,
-                _ => {}
-            }
-        }
+    // Broad-audit P0-4: read the effective extensibility through the ONE
+    // central normalizer, which honors both the short forms
+    // (`@final`/`@appendable`/`@mutable`) AND the long form
+    // `@extensibility(FINAL|APPENDABLE|MUTABLE)` (XTypes 1.3 §7.3.3). The
+    // previous short-form-only scan silently downgraded
+    // `@extensibility(MUTABLE)` to the default and drifted the C wire.
+    match zerodds_idl::semantics::extensibility_of(annotations) {
+        Some(zerodds_idl::semantics::ExtensibilityKind::Final) => Extensibility::Final,
+        Some(zerodds_idl::semantics::ExtensibilityKind::Mutable) => Extensibility::Mutable,
+        Some(zerodds_idl::semantics::ExtensibilityKind::Appendable) => Extensibility::Appendable,
+        // Un-annotated default is APPENDABLE (XTypes 1.3 §7.3.3.1);
+        // `--default-extensibility` patches an explicit short form onto the AST
+        // before emit, so this fallback is the spec default.
+        None => Extensibility::Appendable,
     }
-    // Un-annotated default: FINAL. XTypes 1.3 §7.2.2.4.4 leaves the
-    // extensibility of an un-annotated aggregate implementation-defined; the
-    // canonical zerodds choice — anchored to the `zerodds-cdr` core and the
-    // idl-rust reference (whose hardcoded default is Final, see
-    // tools/idlc/src/default_ext.rs) — is FINAL, matching the rust golden:
-    // SX2: spec default for an unannotated aggregate is APPENDABLE (§7.3.3.1).
-    // `--default-extensibility final` opts back to the no-DHEADER form.
-    Extensibility::Appendable
 }
 
 fn is_optional(annotations: &[Annotation]) -> bool {
@@ -3155,6 +3663,14 @@ fn is_optional(annotations: &[Annotation]) -> bool {
             .last()
             .is_some_and(|p| p.text == "optional" || p.text == "Optional")
     })
+}
+
+/// `@non_serialized` (XTypes 1.3 §7.2.4.4.2) via the central `zerodds-idl`
+/// predicate (broad-audit P0-5, #2). The C struct keeps its field, but every
+/// wire body-write/read loop skips the member BEFORE advancing the sequential
+/// auto-id counter, so survivors' ids compact exactly as the TypeObject does.
+fn is_non_serialized(annotations: &[Annotation]) -> bool {
+    zerodds_idl::semantics::annotations::member_is_non_serialized(annotations)
 }
 
 /// XCDR2 wire byte size of a primitive scalar (XTypes 1.3 §7.4.1). Used to pick
@@ -3232,12 +3748,14 @@ fn mutable_compact_lc(
 ///
 /// zerodds-lint: recursion-depth 16
 fn member_body_has_leading_dheader_c(reg: &TypeReg, type_spec: &TypeSpec) -> bool {
-    match resolve_alias(reg, type_spec) {
+    let (resolved, rscope) = resolve_alias_scoped(reg, type_spec, &c_cur_scope());
+    match resolved {
         TypeSpec::String(_) => true,
         TypeSpec::Map(_) => true,
         TypeSpec::Sequence(seq) => !seq_elem_is_primitive_reg(reg, &seq.elem),
-        TypeSpec::Scoped(sc) => scoped_last(&sc)
-            .and_then(|last| reg.structs.get(&last).cloned())
+        TypeSpec::Scoped(sc) => reg
+            .resolve_fqn_in(&sc, &rscope)
+            .and_then(|fqn| reg.structs.get(&fqn).cloned())
             .is_some_and(|(_, ndef)| {
                 !matches!(extensibility_of(&ndef.annotations), Extensibility::Final)
             }),
@@ -3250,12 +3768,13 @@ fn member_body_has_leading_dheader_c(reg: &TypeReg, type_spec: &TypeSpec) -> boo
 /// bitmask or bitset). Kept standalone so the length-code picker can run without
 /// a `&self` borrow.
 fn seq_elem_is_primitive_reg(reg: &TypeReg, elem: &TypeSpec) -> bool {
-    match resolve_alias(reg, elem) {
+    let (resolved, rscope) = resolve_alias_scoped(reg, elem, &c_cur_scope());
+    match resolved {
         TypeSpec::Primitive(_) => true,
-        TypeSpec::Scoped(sc) => scoped_last(&sc).is_some_and(|last| {
-            reg.enums.contains_key(&last)
-                || reg.bitmasks.contains_key(&last)
-                || reg.bitsets.contains_key(&last)
+        TypeSpec::Scoped(sc) => reg.resolve_fqn_in(&sc, &rscope).is_some_and(|fqn| {
+            reg.enums.contains_key(&fqn)
+                || reg.bitmasks.contains_key(&fqn)
+                || reg.bitsets.contains_key(&fqn)
         }),
         _ => false,
     }
@@ -3293,8 +3812,8 @@ fn effective_array_dims(
 ) -> Result<Vec<u64>, CppGenError> {
     let mut dims = Vec::new();
     if let TypeSpec::Scoped(sc) = type_spec {
-        if let Some(last) = scoped_last(sc) {
-            if let Some(td) = reg.typedef_arrays.get(&last) {
+        if let Some(fqn) = reg.resolve_fqn(sc) {
+            if let Some(td) = reg.typedef_arrays.get(&fqn) {
                 dims.extend_from_slice(td);
             }
         }
@@ -3406,6 +3925,21 @@ fn struct_has_key(def: &StructDef) -> bool {
     def.members.iter().any(|m| is_key(&m.annotations))
 }
 
+/// Sorts `members` into ascending member-id order (explicit `@id(N)`, else
+/// positional index within `members`) — XTypes 1.3 §7.6.8.3.1.b. Mirrors
+/// `idl-rust`'s `emit_key_holder_be` fallback convention (the index is taken
+/// within the already-filtered `@key` list, not the full struct's member
+/// list — matching the cross-vendor-validated reference).
+fn sort_members_by_id<'a>(members: &[&'a Member]) -> Vec<&'a Member> {
+    let mut ordered: Vec<(u32, &Member)> = members
+        .iter()
+        .enumerate()
+        .map(|(idx, m)| (id_annotation(&m.annotations).unwrap_or(idx as u32), *m))
+        .collect();
+    ordered.sort_by_key(|(id, _)| *id);
+    ordered.into_iter().map(|(_, m)| m).collect()
+}
+
 fn id_annotation(annotations: &[Annotation]) -> Option<u32> {
     for a in annotations {
         let last = a.name.parts.last()?;
@@ -3422,11 +3956,168 @@ fn id_annotation(annotations: &[Annotation]) -> Option<u32> {
     }
     None
 }
+/// Collection nesting depth of a type-spec: `0` for a scalar/aggregate, `1` for
+/// a flat sequence/map, `2` for a `sequence<sequence<T>>`, … Used to order the
+/// emission of nested-collection typedefs shallow→deep (a deeper typedef names a
+/// shallower one, so the shallower must come first).
+/// zerodds-lint: recursion-depth 64 (bounded by AST depth)
+fn coll_depth_of(reg: &TypeReg, ts: &TypeSpec) -> u32 {
+    match resolve_alias(reg, ts) {
+        TypeSpec::Sequence(s) => 1 + coll_depth_of(reg, &s.elem),
+        TypeSpec::Map(m) => 1 + coll_depth_of(reg, &m.key).max(coll_depth_of(reg, &m.value)),
+        _ => 0,
+    }
+}
+
+/// An identifier-safe suffix uniquely describing a type-spec, used to build the
+/// name of a nested-collection typedef (`sequence<long>` → `seq_int32_t`,
+/// `map<string,long>` → `map_string_int32_t`). Structurally recursive so two
+/// occurrences of the same type map to the same name.
+/// zerodds-lint: recursion-depth 64 (bounded by AST depth)
+fn coll_suffix(reg: &TypeReg, ts: &TypeSpec) -> String {
+    let resolved = resolve_alias(reg, ts);
+    match &resolved {
+        TypeSpec::Sequence(s) => format!("seq_{}", coll_suffix(reg, &s.elem)),
+        TypeSpec::Map(m) => format!(
+            "map_{}_{}",
+            coll_suffix(reg, &m.key),
+            coll_suffix(reg, &m.value)
+        ),
+        TypeSpec::String(st) if st.wide => "wstring".to_string(),
+        TypeSpec::String(_) => "string".to_string(),
+        _ => {
+            let base = c_type_for(reg, &resolved).unwrap_or_else(|_| "unknown".to_string());
+            base.chars()
+                .map(|c| {
+                    if c.is_ascii_alphanumeric() || c == '_' {
+                        c
+                    } else {
+                        '_'
+                    }
+                })
+                .collect()
+        }
+    }
+}
+
+/// The C typedef name for a nested collection (sequence/map). `ts` must resolve
+/// to a sequence or map. Deterministic from the type so the field declaration,
+/// the decoder `calloc` and user code all spell the same type.
+fn nested_coll_name(reg: &TypeReg, ts: &TypeSpec) -> String {
+    format!("zd_nested_{}", coll_suffix(reg, ts))
+}
+
+/// The C type spelling for a collection ELEMENT (sequence element, map
+/// key/value): a nested collection gets its shared typedef NAME (not a fresh
+/// anonymous struct — see `TypeReg::nested_colls`); everything else is spelled
+/// as usual.
+///
+/// zerodds-lint: recursion-depth 64 (codegen AST walk; bounded by IDL nesting).
+fn c_elem_type(reg: &TypeReg, elem: &TypeSpec) -> Result<String, CppGenError> {
+    let resolved = resolve_alias(reg, elem);
+    if matches!(resolved, TypeSpec::Sequence(_) | TypeSpec::Map(_)) {
+        return Ok(nested_coll_name(reg, &resolved));
+    }
+    c_type_for(reg, elem)
+}
+
+/// The pointer-target spelling for a collection element inside a
+/// nested-collection typedef BODY, which is emitted before the aggregate
+/// typedefs. Struct/union elements use the tag form `struct <C>_s` (a pointer to
+/// an incomplete tag is legal) so the typedef does not depend on the aggregate's
+/// `<C>_t` alias having been emitted yet; nested collections use their own name;
+/// primitives/enums/strings are spelled normally.
+fn nested_elem_ptr_target(reg: &TypeReg, elem: &TypeSpec) -> Result<String, CppGenError> {
+    let resolved = resolve_alias(reg, elem);
+    if matches!(resolved, TypeSpec::Sequence(_) | TypeSpec::Map(_)) {
+        return Ok(nested_coll_name(reg, &resolved));
+    }
+    if let TypeSpec::Scoped(sc) = &resolved {
+        if let Some(fqn) = reg.resolve_fqn(sc) {
+            if let Some((cn, _)) = reg.structs.get(&fqn) {
+                return Ok(format!("struct {cn}_s"));
+            }
+            if let Some((cn, _)) = reg.unions.get(&fqn) {
+                return Ok(format!("struct {cn}_s"));
+            }
+        }
+    }
+    c_type_for(reg, elem)
+}
+
+/// The C body of a nested-collection typedef: `struct { uint32_t len; T* elems; }`
+/// for a sequence, `struct { uint32_t len; K* keys; V* vals; }` for a map.
+fn nested_coll_body(reg: &TypeReg, ts: &TypeSpec) -> Result<String, CppGenError> {
+    match resolve_alias(reg, ts) {
+        TypeSpec::Sequence(s) => {
+            let ep = nested_elem_ptr_target(reg, &s.elem)?;
+            Ok(format!("struct {{ uint32_t len; {ep}* elems; }}"))
+        }
+        TypeSpec::Map(m) => {
+            let kp = nested_elem_ptr_target(reg, &m.key)?;
+            let vp = nested_elem_ptr_target(reg, &m.value)?;
+            Ok(format!(
+                "struct {{ uint32_t len; {kp}* keys; {vp}* vals; }}"
+            ))
+        }
+        _ => Err(unsupported("nested-collection typedef of a non-collection")),
+    }
+}
+
+/// Walk a type-spec collecting nested collections (a sequence/map that is itself
+/// the element/key/value of another collection). `is_elem` is true when `ts` sits
+/// in an element position.
+/// zerodds-lint: recursion-depth 64 (bounded by AST depth)
+fn collect_nested(
+    reg: &TypeReg,
+    ts: &TypeSpec,
+    scope: &[String],
+    is_elem: bool,
+    out: &mut Vec<(u32, String, TypeSpec)>,
+    seen: &mut BTreeSet<String>,
+) {
+    let (resolved, rscope) = resolve_alias_scoped(reg, ts, scope);
+    // `nested_coll_name` / `coll_suffix` / `c_type_for` read `C_CUR_SCOPE`; set
+    // it so element type names resolve correctly at this build-time pass (P0-2).
+    let _g = CScopeGuard(c_cur_scope());
+    c_set_scope(&rscope);
+    match &resolved {
+        TypeSpec::Sequence(s) => {
+            if is_elem {
+                register_nested(reg, &resolved, out, seen);
+            }
+            collect_nested(reg, &s.elem, &rscope, true, out, seen);
+        }
+        TypeSpec::Map(m) => {
+            if is_elem {
+                register_nested(reg, &resolved, out, seen);
+            }
+            collect_nested(reg, &m.key, &rscope, true, out, seen);
+            collect_nested(reg, &m.value, &rscope, true, out, seen);
+        }
+        _ => {}
+    }
+}
+
+fn register_nested(
+    reg: &TypeReg,
+    resolved: &TypeSpec,
+    out: &mut Vec<(u32, String, TypeSpec)>,
+    seen: &mut BTreeSet<String>,
+) {
+    let name = nested_coll_name(reg, resolved);
+    if seen.insert(name.clone()) {
+        out.push((coll_depth_of(reg, resolved), name, resolved.clone()));
+    }
+}
+
 /// zerodds-lint: recursion-depth 64 (c_type_for bounded by AST depth)
 fn c_type_for(reg: &TypeReg, type_spec: &TypeSpec) -> Result<String, CppGenError> {
     let s = match type_spec {
         TypeSpec::Scoped(sc) => {
-            let last = scoped_last(sc).ok_or_else(|| unsupported("empty scoped name"))?;
+            let last = reg
+                .resolve_fqn(sc)
+                .ok_or_else(|| unsupported("unresolved scoped type (C backend)"))?;
             // enum → int32 alias.
             if let Some(cn) = reg.enums.get(&last) {
                 return Ok(format!("{cn}_t"));
@@ -3441,9 +4132,12 @@ fn c_type_for(reg: &TypeReg, type_spec: &TypeSpec) -> Result<String, CppGenError
             // typedef → resolve to underlying type. A typedef-to-array alias
             // (`typedef long Matrix3[3][3];`) carries the element type here; the
             // dims are applied separately at the member declarator via
-            // `effective_array_dims` (#43, typedef-to-array).
+            // `effective_array_dims` (#43, typedef-to-array). Resolve the alias in
+            // ITS module scope (P0-2).
             if reg.typedefs.contains_key(&last) {
-                let resolved = resolve_alias(reg, type_spec);
+                let (resolved, rscope) = resolve_alias_scoped(reg, type_spec, &c_cur_scope());
+                let _g = CScopeGuard(c_cur_scope());
+                c_set_scope(&rscope);
                 return c_type_for(reg, &resolved);
             }
             // nested struct → embed the C struct by value. A RECURSIVE struct
@@ -3499,13 +4193,16 @@ fn c_type_for(reg: &TypeReg, type_spec: &TypeSpec) -> Result<String, CppGenError
             }
         }
         TypeSpec::Sequence(seq) => {
-            let elem = c_type_for(reg, &seq.elem)?;
+            // A nested collection element is spelled by its shared typedef NAME,
+            // not a fresh anonymous struct (which C treats as a distinct,
+            // incompatible type — gcc 14 errors). See `TypeReg::nested_colls`.
+            let elem = c_elem_type(reg, &seq.elem)?;
             return Ok(format!("struct {{ uint32_t len; {elem}* elems; }}"));
         }
         TypeSpec::Map(m) => {
             // map<K,V> → parallel key/value arrays + count (#43, map<K,V>).
-            let kc = c_type_for(reg, &m.key)?;
-            let vc = c_type_for(reg, &m.value)?;
+            let kc = c_elem_type(reg, &m.key)?;
+            let vc = c_elem_type(reg, &m.value)?;
             return Ok(format!(
                 "struct {{ uint32_t len; {kc}* keys; {vc}* vals; }}"
             ));
@@ -3557,13 +4254,38 @@ fn primitive_helper(p: PrimitiveType) -> Result<&'static str, CppGenError> {
 
 #[cfg(test)]
 mod tests {
-    #![allow(clippy::expect_used)]
+    #![allow(clippy::expect_used, clippy::panic)]
     use super::*;
     use zerodds_idl::config::ParserConfig;
 
     fn gen_c(src: &str) -> String {
         let ast = zerodds_idl::parse(src, &ParserConfig::default()).expect("parse ok");
         generate_c_header(&ast, &CGenOptions::default()).expect("c-gen ok")
+    }
+
+    fn try_gen_c(src: &str) -> Result<String, CppGenError> {
+        let ast = zerodds_idl::parse(src, &ParserConfig::default()).expect("parse ok");
+        generate_c_header(&ast, &CGenOptions::default())
+    }
+
+    /// Isolates a struct's `<c_name>_key_hash` function body, so KeyHash
+    /// assertions don't false-positive against the general encode/decode
+    /// bodies (which legitimately reference the struct's full member set).
+    fn key_hash_body<'a>(h: &'a str, c_name: &str) -> &'a str {
+        // The DEFINITION signature (ends in `{`), not the forward
+        // declaration (ends in `;`) emitted earlier in the header.
+        let marker =
+            format!("static int {c_name}_key_hash(const void* sample, uint8_t out_hash[16]) {{");
+        let body_start = h
+            .find(&marker)
+            .unwrap_or_else(|| panic!("{c_name}_key_hash definition present:\n{h}"))
+            + marker.len()
+            - 1;
+        let body_end = h[body_start..]
+            .find("\n}\n")
+            .map(|i| body_start + i)
+            .unwrap_or(h.len());
+        &h[body_start..body_end]
     }
 
     #[test]
@@ -3585,7 +4307,7 @@ mod tests {
     #[test]
     fn nested_module_yields_scoped_type_name() {
         let h = gen_c("module Outer { module Inner { @final struct S { long x; }; }; };");
-        assert!(h.contains("typedef struct Outer_Inner_S_s"));
+        assert!(h.contains("typedef struct Outer_sInner_sS_s"));
         assert!(h.contains("\"Outer::Inner::S\""));
     }
 
@@ -3609,6 +4331,173 @@ mod tests {
         let h = gen_c("@final struct Sensor { @key long id; double value; };");
         assert!(h.contains(".is_keyed = 1"));
         assert!(h.contains("Sensor_key_hash"));
+    }
+
+    // ---- KeyHash correctness (XTypes 1.3 §7.6.8) — C mode ----
+    //
+    // Previously `emit_key_hash_body`'s per-member match was
+    // `Primitive => ..., String => ..., _ => {}` — an unconditional, silent
+    // no-op for EVERY other `@key` shape (typedef, nested struct, enum,
+    // sequence, array): zero key bytes on the wire, cross-vendor-interop-
+    // breaking. The fix dealiases typedefs, expands nested-struct `@key`
+    // members to their own `@key` subset, supports enum, and turns anything
+    // still unsupported into a loud `CppGenError` instead of silence.
+
+    #[test]
+    fn keyhash_typedef_key_emits_real_bytes_not_silent_skip() {
+        let h = gen_c("typedef long MyId;\n@final struct S { @key MyId id; long val; };");
+        let kh = key_hash_body(&h, "S");
+        assert!(
+            kh.contains("zerodds_xcdr2_c_kh_write_i32(&kh_buf, &kh_len, &kh_cap, s->id)"),
+            "a typedef-aliased @key must dealias to the underlying primitive write:\n{kh}"
+        );
+    }
+
+    #[test]
+    fn keyhash_nested_struct_key_expands_inner_key_members_only() {
+        let h = gen_c(
+            "@final struct Inner { @key long x; long ignored; @key long y; };\n\
+             @final struct Outer { @key Inner i; long z; };",
+        );
+        let kh = key_hash_body(&h, "Outer");
+        assert!(
+            kh.contains("zerodds_xcdr2_c_kh_write_i32(&kh_buf, &kh_len, &kh_cap, s->i.x)")
+                && kh.contains("zerodds_xcdr2_c_kh_write_i32(&kh_buf, &kh_len, &kh_cap, s->i.y)"),
+            "nested-struct @key must expand into the inner struct's own @key members:\n{kh}"
+        );
+        assert!(
+            !kh.contains("s->i.ignored"),
+            "a non-@key inner member must NOT be included when the inner struct has explicit @key members:\n{kh}"
+        );
+    }
+
+    #[test]
+    fn keyhash_nested_struct_without_keys_uses_all_inner_members() {
+        let h = gen_c(
+            "@final struct Pair { long a; long b; };\n\
+             @final struct Holder { @key Pair p; };",
+        );
+        let kh = key_hash_body(&h, "Holder");
+        assert!(
+            kh.contains("s->p.a") && kh.contains("s->p.b"),
+            "a keyless nested struct must key on ALL its members:\n{kh}"
+        );
+    }
+
+    #[test]
+    fn keyhash_typedef_in_nested_struct_key_dealiases() {
+        let h = gen_c(
+            "typedef long MyId;\n\
+             @final struct Inner { @key MyId x; };\n\
+             @final struct Outer { @key Inner i; };",
+        );
+        let kh = key_hash_body(&h, "Outer");
+        assert!(
+            kh.contains("zerodds_xcdr2_c_kh_write_i32(&kh_buf, &kh_len, &kh_cap, s->i.x)"),
+            "a typedef-aliased @key member inside a nested @key struct must dealias:\n{kh}"
+        );
+    }
+
+    #[test]
+    fn keyhash_enum_key_emits_real_bytes_not_silent_skip() {
+        let h = gen_c("enum Color { RED, GREEN, BLUE };\n@final struct S { @key Color c; };");
+        let kh = key_hash_body(&h, "S");
+        assert!(
+            kh.contains("zerodds_xcdr2_c_kh_write_i32(&kh_buf, &kh_len, &kh_cap, (int32_t)(s->c))"),
+            "an enum @key must narrow-cast and write real bytes, not silently skip:\n{kh}"
+        );
+    }
+
+    #[test]
+    fn keyhash_member_id_order_not_declaration_order() {
+        // XTypes 1.3 §7.6.8.3.1.b: KeyHolder members in ascending member-id
+        // order. Declaration order here is a, b; member-id order (via @id)
+        // is b, a.
+        let h = gen_c("@final struct K { @id(1) @key octet a; @id(0) @key long b; };");
+        let kh = key_hash_body(&h, "K");
+        let pos_a = kh.find("s->a").expect("a written");
+        let pos_b = kh.find("s->b").expect("b written");
+        assert!(
+            pos_b < pos_a,
+            "member-id 0 (b) must be written before member-id 1 (a):\n{kh}"
+        );
+    }
+
+    #[test]
+    fn keyhash_sequence_key_is_a_loud_codegen_error_not_silent() {
+        // C mode's low-level fixed-arity buffer builder has no
+        // variable-length-collection KeyHolder encoder — this must be a
+        // loud `CppGenError`, not a silent zero-byte no-op.
+        let err = try_gen_c("@final struct S { @key sequence<long> ids; };")
+            .expect_err("sequence @key must be rejected, not silently accepted");
+        assert!(
+            matches!(err, CppGenError::UnsupportedConstruct { .. }),
+            "expected UnsupportedConstruct, got: {err:?}"
+        );
+    }
+
+    #[test]
+    fn keyhash_union_key_is_a_loud_codegen_error_not_silent() {
+        let err = try_gen_c(
+            "union U switch (long) { case 0: long a; };\n\
+             @final struct S { @key U u; };",
+        )
+        .expect_err("union @key must be rejected, not silently accepted");
+        assert!(matches!(err, CppGenError::UnsupportedConstruct { .. }));
+    }
+
+    // ---- #14: reserved-keyword escaping (C mode has no raw-identifier
+    // syntax; the idiomatic escape is a trailing underscore) ----
+
+    #[test]
+    fn struct_field_named_c_keyword_is_escaped() {
+        // "default" and "long" are IDL keywords themselves (not usable as
+        // IDL identifiers at all); "int"/"register"/"static" are plain
+        // legal IDL identifiers that happen to collide with C keywords —
+        // previously this emitted `int32_t int;` etc, invalid C, silently.
+        let h = gen_c("@final struct S { long int; long register; long static; };");
+        assert!(h.contains("int32_t int_;"), "{h}");
+        assert!(h.contains("int32_t register_;"), "{h}");
+        assert!(h.contains("int32_t static_;"), "{h}");
+        assert!(!h.contains("int32_t int;"), "{h}");
+        assert!(!h.contains("int32_t register;"), "{h}");
+        assert!(!h.contains("int32_t static;"), "{h}");
+        // Field access in the codec bodies must use the same escaped name.
+        assert!(h.contains("s->int_"), "{h}");
+        assert!(h.contains("s->register_"), "{h}");
+        assert!(h.contains("s->static_"), "{h}");
+    }
+
+    #[test]
+    fn top_level_type_named_c_keyword_is_escaped() {
+        // `int` is not an IDL keyword (IDL uses `long`/`short`), so it is a
+        // legal top-level IDL struct name — but a bare C typedef named
+        // `int` would be nonsensical/invalid. The unscoped (empty-scope)
+        // c_identifier path must escape it.
+        let h = gen_c("@final struct int { long v; };");
+        assert!(h.contains("typedef struct int__s"), "{h}");
+        assert!(h.contains("int__typesupport"), "{h}");
+        assert!(!h.contains("typedef struct int_s"), "{h}");
+    }
+
+    #[test]
+    fn union_case_field_named_c_keyword_is_escaped() {
+        let h = gen_c("union U switch (long) { case 0: long for; case 1: long while_val; };");
+        assert!(h.contains("for_;") || h.contains("int32_t for_;"), "{h}");
+        assert!(!h.contains(" for;"), "{h}");
+    }
+
+    #[test]
+    fn enum_value_named_c_keyword_stays_compound_and_valid() {
+        // Enumerator constants are always emitted as `{EnumC_name}_{LABEL}`
+        // (module+enum prefixed to stay unique in C's flat namespace), so
+        // they can never collide with a bare C keyword by construction —
+        // no escaping needed/applied here, this just documents +
+        // regression-guards that invariant.
+        let h = gen_c("enum Mode { int, register, static };");
+        assert!(h.contains("Mode_int"), "{h}");
+        assert!(h.contains("Mode_register"), "{h}");
+        assert!(h.contains("Mode_static"), "{h}");
     }
 
     // ---- Bug C: scope widening (no longer rejected) ----
@@ -3828,19 +4717,19 @@ mod tests {
              };",
         );
         assert!(
-            h.contains("typedef struct conf_Node_s"),
+            h.contains("typedef struct conf_sNode_s"),
             "node typedef:\n{h}"
         );
         assert!(
-            h.contains("typedef struct conf_Variant_s"),
+            h.contains("typedef struct conf_sVariant_s"),
             "variant typedef:\n{h}"
         );
         // Node typedef must come before Variant typedef (by-value embed order).
         let ni = h
-            .find("typedef struct conf_Node_s")
+            .find("typedef struct conf_sNode_s")
             .expect("Node typedef present");
         let vi = h
-            .find("typedef struct conf_Variant_s")
+            .find("typedef struct conf_sVariant_s")
             .expect("Variant typedef present");
         assert!(ni < vi, "Node typedef must precede Variant typedef");
     }

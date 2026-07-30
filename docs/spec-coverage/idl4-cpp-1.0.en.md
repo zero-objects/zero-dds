@@ -271,10 +271,20 @@ extensions (alignas/concept/consteval/co_await/co_return/co_yield/
 constexpr/constinit/decltype/...). "The use of any of these names
 for a user-defined IDL type or interface (assuming it is also a
 legal IDL name) shall result in the mapped name having an underscore
-('_') prepended."
+('_') prepended." The spec text (`internal/standards/cache/omg/idl4-cpp-1.0.pdf`,
+§7.1.2, verified 2026-07-28) contains no alternative-conformance
+clause — no "or shall be rejected" licensing wording exists anywhere
+in that paragraph or section. The previous entry here cited such a
+clause; that citation does not exist in the spec and was incorrect
+(github-triage 2026-07-28 #14).
 
-**Repo:** reserved-word list in `crates/idl-cpp/src/error.rs`
-validation.
+**Repo:** reserved-word list (`CPP_RESERVED`, 84 entries) + `is_reserved`/
+`check_identifier` in `crates/idl-cpp/src/type_map.rs` (not
+`error.rs` — `error.rs` only defines the `CppGenError::InvalidName`
+variant `check_identifier` returns). `check_identifier` is called at
+23 sites across `crates/idl-cpp/src/emitter.rs` and **hard-rejects**
+(`Err(InvalidName)`) any IDL identifier colliding with a C++ keyword —
+it does not implement the spec-mandated underscore-prepend escape.
 
 **Tests:** `reserved_class_is_rejected`,
 `reserved_field_name_is_rejected`,
@@ -284,9 +294,22 @@ validation.
 `non_reserved_identifier_passes`,
 `check_returns_invalidname_with_reason`.
 
-**Status:** done — the ZeroDDS-strict reject is a spec-conformant variant
-(the spec licenses implementations to choose between an underscore prefix
-and reject; see §7.1.2 last paragraph "or shall be rejected").
+**Status:** partial — collision *detection* is complete and correct
+(the 84-entry table + all 23 emission call sites), but the mapping
+applied on collision (hard reject) is not what §7.1.2 mandates
+(underscore-prepend escape). This makes an otherwise-legal IDL type or
+member name (e.g. `long register;`, `struct class { ... };`)
+uncompilable through the full-C++ path even though the spec requires
+it to compile as `_register`/`_class`. Contrast: the sibling `--c-mode`
+path (`crates/idl-cpp/src/c_mode.rs`, vendor spec `zerodds-xcdr2-c-1.0`
+§9.5) was fixed in the same pass (github-triage #14) to escape via a
+trailing-underscore suffix instead of rejecting — the full-C++ path's
+reject-instead-of-escape gap is tracked as an **open** follow-on
+(rewiring 23 `check_identifier` call sites from an early-return gate
+into a name-substitution pass, plus updating the 7 reject-oriented
+tests above to assert escaping instead, is out of scope for the #14
+pass that covered C-mode + the 12 backends with zero prior
+keyword-handling; deliberately not done under a bandaid here).
 
 ### 7.1.3 C++11 as minimum standard; C++98/03 via Annex C
 
@@ -1332,9 +1355,11 @@ CORBA-Coexistence (`corba-3.3.md`).
 
 ## Audit status
 
-57 done / 0 partial / 0 open / 20 n/a (informative) / 0 n/a (rejected).
+56 done / 1 partial / 0 open / 20 n/a (informative) / 0 n/a (rejected).
 
 Test run: `cargo test -p zerodds-idl-cpp` — 133 lib + 150 integration
 (11 bins) = 283 tests green, 0 failed.
 
-No open items.
+One partial item (§7.1.2, reserved-name collision handling: detection
+complete, but reject-instead-of-spec-mandated-escape) — see that
+entry for the tracked follow-on scope. No fully-open items.

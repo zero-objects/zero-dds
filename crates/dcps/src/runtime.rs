@@ -701,6 +701,20 @@ pub struct RuntimeConfig {
     #[cfg(feature = "security")]
     pub interface_bindings: Vec<InterfaceBindingSpec>,
 
+    /// DDS-Security §9.3.3 identity-adjusted participant GUID prefix.
+    /// `None` (default) → the participant constructor picks a random
+    /// prefix ([`crate::participant::random_guid_prefix`]), same as the
+    /// unsecured path. `Some(prefix)` → the constructor MUST start the
+    /// runtime with exactly this prefix instead of a random one, so that
+    /// the SPDP beacon, handshake `c.pdata` and all entity GUIDs are
+    /// derived from the identity cert — a random wire GUID fails a
+    /// peer's §9.3.3 check. Set by [`Self::with_security_bundle`] from
+    /// [`zerodds_security_runtime::SecurityProfile::adjusted_participant_guid`]
+    /// (mirrors what `zerodds-c-api::security_ffi::finish_secure_runtime`
+    /// already does for the FFI path).
+    #[cfg(feature = "security")]
+    pub security_guid_prefix: Option<GuidPrefix>,
+
     /// `true` → the SPDP beacon additionally announces the 12 secure
     /// discovery bits (16..27, DDS-Security 1.2 §7.4.7.1). Default
     /// `false` — only standard bits are announced. Set by the DCPS
@@ -1183,6 +1197,8 @@ impl Default for RuntimeConfig {
             security_logger: None,
             #[cfg(feature = "security")]
             interface_bindings: Vec::new(),
+            #[cfg(feature = "security")]
+            security_guid_prefix: None,
             announce_secure_endpoints: false,
             // Env hook for bench/FastDDS interop: ZERODDS_SECURE_SPDP=1 turns
             // on the reliable secure SPDP channel (0xff0101). Production sets this
@@ -1235,9 +1251,16 @@ impl RuntimeConfig {
     /// Apply a [`SecurityBundle`](zerodds_security_runtime::SecurityBundle):
     /// wires its security-event logger into [`Self::security_logger`] and, if
     /// the bundle carries a [`SecurityProfile`](zerodds_security_runtime::SecurityProfile),
-    /// its gate into [`Self::security`]. Convenience for the common
-    /// `SecurityBundle::builder()…build()` flow so callers don't have to set
-    /// the two fields by hand.
+    /// its gate into [`Self::security`] AND its DDS-Security §9.3.3
+    /// identity-adjusted GUID prefix into [`Self::security_guid_prefix`].
+    /// Convenience for the common `SecurityBundle::builder()…build()` flow
+    /// so callers don't have to set the fields by hand.
+    ///
+    /// The GUID-prefix wiring matters: without it the participant
+    /// constructor falls back to a random prefix, which a peer's §9.3.3
+    /// handshake check (`c.pdata` GUID must derive from the identity cert)
+    /// rejects. This mirrors `zerodds-c-api::security_ffi::finish_secure_runtime`,
+    /// which has always used the adjusted prefix on the FFI path.
     #[cfg(feature = "security")]
     #[must_use]
     pub fn with_security_bundle(
@@ -1249,6 +1272,9 @@ impl RuntimeConfig {
         }
         if let Some(profile) = bundle.security_profile() {
             self.security = Some(profile.gate.clone());
+            let mut prefix_bytes = [0u8; 12];
+            prefix_bytes.copy_from_slice(&profile.adjusted_participant_guid[..12]);
+            self.security_guid_prefix = Some(GuidPrefix::from_bytes(prefix_bytes));
         }
         self
     }
@@ -2023,6 +2049,16 @@ struct UserWriterSlot {
     ownership_strength: i32,
     /// Partition list.
     partition: Vec<String>,
+    /// Presentation QoS offered by this writer (Spec §2.2.3.6). RxO-checked
+    /// against the remote reader's requested presentation in
+    /// `wire_writer_to_remote_reader`.
+    presentation: zerodds_qos::PresentationQosPolicy,
+    /// LatencyBudget offered by this writer (Spec §2.2.3.10). RxO-checked
+    /// (`offered.duration <= requested.duration`).
+    latency_budget: zerodds_qos::LatencyBudgetQosPolicy,
+    /// DestinationOrder offered by this writer (Spec §2.2.3.18). RxO-checked
+    /// (`offered.kind >= requested.kind`).
+    destination_order: zerodds_qos::DestinationOrderQosPolicy,
     /// Per-matched-reader ProtectionLevel. Derived at the
     /// SEDP match from `sub.security_info`. `None` entries
     /// for legacy readers. Empty for writers without matched
@@ -2215,6 +2251,12 @@ struct UserReaderSlot {
     /// execute the callback cloned without another lock (minimize lock
     /// hold time).
     listener: Option<alloc::sync::Arc<UserReaderListener>>,
+    /// `true` = RELIABLE requested, `false` = BEST_EFFORT (Spec §2.2.3.14).
+    /// Mirrors `cfg.reliable` — needed standalone because
+    /// `ReliableReader::best_effort` has no public getter and the RxO
+    /// check in `wire_reader_to_remote_writer` needs the *requested* kind,
+    /// not the writer-derived one.
+    reliable: bool,
     durability: zerodds_qos::DurabilityKind,
     /// Deadline period in nanoseconds (0 == INFINITE).
     deadline_nanos: u64,
@@ -2259,6 +2301,16 @@ struct UserReaderSlot {
     ownership: zerodds_qos::OwnershipKind,
     /// Partition.
     partition: Vec<String>,
+    /// Presentation QoS requested by this reader (Spec §2.2.3.6). RxO-checked
+    /// against the remote writer's offered presentation in
+    /// `wire_reader_to_remote_writer`.
+    presentation: zerodds_qos::PresentationQosPolicy,
+    /// LatencyBudget requested by this reader (Spec §2.2.3.10). RxO-checked
+    /// (`offered.duration <= requested.duration`).
+    latency_budget: zerodds_qos::LatencyBudgetQosPolicy,
+    /// DestinationOrder requested by this reader (Spec §2.2.3.18). RxO-checked
+    /// (`offered.kind >= requested.kind`).
+    destination_order: zerodds_qos::DestinationOrderQosPolicy,
     /// Per-writer strength cache for exclusive-ownership resolution
     /// (DDS 1.4 §2.2.3.23). Filled by `wire_reader_to_remote_writer`
     /// from each `PublicationBuiltinTopicData.ownership_strength`;
@@ -2274,6 +2326,15 @@ struct UserReaderSlot {
     /// XTypes 1.3 §7.6.3.7 — TCE policy controlling the strictness
     /// of the XTypes match path.
     type_consistency: zerodds_types::qos::TypeConsistencyEnforcement,
+    /// E1 bug 1 — the exact DataRepresentation accept list this reader
+    /// announced on the wire (PID 0x0073), i.e. `sub_data.data_representation`
+    /// as computed once in `register_user_reader_kind` (per-reader override
+    /// via `cfg.data_representation_offer`, or the widened
+    /// `reader_accept_repr` default). Mirrored here so
+    /// `wire_reader_to_remote_writer` can RxO-check the remote writer's
+    /// offered representation against what THIS reader actually accepts,
+    /// without recomputing the widen-default logic at match time.
+    data_representation_accept: Vec<i16>,
     /// A2 — TIME_BASED_FILTER `minimum_separation` (DDS 1.4 §2.2.3.12), in
     /// nanoseconds, for the runtime/C-FFI delivery path. `0` (default) = off.
     /// Set via [`DcpsRuntime::set_user_reader_time_based_filter`] (the
@@ -2360,6 +2421,10 @@ pub struct UserWriterConfig {
     pub durability: zerodds_qos::DurabilityKind,
     /// Deadline period (offered).
     pub deadline: zerodds_qos::DeadlineQosPolicy,
+    /// LatencyBudget (offered) — RxO-matched (§2.2.3.10).
+    pub latency_budget: zerodds_qos::LatencyBudgetQosPolicy,
+    /// DestinationOrder (offered) — RxO-matched (§2.2.3.18).
+    pub destination_order: zerodds_qos::DestinationOrderQosPolicy,
     /// Lifespan duration (writer-only).
     pub lifespan: zerodds_qos::LifespanQosPolicy,
     /// Liveliness (offered).
@@ -2380,6 +2445,10 @@ pub struct UserWriterConfig {
     /// XTypes 1.3 §7.3.4.2 TypeIdentifier (F-TYPES-3 wire-up). Default
     /// `TypeIdentifier::None` for the `T::TYPE_IDENTIFIER` default.
     pub type_identifier: zerodds_types::TypeIdentifier,
+    /// Presentation QoS (Spec §2.2.3.6) — Publisher-group scope offered by
+    /// this writer. Default `PresentationQosPolicy::default()` (INSTANCE,
+    /// no coherent/ordered access).
+    pub presentation: zerodds_qos::PresentationQosPolicy,
 
     /// D.5g — per-writer override of the DataRepresentation offer list.
     /// `None` = use `RuntimeConfig::data_representation_offer`.
@@ -2401,10 +2470,18 @@ pub struct UserReaderConfig {
     pub durability: zerodds_qos::DurabilityKind,
     /// Deadline (requested).
     pub deadline: zerodds_qos::DeadlineQosPolicy,
+    /// LatencyBudget (requested) — RxO-matched (§2.2.3.10).
+    pub latency_budget: zerodds_qos::LatencyBudgetQosPolicy,
+    /// DestinationOrder (requested) — RxO-matched (§2.2.3.18).
+    pub destination_order: zerodds_qos::DestinationOrderQosPolicy,
     /// Liveliness (requested).
     pub liveliness: zerodds_qos::LivelinessQosPolicy,
     /// Ownership.
     pub ownership: zerodds_qos::OwnershipKind,
+    /// Presentation QoS (Spec §2.2.3.6) — Subscriber-group scope requested by
+    /// this reader. Default `PresentationQosPolicy::default()` (INSTANCE,
+    /// no coherent/ordered access).
+    pub presentation: zerodds_qos::PresentationQosPolicy,
     /// Partition.
     pub partition: Vec<String>,
     /// UserData QoS (Spec §2.2.3.1).
@@ -2452,7 +2529,10 @@ fn build_publication_data(
         ownership_strength: cfg.ownership_strength,
         liveliness: cfg.liveliness,
         deadline: cfg.deadline,
+        latency_budget: cfg.latency_budget,
+        destination_order: cfg.destination_order,
         lifespan: cfg.lifespan,
+        presentation: cfg.presentation,
         partition: cfg.partition.clone(),
         user_data: cfg.user_data.clone(),
         topic_data: cfg.topic_data.clone(),
@@ -2534,6 +2614,9 @@ fn build_subscription_data(
         ownership: cfg.ownership,
         liveliness: cfg.liveliness,
         deadline: cfg.deadline,
+        latency_budget: cfg.latency_budget,
+        destination_order: cfg.destination_order,
+        presentation: cfg.presentation,
         partition: cfg.partition.clone(),
         user_data: cfg.user_data.clone(),
         topic_data: cfg.topic_data.clone(),
@@ -2853,6 +2936,21 @@ impl DcpsRuntime {
         guid_prefix: GuidPrefix,
         mut config: RuntimeConfig,
     ) -> Result<Arc<Self>> {
+        // DDS-Security §9.3.3: under an active security profile the wire GUID
+        // prefix MUST be the identity-cert-derived prefix, not a random
+        // candidate. `with_security_bundle` populates `security_guid_prefix`;
+        // a hand-built `RuntimeConfig { security: Some(_), .. }` that leaves it
+        // `None` would otherwise start with a random prefix and be silently
+        // rejected by a peer's §9.3.3 handshake. Enforce the invariant at this
+        // chokepoint (release-build `Err`, not a debug_assert) so the public
+        // Rust API, the FFI path and direct `DcpsRuntime::start` callers
+        // (bridges) cannot bypass it.
+        #[cfg(feature = "security")]
+        if config.security.is_some() && config.security_guid_prefix != Some(guid_prefix) {
+            return Err(DdsError::NotAllowedBySecurity {
+                what: "participant GUID prefix is not the DDS-Security §9.3.3 identity-derived prefix",
+            });
+        }
         // C1 multicast-free discovery: merge the domain-aware env `ZERODDS_PEERS`
         // into the (programmatic) `config.initial_peers`. Default
         // is both empty → pure multicast behavior.
@@ -4462,6 +4560,9 @@ impl DcpsRuntime {
                     ownership: cfg.ownership,
                     ownership_strength: cfg.ownership_strength,
                     partition: cfg.partition.clone(),
+                    presentation: cfg.presentation,
+                    latency_budget: cfg.latency_budget,
+                    destination_order: cfg.destination_order,
                     #[cfg(feature = "security")]
                     reader_protection: BTreeMap::new(),
                     #[cfg(feature = "security")]
@@ -4709,6 +4810,7 @@ impl DcpsRuntime {
                     sample_tx: tx,
                     async_waker: Arc::new(std::sync::Mutex::new(None)),
                     listener: None,
+                    reliable: cfg.reliable,
                     durability: cfg.durability,
                     deadline_nanos: qos_duration_to_nanos(cfg.deadline.period),
                     // Start time as reference (see register_user_writer).
@@ -4729,9 +4831,13 @@ impl DcpsRuntime {
                     liveliness_alive_writers: alloc::collections::BTreeSet::new(),
                     ownership: cfg.ownership,
                     partition: cfg.partition.clone(),
+                    presentation: cfg.presentation,
+                    latency_budget: cfg.latency_budget,
+                    destination_order: cfg.destination_order,
                     writer_strengths: alloc::collections::BTreeMap::new(),
                     type_identifier: cfg.type_identifier.clone(),
                     type_consistency: cfg.type_consistency,
+                    data_representation_accept: sub_data.data_representation.clone(),
                     // A2 — TIME_BASED_FILTER off by default; the C-FFI/rmw path
                     // arms it via `set_user_reader_time_based_filter`.
                     tbf_min_separation_nanos: 0,
@@ -5341,6 +5447,21 @@ impl DcpsRuntime {
                     bump(slot, qid::DURABILITY);
                     return;
                 }
+                // E1 bug 1 — Reliability: offered.kind >= requested.kind
+                // (Spec §2.2.3.14.4 / §2.2.3 Table: BestEffort < Reliable).
+                // A BEST_EFFORT writer must NOT associate with a RELIABLE
+                // reader — previously unenforced (`qid::RELIABILITY` was
+                // wired into the diagnostic name lookup only, never into a
+                // `bump()` call here).
+                let writer_reliability_kind = if slot.reliable {
+                    zerodds_qos::ReliabilityKind::Reliable
+                } else {
+                    zerodds_qos::ReliabilityKind::BestEffort
+                };
+                if writer_reliability_kind < sub.reliability.kind {
+                    bump(slot, qid::RELIABILITY);
+                    return;
+                }
                 // Deadline: writer period <= reader period (the writer promises
                 // to write faster than the reader expects).
                 if !deadline_compat(
@@ -5363,16 +5484,50 @@ impl DcpsRuntime {
                     bump(slot, qid::LIVELINESS);
                     return;
                 }
+                // LatencyBudget (Spec §2.2.3.10.4): offered.duration <=
+                // requested.duration — the writer promises latency at least
+                // as tight as the reader tolerates. Semantics from
+                // zerodds_qos::LatencyBudgetQosPolicy::is_compatible_with.
+                if !slot.latency_budget.is_compatible_with(sub.latency_budget) {
+                    bump(slot, qid::LATENCY_BUDGET);
+                    return;
+                }
+                // DestinationOrder (Spec §2.2.3.18.3): offered.kind >=
+                // requested.kind (BY_SOURCE_TIMESTAMP > BY_RECEPTION_TIMESTAMP).
+                // Semantics from
+                // zerodds_qos::DestinationOrderQosPolicy::is_compatible_with.
+                if !slot
+                    .destination_order
+                    .is_compatible_with(sub.destination_order)
+                {
+                    bump(slot, qid::DESTINATION_ORDER);
+                    return;
+                }
                 // Ownership: both must be equal (Spec §2.2.3.6 Table:
                 // no "compatible" case except exactly equal).
                 if slot.ownership != sub.ownership {
                     bump(slot, qid::OWNERSHIP);
                     return;
                 }
-                // Partition: at least one common partition — or
-                // both empty (default partition "").
+                // E1 bug 1 — Presentation: offered.access_scope >=
+                // requested.access_scope AND offered.coherent_access >=
+                // requested.coherent_access AND offered.ordered_access >=
+                // requested.ordered_access (Spec §2.2.3.6.6). Previously
+                // unenforced for the same reason as RELIABILITY above.
+                if !slot.presentation.is_compatible_with(sub.presentation) {
+                    bump(slot, qid::PRESENTATION);
+                    return;
+                }
+                // E1 bug 2 — Partition: at least one common partition — or
+                // both empty (default partition ""). DDS 1.4 §2.2.3.13 is
+                // explicit that PARTITION is NOT an RxO policy: a mismatch
+                // causes silent non-association (no
+                // OFFERED_INCOMPATIBLE_QOS / REQUESTED_INCOMPATIBLE_QOS
+                // listener event, no status-counter bump) — unlike
+                // DURABILITY/DEADLINE/LIVELINESS/OWNERSHIP/RELIABILITY/
+                // PRESENTATION above, which are genuine RxO policies. Do
+                // NOT call `bump()` here.
                 if !partitions_overlap(&slot.partition, &sub.partition) {
-                    bump(slot, qid::PARTITION);
                     return;
                 }
                 // F-TYPES-3 XTypes-1.3 §7.6.3.7 symmetric writer-side check.
@@ -5388,23 +5543,86 @@ impl DcpsRuntime {
                     // (XTypes 1.3 §7.2.4.1 identity). This is the typed-endpoint
                     // case: writer + reader of the same generated type carry the
                     // same (possibly complete) TypeIdentifier, whose TypeObject
-                    // is NOT in this fresh registry. Without this short-circuit a
+                    // may not be in the registry. Without this short-circuit a
                     // complete-hash type-id would fail the assignability lookup
                     // (Bug QT). Skip the registry-backed structural check when the
-                    // ids are identical.
+                    // ids are identical. LOAD-BEARING — do not remove.
                     && slot.type_identifier != sub.type_identifier
                 {
-                    let registry = zerodds_types::resolve::TypeRegistry::new();
+                    // Gap 2 (#24): resolve against the runtime's POPULATED
+                    // TypeLookup registry (filled by `register_type_object` and
+                    // by TypeLookup replies), NOT a fresh empty one — only then
+                    // can structural type-evolution matching (member added /
+                    // reordered / widened) resolve. The writer side uses the
+                    // DEFAULT TCE (AllowTypeCoercion, no force_type_validation);
+                    // the reader side (`wire_reader_to_remote_writer`) re-checks
+                    // with the real reader TCE and is authoritative for strict
+                    // validation.
                     let tce = zerodds_types::qos::TypeConsistencyEnforcement::default();
-                    let matcher = zerodds_types::type_matcher::TypeMatcher::new(&tce);
-                    if !matcher
-                        .match_types(&slot.type_identifier, &sub.type_identifier, &registry)
-                        .is_match()
-                    {
+                    // (decision, missing_hash_to_fetch)
+                    let (reject, type_fetch): (bool, Option<zerodds_types::EquivalenceHash>) =
+                        match self.type_lookup_server.lock() {
+                            Ok(server) => {
+                                let reg = &server.registry;
+                                let missing = unresolved_type_hash(reg, &slot.type_identifier)
+                                    .or_else(|| unresolved_type_hash(reg, &sub.type_identifier));
+                                if let Some(h) = missing {
+                                    // RESOLUTION-MISS (writer side, non-strict):
+                                    // the peer type object is not in the registry
+                                    // yet. INTERIM optimistic match — the reader
+                                    // side under its own TCE is authoritative and
+                                    // will reject/defer if needed. Fetch to prime
+                                    // the registry for the reader's re-check.
+                                    (false, Some(h))
+                                } else {
+                                    let matcher =
+                                        zerodds_types::type_matcher::TypeMatcher::new(&tce);
+                                    let ok = matcher
+                                        .match_types(
+                                            &slot.type_identifier,
+                                            &sub.type_identifier,
+                                            reg,
+                                        )
+                                        .is_match();
+                                    (!ok, None)
+                                }
+                            }
+                            // Poisoned registry lock: fail closed (do not match).
+                            Err(_) => (true, None),
+                        };
+                    // Best-effort getTypes fetch (peer unknown ⇒ Ok(None)); on the
+                    // rare miss path only. Issued after the registry guard drop.
+                    if let Some(h) = type_fetch {
+                        let _ = self.send_type_lookup_request(sub.key.prefix, &[h]);
+                    }
+                    if reject {
                         bump(slot, qid::TYPE_CONSISTENCY_ENFORCEMENT);
                         return;
                     }
                 }
+
+                // E1 bug 1 — DataRepresentation (XTypes 1.3 §7.6.3.1.2,
+                // RTPS 2.5 PID 0x0073): Writer-offered = Per-Writer-Override
+                // (slot.data_rep_offer_override) OR Runtime-Default.
+                // Reader-accepted = sub.data_representation (spec default
+                // `[XCDR1]` if empty). Match mode from RuntimeConfig.
+                // Computed BEFORE the proxy is constructed so a disjoint
+                // offer/accept set rejects the match outright (previously
+                // the proxy was added anyway on a `None` negotiation
+                // result — an explicit code comment admitted "a spec-strict
+                // caller should reject the match").
+                use zerodds_rtps::publication_data::data_representation as dr;
+                let writer_offered: Vec<i16> = slot
+                    .data_rep_offer_override
+                    .clone()
+                    .unwrap_or_else(|| self.config.data_representation_offer.clone());
+                let dr_mode = self.config.data_rep_match_mode;
+                let Some(negotiated) =
+                    dr::negotiate(&writer_offered, &sub.data_representation, dr_mode)
+                else {
+                    bump(slot, qid::DATA_REPRESENTATION);
+                    return;
+                };
 
                 let mut proxy = zerodds_rtps::reader_proxy::ReaderProxy::new(
                     sub.key,
@@ -5412,30 +5630,7 @@ impl DcpsRuntime {
                     Vec::new(),
                     slot.reliable,
                 );
-                // D.5g — Per-Peer DataRepresentation negotiation
-                // (XTypes 1.3 §7.6.3.1.2). Writer-offered = Per-Writer-
-                // Override (slot.data_rep_offer_override) ODER Runtime-
-                // Default. Reader-accepted = sub.data_representation
-                // (spec default `[XCDR1]` if empty). Match mode from
-                // RuntimeConfig.
-                {
-                    use zerodds_rtps::publication_data::data_representation as dr;
-                    let writer_offered: Vec<i16> = slot
-                        .data_rep_offer_override
-                        .clone()
-                        .unwrap_or_else(|| self.config.data_representation_offer.clone());
-                    let mode = self.config.data_rep_match_mode;
-                    if let Some(negotiated) =
-                        dr::negotiate(&writer_offered, &sub.data_representation, mode)
-                    {
-                        proxy.set_negotiated_data_representation(negotiated);
-                    } else {
-                        // No overlap → SEDP match spec violation.
-                        // We add the proxy anyway for best-effort
-                        // compat; the wire-format default stays XCDR2.
-                        // A spec-strict caller should reject the match.
-                    }
-                }
+                proxy.set_negotiated_data_representation(negotiated);
                 // Spec §2.2.3.4 Tab. 16: cache replay suppression. For
                 // Volatile the reader must not see any late-joiner history
                 // → skip up to `cache.max_sn`. For Transient/Persistent
@@ -5706,6 +5901,16 @@ impl DcpsRuntime {
                     bump(slot, qid::DURABILITY);
                     return;
                 }
+                // E1 bug 1 — Reliability, symmetric to `wire_writer_to_remote_reader`.
+                let requested_reliability_kind = if slot.reliable {
+                    zerodds_qos::ReliabilityKind::Reliable
+                } else {
+                    zerodds_qos::ReliabilityKind::BestEffort
+                };
+                if pubd.reliability.kind < requested_reliability_kind {
+                    bump(slot, qid::RELIABILITY);
+                    return;
+                }
                 if !deadline_compat(
                     qos_duration_to_nanos(pubd.deadline.period),
                     slot.deadline_nanos,
@@ -5724,12 +5929,56 @@ impl DcpsRuntime {
                     bump(slot, qid::LIVELINESS);
                     return;
                 }
+                // LatencyBudget (Spec §2.2.3.10.4), symmetric to
+                // `wire_writer_to_remote_reader`: the remote writer is now the
+                // offering side, this reader the requesting side —
+                // offered.duration <= requested.duration.
+                if !pubd.latency_budget.is_compatible_with(slot.latency_budget) {
+                    bump(slot, qid::LATENCY_BUDGET);
+                    return;
+                }
+                // DestinationOrder (Spec §2.2.3.18.3), symmetric:
+                // offered.kind >= requested.kind.
+                if !pubd
+                    .destination_order
+                    .is_compatible_with(slot.destination_order)
+                {
+                    bump(slot, qid::DESTINATION_ORDER);
+                    return;
+                }
                 if pubd.ownership != slot.ownership {
                     bump(slot, qid::OWNERSHIP);
                     return;
                 }
+                // E1 bug 1 — Presentation, symmetric to `wire_writer_to_remote_reader`.
+                if !pubd.presentation.is_compatible_with(slot.presentation) {
+                    bump(slot, qid::PRESENTATION);
+                    return;
+                }
+                // E1 bug 1 — DataRepresentation, symmetric to
+                // `wire_writer_to_remote_reader`: the remote writer's offered
+                // representation set must overlap this reader's own accept
+                // list (`data_representation_accept`, exactly what this
+                // reader announced on the wire).
+                {
+                    use zerodds_rtps::publication_data::data_representation as dr;
+                    let dr_mode = self.config.data_rep_match_mode;
+                    if dr::negotiate(
+                        &pubd.data_representation,
+                        &slot.data_representation_accept,
+                        dr_mode,
+                    )
+                    .is_none()
+                    {
+                        bump(slot, qid::DATA_REPRESENTATION);
+                        return;
+                    }
+                }
+                // E1 bug 2 — Partition, symmetric to `wire_writer_to_remote_reader`:
+                // DDS 1.4 §2.2.3.13 mandates silent non-association, no
+                // REQUESTED_INCOMPATIBLE_QOS listener event. Do NOT call
+                // `bump()` here.
                 if !partitions_overlap(&pubd.partition, &slot.partition) {
-                    bump(slot, qid::PARTITION);
                     return;
                 }
 
@@ -5741,19 +5990,86 @@ impl DcpsRuntime {
                     && pubd.type_identifier != zerodds_types::TypeIdentifier::None
                     // Equal TypeIdentifiers ⇒ same type (XTypes 1.3 §7.2.4.1).
                     // The typed-endpoint case carries a complete TypeIdentifier
-                    // whose TypeObject is not in this fresh registry; identity
-                    // is decisive without a structural lookup (Bug QT).
+                    // whose TypeObject may not be in the registry; identity is
+                    // decisive without a structural lookup (Bug QT). LOAD-BEARING
+                    // — do not remove.
                     && pubd.type_identifier != slot.type_identifier
                 {
-                    let registry = zerodds_types::resolve::TypeRegistry::new();
-                    let matcher =
-                        zerodds_types::type_matcher::TypeMatcher::new(&slot.type_consistency);
-                    if !matcher
-                        .match_types(&pubd.type_identifier, &slot.type_identifier, &registry)
-                        .is_match()
-                    {
-                        bump(slot, qid::TYPE_CONSISTENCY_ENFORCEMENT);
-                        return;
+                    // Gap 2 (#24): resolve against the runtime's POPULATED
+                    // TypeLookup registry (`register_type_object` + TypeLookup
+                    // replies), NOT a fresh empty one. `slot.type_consistency` is
+                    // the reader's real TCE — force_type_validation is enforced
+                    // here (the reader is authoritative).
+                    //
+                    // RESOLUTION-MISS POLICY (explicit decision):
+                    //   The remote writer's TypeObject may not be in the registry
+                    //   yet. Spec-correct is fetch-then-decide (issue getTypes,
+                    //   defer until the reply populates the registry — XTypes 1.3
+                    //   §7.6.3.3.4). We implement:
+                    //     * force_type_validation (STRICT): an unresolved type MUST
+                    //       NOT match. DEFER — no WriterProxy now, and NO
+                    //       incompatible-qos bump (unknown ≠ proven incompatible).
+                    //       The getTypes fetch primes the registry; the matching
+                    //       pass re-run after the TypeLookup reply
+                    //       (`dispatch_type_lookup_datagram`) re-evaluates this
+                    //       check and resolves it. This is real async resolution.
+                    //     * non-strict (default, spec-lenient): INTERIM optimistic
+                    //       match — wire now, fetch to confirm / enable a later
+                    //       strict re-check. FOLLOW-UP: an already-optimistically-
+                    //       wired match is NOT un-wired on a later incompatibility
+                    //       verdict; that async re-validation is deferred work.
+                    let strict = slot.type_consistency.force_type_validation;
+                    #[derive(Clone, Copy)]
+                    enum Decision {
+                        Wire,
+                        Reject,
+                        MissDefer,
+                    }
+                    let (decision, type_fetch): (Decision, Option<zerodds_types::EquivalenceHash>) =
+                        match self.type_lookup_server.lock() {
+                            Ok(server) => {
+                                let reg = &server.registry;
+                                let missing = unresolved_type_hash(reg, &pubd.type_identifier)
+                                    .or_else(|| unresolved_type_hash(reg, &slot.type_identifier));
+                                if let Some(h) = missing {
+                                    if strict {
+                                        (Decision::MissDefer, Some(h))
+                                    } else {
+                                        (Decision::Wire, Some(h))
+                                    }
+                                } else {
+                                    let matcher = zerodds_types::type_matcher::TypeMatcher::new(
+                                        &slot.type_consistency,
+                                    );
+                                    if matcher
+                                        .match_types(
+                                            &pubd.type_identifier,
+                                            &slot.type_identifier,
+                                            reg,
+                                        )
+                                        .is_match()
+                                    {
+                                        (Decision::Wire, None)
+                                    } else {
+                                        (Decision::Reject, None)
+                                    }
+                                }
+                            }
+                            // Poisoned registry lock: fail closed (do not match).
+                            Err(_) => (Decision::Reject, None),
+                        };
+                    // Best-effort getTypes fetch (peer unknown ⇒ Ok(None)); rare
+                    // miss path only. Issued after the registry guard drop.
+                    if let Some(h) = type_fetch {
+                        let _ = self.send_type_lookup_request(pubd.key.prefix, &[h]);
+                    }
+                    match decision {
+                        Decision::Wire => {}
+                        Decision::Reject => {
+                            bump(slot, qid::TYPE_CONSISTENCY_ENFORCEMENT);
+                            return;
+                        }
+                        Decision::MissDefer => return,
                     }
                 }
 
@@ -8694,6 +9010,34 @@ fn check_deadlines(rt: &Arc<DcpsRuntime>, now: std::time::Duration) -> Option<u6
     next_due.into_inner()
 }
 
+/// Gap 2 (#24): resolution-miss probe for the runtime type-match sites.
+///
+/// Returns `Some(hash)` iff `ti` references a `TypeObject` by
+/// `EquivalenceHash` that is ABSENT from `reg` — i.e. the structural
+/// assignability check cannot resolve it yet. Primitive / string / plain-
+/// collection identifiers never need a registry entry (`is_assignable`
+/// resolves them structurally), so they return `None` ("resolvable").
+///
+/// Both the Minimal and the Complete hash variant look the object up in
+/// the registry's *minimal* map (`assignability.rs` compares via
+/// `get_minimal` for both), so a present minimal entry ⇒ resolvable.
+fn unresolved_type_hash(
+    reg: &zerodds_types::resolve::TypeRegistry,
+    ti: &zerodds_types::TypeIdentifier,
+) -> Option<zerodds_types::EquivalenceHash> {
+    match ti {
+        zerodds_types::TypeIdentifier::EquivalenceHashMinimal(h)
+        | zerodds_types::TypeIdentifier::EquivalenceHashComplete(h) => {
+            if reg.get_minimal(h).is_none() {
+                Some(*h)
+            } else {
+                None
+            }
+        }
+        _ => None,
+    }
+}
+
 /// For all local writers + readers: matching against the current
 /// SEDP cache. A cheap re-run when SEDP events came in — idempotent,
 /// because ReliableWriter/Reader add_*_proxy are idempotent (same
@@ -11125,6 +11469,27 @@ fn dispatch_type_lookup_datagram(rt: &Arc<DcpsRuntime>, bytes: &[u8], source: &L
         // Inbound Request → Server.
         if d.reader_id == EntityId::TL_SVC_REQ_READER {
             accepted = true;
+            // Reply routing: address the reply to the requester's ADVERTISED
+            // user-unicast locator (resolved by its GuidPrefix from discovery),
+            // NOT the datagram source. The request arrives from an ephemeral
+            // outbound UDP source port that nobody listens on; only the
+            // advertised default-unicast (fallback metatraffic-unicast) locator
+            // reaches the peer's TypeLookup receive path. Without this, the
+            // getTypes reply is lost, the client's registry is never populated,
+            // and the deferred/optimistic match never resolves (Gap 2 #24).
+            // Fall back to the datagram source if the peer is not (yet) discovered.
+            let reply_target = rt
+                .discovered
+                .lock()
+                .ok()
+                .and_then(|d| {
+                    d.get(&src_prefix).and_then(|dp| {
+                        dp.data
+                            .default_unicast_locator
+                            .or(dp.data.metatraffic_unicast_locator)
+                    })
+                })
+                .unwrap_or(*source);
             // Request sample identity = (request writer GUID, request SN) — mirrored
             // as related_sample_identity into the reply inline QoS.
             let (sn_hi, sn_lo) = d.writer_sn.split();
@@ -11141,7 +11506,7 @@ fn dispatch_type_lookup_datagram(rt: &Arc<DcpsRuntime>, bytes: &[u8], source: &L
                 };
                 let _ = send_type_lookup_reply(
                     rt,
-                    source,
+                    &reply_target,
                     TypeLookupReplyPayload::Types(reply),
                     related,
                 );
@@ -11155,7 +11520,7 @@ fn dispatch_type_lookup_datagram(rt: &Arc<DcpsRuntime>, bytes: &[u8], source: &L
                 };
                 let _ = send_type_lookup_reply(
                     rt,
-                    source,
+                    &reply_target,
                     TypeLookupReplyPayload::Dependencies(reply),
                     related,
                 );
@@ -11181,8 +11546,22 @@ fn dispatch_type_lookup_datagram(rt: &Arc<DcpsRuntime>, bytes: &[u8], source: &L
                 });
             let mut r = BufferReader::new(body, Endianness::Little);
             if let Ok(reply) = GetTypesReply::decode_from(&mut r) {
-                if let Ok(mut client) = rt.type_lookup_client.lock() {
-                    client.handle_reply(request_id, TypeLookupReply::Types(reply));
+                let applied = if let Ok(mut client) = rt.type_lookup_client.lock() {
+                    // The reply callback (registered in `send_type_lookup_request`)
+                    // synchronously inserts the fetched TypeObject(s) into
+                    // `type_lookup_server.registry`.
+                    client.handle_reply(request_id, TypeLookupReply::Types(reply))
+                } else {
+                    false
+                };
+                // Gap 2 (#24): the registry is now populated with the fetched
+                // type. Re-run the idempotent matching pass so any typed match
+                // that DEFERRED on a resolution-miss (force_type_validation, or a
+                // non-strict endpoint awaiting confirmation) re-evaluates and
+                // resolves. Done AFTER releasing the client lock, because matching
+                // may itself issue a getTypes fetch (which locks the client).
+                if applied {
+                    run_matching_pass(rt);
                 }
                 continue;
             }
@@ -11642,10 +12021,13 @@ mod tests {
             reliable: true,
             durability: zerodds_qos::DurabilityKind::Volatile,
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            latency_budget: Default::default(),
+            destination_order: Default::default(),
             lifespan: zerodds_qos::LifespanQosPolicy::default(),
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             ownership: zerodds_qos::OwnershipKind::Shared,
             ownership_strength: 0,
+            presentation: Default::default(),
             partition: alloc::vec![],
             user_data: alloc::vec![],
             topic_data: alloc::vec![],
@@ -11659,8 +12041,11 @@ mod tests {
             reliable: true,
             durability: zerodds_qos::DurabilityKind::Volatile,
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            latency_budget: Default::default(),
+            destination_order: Default::default(),
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             ownership: zerodds_qos::OwnershipKind::Shared,
+            presentation: Default::default(),
             partition: alloc::vec![],
             user_data: alloc::vec![],
             topic_data: alloc::vec![],
@@ -11721,10 +12106,13 @@ mod tests {
             reliable: true,
             durability: zerodds_qos::DurabilityKind::Volatile,
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            latency_budget: Default::default(),
+            destination_order: Default::default(),
             lifespan: zerodds_qos::LifespanQosPolicy::default(),
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             ownership: zerodds_qos::OwnershipKind::Shared,
             ownership_strength: 0,
+            presentation: Default::default(),
             partition: alloc::vec![],
             user_data: alloc::vec![],
             topic_data: alloc::vec![],
@@ -11738,8 +12126,11 @@ mod tests {
             reliable: true,
             durability: zerodds_qos::DurabilityKind::Volatile,
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            latency_budget: Default::default(),
+            destination_order: Default::default(),
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             ownership: zerodds_qos::OwnershipKind::Shared,
+            presentation: Default::default(),
             partition: alloc::vec![],
             user_data: alloc::vec![],
             topic_data: alloc::vec![],
@@ -11793,10 +12184,13 @@ mod tests {
                 reliable: false,
                 durability: zerodds_qos::DurabilityKind::Volatile,
                 deadline: zerodds_qos::DeadlineQosPolicy::default(),
+                latency_budget: Default::default(),
+                destination_order: Default::default(),
                 lifespan: zerodds_qos::LifespanQosPolicy::default(),
                 liveliness: zerodds_qos::LivelinessQosPolicy::default(),
                 ownership: zerodds_qos::OwnershipKind::Shared,
                 ownership_strength: 0,
+                presentation: Default::default(),
                 partition: alloc::vec![],
                 user_data: alloc::vec![],
                 topic_data: alloc::vec![],
@@ -11812,8 +12206,11 @@ mod tests {
                 reliable: false,
                 durability: zerodds_qos::DurabilityKind::TransientLocal,
                 deadline: zerodds_qos::DeadlineQosPolicy::default(),
+                latency_budget: Default::default(),
+                destination_order: Default::default(),
                 liveliness: zerodds_qos::LivelinessQosPolicy::default(),
                 ownership: zerodds_qos::OwnershipKind::Shared,
+                presentation: Default::default(),
                 partition: alloc::vec![],
                 user_data: alloc::vec![],
                 topic_data: alloc::vec![],
@@ -12141,10 +12538,13 @@ mod tests {
                 reliable: true,
                 durability: zerodds_qos::DurabilityKind::Volatile,
                 deadline: zerodds_qos::DeadlineQosPolicy::default(),
+                latency_budget: Default::default(),
+                destination_order: Default::default(),
                 lifespan: zerodds_qos::LifespanQosPolicy::default(),
                 liveliness: zerodds_qos::LivelinessQosPolicy::default(),
                 ownership: zerodds_qos::OwnershipKind::Shared,
                 ownership_strength: 0,
+                presentation: Default::default(),
                 partition: alloc::vec![],
                 user_data: alloc::vec![],
                 topic_data: alloc::vec![],
@@ -12160,8 +12560,11 @@ mod tests {
                 reliable: true,
                 durability: zerodds_qos::DurabilityKind::Volatile,
                 deadline: zerodds_qos::DeadlineQosPolicy::default(),
+                latency_budget: Default::default(),
+                destination_order: Default::default(),
                 liveliness: zerodds_qos::LivelinessQosPolicy::default(),
                 ownership: zerodds_qos::OwnershipKind::Shared,
+                presentation: Default::default(),
                 partition: alloc::vec![],
                 user_data: alloc::vec![],
                 topic_data: alloc::vec![],
@@ -12215,10 +12618,13 @@ mod tests {
                     reliable: true,
                     durability: zerodds_qos::DurabilityKind::Volatile,
                     deadline: zerodds_qos::DeadlineQosPolicy::default(),
+                    latency_budget: Default::default(),
+                    destination_order: Default::default(),
                     lifespan: zerodds_qos::LifespanQosPolicy::default(),
                     liveliness: zerodds_qos::LivelinessQosPolicy::default(),
                     ownership: zerodds_qos::OwnershipKind::Shared,
                     ownership_strength: 0,
+                    presentation: Default::default(),
                     partition: alloc::vec![],
                     user_data: alloc::vec![],
                     topic_data: alloc::vec![],
@@ -12234,8 +12640,11 @@ mod tests {
                     reliable: true,
                     durability: zerodds_qos::DurabilityKind::Volatile,
                     deadline: zerodds_qos::DeadlineQosPolicy::default(),
+                    latency_budget: Default::default(),
+                    destination_order: Default::default(),
                     liveliness: zerodds_qos::LivelinessQosPolicy::default(),
                     ownership: zerodds_qos::OwnershipKind::Shared,
+                    presentation: Default::default(),
                     partition: alloc::vec![],
                     user_data: alloc::vec![],
                     topic_data: alloc::vec![],
@@ -12309,10 +12718,13 @@ mod tests {
                 reliable: true,
                 durability: zerodds_qos::DurabilityKind::Volatile,
                 deadline: zerodds_qos::DeadlineQosPolicy::default(),
+                latency_budget: Default::default(),
+                destination_order: Default::default(),
                 lifespan: zerodds_qos::LifespanQosPolicy::default(),
                 liveliness: zerodds_qos::LivelinessQosPolicy::default(),
                 ownership: zerodds_qos::OwnershipKind::Shared,
                 ownership_strength: 0,
+                presentation: Default::default(),
                 partition: alloc::vec![],
                 user_data: alloc::vec![],
                 topic_data: alloc::vec![],
@@ -12328,8 +12740,11 @@ mod tests {
                 reliable: true,
                 durability: zerodds_qos::DurabilityKind::Volatile,
                 deadline: zerodds_qos::DeadlineQosPolicy::default(),
+                latency_budget: Default::default(),
+                destination_order: Default::default(),
                 liveliness: zerodds_qos::LivelinessQosPolicy::default(),
                 ownership: zerodds_qos::OwnershipKind::Shared,
+                presentation: Default::default(),
                 partition: alloc::vec![],
                 user_data: alloc::vec![],
                 topic_data: alloc::vec![],
@@ -12688,7 +13103,10 @@ mod tests {
             ownership_strength: 0,
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
+            destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
             lifespan: zerodds_qos::LifespanQosPolicy::default(),
+            presentation: Default::default(),
             partition: Vec::new(),
             user_data: Vec::new(),
             topic_data: Vec::new(),
@@ -12756,10 +13174,13 @@ mod tests {
                 reliable: true,
                 durability: zerodds_qos::DurabilityKind::Volatile,
                 deadline: zerodds_qos::DeadlineQosPolicy::default(),
+                latency_budget: Default::default(),
+                destination_order: Default::default(),
                 lifespan: zerodds_qos::LifespanQosPolicy::default(),
                 liveliness: zerodds_qos::LivelinessQosPolicy::default(),
                 ownership: zerodds_qos::OwnershipKind::Shared,
                 ownership_strength: 0,
+                presentation: Default::default(),
                 partition: Vec::new(),
                 user_data: Vec::new(),
                 topic_data: Vec::new(),
@@ -12775,8 +13196,11 @@ mod tests {
                 reliable: true,
                 durability: zerodds_qos::DurabilityKind::Volatile,
                 deadline: zerodds_qos::DeadlineQosPolicy::default(),
+                latency_budget: Default::default(),
+                destination_order: Default::default(),
                 liveliness: zerodds_qos::LivelinessQosPolicy::default(),
                 ownership: zerodds_qos::OwnershipKind::Shared,
+                presentation: Default::default(),
                 partition: Vec::new(),
                 user_data: Vec::new(),
                 topic_data: Vec::new(),
@@ -12850,6 +13274,81 @@ mod tests {
     }
 
     // =======================================================================
+    // Security: DDS-Security §9.3.3 GUID-prefix guard (GitHub #11)
+    // =======================================================================
+
+    /// Minimal ENCRYPT-on-domain-0 gate for the guard tests.
+    #[cfg(feature = "security")]
+    fn guard_test_gate() -> std::sync::Arc<zerodds_security_runtime::SharedSecurityGate> {
+        use zerodds_security_crypto::AesGcmCryptoPlugin;
+        use zerodds_security_permissions::parse_governance_xml;
+        use zerodds_security_runtime::SharedSecurityGate;
+        const GOV: &str = r#"
+<domain_access_rules>
+  <domain_rule>
+    <domains><id>0</id></domains>
+    <rtps_protection_kind>ENCRYPT</rtps_protection_kind>
+    <topic_access_rules><topic_rule><topic_expression>*</topic_expression></topic_rule></topic_access_rules>
+  </domain_rule>
+</domain_access_rules>
+"#;
+        std::sync::Arc::new(SharedSecurityGate::new(
+            0,
+            parse_governance_xml(GOV).unwrap(),
+            Box::new(AesGcmCryptoPlugin::new()),
+        ))
+    }
+
+    /// (i) No security profile → the §9.3.3 guard does not apply, `start` is Ok
+    /// with whatever (random-style) prefix the caller supplied.
+    #[cfg(feature = "security")]
+    #[test]
+    fn security_guid_guard_absent_security_is_unaffected() {
+        let prefix = GuidPrefix::from_bytes([0x5A; 12]);
+        let cfg = RuntimeConfig {
+            security: None,
+            security_guid_prefix: None,
+            ..RuntimeConfig::default()
+        };
+        let rt = DcpsRuntime::start(0, prefix, cfg).expect("start without security");
+        assert_eq!(rt.guid_prefix, prefix);
+    }
+
+    /// (ii) security=Some but `security_guid_prefix` left `None` (hand-built
+    /// `RuntimeConfig` that bypassed `with_security_bundle`) → the wire prefix
+    /// would be a random candidate, so `start` MUST reject with
+    /// `NotAllowedBySecurity` rather than silently mis-announce (GitHub #11).
+    #[cfg(feature = "security")]
+    #[test]
+    fn security_guid_guard_rejects_missing_identity_prefix() {
+        let prefix = GuidPrefix::from_bytes([0x5B; 12]);
+        let cfg = RuntimeConfig {
+            security: Some(guard_test_gate()),
+            security_guid_prefix: None,
+            ..RuntimeConfig::default()
+        };
+        match DcpsRuntime::start(0, prefix, cfg) {
+            Err(DdsError::NotAllowedBySecurity { .. }) => {}
+            other => panic!("expected NotAllowedBySecurity, got {other:?}"),
+        }
+    }
+
+    /// (iii) security=Some and `security_guid_prefix == Some(p)`, started with
+    /// the same `p` → Ok, and the runtime's wire GUID prefix is exactly `p`.
+    #[cfg(feature = "security")]
+    #[test]
+    fn security_guid_guard_accepts_matching_identity_prefix() {
+        let p = GuidPrefix::from_bytes([0x5C; 12]);
+        let cfg = RuntimeConfig {
+            security: Some(guard_test_gate()),
+            security_guid_prefix: Some(p),
+            ..RuntimeConfig::default()
+        };
+        let rt = DcpsRuntime::start(0, p, cfg).expect("start with matching identity prefix");
+        assert_eq!(rt.guid_prefix, p);
+    }
+
+    // =======================================================================
     // Security: Writer-Side Per-Reader-Serializer
     // =======================================================================
 
@@ -12882,6 +13381,7 @@ mod tests {
 
         let cfg = RuntimeConfig {
             security: Some(std::sync::Arc::new(gate)),
+            security_guid_prefix: Some(GuidPrefix::from_bytes([0xE4; 12])),
             ..RuntimeConfig::default()
         };
         let rt =
@@ -12894,10 +13394,13 @@ mod tests {
                 reliable: true,
                 durability: zerodds_qos::DurabilityKind::Volatile,
                 deadline: zerodds_qos::DeadlineQosPolicy::default(),
+                latency_budget: Default::default(),
+                destination_order: Default::default(),
                 lifespan: zerodds_qos::LifespanQosPolicy::default(),
                 liveliness: zerodds_qos::LivelinessQosPolicy::default(),
                 ownership: zerodds_qos::OwnershipKind::Shared,
                 ownership_strength: 0,
+                presentation: Default::default(),
                 partition: Vec::new(),
                 user_data: Vec::new(),
                 topic_data: Vec::new(),
@@ -13032,6 +13535,7 @@ mod tests {
         let cfg = RuntimeConfig {
             security: Some(std::sync::Arc::new(gate)),
             security_logger: Some(logger_dyn),
+            security_guid_prefix: Some(GuidPrefix::from_bytes([0xE7; 12])),
             ..RuntimeConfig::default()
         };
         DcpsRuntime::start(0, GuidPrefix::from_bytes([0xE7; 12]), cfg).expect("start rt")
@@ -13373,6 +13877,7 @@ mod tests {
         let cfg = RuntimeConfig {
             security: Some(std::sync::Arc::new(gate)),
             interface_bindings: bindings,
+            security_guid_prefix: Some(GuidPrefix::from_bytes([0xF0; 12])),
             ..RuntimeConfig::default()
         };
         let rt = DcpsRuntime::start(0, GuidPrefix::from_bytes([0xF0; 12]), cfg).expect("rt");
@@ -13384,10 +13889,13 @@ mod tests {
                 reliable: true,
                 durability: zerodds_qos::DurabilityKind::Volatile,
                 deadline: zerodds_qos::DeadlineQosPolicy::default(),
+                latency_budget: Default::default(),
+                destination_order: Default::default(),
                 lifespan: zerodds_qos::LifespanQosPolicy::default(),
                 liveliness: zerodds_qos::LivelinessQosPolicy::default(),
                 ownership: zerodds_qos::OwnershipKind::Shared,
                 ownership_strength: 0,
+                presentation: Default::default(),
                 partition: Vec::new(),
                 user_data: Vec::new(),
                 topic_data: Vec::new(),
@@ -13552,6 +14060,7 @@ mod tests {
             security: Some(std::sync::Arc::new(gate)),
             security_logger: Some(logger_dyn),
             interface_bindings: bindings,
+            security_guid_prefix: Some(GuidPrefix::from_bytes([0xF1; 12])),
             ..RuntimeConfig::default()
         };
         let rt = DcpsRuntime::start(0, GuidPrefix::from_bytes([0xF1; 12]), cfg).expect("rt");
@@ -13631,10 +14140,13 @@ mod tests {
                 reliable: true,
                 durability: zerodds_qos::DurabilityKind::Volatile,
                 deadline: zerodds_qos::DeadlineQosPolicy::default(),
+                latency_budget: Default::default(),
+                destination_order: Default::default(),
                 lifespan: zerodds_qos::LifespanQosPolicy::default(),
                 liveliness: zerodds_qos::LivelinessQosPolicy::default(),
                 ownership: zerodds_qos::OwnershipKind::Shared,
                 ownership_strength: 0,
+                presentation: Default::default(),
                 partition: Vec::new(),
                 user_data: Vec::new(),
                 topic_data: Vec::new(),
@@ -13760,7 +14272,10 @@ mod tests {
                 ownership_strength: 0,
                 liveliness: LivelinessQosPolicy::default(),
                 deadline: zerodds_qos::DeadlineQosPolicy::default(),
+                latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
+                destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
                 lifespan: zerodds_qos::LifespanQosPolicy::default(),
+                presentation: Default::default(),
                 partition: Vec::new(),
                 user_data: Vec::new(),
                 topic_data: Vec::new(),
@@ -13821,6 +14336,9 @@ mod tests {
                 ownership: zerodds_qos::OwnershipKind::Shared,
                 liveliness: LivelinessQosPolicy::default(),
                 deadline: zerodds_qos::DeadlineQosPolicy::default(),
+                latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
+                destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
+                presentation: Default::default(),
                 partition: Vec::new(),
                 user_data: Vec::new(),
                 topic_data: Vec::new(),
@@ -13953,7 +14471,10 @@ mod tests {
                 ownership_strength: 0,
                 liveliness: LivelinessQosPolicy::default(),
                 deadline: zerodds_qos::DeadlineQosPolicy::default(),
+                latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
+                destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
                 lifespan: zerodds_qos::LifespanQosPolicy::default(),
+                presentation: Default::default(),
                 partition: Vec::new(),
                 user_data: Vec::new(),
                 topic_data: Vec::new(),
@@ -14026,6 +14547,9 @@ mod tests {
                 ownership: zerodds_qos::OwnershipKind::Shared,
                 liveliness: LivelinessQosPolicy::default(),
                 deadline: zerodds_qos::DeadlineQosPolicy::default(),
+                latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
+                destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
+                presentation: Default::default(),
                 partition: Vec::new(),
                 user_data: Vec::new(),
                 topic_data: Vec::new(),
@@ -14094,7 +14618,10 @@ mod tests {
                 ownership_strength: 0,
                 liveliness: LivelinessQosPolicy::default(),
                 deadline: zerodds_qos::DeadlineQosPolicy::default(),
+                latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
+                destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
                 lifespan: zerodds_qos::LifespanQosPolicy::default(),
+                presentation: Default::default(),
                 partition: Vec::new(),
                 user_data: Vec::new(),
                 topic_data: Vec::new(),
@@ -14818,6 +15345,7 @@ mod tests {
             a_prefix,
             RuntimeConfig {
                 security: Some(gate_a.clone()),
+                security_guid_prefix: Some(a_prefix),
                 ..RuntimeConfig::default()
             },
         )
@@ -15178,6 +15706,107 @@ mod tests {
         rt.shutdown();
     }
 
+    /// Gap 2 (#24): a writer and reader of STRUCTURALLY-DIFFERENT but
+    /// assignable types (distinct EquivalenceHashes) match + exchange ONLY
+    /// because the runtime resolves them against its POPULATED TypeLookup
+    /// registry. With the pre-fix empty `TypeRegistry::new()` at the match
+    /// sites the differing hashes cannot resolve → the reader rejects
+    /// (TYPE_CONSISTENCY_ENFORCEMENT) and the sample never arrives.
+    ///
+    /// Evolution direction: the WRITER carries the superset (V2 = V1 + a
+    /// trailing @optional member), the READER the prefix (V1). This is the
+    /// direction the appendable assignability rule supports
+    /// (`assignability.rs`: writer ⊇ reader prefix, XTypes §7.2.4.4.4.4).
+    #[test]
+    fn gap2_structural_evolution_matches_via_populated_registry() {
+        use zerodds_types::builder::{Extensibility, TypeObjectBuilder};
+        let rt = DcpsRuntime::start(
+            63,
+            GuidPrefix::from_bytes([0x63; 12]),
+            RuntimeConfig::default(),
+        )
+        .expect("start");
+
+        // Build + register both TypeObjects in the runtime's TypeLookup
+        // registry (the same path `register_type_object` fills for local
+        // codegen types). Returns the endpoint TypeIdentifier.
+        let register =
+            |rt: &DcpsRuntime, st: zerodds_types::type_object::minimal::MinimalStructType| {
+                let obj = zerodds_types::TypeObject::Minimal(
+                    zerodds_types::MinimalTypeObject::Struct(st),
+                );
+                let hash = rt.register_type_object(obj).expect("register type object");
+                zerodds_types::TypeIdentifier::EquivalenceHashMinimal(hash)
+            };
+        let writer_v2 = TypeObjectBuilder::struct_type("::gap2::Evo")
+            .extensibility(Extensibility::Appendable)
+            .member(
+                "a",
+                zerodds_types::TypeIdentifier::Primitive(zerodds_types::PrimitiveKind::Int32),
+                |m| m,
+            )
+            .member(
+                "b",
+                zerodds_types::TypeIdentifier::Primitive(zerodds_types::PrimitiveKind::Int32),
+                |m| m,
+            )
+            .member(
+                "c",
+                zerodds_types::TypeIdentifier::Primitive(zerodds_types::PrimitiveKind::Int32),
+                |m| m.optional(),
+            )
+            .build_minimal();
+        let reader_v1 = TypeObjectBuilder::struct_type("::gap2::Evo")
+            .extensibility(Extensibility::Appendable)
+            .member(
+                "a",
+                zerodds_types::TypeIdentifier::Primitive(zerodds_types::PrimitiveKind::Int32),
+                |m| m,
+            )
+            .member(
+                "b",
+                zerodds_types::TypeIdentifier::Primitive(zerodds_types::PrimitiveKind::Int32),
+                |m| m,
+            )
+            .build_minimal();
+        let w_id = register(&rt, writer_v2);
+        let r_id = register(&rt, reader_v1);
+        assert_ne!(
+            w_id, r_id,
+            "the two evolutions must carry distinct TypeIdentifiers (else the \
+             equal-hash short-circuit — not the registry path — would decide)"
+        );
+
+        let mut w_cfg = qr_writer_cfg(
+            "Gap2Evo",
+            zerodds_qos::DurabilityKind::Volatile,
+            alloc::vec![],
+            zerodds_qos::LivelinessKind::Automatic,
+        );
+        w_cfg.type_identifier = w_id;
+        let mut r_cfg = qr_reader_cfg(
+            "Gap2Evo",
+            zerodds_qos::DurabilityKind::Volatile,
+            alloc::vec![],
+            zerodds_qos::LivelinessKind::Automatic,
+        );
+        r_cfg.type_identifier = r_id;
+
+        let w = rt.register_user_writer(w_cfg).expect("writer");
+        let (_r, rx) = rt.register_user_reader(r_cfg).expect("reader");
+        rt.write_user_sample(w, b"evolved".to_vec()).expect("write");
+        let s = rx
+            .recv_timeout(core::time::Duration::from_millis(500))
+            .expect(
+                "structurally-assignable typed endpoints must match via the populated registry",
+            );
+        match s {
+            UserSample::Alive { payload, .. } => assert_eq!(payload.as_ref(), b"evolved"),
+            other => panic!("expected Alive, got {other:?}"),
+        }
+        rt.shutdown();
+    }
+
     // ===================================================================
     // QR-cluster (#77) — same-runtime QoS behavioral regression tests.
     // ===================================================================
@@ -15194,6 +15823,8 @@ mod tests {
             reliable: true,
             durability,
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            latency_budget: Default::default(),
+            destination_order: Default::default(),
             lifespan: zerodds_qos::LifespanQosPolicy::default(),
             liveliness: zerodds_qos::LivelinessQosPolicy {
                 kind: liveliness,
@@ -15201,6 +15832,7 @@ mod tests {
             },
             ownership: zerodds_qos::OwnershipKind::Shared,
             ownership_strength: 0,
+            presentation: Default::default(),
             partition,
             user_data: alloc::vec![],
             topic_data: alloc::vec![],
@@ -15222,11 +15854,14 @@ mod tests {
             reliable: true,
             durability,
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            latency_budget: Default::default(),
+            destination_order: Default::default(),
             liveliness: zerodds_qos::LivelinessQosPolicy {
                 kind: liveliness,
                 lease_duration: QosDuration::INFINITE,
             },
             ownership: zerodds_qos::OwnershipKind::Shared,
+            presentation: Default::default(),
             partition,
             user_data: alloc::vec![],
             topic_data: alloc::vec![],
@@ -15604,6 +16239,354 @@ mod tests {
         let _ = rx.recv_timeout(core::time::Duration::from_millis(200));
         let (_a, count2, _n) = rt.user_reader_liveliness_status(r);
         assert_eq!(count2, 1, "same writer must not bump alive_count twice");
+        rt.shutdown();
+    }
+
+    // ========================================================================
+    // RxO matching for DESTINATION_ORDER (§2.2.3.18) + LATENCY_BUDGET
+    // (§2.2.3.10) in the runtime matcher (`wire_writer_to_remote_reader` /
+    // `wire_reader_to_remote_writer`). Semantics come from
+    // `zerodds_qos::{DestinationOrderQosPolicy,LatencyBudgetQosPolicy}
+    // ::is_compatible_with` — offered.kind >= requested.kind and
+    // offered.duration <= requested.duration.
+    // ========================================================================
+
+    fn rxo_writer_cfg(
+        dest: zerodds_qos::DestinationOrderKind,
+        latency_ms: i32,
+    ) -> UserWriterConfig {
+        UserWriterConfig {
+            topic_name: "RxOTopic".into(),
+            type_name: "RxOType".into(),
+            // BestEffort so RELIABILITY never masks the policy under test.
+            reliable: false,
+            durability: zerodds_qos::DurabilityKind::Volatile,
+            deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            latency_budget: zerodds_qos::LatencyBudgetQosPolicy {
+                duration: zerodds_qos::Duration::from_millis(latency_ms),
+            },
+            destination_order: zerodds_qos::DestinationOrderQosPolicy { kind: dest },
+            lifespan: zerodds_qos::LifespanQosPolicy::default(),
+            liveliness: zerodds_qos::LivelinessQosPolicy::default(),
+            ownership: zerodds_qos::OwnershipKind::Shared,
+            ownership_strength: 0,
+            presentation: Default::default(),
+            partition: alloc::vec![],
+            user_data: alloc::vec![],
+            topic_data: alloc::vec![],
+            group_data: alloc::vec![],
+            type_identifier: zerodds_types::TypeIdentifier::None,
+            data_representation_offer: None,
+        }
+    }
+
+    fn rxo_reader_cfg(
+        dest: zerodds_qos::DestinationOrderKind,
+        latency_ms: i32,
+    ) -> UserReaderConfig {
+        UserReaderConfig {
+            topic_name: "RxOTopic".into(),
+            type_name: "RxOType".into(),
+            reliable: false,
+            durability: zerodds_qos::DurabilityKind::Volatile,
+            deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            latency_budget: zerodds_qos::LatencyBudgetQosPolicy {
+                duration: zerodds_qos::Duration::from_millis(latency_ms),
+            },
+            destination_order: zerodds_qos::DestinationOrderQosPolicy { kind: dest },
+            liveliness: zerodds_qos::LivelinessQosPolicy::default(),
+            ownership: zerodds_qos::OwnershipKind::Shared,
+            presentation: Default::default(),
+            partition: alloc::vec![],
+            user_data: alloc::vec![],
+            topic_data: alloc::vec![],
+            group_data: alloc::vec![],
+            type_identifier: zerodds_types::TypeIdentifier::None,
+            type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
+            data_representation_offer: None,
+        }
+    }
+
+    /// A remote reader (subscription) with a non-empty unicast locator so the
+    /// matcher does not early-return on missing locators before the QoS chain.
+    fn rxo_remote_sub(
+        dest: zerodds_qos::DestinationOrderKind,
+        latency_ms: i32,
+    ) -> zerodds_rtps::subscription_data::SubscriptionBuiltinTopicData {
+        let prefix = GuidPrefix::from_bytes([0x9A; 12]);
+        zerodds_rtps::subscription_data::SubscriptionBuiltinTopicData {
+            key: Guid::new(prefix, EntityId::user_reader_with_key([0x0A, 0x0B, 0x0C])),
+            participant_key: Guid::new(prefix, EntityId::PARTICIPANT),
+            topic_name: "RxOTopic".into(),
+            type_name: "RxOType".into(),
+            durability: zerodds_qos::DurabilityKind::Volatile,
+            reliability: zerodds_qos::ReliabilityQosPolicy {
+                kind: zerodds_qos::ReliabilityKind::BestEffort,
+                max_blocking_time: QosDuration::from_millis(100_i32),
+            },
+            ownership: zerodds_qos::OwnershipKind::Shared,
+            liveliness: zerodds_qos::LivelinessQosPolicy::default(),
+            deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            latency_budget: zerodds_qos::LatencyBudgetQosPolicy {
+                duration: zerodds_qos::Duration::from_millis(latency_ms),
+            },
+            destination_order: zerodds_qos::DestinationOrderQosPolicy { kind: dest },
+            presentation: Default::default(),
+            partition: alloc::vec![],
+            user_data: alloc::vec![],
+            topic_data: alloc::vec![],
+            group_data: alloc::vec![],
+            type_information: None,
+            data_representation: alloc::vec![2],
+            content_filter: None,
+            security_info: None,
+            service_instance_name: None,
+            related_entity_guid: None,
+            topic_aliases: None,
+            type_identifier: zerodds_types::TypeIdentifier::None,
+            unicast_locators: alloc::vec![Locator::udp_v4([127, 0, 0, 1], 7411)],
+            multicast_locators: alloc::vec![],
+        }
+    }
+
+    /// A remote writer (publication) with a non-empty unicast locator.
+    fn rxo_remote_pub(
+        dest: zerodds_qos::DestinationOrderKind,
+        latency_ms: i32,
+    ) -> zerodds_rtps::publication_data::PublicationBuiltinTopicData {
+        let prefix = GuidPrefix::from_bytes([0x9B; 12]);
+        zerodds_rtps::publication_data::PublicationBuiltinTopicData {
+            key: Guid::new(prefix, EntityId::user_writer_with_key([0x1A, 0x1B, 0x1C])),
+            participant_key: Guid::new(prefix, EntityId::PARTICIPANT),
+            topic_name: "RxOTopic".into(),
+            type_name: "RxOType".into(),
+            durability: zerodds_qos::DurabilityKind::Volatile,
+            reliability: zerodds_qos::ReliabilityQosPolicy {
+                kind: zerodds_qos::ReliabilityKind::BestEffort,
+                max_blocking_time: QosDuration::from_millis(100_i32),
+            },
+            ownership: zerodds_qos::OwnershipKind::Shared,
+            ownership_strength: 0,
+            liveliness: zerodds_qos::LivelinessQosPolicy::default(),
+            deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            latency_budget: zerodds_qos::LatencyBudgetQosPolicy {
+                duration: zerodds_qos::Duration::from_millis(latency_ms),
+            },
+            destination_order: zerodds_qos::DestinationOrderQosPolicy { kind: dest },
+            lifespan: zerodds_qos::LifespanQosPolicy::default(),
+            presentation: Default::default(),
+            partition: alloc::vec![],
+            user_data: alloc::vec![],
+            topic_data: alloc::vec![],
+            group_data: alloc::vec![],
+            type_information: None,
+            data_representation: alloc::vec![2],
+            security_info: None,
+            service_instance_name: None,
+            related_entity_guid: None,
+            topic_aliases: None,
+            type_identifier: zerodds_types::TypeIdentifier::None,
+            unicast_locators: alloc::vec![Locator::udp_v4([127, 0, 0, 1], 7412)],
+            multicast_locators: alloc::vec![],
+        }
+    }
+
+    /// A single-runtime harness on a UNIQUE domain per test — otherwise the
+    /// same-process in-process discovery cross-matches the "RxOTopic"
+    /// endpoints of the sibling RxO tests and inflates the matched count.
+    fn rxo_runtime(seed: u8) -> Arc<DcpsRuntime> {
+        DcpsRuntime::start(
+            i32::from(seed),
+            GuidPrefix::from_bytes([seed; 12]),
+            RuntimeConfig::default(),
+        )
+        .expect("start runtime")
+    }
+
+    // ---- offered side (writer matcher) — DESTINATION_ORDER ----
+
+    #[test]
+    fn rxo_offered_destination_order_incompatible_rejects_match() {
+        use zerodds_qos::DestinationOrderKind as DO;
+        let rt = rxo_runtime(0x40);
+        // Writer offers BY_RECEPTION, remote reader requests BY_SOURCE:
+        // offered(0) >= requested(1) is false → incompatible.
+        let w = rt
+            .register_user_writer(rxo_writer_cfg(DO::ByReceptionTimestamp, 0))
+            .expect("writer");
+        let sub = rxo_remote_sub(DO::BySourceTimestamp, 0);
+        let now = rt.start_instant.elapsed();
+        {
+            let mut sedp = rt.sedp.lock().expect("sedp");
+            sedp.cache_mut().insert_subscription(sub, now);
+        }
+        rt.match_local_writer_against_cache(w);
+
+        let status = rt.user_writer_offered_incompatible_qos(w);
+        assert_eq!(
+            rt.user_writer_matched_count(w),
+            0,
+            "incompatible DESTINATION_ORDER must not match"
+        );
+        assert!(status.total_count >= 1, "expected an incompatible-qos bump");
+        assert_eq!(
+            status.last_policy_id,
+            crate::psm_constants::qos_policy_id::DESTINATION_ORDER
+        );
+        rt.shutdown();
+    }
+
+    #[test]
+    fn rxo_offered_destination_order_compatible_matches() {
+        use zerodds_qos::DestinationOrderKind as DO;
+        let rt = rxo_runtime(0x41);
+        // Writer offers BY_SOURCE, remote reader requests BY_RECEPTION:
+        // offered(1) >= requested(0) → compatible.
+        let w = rt
+            .register_user_writer(rxo_writer_cfg(DO::BySourceTimestamp, 0))
+            .expect("writer");
+        let sub = rxo_remote_sub(DO::ByReceptionTimestamp, 0);
+        let now = rt.start_instant.elapsed();
+        {
+            let mut sedp = rt.sedp.lock().expect("sedp");
+            sedp.cache_mut().insert_subscription(sub, now);
+        }
+        rt.match_local_writer_against_cache(w);
+
+        assert_eq!(
+            rt.user_writer_matched_count(w),
+            1,
+            "compatible DESTINATION_ORDER must match"
+        );
+        assert_eq!(rt.user_writer_offered_incompatible_qos(w).total_count, 0);
+        rt.shutdown();
+    }
+
+    // ---- offered side (writer matcher) — LATENCY_BUDGET ----
+
+    #[test]
+    fn rxo_offered_latency_budget_incompatible_rejects_match() {
+        use zerodds_qos::DestinationOrderKind as DO;
+        let rt = rxo_runtime(0x42);
+        // Writer offers 100 ms, remote reader requests 10 ms:
+        // offered.duration(100) <= requested.duration(10) is false.
+        let w = rt
+            .register_user_writer(rxo_writer_cfg(DO::ByReceptionTimestamp, 100))
+            .expect("writer");
+        let sub = rxo_remote_sub(DO::ByReceptionTimestamp, 10);
+        let now = rt.start_instant.elapsed();
+        {
+            let mut sedp = rt.sedp.lock().expect("sedp");
+            sedp.cache_mut().insert_subscription(sub, now);
+        }
+        rt.match_local_writer_against_cache(w);
+
+        let status = rt.user_writer_offered_incompatible_qos(w);
+        assert_eq!(rt.user_writer_matched_count(w), 0);
+        assert!(status.total_count >= 1);
+        assert_eq!(
+            status.last_policy_id,
+            crate::psm_constants::qos_policy_id::LATENCY_BUDGET
+        );
+        rt.shutdown();
+    }
+
+    #[test]
+    fn rxo_offered_latency_budget_compatible_matches() {
+        use zerodds_qos::DestinationOrderKind as DO;
+        let rt = rxo_runtime(0x43);
+        // Writer offers 10 ms, remote reader requests 100 ms → compatible.
+        let w = rt
+            .register_user_writer(rxo_writer_cfg(DO::ByReceptionTimestamp, 10))
+            .expect("writer");
+        let sub = rxo_remote_sub(DO::ByReceptionTimestamp, 100);
+        let now = rt.start_instant.elapsed();
+        {
+            let mut sedp = rt.sedp.lock().expect("sedp");
+            sedp.cache_mut().insert_subscription(sub, now);
+        }
+        rt.match_local_writer_against_cache(w);
+
+        assert_eq!(rt.user_writer_matched_count(w), 1);
+        assert_eq!(rt.user_writer_offered_incompatible_qos(w).total_count, 0);
+        rt.shutdown();
+    }
+
+    // ---- requested side (reader matcher) — symmetric checks ----
+
+    #[test]
+    fn rxo_requested_destination_order_incompatible_rejects_match() {
+        use zerodds_qos::DestinationOrderKind as DO;
+        let rt = rxo_runtime(0x44);
+        // Reader requests BY_SOURCE, remote writer offers BY_RECEPTION:
+        // offered(0) >= requested(1) is false → incompatible.
+        let (r, _rx) = rt
+            .register_user_reader(rxo_reader_cfg(DO::BySourceTimestamp, 0))
+            .expect("reader");
+        let pubd = rxo_remote_pub(DO::ByReceptionTimestamp, 0);
+        let now = rt.start_instant.elapsed();
+        {
+            let mut sedp = rt.sedp.lock().expect("sedp");
+            sedp.cache_mut().insert_publication(pubd, now);
+        }
+        rt.match_local_reader_against_cache(r);
+
+        let status = rt.user_reader_requested_incompatible_qos(r);
+        assert_eq!(rt.user_reader_matched_count(r), 0);
+        assert!(status.total_count >= 1);
+        assert_eq!(
+            status.last_policy_id,
+            crate::psm_constants::qos_policy_id::DESTINATION_ORDER
+        );
+        rt.shutdown();
+    }
+
+    #[test]
+    fn rxo_requested_latency_budget_incompatible_rejects_match() {
+        use zerodds_qos::DestinationOrderKind as DO;
+        let rt = rxo_runtime(0x45);
+        // Reader requests 10 ms, remote writer offers 100 ms:
+        // offered.duration(100) <= requested.duration(10) is false.
+        let (r, _rx) = rt
+            .register_user_reader(rxo_reader_cfg(DO::ByReceptionTimestamp, 10))
+            .expect("reader");
+        let pubd = rxo_remote_pub(DO::ByReceptionTimestamp, 100);
+        let now = rt.start_instant.elapsed();
+        {
+            let mut sedp = rt.sedp.lock().expect("sedp");
+            sedp.cache_mut().insert_publication(pubd, now);
+        }
+        rt.match_local_reader_against_cache(r);
+
+        let status = rt.user_reader_requested_incompatible_qos(r);
+        assert_eq!(rt.user_reader_matched_count(r), 0);
+        assert!(status.total_count >= 1);
+        assert_eq!(
+            status.last_policy_id,
+            crate::psm_constants::qos_policy_id::LATENCY_BUDGET
+        );
+        rt.shutdown();
+    }
+
+    #[test]
+    fn rxo_requested_both_compatible_matches() {
+        use zerodds_qos::DestinationOrderKind as DO;
+        let rt = rxo_runtime(0x46);
+        // Reader requests BY_RECEPTION + 100 ms; writer offers BY_SOURCE +
+        // 10 ms → both compatible.
+        let (r, _rx) = rt
+            .register_user_reader(rxo_reader_cfg(DO::ByReceptionTimestamp, 100))
+            .expect("reader");
+        let pubd = rxo_remote_pub(DO::BySourceTimestamp, 10);
+        let now = rt.start_instant.elapsed();
+        {
+            let mut sedp = rt.sedp.lock().expect("sedp");
+            sedp.cache_mut().insert_publication(pubd, now);
+        }
+        rt.match_local_reader_against_cache(r);
+
+        assert_eq!(rt.user_reader_matched_count(r), 1);
+        assert_eq!(rt.user_reader_requested_incompatible_qos(r).total_count, 0);
         rt.shutdown();
     }
 }

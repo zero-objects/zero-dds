@@ -120,6 +120,21 @@ pub enum DecodeError {
         /// Member ID that is missing.
         member_id: u32,
     },
+    /// A bounded `string<N>` / `wstring<N>` / `sequence<T,N>` / `map<K,V,N>`
+    /// value decoded from the wire exceeds its IDL-declared bound `N`
+    /// (XTypes 1.3 §7.4.3 requires the bound to be enforced on both the
+    /// encode AND the decode side — regression #22). Distinct from
+    /// [`DecodeError::LengthExceeded`], which is a wire-framing violation
+    /// (announced length vs. remaining bytes in the buffer); this is a
+    /// semantic IDL-contract violation on an otherwise well-formed decode.
+    BoundExceeded {
+        /// Number of elements/characters/bytes actually decoded.
+        actual: usize,
+        /// The IDL-declared bound `N`.
+        bound: usize,
+        /// Description of which bounded type was violated.
+        message: &'static str,
+    },
 }
 
 impl fmt::Display for DecodeError {
@@ -158,6 +173,14 @@ impl fmt::Display for DecodeError {
             Self::MissingNonOptionalMember { member_id } => {
                 write!(f, "missing non-optional member id: {member_id}")
             }
+            Self::BoundExceeded {
+                actual,
+                bound,
+                message,
+            } => write!(
+                f,
+                "decoded {actual} exceeds the IDL bound {bound}: {message}"
+            ),
         }
     }
 }

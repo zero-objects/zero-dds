@@ -1,0 +1,15 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <StartupObject>ZeroDDS.Examples.ByteIdentity</StartupObject>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Zerodds.cs" />
+    <Compile Include="ByteIdentity.cs" />
+  </ItemGroup>
+</Project>

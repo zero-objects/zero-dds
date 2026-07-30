@@ -109,7 +109,9 @@ once per policy mismatch.
 ## Setting QoS in code
 
 ```rust
+use zerodds_dcps::runtime::UserWriterConfig;
 use zerodds_qos::*;
+use zerodds_types::{PrimitiveKind, TypeIdentifier};
 
 let cfg = UserWriterConfig {
     topic_name: "Telemetry".into(),
@@ -129,8 +131,16 @@ let cfg = UserWriterConfig {
     ownership: OwnershipKind::Exclusive,
     ownership_strength: 100,
     partition: vec!["sensor.*".into()],
+    user_data: vec![],
+    topic_data: vec![],
+    group_data: vec![],
+    type_identifier: TypeIdentifier::Primitive(PrimitiveKind::UInt8),
+    data_representation_offer: None,
 };
 ```
+
+> ▶ Runnable example: [`qos-policies-full-writer`](https://github.com/zero-objects/zero-dds-snippets/tree/master/qos-policies-full-writer)
+> (registers this exact config against a live `DcpsRuntime`).
 
 ## Reading further
 

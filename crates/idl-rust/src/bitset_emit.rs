@@ -34,6 +34,7 @@ pub fn emit_bitset(out: &mut String, b: &BitsetDecl) -> Result<()> {
     out.push_str(&format!("    storage: {storage_type},\n"));
     out.push_str("}\n\n");
 
+    out.push_str(crate::emitter::IMPL_LINT_ALLOW);
     out.push_str(&format!("impl {name} {{\n"));
     out.push_str(&format!(
         "    /// Constructs a `{name}` with all bits set to 0.\n"
@@ -75,6 +76,7 @@ pub fn emit_bitset(out: &mut String, b: &BitsetDecl) -> Result<()> {
     out.push_str("}\n\n");
 
     // CdrEncode/CdrDecode: simple storage round-trip.
+    out.push_str(crate::emitter::IMPL_LINT_ALLOW);
     out.push_str(&format!("impl zerodds_cdr::CdrEncode for {name} {{\n"));
     out.push_str("    fn encode(&self, w: &mut zerodds_cdr::BufferWriter) -> ::core::result::Result<(), zerodds_cdr::EncodeError> {\n");
     out.push_str(&format!(
@@ -83,6 +85,7 @@ pub fn emit_bitset(out: &mut String, b: &BitsetDecl) -> Result<()> {
     out.push_str("    }\n");
     out.push_str("}\n\n");
 
+    out.push_str(crate::emitter::IMPL_LINT_ALLOW);
     out.push_str(&format!("impl zerodds_cdr::CdrDecode for {name} {{\n"));
     out.push_str("    fn decode(r: &mut zerodds_cdr::BufferReader<'_>) -> ::core::result::Result<Self, zerodds_cdr::DecodeError> {\n");
     out.push_str(&format!(
@@ -191,6 +194,7 @@ pub fn emit_bitmask(out: &mut String, m: &BitmaskDecl) -> Result<()> {
     out.push_str("#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]\n");
     out.push_str(&format!("pub struct {name}({storage_type});\n\n"));
 
+    out.push_str(crate::emitter::IMPL_LINT_ALLOW);
     out.push_str(&format!("impl {name} {{\n"));
     for (idx, value) in m.values.iter().enumerate() {
         emit_bitmask_value(out, value, storage_type, idx);
@@ -232,6 +236,7 @@ pub fn emit_bitmask(out: &mut String, m: &BitmaskDecl) -> Result<()> {
     }
 
     // CdrEncode/CdrDecode
+    out.push_str(crate::emitter::IMPL_LINT_ALLOW);
     out.push_str(&format!("impl zerodds_cdr::CdrEncode for {name} {{\n"));
     out.push_str("    fn encode(&self, w: &mut zerodds_cdr::BufferWriter) -> ::core::result::Result<(), zerodds_cdr::EncodeError> {\n");
     out.push_str(&format!(
@@ -240,6 +245,7 @@ pub fn emit_bitmask(out: &mut String, m: &BitmaskDecl) -> Result<()> {
     out.push_str("    }\n");
     out.push_str("}\n\n");
 
+    out.push_str(crate::emitter::IMPL_LINT_ALLOW);
     out.push_str(&format!("impl zerodds_cdr::CdrDecode for {name} {{\n"));
     out.push_str("    fn decode(r: &mut zerodds_cdr::BufferReader<'_>) -> ::core::result::Result<Self, zerodds_cdr::DecodeError> {\n");
     out.push_str(&format!(

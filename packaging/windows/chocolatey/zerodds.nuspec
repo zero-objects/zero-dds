@@ -5,7 +5,7 @@
 <package xmlns="http://schemas.microsoft.com/packaging/2015/06/nuspec.xsd">
   <metadata>
     <id>zerodds</id>
-    <version>1.0.0-rc.1</version>
+    <version>1.0.0-rc.7</version>
     <packageSourceUrl>https://github.com/zero-objects/zerodds/tree/main/packaging/windows/chocolatey</packageSourceUrl>
     <owners>ZeroDDS Contributors</owners>
     <title>ZeroDDS</title>
@@ -28,7 +28,7 @@ ROS-2). The MSI behind this Chocolatey package registers Windows
 services for every enabled bridge. See zerodds-deployment-1.0.md §4
 for the full layout.
     ]]></description>
-    <releaseNotes>https://github.com/zero-objects/zerodds/releases/tag/v1.0.0-rc.1</releaseNotes>
+    <releaseNotes>https://github.com/zero-objects/zerodds/releases/tag/v1.0.0-rc.7</releaseNotes>
     <dependencies>
       <dependency id="vcredist140" version="14.40.0" />
     </dependencies>

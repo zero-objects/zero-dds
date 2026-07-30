@@ -1166,14 +1166,23 @@ fn walk_for_exposed_redefines(
     for d in defs {
         match d {
             Definition::Module(m) => {
-                if m.name.span.start as u32 > earliest_import_offset
-                    && exposed_only.contains(&m.name.text)
-                {
-                    errs.push(SpecValidationError::ImportSemanticViolation {
-                        violation: "module name is exposed via import but not imported; redefine or reopen is forbidden (effect 5)",
-                        target: m.name.text.clone(),
-                        span: m.name.span,
-                    });
+                // The AST builder folds a reopened module into a single
+                // `ModuleDef` (see `ast::builder::merge_reopened_modules`),
+                // so `m.name.span` only ever reflects the *first*
+                // occurrence. `reopen_spans` carries every occurrence's
+                // name-span — check each one, since a module first declared
+                // before the import and then reopened after it is exactly
+                // the effect-5 violation this pass exists to catch.
+                if exposed_only.contains(&m.name.text) {
+                    for occurrence in &m.reopen_spans {
+                        if occurrence.start as u32 > earliest_import_offset {
+                            errs.push(SpecValidationError::ImportSemanticViolation {
+                                violation: "module name is exposed via import but not imported; redefine or reopen is forbidden (effect 5)",
+                                target: m.name.text.clone(),
+                                span: *occurrence,
+                            });
+                        }
+                    }
                 }
                 walk_for_exposed_redefines(
                     &m.definitions,

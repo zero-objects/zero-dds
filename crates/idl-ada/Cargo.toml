@@ -1,0 +1,24 @@
+[package]
+name = "zerodds-idl-ada"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "OMG IDL4 → Ada code generator for ZeroDDS (byte-identical XCDR2 wire, native pure-Ada endpoint mapping)."
+repository = "https://github.com/zero-objects/zero-dds"
+homepage = "https://zerodds.org"
+documentation = "https://docs.rs/zerodds-idl-ada"
+readme = "README.md"
+keywords = ["dds", "idl", "ada", "codegen", "xtypes"]
+categories = ["development-tools", "network-programming"]
+publish = true
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+zerodds-idl = { version = "1.0.0-rc.7", path = "../idl" }

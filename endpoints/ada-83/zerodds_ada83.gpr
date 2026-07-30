@@ -1,0 +1,26 @@
+-- SPDX-License-Identifier: Apache-2.0
+-- Copyright 2026 ZeroDDS Contributors
+--
+--  pre-Object Ada 83 endpoint SDK (ADR 0013) — strict Ada 83 (-gnat83), the
+--  oldest-legacy variant. Additive to the modern procedural + Object-Ada SDKs.
+
+project Zerodds_Ada83 is
+
+   for Languages use ("Ada");
+   for Source_Dirs use ("src", "test");
+   for Object_Dir use "build";
+   for Exec_Dir use "build";
+   for Main use ("test_ada83_identity.adb", "test_ada83_async.adb",
+                 "test_ada83_reliable.adb", "example_ada83_reliable.adb");
+
+   package Compiler is
+      for Default_Switches ("Ada") use ("-gnat83", "-g", "-O2");
+      --  The reliability CORE + its unit test are strict Ada 83. The UDP sender
+      --  app is the driver half (GNAT.Sockets / Command_Line / Real_Time are not
+      --  Ada 83), so -- like endpoints/c builds reliable_udp_app.c with the
+      --  default gcc std, not the strict-C89 Makefile -- it is compiled with a
+      --  relaxed standard while the core it calls stays -gnat83.
+      for Switches ("example_ada83_reliable.adb") use ("-gnat2012", "-g", "-O2");
+   end Compiler;
+
+end Zerodds_Ada83;

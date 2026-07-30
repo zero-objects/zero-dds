@@ -1,0 +1,10 @@
+#include "common.idl"
+
+// Top-level IDL. Its generated output must be rebuilt when either robot.idl or
+// the transitively #included common.idl changes.
+struct Robot {
+    Common base;
+    string name;
+    double x;
+    double y;
+};

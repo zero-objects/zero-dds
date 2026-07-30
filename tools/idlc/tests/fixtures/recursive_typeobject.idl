@@ -1,0 +1,13 @@
+// P1 gate corpus: a recursive type (self-cycle via sequence<Node>) that the
+// minimal TypeObject lowering cannot express, next to an entirely independent,
+// well-formed type. Per-SCC isolation must keep `Flat`'s TypeObject while
+// dropping `Node`; `dump-typeobject` must report the drop and exit non-zero.
+struct Flat {
+    long x;
+    double y;
+};
+
+struct Node {
+    long id;
+    sequence<Node> kids;
+};

@@ -146,7 +146,7 @@ module conf {
     );
     // Sanity: enum became an int32 alias.
     assert!(
-        h.contains("typedef int32_t conf_Color_t;"),
+        h.contains("typedef int32_t conf_sColor_t;"),
         "enum alias missing"
     );
 
@@ -155,9 +155,9 @@ module conf {
 #include <assert.h>
 #include <string.h>
 int main(void) {
-    conf_Wide_t w; memset(&w, 0, sizeof(w));
+    conf_sWide_t w; memset(&w, 0, sizeof(w));
     w.id = 42;
-    w.c = conf_Color_GREEN;
+    w.c = conf_sColor_GREEN;
     w.battery = 3.5;
     w.origin.x = 7; w.origin.y = 8;
     w.grid[0]=10; w.grid[1]=20; w.grid[2]=30;
@@ -165,13 +165,13 @@ int main(void) {
     w.label = "hi";
 
     uint8_t buf[512]; size_t n=0;
-    assert(conf_Wide_encode(&w, buf, sizeof(buf), &n) == 0);
+    assert(conf_sWide_encode(&w, buf, sizeof(buf), &n) == 0);
     assert(n > 0);
 
-    conf_Wide_t back; memset(&back, 0, sizeof(back));
-    assert(conf_Wide_decode(buf, n, &back) == 0);
+    conf_sWide_t back; memset(&back, 0, sizeof(back));
+    assert(conf_sWide_decode(buf, n, &back) == 0);
     assert(back.id == 42);
-    assert(back.c == conf_Color_GREEN);
+    assert(back.c == conf_sColor_GREEN);
     assert(back.battery == 3.5);
     assert(back.origin.x == 7 && back.origin.y == 8);
     assert(back.grid[0]==10 && back.grid[1]==20 && back.grid[2]==30);
@@ -179,13 +179,13 @@ int main(void) {
     assert(strcmp(back.label, "hi") == 0);
 
     /* @optional absent: presence flag clears, value not read */
-    conf_Wide_t w2; memset(&w2, 0, sizeof(w2));
-    w2.id = 1; w2.c = conf_Color_RED; w2.battery = 1.0;
+    conf_sWide_t w2; memset(&w2, 0, sizeof(w2));
+    w2.id = 1; w2.c = conf_sColor_RED; w2.battery = 1.0;
     w2.maybe_present = 0; w2.label = "x";
     size_t n2 = 0;
-    assert(conf_Wide_encode(&w2, buf, sizeof(buf), &n2) == 0);
-    conf_Wide_t b2; memset(&b2, 0, sizeof(b2));
-    assert(conf_Wide_decode(buf, n2, &b2) == 0);
+    assert(conf_sWide_encode(&w2, buf, sizeof(buf), &n2) == 0);
+    conf_sWide_t b2; memset(&b2, 0, sizeof(b2));
+    assert(conf_sWide_decode(buf, n2, &b2) == 0);
     assert(b2.maybe_present == 0);
     assert(b2.id == 1);
     return 0;
@@ -199,6 +199,57 @@ int main(void) {
 // ===========================================================================
 // C-Foundation #43 — additional feature roundtrips (each gcc-compiled + run).
 // ===========================================================================
+
+/// Broad-audit P0-5 (#2): a `@non_serialized` member keeps its C struct field
+/// but is written to NO wire form and read from none. Byte-proof (real gcc
+/// compile + run): the C struct has the `secret` field, yet the encoded length
+/// is only `a`+`b` and its value is independent of `secret`; decode leaves the
+/// field untouched (memset 0). Also asserts the @final wire byte layout.
+#[test]
+#[ignore = "requires gcc in PATH"]
+fn non_serialized_absent_from_wire_p0_5_roundtrip() {
+    if !gcc_available() {
+        return;
+    }
+    let h =
+        gen_c("module m { @final struct S { long a; @non_serialized long secret; long b; }; };");
+    // The C struct still declares the field (in-memory ABI slot kept).
+    assert!(
+        h.contains("int32_t secret;"),
+        "the @non_serialized field must stay in the C struct:\n{h}"
+    );
+    let main = r#"
+#include "gen.h"
+#include <assert.h>
+#include <string.h>
+int main(void){
+    m_sS_t s; memset(&s,0,sizeof s);
+    s.a = 1; s.secret = 999; s.b = 2;
+    uint8_t b[256]; size_t n=0;
+    assert(m_sS_encode(&s,b,sizeof b,&n)==0);
+    /* @final: a(4) + b(4) = 8 bytes; secret is NOT on the wire. */
+    assert(n==8);
+    assert(*(int32_t*)&b[0]==1);
+    assert(*(int32_t*)&b[4]==2);
+
+    /* Changing secret must not change a single wire byte. */
+    m_sS_t s2; memset(&s2,0,sizeof s2);
+    s2.a = 1; s2.secret = -424242; s2.b = 2;
+    uint8_t b2[256]; size_t n2=0;
+    assert(m_sS_encode(&s2,b2,sizeof b2,&n2)==0);
+    assert(n2==n && memcmp(b,b2,n)==0);
+
+    /* Decode leaves secret at its default (0); a and b round-trip. */
+    m_sS_t back; memset(&back,0,sizeof back);
+    assert(m_sS_decode(b,n,&back)==0);
+    assert(back.a==1 && back.b==2 && back.secret==0);
+    return 0;
+}
+"#;
+    if let Err(e) = compile_and_run(&h, main) {
+        panic!("@non_serialized C roundtrip failed:\n{e}");
+    }
+}
 
 /// const-array-bound: `const long N = 4; long v[N];` — the bound resolves to
 /// its literal (4) just like every other backend (#43).
@@ -222,13 +273,13 @@ fn const_array_bound_roundtrip() {
 #include "gen.h"
 #include <assert.h>
 int main(void){
-    m_A_t a; memset(&a,0,sizeof a);
+    m_sA_t a; memset(&a,0,sizeof a);
     for(int i=0;i<4;i++) a.v[i]=i*7;
     a.w[0]=1.5; a.w[1]=2.5;
     uint8_t b[256]; size_t n=0;
-    assert(m_A_encode(&a,b,sizeof b,&n)==0);
-    m_A_t back; memset(&back,0,sizeof back);
-    assert(m_A_decode(b,n,&back)==0);
+    assert(m_sA_encode(&a,b,sizeof b,&n)==0);
+    m_sA_t back; memset(&back,0,sizeof back);
+    assert(m_sA_decode(b,n,&back)==0);
     for(int i=0;i<4;i++) assert(back.v[i]==i*7);
     assert(back.w[0]==1.5 && back.w[1]==2.5);
     return 0;
@@ -292,9 +343,11 @@ int main(void){
     S_t s; memset(&s,0,sizeof s);
     P_t pv[2]; pv[0].x=1; pv[0].y=2; pv[1].x=3; pv[1].y=4;
     s.pts.len=2; s.pts.elems=pv;
-    /* mat = [[5,6],[7]] */
+    /* mat = [[5,6],[7]] — the inner sequence<long> has a generated shared type
+       (zd_nested_seq_int32_t); C makes each anonymous `struct {…}` a distinct,
+       incompatible type, so the element must use that named type. */
     int32_t r0[2]={5,6}; int32_t r1[1]={7};
-    struct { uint32_t len; int32_t* elems; } rows[2];
+    zd_nested_seq_int32_t rows[2];
     rows[0].len=2; rows[0].elems=r0;
     rows[1].len=1; rows[1].elems=r1;
     s.mat.len=2; s.mat.elems=rows;
@@ -389,14 +442,14 @@ fn union_enum_discriminator_member_roundtrip() {
 #include "gen.h"
 #include <assert.h>
 int main(void){
-    c_Telemetry_t t; memset(&t,0,sizeof t);
-    t.seq=7; t.r._d=c_Mode_ON; t.r._u.level=3.5;
+    c_sTelemetry_t t; memset(&t,0,sizeof t);
+    t.seq=7; t.r._d=c_sMode_ON; t.r._u.level=3.5;
     uint8_t b[256]; size_t n=0;
-    assert(c_Telemetry_encode(&t,b,sizeof b,&n)==0);
-    c_Telemetry_t back; memset(&back,0,sizeof back);
-    assert(c_Telemetry_decode(b,n,&back)==0);
+    assert(c_sTelemetry_encode(&t,b,sizeof b,&n)==0);
+    c_sTelemetry_t back; memset(&back,0,sizeof back);
+    assert(c_sTelemetry_decode(b,n,&back)==0);
     assert(back.seq==7);
-    assert(back.r._d==c_Mode_ON);
+    assert(back.r._d==c_sMode_ON);
     assert(back.r._u.level==3.5);
     return 0;
 }
@@ -605,7 +658,7 @@ fn mutable_struct_aggregate_members_roundtrip() {
 #include <assert.h>
 #include <string.h>
 int main(void){
-    m_Mut_t t; memset(&t,0,sizeof t);
+    m_sMut_t t; memset(&t,0,sizeof t);
     t.seq=42;
     int32_t nv[3]={10,20,30}; t.nums.len=3; t.nums.elems=nv;
     t.label="hello";
@@ -614,9 +667,9 @@ int main(void){
     t.counters.len=2; t.counters.keys=k; t.counters.vals=v;
     uint16_t wl[3]={'O','K',0}; t.wlabel=wl;
     uint8_t b[512]; size_t n=0;
-    assert(m_Mut_encode(&t,b,sizeof b,&n)==0);
-    m_Mut_t back; memset(&back,0,sizeof back);
-    assert(m_Mut_decode(b,n,&back)==0);
+    assert(m_sMut_encode(&t,b,sizeof b,&n)==0);
+    m_sMut_t back; memset(&back,0,sizeof back);
+    assert(m_sMut_decode(b,n,&back)==0);
     assert(back.seq==42);
     assert(back.nums.len==3 && back.nums.elems[0]==10 && back.nums.elems[2]==30);
     assert(strcmp(back.label,"hello")==0);
@@ -658,24 +711,24 @@ fn optional_inside_nested_struct_roundtrips() {
 #include <string.h>
 int main(void){
     /* present optionals */
-    m_Outer_t o; memset(&o,0,sizeof o);
+    m_sOuter_t o; memset(&o,0,sizeof o);
     o.id=5; o.inner.a=1;
     o.inner.maybe=99; o.inner.maybe_present=1;
     o.inner.note="hi"; o.inner.note_present=1;
     uint8_t b[256]; size_t n=0;
-    assert(m_Outer_encode(&o,b,sizeof b,&n)==0);
-    m_Outer_t back; memset(&back,0,sizeof back);
-    assert(m_Outer_decode(b,n,&back)==0);
+    assert(m_sOuter_encode(&o,b,sizeof b,&n)==0);
+    m_sOuter_t back; memset(&back,0,sizeof back);
+    assert(m_sOuter_decode(b,n,&back)==0);
     assert(back.id==5 && back.inner.a==1);
     assert(back.inner.maybe_present==1 && back.inner.maybe==99);
     assert(back.inner.note_present==1 && strcmp(back.inner.note,"hi")==0);
     /* absent optionals stay absent, not zero-valued */
-    m_Outer_t o2; memset(&o2,0,sizeof o2);
+    m_sOuter_t o2; memset(&o2,0,sizeof o2);
     o2.id=6; o2.inner.a=2;
     o2.inner.maybe_present=0; o2.inner.note_present=0;
-    size_t n2=0; assert(m_Outer_encode(&o2,b,sizeof b,&n2)==0);
-    m_Outer_t b2; memset(&b2,0,sizeof b2);
-    assert(m_Outer_decode(b,n2,&b2)==0);
+    size_t n2=0; assert(m_sOuter_encode(&o2,b,sizeof b,&n2)==0);
+    m_sOuter_t b2; memset(&b2,0,sizeof b2);
+    assert(m_sOuter_decode(b,n2,&b2)==0);
     assert(b2.inner.maybe_present==0 && b2.inner.note_present==0);
     assert(b2.inner.note==NULL);
     return 0;
@@ -772,24 +825,26 @@ fn deep_nesting_roundtrip() {
 #include <assert.h>
 #include <string.h>
 int main(void){
-    m_Deep_t d; memset(&d,0,sizeof d);
+    m_sDeep_t d; memset(&d,0,sizeof d);
     d.chain.mid.inner.v=42; d.chain.mid.tag=7; d.chain.top=1;
-    /* grid = [[{1},{2}],[{3}]] */
-    m_Cell_t row0[2]; row0[0].x=1; row0[0]; row0[1].x=2;
-    m_Cell_t row1[1]; row1[0].x=3;
-    struct { uint32_t len; m_Cell_t* elems; } rows[2];
+    /* grid = [[{1},{2}],[{3}]] — the inner sequence<Cell> has a generated shared
+       type (zd_nested_seq_m_sCell_t); each anonymous `struct {…}` is a distinct,
+       incompatible C type, so the element must use that named type. */
+    m_sCell_t row0[2]; row0[0].x=1; row0[1].x=2;
+    m_sCell_t row1[1]; row1[0].x=3;
+    zd_nested_seq_m_sCell_t rows[2];
     rows[0].len=2; rows[0].elems=row0;
     rows[1].len=1; rows[1].elems=row1;
     d.grid.len=2; d.grid.elems=rows;
     /* table = {"k": WithSeq{[10,20]}} */
     int32_t inner_data[2]={10,20};
-    m_WithSeq_t wv[1]; wv[0].data.len=2; wv[0].data.elems=inner_data;
+    m_sWithSeq_t wv[1]; wv[0].data.len=2; wv[0].data.elems=inner_data;
     char* tk[1]={"k"};
     d.table.len=1; d.table.keys=tk; d.table.vals=wv;
     uint8_t b[1024]; size_t n=0;
-    assert(m_Deep_encode(&d,b,sizeof b,&n)==0);
-    m_Deep_t back; memset(&back,0,sizeof back);
-    assert(m_Deep_decode(b,n,&back)==0);
+    assert(m_sDeep_encode(&d,b,sizeof b,&n)==0);
+    m_sDeep_t back; memset(&back,0,sizeof back);
+    assert(m_sDeep_decode(b,n,&back)==0);
     assert(back.chain.mid.inner.v==42 && back.chain.mid.tag==7 && back.chain.top==1);
     assert(back.grid.len==2);
     assert(back.grid.elems[0].len==2 && back.grid.elems[0].elems[1].x==2);
@@ -832,7 +887,7 @@ fn arrays_and_extreme_primitives_roundtrip() {
 #include <string.h>
 #include <stdint.h>
 int main(void){
-    m_A_t a; memset(&a,0,sizeof a);
+    m_sA_t a; memset(&a,0,sizeof a);
     for(int i=0;i<3;i++){ a.pts[i].x=i*10+1; a.pts[i].y=i*10+2; }
     a.grid[0][0]=1; a.grid[0][1]=2; a.grid[1][0]=3; a.grid[1][1]=4;
     a.i8mm[0]=INT8_MIN; a.i8mm[1]=INT8_MAX;
@@ -840,9 +895,9 @@ int main(void){
     a.u32max=UINT32_MAX;
     a.zero_neg[0]=0; a.zero_neg[1]=-1;
     uint8_t b[512]; size_t n=0;
-    assert(m_A_encode(&a,b,sizeof b,&n)==0);
-    m_A_t back; memset(&back,0,sizeof back);
-    assert(m_A_decode(b,n,&back)==0);
+    assert(m_sA_encode(&a,b,sizeof b,&n)==0);
+    m_sA_t back; memset(&back,0,sizeof back);
+    assert(m_sA_decode(b,n,&back)==0);
     for(int i=0;i<3;i++){ assert(back.pts[i].x==i*10+1 && back.pts[i].y==i*10+2); }
     assert(back.grid[0][0]==1 && back.grid[0][1]==2 && back.grid[1][0]==3 && back.grid[1][1]==4);
     assert(back.i8mm[0]==INT8_MIN && back.i8mm[1]==INT8_MAX);
@@ -884,38 +939,38 @@ fn optional_aggregate_and_keyed_roundtrip() {
 #include <string.h>
 int main(void){
     /* present aggregates */
-    m_Opt_t o; memset(&o,0,sizeof o);
+    m_sOpt_t o; memset(&o,0,sizeof o);
     o.id=1;
     int32_t sv[2]={5,6}; o.oseq.len=2; o.oseq.elems=sv; o.oseq_present=1;
     o.ostruct.a=77; o.ostruct_present=1;
     o.ostr="here"; o.ostr_present=1;
     uint8_t b[256]; size_t n=0;
-    assert(m_Opt_encode(&o,b,sizeof b,&n)==0);
-    m_Opt_t back; memset(&back,0,sizeof back);
-    assert(m_Opt_decode(b,n,&back)==0);
+    assert(m_sOpt_encode(&o,b,sizeof b,&n)==0);
+    m_sOpt_t back; memset(&back,0,sizeof back);
+    assert(m_sOpt_decode(b,n,&back)==0);
     assert(back.oseq_present==1 && back.oseq.len==2 && back.oseq.elems[1]==6);
     assert(back.ostruct_present==1 && back.ostruct.a==77);
     assert(back.ostr_present==1 && strcmp(back.ostr,"here")==0);
     /* absent aggregates stay absent */
-    m_Opt_t o2; memset(&o2,0,sizeof o2);
+    m_sOpt_t o2; memset(&o2,0,sizeof o2);
     o2.id=2; o2.oseq_present=0; o2.ostruct_present=0; o2.ostr_present=0;
-    size_t n2=0; assert(m_Opt_encode(&o2,b,sizeof b,&n2)==0);
-    m_Opt_t b2; memset(&b2,0,sizeof b2);
-    assert(m_Opt_decode(b,n2,&b2)==0);
+    size_t n2=0; assert(m_sOpt_encode(&o2,b,sizeof b,&n2)==0);
+    m_sOpt_t b2; memset(&b2,0,sizeof b2);
+    assert(m_sOpt_decode(b,n2,&b2)==0);
     assert(b2.oseq_present==0 && b2.ostruct_present==0 && b2.ostr_present==0);
     assert(b2.ostr==NULL);
 
     /* keyed: same key, different payload → key hash identical */
-    m_Keyed_t k1; memset(&k1,0,sizeof k1); k1.k=99; k1.payload=1;
-    m_Keyed_t k2; memset(&k2,0,sizeof k2); k2.k=99; k2.payload=2;
+    m_sKeyed_t k1; memset(&k1,0,sizeof k1); k1.k=99; k1.payload=1;
+    m_sKeyed_t k2; memset(&k2,0,sizeof k2); k2.k=99; k2.payload=2;
     uint8_t h1[16], h2[16];
-    assert(m_Keyed_key_hash(&k1,h1)==0);
-    assert(m_Keyed_key_hash(&k2,h2)==0);
+    assert(m_sKeyed_key_hash(&k1,h1)==0);
+    assert(m_sKeyed_key_hash(&k2,h2)==0);
     assert(memcmp(h1,h2,16)==0);  /* key identical → hash identical */
     /* different key → different hash */
-    m_Keyed_t k3; memset(&k3,0,sizeof k3); k3.k=100; k3.payload=1;
+    m_sKeyed_t k3; memset(&k3,0,sizeof k3); k3.k=100; k3.payload=1;
     uint8_t h3[16];
-    assert(m_Keyed_key_hash(&k3,h3)==0);
+    assert(m_sKeyed_key_hash(&k3,h3)==0);
     assert(memcmp(h1,h3,16)!=0);
     return 0;
 }
@@ -949,23 +1004,23 @@ fn union_default_and_as_map_value_roundtrip() {
 #include <string.h>
 int main(void){
     /* default arm directly */
-    m_U_t u; memset(&u,0,sizeof u); u._d=999; u._u.s="dflt";
+    m_sU_t u; memset(&u,0,sizeof u); u._d=999; u._u.s="dflt";
     uint8_t b[256]; size_t n=0;
-    assert(m_U_encode(&u,b,sizeof b,&n)==0);
-    m_U_t bu; memset(&bu,0,sizeof bu);
-    assert(m_U_decode(b,n,&bu)==0);
+    assert(m_sU_encode(&u,b,sizeof b,&n)==0);
+    m_sU_t bu; memset(&bu,0,sizeof bu);
+    assert(m_sU_decode(b,n,&bu)==0);
     assert(bu._d==999 && strcmp(bu._u.s,"dflt")==0);
 
     /* union as a map value */
-    m_Holder_t hld; memset(&hld,0,sizeof hld);
-    m_U_t vals[2];
-    memset(&vals[0],0,sizeof(m_U_t)); vals[0]._d=1; vals[0]._u.i=123;
-    memset(&vals[1],0,sizeof(m_U_t)); vals[1]._d=999; vals[1]._u.s="x";
+    m_sHolder_t hld; memset(&hld,0,sizeof hld);
+    m_sU_t vals[2];
+    memset(&vals[0],0,sizeof(m_sU_t)); vals[0]._d=1; vals[0]._u.i=123;
+    memset(&vals[1],0,sizeof(m_sU_t)); vals[1]._d=999; vals[1]._u.s="x";
     char* keys[2]={"a","b"};
     hld.by_name.len=2; hld.by_name.keys=keys; hld.by_name.vals=vals;
-    size_t n2=0; assert(m_Holder_encode(&hld,b,sizeof b,&n2)==0);
-    m_Holder_t hback; memset(&hback,0,sizeof hback);
-    assert(m_Holder_decode(b,n2,&hback)==0);
+    size_t n2=0; assert(m_sHolder_encode(&hld,b,sizeof b,&n2)==0);
+    m_sHolder_t hback; memset(&hback,0,sizeof hback);
+    assert(m_sHolder_decode(b,n2,&hback)==0);
     assert(hback.by_name.len==2);
     assert(strcmp(hback.by_name.keys[0],"a")==0 && hback.by_name.vals[0]._d==1 && hback.by_name.vals[0]._u.i==123);
     assert(strcmp(hback.by_name.keys[1],"b")==0 && hback.by_name.vals[1]._d==999 && strcmp(hback.by_name.vals[1]._u.s,"x")==0);
@@ -1071,14 +1126,14 @@ fn typedef_alias_chain_and_array_roundtrip() {
 #include "gen.h"
 #include <assert.h>
 int main(void){
-    conf_UsesTypedefs_t u; memset(&u,0,sizeof u);
+    conf_sUsesTypedefs_t u; memset(&u,0,sizeof u);
     u.battery=3.5; u.charger=7.25;
     int32_t sv[3]={11,22,33}; u.samples.len=3; u.samples.elems=sv;
     for(int i=0;i<3;i++) for(int j=0;j<3;j++) u.transform[i][j]=i*3+j;
     uint8_t b[512]; size_t n=0;
-    assert(conf_UsesTypedefs_encode(&u,b,sizeof b,&n)==0);
-    conf_UsesTypedefs_t back; memset(&back,0,sizeof back);
-    assert(conf_UsesTypedefs_decode(b,n,&back)==0);
+    assert(conf_sUsesTypedefs_encode(&u,b,sizeof b,&n)==0);
+    conf_sUsesTypedefs_t back; memset(&back,0,sizeof back);
+    assert(conf_sUsesTypedefs_decode(b,n,&back)==0);
     assert(back.battery==3.5 && back.charger==7.25);
     assert(back.samples.len==3 && back.samples.elems[2]==33);
     for(int i=0;i<3;i++) for(int j=0;j<3;j++) assert(back.transform[i][j]==i*3+j);
@@ -1108,40 +1163,40 @@ fn bitset_bitmask_roundtrip() {
     );
     // Bitmask → uint32 holder + flag constants; bitset → uint8 holder + macros.
     assert!(
-        h.contains("typedef uint32_t conf_Permissions_t;"),
+        h.contains("typedef uint32_t conf_sPermissions_t;"),
         "bitmask holder:\n{h}"
     );
     assert!(
-        h.contains("conf_Permissions_WRITE = (1u << 1)"),
+        h.contains("conf_sPermissions_WRITE = (1u << 1)"),
         "bitmask flag bit:\n{h}"
     );
     assert!(
-        h.contains("typedef uint8_t conf_Flags_t;"),
+        h.contains("typedef uint8_t conf_sFlags_t;"),
         "bitset holder (3+1+4=8 → u8):\n{h}"
     );
     assert!(
-        h.contains("conf_Flags_priority_SHIFT = 4"),
+        h.contains("conf_sFlags_priority_SHIFT = 4"),
         "bitset field offset:\n{h}"
     );
     let main = r#"
 #include "gen.h"
 #include <assert.h>
 int main(void){
-    conf_UsesBits_t u; memset(&u,0,sizeof u);
-    u.perms = conf_Permissions_READ | conf_Permissions_EXECUTE;
+    conf_sUsesBits_t u; memset(&u,0,sizeof u);
+    u.perms = conf_sPermissions_READ | conf_sPermissions_EXECUTE;
     /* pack the bitset fields: kind=5, active=1, priority=9 */
     u.flags = 0;
-    u.flags |= (5u & conf_Flags_kind_MASK)     << conf_Flags_kind_SHIFT;
-    u.flags |= (1u & conf_Flags_active_MASK)   << conf_Flags_active_SHIFT;
-    u.flags |= (9u & conf_Flags_priority_MASK) << conf_Flags_priority_SHIFT;
+    u.flags |= (5u & conf_sFlags_kind_MASK)     << conf_sFlags_kind_SHIFT;
+    u.flags |= (1u & conf_sFlags_active_MASK)   << conf_sFlags_active_SHIFT;
+    u.flags |= (9u & conf_sFlags_priority_MASK) << conf_sFlags_priority_SHIFT;
     uint8_t b[64]; size_t n=0;
-    assert(conf_UsesBits_encode(&u,b,sizeof b,&n)==0);
-    conf_UsesBits_t back; memset(&back,0,sizeof back);
-    assert(conf_UsesBits_decode(b,n,&back)==0);
-    assert(back.perms == (conf_Permissions_READ | conf_Permissions_EXECUTE));
-    assert(((back.flags >> conf_Flags_kind_SHIFT)     & conf_Flags_kind_MASK)     == 5);
-    assert(((back.flags >> conf_Flags_active_SHIFT)   & conf_Flags_active_MASK)   == 1);
-    assert(((back.flags >> conf_Flags_priority_SHIFT) & conf_Flags_priority_MASK) == 9);
+    assert(conf_sUsesBits_encode(&u,b,sizeof b,&n)==0);
+    conf_sUsesBits_t back; memset(&back,0,sizeof back);
+    assert(conf_sUsesBits_decode(b,n,&back)==0);
+    assert(back.perms == (conf_sPermissions_READ | conf_sPermissions_EXECUTE));
+    assert(((back.flags >> conf_sFlags_kind_SHIFT)     & conf_sFlags_kind_MASK)     == 5);
+    assert(((back.flags >> conf_sFlags_active_SHIFT)   & conf_sFlags_active_MASK)   == 1);
+    assert(((back.flags >> conf_sFlags_priority_SHIFT) & conf_sFlags_priority_MASK) == 9);
     return 0;
 }
 "#;
@@ -1167,11 +1222,11 @@ fn recursive_tree_through_sequence_roundtrip() {
     // The self-reference is behind a pointer (struct tag form), and spliced via
     // a runtime body helper — never inline-recursed.
     assert!(
-        h.contains("struct conf_TreeNode_s* elems;"),
+        h.contains("struct conf_sTreeNode_s* elems;"),
         "recursive seq element must be a pointer-to-tag:\n{h}"
     );
     assert!(
-        h.contains("conf_TreeNode_write_body(") && h.contains("conf_TreeNode_read_body("),
+        h.contains("conf_sTreeNode_write_body(") && h.contains("conf_sTreeNode_read_body("),
         "recursive body helper missing:\n{h}"
     );
     let main = r#"
@@ -1179,24 +1234,24 @@ fn recursive_tree_through_sequence_roundtrip() {
 #include <assert.h>
 int main(void){
     /* tree: root(1) -> [ a(2) -> [ c(4) ], b(3) ] */
-    conf_TreeNode_t c; memset(&c,0,sizeof c); c.value=4;
-    conf_TreeNode_t a; memset(&a,0,sizeof a); a.value=2;
+    conf_sTreeNode_t c; memset(&c,0,sizeof c); c.value=4;
+    conf_sTreeNode_t a; memset(&a,0,sizeof a); a.value=2;
     a.children.len=1; a.children.elems=&c;
-    conf_TreeNode_t bnode; memset(&bnode,0,sizeof bnode); bnode.value=3;
-    conf_TreeNode_t kids[2]; kids[0]=a; kids[1]=bnode;
-    conf_TreeNode_t root; memset(&root,0,sizeof root); root.value=1;
+    conf_sTreeNode_t bnode; memset(&bnode,0,sizeof bnode); bnode.value=3;
+    conf_sTreeNode_t kids[2]; kids[0]=a; kids[1]=bnode;
+    conf_sTreeNode_t root; memset(&root,0,sizeof root); root.value=1;
     root.children.len=2; root.children.elems=kids;
 
     uint8_t buf[512]; size_t n=0;
-    assert(conf_TreeNode_encode(&root,buf,sizeof buf,&n)==0);
-    conf_TreeNode_t back; memset(&back,0,sizeof back);
-    assert(conf_TreeNode_decode(buf,n,&back)==0);
+    assert(conf_sTreeNode_encode(&root,buf,sizeof buf,&n)==0);
+    conf_sTreeNode_t back; memset(&back,0,sizeof back);
+    assert(conf_sTreeNode_decode(buf,n,&back)==0);
     assert(back.value==1 && back.children.len==2);
     assert(back.children.elems[0].value==2);
     assert(back.children.elems[0].children.len==1);
     assert(back.children.elems[0].children.elems[0].value==4);
     assert(back.children.elems[1].value==3 && back.children.elems[1].children.len==0);
-    conf_TreeNode_sample_free(&back);
+    conf_sTreeNode_sample_free(&back);
     return 0;
 }
 "#;
@@ -1248,11 +1303,11 @@ fn forward_declared_struct_and_union_roundtrip() {
     // The union embeds the (recursive) struct by value; the struct's typedef must
     // precede the union typedef (topological order) and be complete.
     assert!(
-        h.contains("typedef struct conf_Node_s"),
+        h.contains("typedef struct conf_sNode_s"),
         "node typedef missing:\n{h}"
     );
     assert!(
-        h.contains("typedef struct conf_Variant_s"),
+        h.contains("typedef struct conf_sVariant_s"),
         "variant typedef missing:\n{h}"
     );
     let main = r#"
@@ -1260,29 +1315,29 @@ fn forward_declared_struct_and_union_roundtrip() {
 #include <assert.h>
 int main(void){
     /* Node self-ref: head(10) -> [ tail(20) ] */
-    conf_Node_t tail; memset(&tail,0,sizeof tail); tail.value=20;
-    conf_Node_t head; memset(&head,0,sizeof head); head.value=10;
+    conf_sNode_t tail; memset(&tail,0,sizeof tail); tail.value=20;
+    conf_sNode_t head; memset(&head,0,sizeof head); head.value=10;
     head.next.len=1; head.next.elems=&tail;
     uint8_t b[256]; size_t n=0;
-    assert(conf_Node_encode(&head,b,sizeof b,&n)==0);
-    conf_Node_t nback; memset(&nback,0,sizeof nback);
-    assert(conf_Node_decode(b,n,&nback)==0);
+    assert(conf_sNode_encode(&head,b,sizeof b,&n)==0);
+    conf_sNode_t nback; memset(&nback,0,sizeof nback);
+    assert(conf_sNode_decode(b,n,&nback)==0);
     assert(nback.value==10 && nback.next.len==1 && nback.next.elems[0].value==20);
-    conf_Node_sample_free(&nback);
+    conf_sNode_sample_free(&nback);
 
     /* Variant arm 1 embeds a Node by value */
-    conf_Variant_t v; memset(&v,0,sizeof v);
+    conf_sVariant_t v; memset(&v,0,sizeof v);
     v._d=1; v._u.n.value=99; v._u.n.next.len=0; v._u.n.next.elems=NULL;
-    size_t n2=0; assert(conf_Variant_encode(&v,b,sizeof b,&n2)==0);
-    conf_Variant_t vback; memset(&vback,0,sizeof vback);
-    assert(conf_Variant_decode(b,n2,&vback)==0);
+    size_t n2=0; assert(conf_sVariant_encode(&v,b,sizeof b,&n2)==0);
+    conf_sVariant_t vback; memset(&vback,0,sizeof vback);
+    assert(conf_sVariant_decode(b,n2,&vback)==0);
     assert(vback._d==1 && vback._u.n.value==99 && vback._u.n.next.len==0);
 
     /* Variant arm 0 (plain long) */
-    conf_Variant_t v0; memset(&v0,0,sizeof v0); v0._d=0; v0._u.a=42;
-    size_t n3=0; assert(conf_Variant_encode(&v0,b,sizeof b,&n3)==0);
-    conf_Variant_t v0back; memset(&v0back,0,sizeof v0back);
-    assert(conf_Variant_decode(b,n3,&v0back)==0);
+    conf_sVariant_t v0; memset(&v0,0,sizeof v0); v0._d=0; v0._u.a=42;
+    size_t n3=0; assert(conf_sVariant_encode(&v0,b,sizeof b,&n3)==0);
+    conf_sVariant_t v0back; memset(&v0back,0,sizeof v0back);
+    assert(conf_sVariant_decode(b,n3,&v0back)==0);
     assert(v0back._d==0 && v0back._u.a==42);
     return 0;
 }
@@ -1326,20 +1381,20 @@ fn fixed_member_roundtrips_through_gcc() {
 #include <string.h>
 int main(void) {
     /* @appendable Order: DHEADER(7) + id(4) + bcd(3); fixed<4,0> 1234 = 01 23 4c */
-    shop_Order_t o; memset(&o, 0, sizeof(o));
+    shop_sOrder_t o; memset(&o, 0, sizeof(o));
     o.id = 7; o.qty.bcd[0]=0x01; o.qty.bcd[1]=0x23; o.qty.bcd[2]=0x4c;
     unsigned char buf[64]; size_t n = 0;
-    assert(shop_Order_encode(&o, buf, sizeof(buf), &n) == 0);
+    assert(shop_sOrder_encode(&o, buf, sizeof(buf), &n) == 0);
     unsigned char want_o[] = {0x07,0,0,0, 0x07,0,0,0, 0x01,0x23,0x4c};
     assert(n == sizeof(want_o) && memcmp(buf, want_o, n) == 0);
-    shop_Order_t ob; memset(&ob, 0, sizeof(ob));
-    assert(shop_Order_decode(buf, n, &ob) == 0);
+    shop_sOrder_t ob; memset(&ob, 0, sizeof(ob));
+    assert(shop_sOrder_decode(buf, n, &ob) == 0);
     assert(ob.id == 7 && ob.qty.bcd[0]==0x01 && ob.qty.bcd[1]==0x23 && ob.qty.bcd[2]==0x4c);
 
     /* @final Price: sku(4) + bcd(3); fixed<5,2> 123.45 = 12 34 5c (no DHEADER) */
-    shop_Price_t p; memset(&p, 0, sizeof(p));
+    shop_sPrice_t p; memset(&p, 0, sizeof(p));
     p.sku = 9; p.amount.bcd[0]=0x12; p.amount.bcd[1]=0x34; p.amount.bcd[2]=0x5c;
-    assert(shop_Price_encode(&p, buf, sizeof(buf), &n) == 0);
+    assert(shop_sPrice_encode(&p, buf, sizeof(buf), &n) == 0);
     unsigned char want_p[] = {0x09,0,0,0, 0x12,0x34,0x5c};
     assert(n == sizeof(want_p) && memcmp(buf, want_p, n) == 0);
     return 0;

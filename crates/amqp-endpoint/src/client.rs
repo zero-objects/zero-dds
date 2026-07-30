@@ -31,6 +31,18 @@ const AMQP_HEADER: [u8; 8] = [b'A', b'M', b'Q', b'P', 0x00, 0x01, 0x00, 0x00];
 /// SASL protocol header (Spec §5.2.1): protocol-id `0x03` = SASL, version 1.0.0.
 const SASL_HEADER: [u8; 8] = [b'A', b'M', b'Q', b'P', 0x03, 0x01, 0x00, 0x00];
 
+/// Hard cap on a single AMQP 1.0 frame (16 MiB).
+///
+/// TCP is a stream transport: the peer-announced frame `size` (a `u32`,
+/// up to ~4 GiB, Spec §2.3.1) cannot be checked against "bytes
+/// remaining" the way an in-memory buffer decode can — there is no
+/// bound until this cap is applied. This client does not negotiate
+/// `max-frame-size` via the `open` performative, so the cap is a fixed
+/// ceiling rather than a broker-negotiated one. Mirrors the
+/// established `crates/transport-tcp/src/framing.rs::MAX_FRAME_SIZE`
+/// DoS-cap pattern: reject before allocating.
+const MAX_AMQP_FRAME_SIZE: usize = 16 * 1024 * 1024;
+
 /// An established AMQP 1.0 client connection to a broker.
 pub struct AmqpClient {
     stream: TcpStream,
@@ -253,6 +265,12 @@ impl AmqpClient {
         if h.size < 8 {
             return Err(proto("frame size < 8"));
         }
+        if h.size as usize > MAX_AMQP_FRAME_SIZE {
+            return Err(proto_owned(format!(
+                "AMQP frame size {} exceeds MAX_AMQP_FRAME_SIZE ({MAX_AMQP_FRAME_SIZE})",
+                h.size
+            )));
+        }
         // Skip any extended header (doff words beyond the fixed 8 bytes).
         let ext = (h.doff as usize) * 4 - 8;
         if ext > 0 {
@@ -305,4 +323,72 @@ fn proto_owned(msg: String) -> io::Error {
 }
 fn map_codec(e: zerodds_amqp_bridge::TypeError) -> io::Error {
     proto_owned(format!("amqp codec: {e:?}"))
+}
+
+#[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
+mod tests {
+    use super::*;
+    use std::net::TcpListener;
+
+    // -------------------------------------------------------------
+    // Buffer-cap hardening — a peer-announced frame `size` above
+    // MAX_AMQP_FRAME_SIZE must be rejected cleanly (no multi-GB
+    // allocation attempt) right after the 8-byte header is read,
+    // before the extended-header/body is read/allocated. Mirrors the
+    // established `crates/transport-tcp/src/framing.rs::MAX_FRAME_SIZE`
+    // guard. `AmqpClient` is built directly (bypassing the full SASL +
+    // `open`/`begin` handshake `connect_plain()` drives), since this
+    // crate has no mock-broker test harness — `read_frame` is
+    // exercised in isolation instead.
+    // -------------------------------------------------------------
+
+    #[test]
+    fn read_frame_rejects_oversized_size_cleanly() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("local_addr");
+        let handle = std::thread::spawn(move || {
+            let mut stream = TcpStream::connect(addr).expect("connect");
+            // Header only: size far beyond MAX_AMQP_FRAME_SIZE, doff=2
+            // (no extended header). No body bytes follow — read_frame
+            // must reject before ever attempting to read/allocate it.
+            let h = FrameHeader::new_amqp(u32::MAX, 2, 0);
+            stream
+                .write_all(&encode_frame_header(h))
+                .expect("write header");
+        });
+        let (accepted, _) = listener.accept().expect("accept");
+        let mut client = AmqpClient {
+            stream: accepted,
+            handle: 0,
+            delivery_id: 0,
+        };
+        let res = client.read_frame(FrameType::Amqp);
+        assert!(res.is_err(), "expected clean rejection, got {res:?}");
+        handle.join().expect("writer thread");
+    }
+
+    #[test]
+    fn read_frame_within_bound_still_round_trips() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind");
+        let addr = listener.local_addr().expect("local_addr");
+        let body = [1u8, 2, 3, 4];
+        let handle = std::thread::spawn(move || {
+            let mut stream = TcpStream::connect(addr).expect("connect");
+            let h = FrameHeader::new_amqp(8 + body.len() as u32, 2, 0);
+            stream
+                .write_all(&encode_frame_header(h))
+                .expect("write header");
+            stream.write_all(&body).expect("write body");
+        });
+        let (accepted, _) = listener.accept().expect("accept");
+        let mut client = AmqpClient {
+            stream: accepted,
+            handle: 0,
+            delivery_id: 0,
+        };
+        let got = client.read_frame(FrameType::Amqp).expect("read_frame");
+        assert_eq!(got, body);
+        handle.join().expect("writer thread");
+    }
 }

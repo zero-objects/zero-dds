@@ -55,6 +55,8 @@ struct topic_type_support<::Base> {
     static const char* type_name() { return "Base"; }
     static constexpr bool is_keyed() { return false; }
     static constexpr ::dds::topic::core::policy::DataRepresentationKind extensibility() { return ::dds::topic::core::policy::DataRepresentationKind::APPENDABLE; }
+    static const uint8_t* type_object();
+    static uintptr_t type_object_len();
     static std::vector<uint8_t> encode(const ::Base& zd_v);
     static std::vector<uint8_t> encode(const ::Base& zd_v, ::dds::topic::xcdr2::XcdrVersion zd_repr);
     static std::vector<uint8_t> encode_be(const ::Base& zd_v);
@@ -68,6 +70,8 @@ struct topic_type_support<::Child> {
     static const char* type_name() { return "Child"; }
     static constexpr bool is_keyed() { return false; }
     static constexpr ::dds::topic::core::policy::DataRepresentationKind extensibility() { return ::dds::topic::core::policy::DataRepresentationKind::APPENDABLE; }
+    static const uint8_t* type_object();
+    static uintptr_t type_object_len();
     static std::vector<uint8_t> encode(const ::Child& zd_v);
     static std::vector<uint8_t> encode(const ::Child& zd_v, ::dds::topic::xcdr2::XcdrVersion zd_repr);
     static std::vector<uint8_t> encode_be(const ::Child& zd_v);
@@ -76,6 +80,18 @@ struct topic_type_support<::Child> {
     static std::array<uint8_t, 16> key_hash(const ::Child& zd_v);
 };
 
+inline const uint8_t* topic_type_support<::Base>::type_object() {
+    static const uint8_t ZD_TYPE_OBJECT[] = {
+        0xf2, 0x51, 0x02, 0x00, 0x0d, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+        0x05, 0x00, 0x00, 0x00, 0x42, 0x61, 0x73, 0x65, 0x00, 0x00, 0x00, 0x00, 
+        0x21, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x19, 0x00, 0x00, 0x00, 
+        0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x04, 0x00, 0x0b, 0x00, 0x00, 0x00, 
+        0x62, 0x61, 0x73, 0x65, 0x5f, 0x66, 0x69, 0x65, 0x6c, 0x64, 0x00, 0x00, 
+        0x00, 
+    };
+    return ZD_TYPE_OBJECT;
+}
+inline uintptr_t topic_type_support<::Base>::type_object_len() { return 61; }
 inline std::vector<uint8_t> topic_type_support<::Base>::encode(const ::Base& zd_v) {
         return encode(zd_v, ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
     }
@@ -132,6 +148,18 @@ inline std::array<uint8_t, 16> topic_type_support<::Base>::key_hash(const ::Base
         return std::array<uint8_t, 16>{{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0}};
     }
 
+inline const uint8_t* topic_type_support<::Child>::type_object() {
+    static const uint8_t ZD_TYPE_OBJECT[] = {
+        0xf2, 0x51, 0x02, 0x00, 0x0e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+        0x06, 0x00, 0x00, 0x00, 0x43, 0x68, 0x69, 0x6c, 0x64, 0x00, 0x00, 0x00, 
+        0x22, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x1a, 0x00, 0x00, 0x00, 
+        0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x04, 0x00, 0x0c, 0x00, 0x00, 0x00, 
+        0x63, 0x68, 0x69, 0x6c, 0x64, 0x5f, 0x66, 0x69, 0x65, 0x6c, 0x64, 0x00, 
+        0x00, 0x00, 
+    };
+    return ZD_TYPE_OBJECT;
+}
+inline uintptr_t topic_type_support<::Child>::type_object_len() { return 62; }
 inline std::vector<uint8_t> topic_type_support<::Child>::encode(const ::Child& zd_v) {
         return encode(zd_v, ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
     }
@@ -145,6 +173,7 @@ inline std::vector<uint8_t> topic_type_support<::Child>::encode(const ::Child& z
         if (!zd_x1) { zd_dh = ::dds::topic::xcdr2::dheader_begin(zd_out); }
         const size_t zd_origin = zd_out.size();
         (void)zd_origin;
+        ::dds::topic::xcdr2::write_le_origin<int32_t>(zd_out, zd_origin, zd_v.base_field(), zd_max_align);
         ::dds::topic::xcdr2::write_le_origin<int32_t>(zd_out, zd_origin, zd_v.child_field(), zd_max_align);
         if (!zd_x1) { ::dds::topic::xcdr2::dheader_end(zd_out, zd_dh, false); }
         return zd_out;
@@ -162,6 +191,7 @@ inline std::vector<uint8_t> topic_type_support<::Child>::encode_be(const ::Child
         if (!zd_x1) { zd_dh = ::dds::topic::xcdr2::dheader_begin(zd_out); }
         const size_t zd_origin = zd_out.size();
         (void)zd_origin;
+        ::dds::topic::xcdr2::write_be_origin<int32_t>(zd_out, zd_origin, zd_v.base_field(), zd_max_align);
         ::dds::topic::xcdr2::write_be_origin<int32_t>(zd_out, zd_origin, zd_v.child_field(), zd_max_align);
         if (!zd_x1) { ::dds::topic::xcdr2::dheader_end(zd_out, zd_dh, true); }
         return zd_out;
@@ -179,6 +209,7 @@ inline ::Child topic_type_support<::Child>::decode(const uint8_t* zd_buf, size_t
         }
         const size_t zd_origin = zd_pos;
         (void)zd_end;
+        zd_v.base_field(::dds::topic::xcdr2::read_le_origin<int32_t>(zd_buf, zd_pos, zd_len, zd_origin, zd_max_align, zd_be));
         zd_v.child_field(::dds::topic::xcdr2::read_le_origin<int32_t>(zd_buf, zd_pos, zd_len, zd_origin, zd_max_align, zd_be));
         if (!zd_x1 && zd_pos < zd_end) zd_pos = zd_end;
         return zd_v;
