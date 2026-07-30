@@ -77,7 +77,72 @@ pub enum BitfieldValidationError {
         /// Source location.
         span: Span,
     },
+    /// §7.4.13.4.3 — two bitfields occupy overlapping bit ranges. A bitset
+    /// packs its bitfields consecutively; an explicit `@position(N)` may pin a
+    /// field's starting bit. A pinned field that overlaps the range already
+    /// taken by a preceding field (explicit or implicitly advanced) is a
+    /// collision — the two fields would share storage bits.
+    BitfieldPositionCollision {
+        /// Bitset name.
+        bitset: String,
+        /// Starting bit of the colliding field.
+        position: u32,
+        /// Width of the colliding field.
+        width: u32,
+        /// Source location.
+        span: Span,
+    },
 }
+
+impl core::fmt::Display for BitfieldValidationError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::PositionOutOfRange {
+                bitmask,
+                position,
+                bit_bound,
+                ..
+            } => write!(
+                f,
+                "bitmask '{bitmask}': @position({position}) is out of range (bit_bound {bit_bound})"
+            ),
+            Self::DuplicatePosition {
+                bitmask, position, ..
+            } => write!(f, "bitmask '{bitmask}': duplicate @position({position})"),
+            Self::BitBoundTooLarge { name, value, .. } => {
+                write!(f, "'{name}': @bit_bound({value}) exceeds the maximum of 64")
+            }
+            Self::BitsetTotalTooLarge { name, total, .. } => write!(
+                f,
+                "bitset '{name}': total bitfield width {total} exceeds 64"
+            ),
+            Self::BitfieldWidthTooLarge { bitset, width, .. } => {
+                write!(f, "bitset '{bitset}': bitfield width {width} exceeds 64")
+            }
+            Self::BitfieldExceedsStorageCap {
+                bitset,
+                width,
+                cap,
+                dest_type,
+                ..
+            } => write!(
+                f,
+                "bitset '{bitset}': bitfield width {width} exceeds the {dest_type} storage cap of {cap}"
+            ),
+            Self::BitfieldPositionCollision {
+                bitset,
+                position,
+                width,
+                ..
+            } => write!(
+                f,
+                "bitset '{bitset}': bitfield at @position({position}) (width {width}) collides with a preceding bitfield's bit range"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for BitfieldValidationError {}
 
 /// Top level: bitset+bitmask validation per specification.
 #[must_use]
@@ -165,6 +230,11 @@ pub fn validate_bitmask(b: &BitmaskDecl, errs: &mut Vec<BitfieldValidationError>
 /// Bitset validation.
 pub fn validate_bitset(b: &BitsetDecl, errs: &mut Vec<BitfieldValidationError>) {
     let mut total: u32 = 0;
+    // Consecutive-packing cursor and the bit ranges already claimed, so an
+    // explicit `@position(N)` that overlaps a preceding field is caught
+    // (§7.4.13.4.3). Ranges are `[start, end)`.
+    let mut cursor: u32 = 0;
+    let mut occupied: Vec<(u32, u32)> = Vec::new();
     for bf in &b.bitfields {
         let width = if let ConstExpr::Literal(l) = &bf.spec.width {
             l.raw.parse::<u32>().unwrap_or(0)
@@ -191,6 +261,25 @@ pub fn validate_bitset(b: &BitsetDecl, errs: &mut Vec<BitfieldValidationError>) 
                 });
             }
         }
+        // §7.4.13.4.3: a bitfield starts at its explicit `@position(N)` or, in
+        // its absence, at the running cursor. Overlap with any range already
+        // claimed by a preceding field is a collision.
+        let start = extract_annotation(&bf.annotations, "position")
+            .and_then(|a| extract_int_arg(&a.params))
+            .unwrap_or(cursor);
+        let end = start.saturating_add(width);
+        if width > 0 {
+            if occupied.iter().any(|&(os, oe)| start < oe && os < end) {
+                errs.push(BitfieldValidationError::BitfieldPositionCollision {
+                    bitset: b.name.text.clone(),
+                    position: start,
+                    width,
+                    span: bf.span,
+                });
+            }
+            occupied.push((start, end));
+        }
+        cursor = end;
         total = total.saturating_add(width);
     }
     if total > 64 {
@@ -341,5 +430,47 @@ mod tests {
             )),
             "got {errs:?}"
         );
+    }
+
+    // §7.4.13.4.3 — bitfield @position collisions.
+
+    #[test]
+    fn sequential_bitfields_do_not_collide() {
+        let ast = parse_to_ast("bitset BS { bitfield<3> a; bitfield<5> b; bitfield<8> c; };");
+        let errs = validate_bitfields(&ast);
+        assert!(errs.is_empty(), "got {errs:?}");
+    }
+
+    #[test]
+    fn explicit_positions_overlap_is_collision() {
+        let ast =
+            parse_to_ast("bitset BS { @position(0) bitfield<4> a; @position(2) bitfield<4> b; };");
+        let errs = validate_bitfields(&ast);
+        assert!(
+            errs.iter()
+                .any(|e| matches!(e, BitfieldValidationError::BitfieldPositionCollision { .. })),
+            "got {errs:?}"
+        );
+    }
+
+    #[test]
+    fn explicit_position_colliding_with_implicit_cursor_is_collision() {
+        // `a` implicitly takes [0,4); `@position(2)` pins `b` into [2,6) — overlap.
+        let ast = parse_to_ast("bitset BS { bitfield<4> a; @position(2) bitfield<4> b; };");
+        let errs = validate_bitfields(&ast);
+        assert!(
+            errs.iter()
+                .any(|e| matches!(e, BitfieldValidationError::BitfieldPositionCollision { .. })),
+            "got {errs:?}"
+        );
+    }
+
+    #[test]
+    fn explicit_positions_without_overlap_pass() {
+        // Adjacent, non-overlapping explicit positions.
+        let ast =
+            parse_to_ast("bitset BS { @position(0) bitfield<2> a; @position(2) bitfield<2> b; };");
+        let errs = validate_bitfields(&ast);
+        assert!(errs.is_empty(), "got {errs:?}");
     }
 }

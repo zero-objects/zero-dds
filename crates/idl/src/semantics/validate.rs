@@ -19,12 +19,14 @@
 //! XTypes TypeObject lowering, so `--no-typeobject` cannot bypass the gate.
 
 use crate::ast::{
-    Annotation, ComponentDcl, ConstrTypeDecl, Definition, EventDcl, Export, HomeDcl, InterfaceDcl,
-    ScopedName, Specification, StructDcl, SwitchTypeSpec, TypeDecl, TypeSpec, UnionDcl,
-    ValueElement,
+    Annotation, AnnotationParams, AttrDecl, ComponentDcl, ConstExpr, ConstrTypeDecl, Definition,
+    EventDcl, Export, HomeDcl, IntegerType, InterfaceDcl, InterfaceDef, LiteralKind, Member,
+    OpDecl, ParamDecl, PrimitiveType, ScopedName, Specification, StateMember, StructDcl,
+    SwitchTypeSpec, TypeDecl, TypeSpec, UnaryOp, UnionDcl, ValueDef, ValueElement,
 };
 use crate::errors::Span;
 use crate::semantics::annotations::{LowerError, lower_single};
+use crate::semantics::bitfield_validation::{BitfieldValidationError, validate_bitfields};
 use crate::semantics::resolver::{Resolver, ResolverError};
 use crate::semantics::spec_validators::{SpecValidationError, validate_all_with_pragmas};
 
@@ -62,19 +64,41 @@ pub struct SemanticErrors {
     /// annotation with a wrong-typed/invalid argument. Previously swallowed
     /// as `Ok(None)`/`unwrap_or(0)` so codegen ran with a default value.
     pub annotations: Vec<AnnotationError>,
+    /// Bitset/bitmask constraint findings (§7.4.13.4.3): out-of-range /
+    /// duplicate / colliding `@position`, bit_bound over 64, bitfield width
+    /// over the dest_type cap, bitset total over 64. Previously the
+    /// [`validate_bitfields`] pass existed but was never wired into the gate,
+    /// so a bitset with two bitfields on colliding bit ranges reached the
+    /// backends verbatim.
+    pub bitfields: Vec<BitfieldValidationError>,
+    /// `@default(value)` type-conversion findings: a `@default` literal whose
+    /// type does not match the member type (a string default on an integer
+    /// member, an out-of-range integer literal, a boolean default on a numeric
+    /// member, ...). Previously `@default` lowered to an opaque string
+    /// (`BuiltinAnnotation::Default(String)`) with no type check, so a
+    /// mismatched literal was silently mis-converted downstream.
+    pub defaults: Vec<DefaultValueError>,
 }
 
 impl SemanticErrors {
     /// `true` when no error was recorded.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.resolver.is_empty() && self.spec.is_empty() && self.annotations.is_empty()
+        self.resolver.is_empty()
+            && self.spec.is_empty()
+            && self.annotations.is_empty()
+            && self.bitfields.is_empty()
+            && self.defaults.is_empty()
     }
 
     /// Total number of recorded errors.
     #[must_use]
     pub fn len(&self) -> usize {
-        self.resolver.len() + self.spec.len() + self.annotations.len()
+        self.resolver.len()
+            + self.spec.len()
+            + self.annotations.len()
+            + self.bitfields.len()
+            + self.defaults.len()
     }
 
     /// One human-readable message per error, resolver findings first.
@@ -85,6 +109,8 @@ impl SemanticErrors {
             .map(ToString::to_string)
             .chain(self.spec.iter().map(ToString::to_string))
             .chain(self.annotations.iter().map(ToString::to_string))
+            .chain(self.bitfields.iter().map(ToString::to_string))
+            .chain(self.defaults.iter().map(ToString::to_string))
             .collect()
     }
 }
@@ -131,13 +157,25 @@ pub fn resolve_and_validate(
     let mut annotation_errors = Vec::new();
     collect_annotation_errors(spec, &mut annotation_errors);
 
-    if resolver_errors.is_empty() && spec_errors.is_empty() && annotation_errors.is_empty() {
+    let bitfield_errors = validate_bitfields(spec);
+
+    let mut default_errors = Vec::new();
+    collect_default_type_errors(spec, &mut default_errors);
+
+    if resolver_errors.is_empty()
+        && spec_errors.is_empty()
+        && annotation_errors.is_empty()
+        && bitfield_errors.is_empty()
+        && default_errors.is_empty()
+    {
         Ok(())
     } else {
         Err(SemanticErrors {
             resolver: resolver_errors,
             spec: spec_errors,
             annotations: annotation_errors,
+            bitfields: bitfield_errors,
+            defaults: default_errors,
         })
     }
 }
@@ -335,8 +373,99 @@ fn walk_defs(
                     check_type_spec(&member.type_spec, path, resolver, out);
                 }
             }
+            Definition::Interface(InterfaceDcl::Def(i)) => {
+                walk_interface_refs(i, path, resolver, out);
+            }
+            Definition::ValueDef(v) => {
+                walk_value_refs(v, path, resolver, out);
+            }
+            Definition::ValueBox(v) => {
+                // The value-box inner type must be a declared type; the
+                // separate spec validator only checks it is not *itself* a
+                // value type, not that it resolves at all.
+                check_type_spec(&v.type_spec, path, resolver, out);
+            }
             _ => {}
         }
+    }
+}
+
+/// Walks an interface body: base references, operation return + parameter
+/// types and attribute types. Nested type/exception exports are walked so a
+/// struct declared inside the interface is covered too. This is the
+/// valuetype/interface half of the reference surface that the data-type walk
+/// (`walk_type_decl`) does not reach.
+fn walk_interface_refs(
+    i: &InterfaceDef,
+    path: &[String],
+    resolver: &Resolver,
+    out: &mut Vec<ResolverError>,
+) {
+    for base in &i.bases {
+        check_scoped(base, path, resolver, out);
+    }
+    for ex in &i.exports {
+        walk_export_refs(ex, path, resolver, out);
+    }
+}
+
+/// Walks a valuetype body: base references, state-member types and the
+/// operation/attribute exports. `supports`/`raises` clauses are intentionally
+/// left to the resolver's own definition-side checks.
+fn walk_value_refs(
+    v: &ValueDef,
+    path: &[String],
+    resolver: &Resolver,
+    out: &mut Vec<ResolverError>,
+) {
+    if let Some(inh) = &v.inheritance {
+        for base in &inh.bases {
+            check_scoped(base, path, resolver, out);
+        }
+    }
+    for el in &v.elements {
+        match el {
+            ValueElement::State(StateMember { type_spec, .. }) => {
+                check_type_spec(type_spec, path, resolver, out);
+            }
+            ValueElement::Export(ex) => walk_export_refs(ex, path, resolver, out),
+            ValueElement::Init(_) => {}
+        }
+    }
+}
+
+/// Walks a single interface/valuetype export for unresolved type references:
+/// operation return + parameter types, attribute types, nested type decls and
+/// nested exception members.
+fn walk_export_refs(
+    ex: &Export,
+    path: &[String],
+    resolver: &Resolver,
+    out: &mut Vec<ResolverError>,
+) {
+    match ex {
+        Export::Op(OpDecl {
+            return_type,
+            params,
+            ..
+        }) => {
+            if let Some(rt) = return_type {
+                check_type_spec(rt, path, resolver, out);
+            }
+            for ParamDecl { type_spec, .. } in params {
+                check_type_spec(type_spec, path, resolver, out);
+            }
+        }
+        Export::Attr(AttrDecl { type_spec, .. }) => {
+            check_type_spec(type_spec, path, resolver, out);
+        }
+        Export::Type(t) => walk_type_decl(t, path, resolver, out),
+        Export::Except(e) => {
+            for member in &e.members {
+                check_type_spec(&member.type_spec, path, resolver, out);
+            }
+        }
+        Export::Const(_) => {}
     }
 }
 
@@ -415,6 +544,359 @@ fn is_builtin_pseudo(sn: &ScopedName) -> bool {
     )
 }
 
+// ============================================================================
+// @default type-conversion pass
+// ============================================================================
+
+/// How a `@default(value)` literal is incompatible with the member type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DefaultMismatch {
+    /// The literal is of the wrong kind for the member type (e.g. a string
+    /// default on an integer member).
+    TypeMismatch {
+        /// Human-readable name of the expected value category.
+        expected: &'static str,
+        /// Human-readable name of the literal that was found.
+        found: &'static str,
+    },
+    /// The literal is of the right kind but does not fit the member type's
+    /// value range (e.g. `@default(70000)` on a `short`).
+    OutOfRange {
+        /// The offending literal, as written.
+        value: String,
+        /// Name of the member's integer type.
+        type_name: &'static str,
+    },
+}
+
+/// A `@default(value)` whose literal does not match the annotated member type.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DefaultValueError {
+    /// Name of the member carrying the `@default`.
+    pub member: String,
+    /// Why the default is rejected.
+    pub mismatch: DefaultMismatch,
+    /// Source location of the `@default` annotation.
+    pub span: Span,
+}
+
+impl core::fmt::Display for DefaultValueError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match &self.mismatch {
+            DefaultMismatch::TypeMismatch { expected, found } => write!(
+                f,
+                "@default on member '{}' has a {found} value but the member type expects a {expected}",
+                self.member
+            ),
+            DefaultMismatch::OutOfRange { value, type_name } => write!(
+                f,
+                "@default({value}) on member '{}' is out of range for {type_name}",
+                self.member
+            ),
+        }
+    }
+}
+
+impl std::error::Error for DefaultValueError {}
+
+/// Walks every member-bearing construct (struct, union case, exception,
+/// valuetype state member) and type-checks each `@default(value)` against the
+/// member type. A `@default` whose literal type does not match the member type
+/// — a string default on an integer member, an out-of-range integer literal, a
+/// boolean default on a numeric member — is reported. `@default` values given
+/// as a named constant / enum literal (`ConstExpr::Scoped`) or as an arithmetic
+/// expression are left alone; only a concrete literal (optionally sign-prefixed)
+/// is checked, so a legitimate `@default(TRUE)` / `@default(SomeEnumerator)`
+/// still passes.
+///
+/// zerodds-lint: recursion-depth 64 (AST walk; bounded by IDL nesting)
+fn collect_default_type_errors(spec: &Specification, out: &mut Vec<DefaultValueError>) {
+    walk_default_defs(&spec.definitions, out);
+}
+
+/// zerodds-lint: recursion-depth 64 (module hierarchy; bounded by IDL nesting)
+fn walk_default_defs(defs: &[Definition], out: &mut Vec<DefaultValueError>) {
+    for d in defs {
+        match d {
+            Definition::Module(m) => walk_default_defs(&m.definitions, out),
+            Definition::TemplateModule(t) => walk_default_defs(&t.definitions, out),
+            Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Struct(StructDcl::Def(s)))) => {
+                for m in &s.members {
+                    check_member_default(m, out);
+                }
+            }
+            Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Union(UnionDcl::Def(u)))) => {
+                for c in &u.cases {
+                    check_default_on(
+                        &c.element.type_spec,
+                        &c.element.annotations,
+                        &declarator_name(&c.element.declarator),
+                        out,
+                    );
+                }
+            }
+            Definition::Except(e) => {
+                for m in &e.members {
+                    check_member_default(m, out);
+                }
+            }
+            Definition::ValueDef(v) => {
+                for el in &v.elements {
+                    if let ValueElement::State(sm) = el {
+                        for decl in &sm.declarators {
+                            check_default_on(
+                                &sm.type_spec,
+                                &sm.annotations,
+                                decl.name().text.as_str(),
+                                out,
+                            );
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn declarator_name(d: &crate::ast::Declarator) -> String {
+    d.name().text.clone()
+}
+
+/// Type-checks a struct/exception member's `@default` against its type, once
+/// per declarator so the diagnostic names the right field.
+fn check_member_default(m: &Member, out: &mut Vec<DefaultValueError>) {
+    for decl in &m.declarators {
+        check_default_on(&m.type_spec, &m.annotations, decl.name().text.as_str(), out);
+    }
+}
+
+/// The single-value literal argument of a `@default(...)` annotation in `anns`,
+/// if exactly one such annotation with a single positional argument is present.
+fn default_arg(anns: &[Annotation]) -> Option<&ConstExpr> {
+    anns.iter().find_map(|a| {
+        let is_default = a.name.parts.last().map(|p| p.text.as_str()) == Some("default");
+        match (&a.params, is_default) {
+            (AnnotationParams::Single(e), true) => Some(e),
+            _ => None,
+        }
+    })
+}
+
+/// Classifies a `@default` argument expression as a checkable literal:
+/// returns `(literal_kind, raw_text, negated)`. A sign-prefixed numeric literal
+/// (`-5`, `+3.0`) is unwrapped and its sign recorded. Named constants / enum
+/// literals (`ConstExpr::Scoped`) and arithmetic expressions yield `None` — they
+/// are not literal type mismatches and are left for later stages.
+fn classify_default(expr: &ConstExpr) -> Option<(LiteralKind, &str, bool)> {
+    match expr {
+        ConstExpr::Literal(l) => Some((l.kind, l.raw.as_str(), false)),
+        ConstExpr::Unary { op, operand, .. } => match (op, operand.as_ref()) {
+            (UnaryOp::Minus, ConstExpr::Literal(l)) => Some((l.kind, l.raw.as_str(), true)),
+            (UnaryOp::Plus, ConstExpr::Literal(l)) => Some((l.kind, l.raw.as_str(), false)),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+fn literal_kind_name(kind: LiteralKind) -> &'static str {
+    match kind {
+        LiteralKind::Integer => "integer",
+        LiteralKind::Floating => "floating-point",
+        LiteralKind::Fixed => "fixed-point",
+        LiteralKind::Char => "character",
+        LiteralKind::WideChar => "wide character",
+        LiteralKind::String => "string",
+        LiteralKind::WideString => "wide string",
+        LiteralKind::Boolean => "boolean",
+    }
+}
+
+/// Type-checks one `@default` literal against a member `type_spec`.
+fn check_default_on(
+    type_spec: &TypeSpec,
+    anns: &[Annotation],
+    member: &str,
+    out: &mut Vec<DefaultValueError>,
+) {
+    let Some(expr) = default_arg(anns) else {
+        return;
+    };
+    let Some((kind, raw, negated)) = classify_default(expr) else {
+        return;
+    };
+    let span = expr.span();
+    let mismatch = |expected: &'static str| DefaultValueError {
+        member: member.to_string(),
+        mismatch: DefaultMismatch::TypeMismatch {
+            expected,
+            found: literal_kind_name(kind),
+        },
+        span,
+    };
+    match type_spec {
+        TypeSpec::Primitive(PrimitiveType::Integer(it)) => {
+            if kind == LiteralKind::Integer {
+                if let Some(err) = int_range_error(*it, raw, negated, member, span) {
+                    out.push(err);
+                }
+            } else {
+                out.push(mismatch("integer"));
+            }
+        }
+        TypeSpec::Primitive(PrimitiveType::Octet) => {
+            if kind == LiteralKind::Integer {
+                if let Some(err) = octet_range_error(raw, negated, member, span) {
+                    out.push(err);
+                }
+            } else {
+                out.push(mismatch("octet"));
+            }
+        }
+        TypeSpec::Primitive(PrimitiveType::Floating(_)) => {
+            if !matches!(
+                kind,
+                LiteralKind::Integer | LiteralKind::Floating | LiteralKind::Fixed
+            ) {
+                out.push(mismatch("floating-point number"));
+            }
+        }
+        TypeSpec::Primitive(PrimitiveType::Boolean) => {
+            if kind != LiteralKind::Boolean {
+                out.push(mismatch("boolean"));
+            }
+        }
+        TypeSpec::Primitive(PrimitiveType::Char) => {
+            if kind != LiteralKind::Char {
+                out.push(mismatch("character"));
+            }
+        }
+        TypeSpec::Primitive(PrimitiveType::WideChar) => {
+            if !matches!(kind, LiteralKind::Char | LiteralKind::WideChar) {
+                out.push(mismatch("character"));
+            }
+        }
+        TypeSpec::String(s) if !s.wide => {
+            if kind != LiteralKind::String {
+                out.push(mismatch("string"));
+            }
+        }
+        TypeSpec::String(_) => {
+            if !matches!(kind, LiteralKind::String | LiteralKind::WideString) {
+                out.push(mismatch("wide string"));
+            }
+        }
+        // Scoped/sequence/map/fixed/any members: a `@default` here would carry
+        // a named value or is not a scalar literal target — out of scope for
+        // the literal type check.
+        _ => {}
+    }
+}
+
+/// Integer value bounds `[min, max]` for one `IntegerType`.
+fn int_bounds(it: IntegerType) -> (i128, i128, &'static str) {
+    match it {
+        IntegerType::Int8 => (-128, 127, "int8"),
+        IntegerType::UInt8 => (0, 255, "uint8"),
+        IntegerType::Short | IntegerType::Int16 => (-32_768, 32_767, "short/int16"),
+        IntegerType::UShort | IntegerType::UInt16 => (0, 65_535, "unsigned short/uint16"),
+        IntegerType::Long | IntegerType::Int32 => {
+            (i128::from(i32::MIN), i128::from(i32::MAX), "long/int32")
+        }
+        IntegerType::ULong | IntegerType::UInt32 => {
+            (0, i128::from(u32::MAX), "unsigned long/uint32")
+        }
+        IntegerType::LongLong | IntegerType::Int64 => (
+            i128::from(i64::MIN),
+            i128::from(i64::MAX),
+            "long long/int64",
+        ),
+        IntegerType::ULongLong | IntegerType::UInt64 => {
+            (0, i128::from(u64::MAX), "unsigned long long/uint64")
+        }
+    }
+}
+
+fn int_range_error(
+    it: IntegerType,
+    raw: &str,
+    negated: bool,
+    member: &str,
+    span: Span,
+) -> Option<DefaultValueError> {
+    let value = parse_int_literal(raw, negated)?;
+    let (min, max, type_name) = int_bounds(it);
+    if value < min || value > max {
+        return Some(DefaultValueError {
+            member: member.to_string(),
+            mismatch: DefaultMismatch::OutOfRange {
+                value: signed_raw(raw, negated),
+                type_name,
+            },
+            span,
+        });
+    }
+    None
+}
+
+fn octet_range_error(
+    raw: &str,
+    negated: bool,
+    member: &str,
+    span: Span,
+) -> Option<DefaultValueError> {
+    let value = parse_int_literal(raw, negated)?;
+    if !(0..=255).contains(&value) {
+        return Some(DefaultValueError {
+            member: member.to_string(),
+            mismatch: DefaultMismatch::OutOfRange {
+                value: signed_raw(raw, negated),
+                type_name: "octet",
+            },
+            span,
+        });
+    }
+    None
+}
+
+fn signed_raw(raw: &str, negated: bool) -> String {
+    if negated {
+        format!("-{}", raw.trim())
+    } else {
+        raw.trim().to_string()
+    }
+}
+
+/// Parses an IDL integer literal (`raw`, plus an external sign from a unary
+/// operator) into an `i128`. Decimal, `0x`/`0X` hex and leading-zero octal are
+/// handled; an inline `+`/`-` sign in `raw` is honored too. Returns `None` on a
+/// form we cannot parse — the range check is then skipped rather than reporting
+/// a false positive.
+fn parse_int_literal(raw: &str, external_neg: bool) -> Option<i128> {
+    let t = raw.trim();
+    let (inline_neg, body) = if let Some(r) = t.strip_prefix('-') {
+        (true, r.trim_start())
+    } else if let Some(r) = t.strip_prefix('+') {
+        (false, r.trim_start())
+    } else {
+        (false, t)
+    };
+    let neg = inline_neg ^ external_neg;
+    let magnitude: i128 =
+        if let Some(hex) = body.strip_prefix("0x").or_else(|| body.strip_prefix("0X")) {
+            i128::from_str_radix(hex, 16).ok()?
+        } else if body.len() > 1
+            && body.starts_with('0')
+            && body.bytes().all(|b| (b'0'..=b'7').contains(&b))
+        {
+            i128::from_str_radix(body, 8).ok()?
+        } else {
+            body.parse::<i128>().ok()?
+        };
+    Some(if neg { -magnitude } else { magnitude })
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
@@ -424,6 +906,12 @@ mod tests {
 
     fn parse_ok(src: &str) -> Specification {
         parse(src, &ParserConfig::default()).expect("parse ok")
+    }
+
+    /// CORBA-full profile (valuetypes/interfaces enabled) for the
+    /// valuetype reference tests.
+    fn parse_full(src: &str) -> Specification {
+        parse(src, &ParserConfig::full_4_2()).expect("parse ok")
     }
 
     #[test]
@@ -587,5 +1075,219 @@ mod tests {
         assert!(resolve_and_validate(&parse_ok("bitmask Flags { @position(3) F0 };"), &[]).is_ok());
         // A bare @autoid (no argument) is not a wrong-typed argument.
         assert!(resolve_and_validate(&parse_ok("@autoid struct S { long x; };"), &[]).is_ok());
+    }
+
+    // ---- Class (a): valuetype / interface unresolved references -----------
+
+    #[test]
+    fn interface_op_return_of_unknown_type_is_rejected() {
+        let spec = parse_ok("interface I { Missing get(); };");
+        let err = resolve_and_validate(&spec, &[]).unwrap_err();
+        assert!(
+            err.resolver.iter().any(|e| matches!(
+                e,
+                ResolverError::UnresolvedName { name, .. } if name == "Missing"
+            )),
+            "got {:?}",
+            err.resolver
+        );
+    }
+
+    #[test]
+    fn interface_op_param_of_unknown_type_is_rejected() {
+        let spec = parse_ok("interface I { void set(in Missing v); };");
+        let err = resolve_and_validate(&spec, &[]).unwrap_err();
+        assert!(err.resolver.iter().any(|e| matches!(
+            e,
+            ResolverError::UnresolvedName { name, .. } if name == "Missing"
+        )));
+    }
+
+    #[test]
+    fn interface_base_of_unknown_type_is_rejected() {
+        let spec = parse_ok("interface I : Missing { };");
+        let err = resolve_and_validate(&spec, &[]).unwrap_err();
+        assert!(err.resolver.iter().any(|e| matches!(
+            e,
+            ResolverError::UnresolvedName { name, .. } if name == "Missing"
+        )));
+    }
+
+    #[test]
+    fn valuetype_state_member_of_unknown_type_is_rejected() {
+        let spec = parse_full("valuetype V { public Missing field; };");
+        let err = resolve_and_validate(&spec, &[]).unwrap_err();
+        assert!(err.resolver.iter().any(|e| matches!(
+            e,
+            ResolverError::UnresolvedName { name, .. } if name == "Missing"
+        )));
+    }
+
+    #[test]
+    fn valuetype_base_of_unknown_type_is_rejected() {
+        let spec = parse_full("valuetype V : Missing { };");
+        let err = resolve_and_validate(&spec, &[]).unwrap_err();
+        assert!(err.resolver.iter().any(|e| matches!(
+            e,
+            ResolverError::UnresolvedName { name, .. } if name == "Missing"
+        )));
+    }
+
+    #[test]
+    fn valuetype_and_interface_with_known_refs_pass() {
+        // Counter-corpus: legitimate cross-references must still resolve.
+        assert!(
+            resolve_and_validate(
+                &parse_full(
+                    "struct Payload { long a; };\n\
+                     interface Base { };\n\
+                     interface I : Base { Payload fetch(in Payload p); };\n\
+                     valuetype V { public Payload field; };"
+                ),
+                &[]
+            )
+            .is_ok()
+        );
+    }
+
+    // ---- Class (c): @default type conversion ------------------------------
+
+    #[test]
+    fn default_string_on_integer_member_is_rejected() {
+        let spec = parse_ok("struct S { @default(\"oops\") long x; };");
+        let err = resolve_and_validate(&spec, &[]).unwrap_err();
+        assert!(
+            err.defaults.iter().any(|e| matches!(
+                &e.mismatch,
+                DefaultMismatch::TypeMismatch {
+                    found: "string",
+                    ..
+                }
+            )),
+            "got {:?}",
+            err.defaults
+        );
+    }
+
+    #[test]
+    fn default_out_of_range_on_short_is_rejected() {
+        let spec = parse_ok("struct S { @default(70000) short x; };");
+        let err = resolve_and_validate(&spec, &[]).unwrap_err();
+        assert!(
+            err.defaults
+                .iter()
+                .any(|e| matches!(&e.mismatch, DefaultMismatch::OutOfRange { .. })),
+            "got {:?}",
+            err.defaults
+        );
+    }
+
+    #[test]
+    fn default_boolean_on_integer_member_is_rejected() {
+        let spec = parse_ok("struct S { @default(TRUE) long x; };");
+        let err = resolve_and_validate(&spec, &[]).unwrap_err();
+        assert!(
+            err.defaults.iter().any(|e| matches!(
+                &e.mismatch,
+                DefaultMismatch::TypeMismatch {
+                    found: "boolean",
+                    ..
+                }
+            )),
+            "got {:?}",
+            err.defaults
+        );
+    }
+
+    #[test]
+    fn default_integer_on_string_member_is_rejected() {
+        let spec = parse_ok("struct S { @default(5) string x; };");
+        let err = resolve_and_validate(&spec, &[]).unwrap_err();
+        assert!(
+            err.defaults
+                .iter()
+                .any(|e| matches!(&e.mismatch, DefaultMismatch::TypeMismatch { .. })),
+            "got {:?}",
+            err.defaults
+        );
+    }
+
+    #[test]
+    fn legitimate_defaults_pass_the_gate() {
+        // Counter-corpus: matching defaults must still validate cleanly.
+        assert!(resolve_and_validate(&parse_ok("struct S { @default(7) long x; };"), &[]).is_ok());
+        assert!(
+            resolve_and_validate(&parse_ok("struct S { @default(-5) short x; };"), &[]).is_ok()
+        );
+        assert!(
+            resolve_and_validate(&parse_ok("struct S { @default(255) octet x; };"), &[]).is_ok()
+        );
+        assert!(
+            resolve_and_validate(&parse_ok("struct S { @default(TRUE) boolean x; };"), &[]).is_ok()
+        );
+        assert!(
+            resolve_and_validate(&parse_ok("struct S { @default(\"hi\") string x; };"), &[])
+                .is_ok()
+        );
+        assert!(
+            resolve_and_validate(&parse_ok("struct S { @default(1.5) double x; };"), &[]).is_ok()
+        );
+        // Enum-literal default is a named value (Scoped), left unchecked.
+        assert!(
+            resolve_and_validate(
+                &parse_ok("enum Color { RED, GREEN }; struct S { @default(GREEN) Color c; };"),
+                &[]
+            )
+            .is_ok()
+        );
+    }
+
+    // ---- Class (b): bitset @position collision reaches the gate -----------
+
+    #[test]
+    fn bitset_colliding_position_is_rejected_by_gate() {
+        let spec =
+            parse_ok("bitset BS { @position(0) bitfield<4> a; @position(2) bitfield<4> b; };");
+        let err = resolve_and_validate(&spec, &[]).unwrap_err();
+        assert!(
+            err.bitfields
+                .iter()
+                .any(|e| matches!(e, BitfieldValidationError::BitfieldPositionCollision { .. })),
+            "got {:?}",
+            err.bitfields
+        );
+    }
+
+    #[test]
+    fn bitmask_duplicate_position_is_rejected_by_gate() {
+        // The pre-existing bitmask duplicate-position check now runs in the gate.
+        let spec = parse_ok("bitmask Flags { @position(2) F0, @position(2) F1 };");
+        let err = resolve_and_validate(&spec, &[]).unwrap_err();
+        assert!(
+            err.bitfields
+                .iter()
+                .any(|e| matches!(e, BitfieldValidationError::DuplicatePosition { .. })),
+            "got {:?}",
+            err.bitfields
+        );
+    }
+
+    #[test]
+    fn well_packed_bitset_passes_the_gate() {
+        // Counter-corpus: sequential bitfields without overlap must pass.
+        assert!(
+            resolve_and_validate(
+                &parse_ok(
+                    "@bit_bound(16) bitset TypeFlag {\n\
+                        bitfield<1> is_final;\n\
+                        bitfield<1> is_appendable;\n\
+                        bitfield<1> is_mutable;\n\
+                        bitfield<11>;\n\
+                     };"
+                ),
+                &[]
+            )
+            .is_ok()
+        );
     }
 }

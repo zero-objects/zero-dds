@@ -103,6 +103,11 @@ pub fn fixed_member_id(
 /// `fallback_seq` is the caller's sequential id used only when no
 /// `@id`/`@hashid`/`@autoid(HASH)` applies. Thin wrapper over
 /// [`fixed_member_id`].
+///
+/// Prefer [`resolve_member_id_sequence`] when resolving a whole member list:
+/// the correct `fallback_seq` is the *previous member's resolved id + 1*, which
+/// a caller cannot get from a positional index once an explicit `@id` shifts
+/// the run.
 #[must_use]
 pub fn resolved_member_id(
     container_autoid_hash: bool,
@@ -111,6 +116,40 @@ pub fn resolved_member_id(
     fallback_seq: u32,
 ) -> u32 {
     fixed_member_id(container_autoid_hash, member_annotations, member_name).unwrap_or(fallback_seq)
+}
+
+/// Resolve the wire member-IDs of a whole ordered member list in one pass — the
+/// single source of truth for the SEQUENTIAL fallback.
+///
+/// The canonical rule (IDL 4.2 §7.4.15.4.2 / XTypes 1.3 §7.3.1.2.1.1): a member
+/// that carries no `@id`/`@hashid`/`@autoid(HASH)` takes **the previous
+/// member's resolved id + 1** (the first such member takes 0). "Previous
+/// member's id" is its *resolved* id — so an explicit `@id(5)` makes the next
+/// unannotated member 6, not 2. This is what Cyclone DDS and Fast-DDS emit;
+/// deriving the fallback from a positional index (`idx`) instead disagrees the
+/// moment an explicit id shifts the run, which is why the wire and the
+/// TypeObject used to diverge for mixed `@id` + SEQUENTIAL structs.
+///
+/// `members` yields `(annotations, raw_wire_name)` per WIRE member in
+/// declaration order: multi-declarator members expanded to one entry per
+/// declarator, and `@non_serialized` members already filtered out by the
+/// caller (so the sequence has no gaps from dropped members). `raw_wire_name`
+/// is the IDL source spelling — the `@autoid(HASH)`/`@hashid` NameHash is over
+/// the wire name, never an escaped backend identifier.
+#[must_use]
+pub fn resolve_member_id_sequence<'a>(
+    container_autoid_hash: bool,
+    members: impl IntoIterator<Item = (&'a [Annotation], &'a str)>,
+) -> Vec<u32> {
+    let mut ids = Vec::new();
+    let mut next_seq: u32 = 0;
+    for (annotations, name) in members {
+        let id = fixed_member_id(container_autoid_hash, annotations, name).unwrap_or(next_seq);
+        // The NEXT unannotated member follows THIS member's resolved id.
+        next_seq = id.wrapping_add(1);
+        ids.push(id);
+    }
+    ids
 }
 
 #[cfg(test)]
@@ -197,5 +236,67 @@ mod tests {
         // XTypes §7.3.1.2.1.1: id = MD5(name)[0..4] LE u32 & 0x0FFFFFFF.
         assert_eq!(NameHash::member_id_from_name("color"), 0x0FA5_DD70);
         assert_eq!(NameHash::member_id_from_name("my_hint"), 0x026C_50E0);
+    }
+
+    /// Helper: resolve a struct's whole member sequence, one entry per member
+    /// (single-declarator members in these fixtures).
+    fn seq(src: &str) -> Vec<u32> {
+        let s = first_struct(src);
+        let hash = container_autoid_hash(&s.annotations);
+        let members: Vec<(Vec<Annotation>, String)> = s
+            .members
+            .iter()
+            .map(|m| (m.annotations.clone(), raw_name(m)))
+            .collect();
+        resolve_member_id_sequence(
+            hash,
+            members.iter().map(|(a, n)| (a.as_slice(), n.as_str())),
+        )
+    }
+
+    #[test]
+    fn sequence_all_default_is_zero_based_contiguous() {
+        assert_eq!(seq("struct S { long a; long b; long c; };"), vec![0, 1, 2]);
+    }
+
+    #[test]
+    fn sequence_explicit_id_shifts_following_defaults_prev_plus_one() {
+        // IDL 4.2 §7.4.15.4.2: a=0, b=@id(5), c=prev(5)+1=6, d=7. NOT positional
+        // [0,5,2,3] and NOT next-seq-only [0,5,1,2] — both were the old bugs.
+        assert_eq!(
+            seq("struct S { long a; @id(5) long b; long c; long d; };"),
+            vec![0, 5, 6, 7]
+        );
+    }
+
+    #[test]
+    fn sequence_leading_explicit_id_seeds_the_run() {
+        // @id(10) first → next default is 11, then 12.
+        assert_eq!(
+            seq("struct S { @id(10) long a; long b; long c; };"),
+            vec![10, 11, 12]
+        );
+    }
+
+    #[test]
+    fn sequence_hash_ids_do_not_disturb_their_own_slot_but_advance_the_counter() {
+        // @hashid resolves to a hash; the FOLLOWING default follows hash+1.
+        let h = NameHash::member_id_from_name("my_hint");
+        assert_eq!(
+            seq("struct S { long a; @hashid(\"my_hint\") long b; long c; };"),
+            vec![0, h, h.wrapping_add(1)]
+        );
+    }
+
+    #[test]
+    fn sequence_autoid_hash_container_hashes_every_member() {
+        let s = "@autoid(HASH) struct S { long red; long green; };";
+        assert_eq!(
+            seq(s),
+            vec![
+                NameHash::member_id_from_name("red"),
+                NameHash::member_id_from_name("green"),
+            ]
+        );
     }
 }

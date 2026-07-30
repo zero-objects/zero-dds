@@ -44,4 +44,4 @@ pub use to_typeobject::{
     map_type_spec_resolved,
 };
 pub use union_validation::{UnionValidationError, validate_unions};
-pub use validate::{SemanticErrors, resolve_and_validate};
+pub use validate::{DefaultMismatch, DefaultValueError, SemanticErrors, resolve_and_validate};

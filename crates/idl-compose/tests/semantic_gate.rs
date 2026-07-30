@@ -53,3 +53,91 @@ fn valid_idl_composes() {
     let out = compose(&path, &ComposeOptions::default()).expect("valid IDL must compose");
     assert!(!out.ast.definitions.is_empty());
 }
+
+// ---------------------------------------------------------------------------
+// Adversarial corpus additions (Schuld 6): the gate previously covered only
+// the data-type surface. These three classes were slipping through.
+// ---------------------------------------------------------------------------
+
+// Class (a): valuetype / interface unresolved references.
+
+#[test]
+fn interface_op_return_of_undeclared_type_is_rejected() {
+    let (_dir, path) = write_idl("interface I { DoesNotExist get(); };");
+    assert_semantic_reject(compose(&path, &ComposeOptions::default()));
+}
+
+#[test]
+fn interface_op_param_of_undeclared_type_is_rejected() {
+    let (_dir, path) = write_idl("interface I { void set(in DoesNotExist v); };");
+    assert_semantic_reject(compose(&path, &ComposeOptions::default()));
+}
+
+#[test]
+fn interface_base_of_undeclared_type_is_rejected() {
+    let (_dir, path) = write_idl("interface I : DoesNotExist { };");
+    assert_semantic_reject(compose(&path, &ComposeOptions::default()));
+}
+
+#[test]
+fn interface_with_declared_refs_composes() {
+    // Counter-corpus: an interface whose refs all resolve must still compose.
+    let (_dir, path) = write_idl(
+        "struct Payload { long a; };\n\
+         interface Base { };\n\
+         interface I : Base { Payload fetch(in Payload p); };",
+    );
+    let out = compose(&path, &ComposeOptions::default()).expect("declared refs must compose");
+    assert!(!out.ast.definitions.is_empty());
+}
+
+// Class (b): bitfield / bitmask @position collisions.
+
+#[test]
+fn bitset_colliding_position_is_rejected() {
+    let (_dir, path) =
+        write_idl("bitset BS { @position(0) bitfield<4> a; @position(2) bitfield<4> b; };");
+    assert_semantic_reject(compose(&path, &ComposeOptions::default()));
+}
+
+#[test]
+fn bitmask_duplicate_position_is_rejected() {
+    let (_dir, path) = write_idl("bitmask Flags { @position(2) F0, @position(2) F1 };");
+    assert_semantic_reject(compose(&path, &ComposeOptions::default()));
+}
+
+#[test]
+fn well_packed_bitset_composes() {
+    // Counter-corpus: sequential, non-overlapping bitfields must still compose.
+    let (_dir, path) = write_idl(
+        "@bit_bound(16) bitset TypeFlag {\n\
+            bitfield<1> is_final;\n\
+            bitfield<1> is_appendable;\n\
+            bitfield<11>;\n\
+         };",
+    );
+    let out = compose(&path, &ComposeOptions::default()).expect("packed bitset must compose");
+    assert!(!out.ast.definitions.is_empty());
+}
+
+// Class (c): @default type conversion.
+
+#[test]
+fn default_string_on_integer_member_is_rejected() {
+    let (_dir, path) = write_idl("struct S { @default(\"oops\") long x; };");
+    assert_semantic_reject(compose(&path, &ComposeOptions::default()));
+}
+
+#[test]
+fn default_out_of_range_on_short_is_rejected() {
+    let (_dir, path) = write_idl("struct S { @default(70000) short x; };");
+    assert_semantic_reject(compose(&path, &ComposeOptions::default()));
+}
+
+#[test]
+fn matching_default_composes() {
+    // Counter-corpus: a type-compatible @default must still compose.
+    let (_dir, path) = write_idl("struct S { @default(7) long x; @default(\"hi\") string s; };");
+    let out = compose(&path, &ComposeOptions::default()).expect("matching default must compose");
+    assert!(!out.ast.definitions.is_empty());
+}
