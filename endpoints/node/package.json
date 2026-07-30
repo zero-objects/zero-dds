@@ -7,6 +7,8 @@
   "main": "zerodds.js",
   "files": [
     "zerodds.js",
+    "reliable.js",
+    "udp.js",
     "QUICKSTART.md"
   ],
   "scripts": {

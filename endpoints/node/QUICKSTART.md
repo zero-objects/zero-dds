@@ -25,6 +25,30 @@ Both print five decoded readings and `ALL OK`. No dependencies — just Node 18+
 
 `Transport` is `{ deliver, receive }`. The examples use the in-memory
 `MemTransport`; a real UDP (`dgram`) or shared-memory link is a drop-in.
+`udp.js` provides a `UdpTransport` that carries the sync/async loopback over a
+real socket:
+
+```sh
+node example_ping_pong.js sync  <peer-port>   # Client.poll() owns the loop
+node example_ping_pong.js async <peer-port>   # AsyncReader.stream() drains it
+```
+
+## Reliable stream (RFC-1982 HEARTBEAT / ACKNACK / retransmit)
+
+`reliable.js` adds a genuine reliable writer (DDS-XRCE §8.4.10/§8.4.11),
+byte-identical to `endpoints/c` and `endpoints/java`: a 16-bit RFC-1982 window,
+`WRITE_DATA` / `HEARTBEAT` / `ACKNACK` frames, and ACKNACK-driven retransmit.
+`AsyncReliableWriter` is the async-decoupled sender — the producer `submit(...)`
+is a Promise-based enqueue with backpressure on overflow (no sample dropped, no
+producer hang); a drain loop owns the send window and does the I/O.
+
+```sh
+node example_reliable.js <peer-port> [N]   # submit N, recover loss, drain window
+node reliable_selftest.js                  # unit + byte-golden (prints ALL OK)
+```
+
+Live loss-recovery + baseline + unit/golden run against the shared Rust peer in
+`crates/endpoint-e2e/tests/node_reliable.rs`; sync/async ping-pong in `node.rs`.
 
 ## Wire & codegen
 

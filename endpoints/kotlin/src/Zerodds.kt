@@ -176,3 +176,34 @@ class MemTransport : Transport {
     override fun deliver(frame: ByteArray): Boolean { q.add(frame.copyOf()); return true }
     override fun receive(): ByteArray? = q.poll()
 }
+
+// A real UDP transport: one DatagramSocket carries both directions, so the peer
+// replies to the app's source port. `receive()` polls with a short SO_TIMEOUT
+// and returns null on expiry (never blocks the AsyncReader drain forever). This
+// is the drop-in the QUICKSTART mentions — the sync Client and the AsyncReader
+// run unchanged over a live datagram link instead of MemTransport.
+class UdpTransport(
+    private val host: java.net.InetAddress,
+    private val port: Int,
+    pollMs: Int = 100,
+) : Transport {
+    private val sock = java.net.DatagramSocket().apply { soTimeout = pollMs }
+
+    override fun deliver(frame: ByteArray): Boolean {
+        sock.send(java.net.DatagramPacket(frame, frame.size, host, port))
+        return true
+    }
+
+    override fun receive(): ByteArray? {
+        val buf = ByteArray(4096)
+        val pkt = java.net.DatagramPacket(buf, buf.size)
+        return try {
+            sock.receive(pkt)
+            pkt.data.copyOf(pkt.length)
+        } catch (e: java.net.SocketTimeoutException) {
+            null
+        }
+    }
+
+    fun close() = sock.close()
+}

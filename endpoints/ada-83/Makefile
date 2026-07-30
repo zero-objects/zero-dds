@@ -17,6 +17,7 @@ all:
 test: all
 	build/test_ada83_identity
 	build/test_ada83_async
+	build/test_ada83_reliable
 
 clean:
 	-$(GPRCLEAN) -P zerodds_ada83.gpr
