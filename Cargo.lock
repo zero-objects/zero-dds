@@ -8083,6 +8083,7 @@ name = "zerodds-idl-ocaml"
 version = "1.0.0-rc.7"
 dependencies = [
  "zerodds-idl",
+ "zerodds-types",
 ]
 
 [[package]]

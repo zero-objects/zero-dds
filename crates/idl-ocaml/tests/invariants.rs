@@ -91,6 +91,10 @@ fn emit(src: &str) -> String {
 /// `type `, `let `), taking the first whitespace-delimited token after it.
 fn top_level_named(ml: &str, kw: &str) -> Vec<String> {
     ml.lines()
+        // `module type X` is a distinct OCaml namespace (module-type / signature
+        // names) — not a `module X`. Don't let the `"module "` prefix swallow a
+        // `"module type "` line; those are counted under their own keyword.
+        .filter(|l| !(kw == "module " && l.starts_with("module type ")))
         .filter_map(|l| l.strip_prefix(kw))
         .map(|rest| rest.split_whitespace().next().unwrap_or("").to_string())
         .filter(|n| !n.is_empty())
@@ -100,7 +104,7 @@ fn top_level_named(ml: &str, kw: &str) -> Vec<String> {
 fn assert_no_duplicate_top_level(ml: &str) {
     // OCaml has separate namespaces for modules / types / values, so a `type t`
     // and a `module T` can coexist — dedupe within each namespace.
-    for kw in ["module ", "type ", "let "] {
+    for kw in ["module ", "module type ", "type ", "let "] {
         let mut seen = HashSet::new();
         for n in top_level_named(ml, kw) {
             assert!(

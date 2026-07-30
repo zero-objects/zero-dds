@@ -4,8 +4,13 @@
 //! IDL4 → OCaml emitter. Walks the `zerodds-idl` AST and emits a self-contained
 //! OCaml source file: a `Wire` module (byte-identical to `endpoints/ocaml`) plus,
 //! per IDL `struct`, a module with a record type `t` and a `marshal(v, endian)`
-//! function. `@final` and `@appendable` are supported; other extensibilities and
-//! constructs raise [`IdlOcamlError::Unsupported`].
+//! function, plus native `<Iface>_Client`/`<Iface>_Handler` module-type
+//! signatures for `interface` operations. Both wire representations are emitted:
+//! XCDR2 (`marshal`/`unmarshal`) and XCDR1 / classic CDR
+//! (`marshal_xcdr1`/`unmarshal_xcdr1`). All three extensibilities (`@final`,
+//! `@appendable`, `@mutable`) are supported for both struct and union.
+//! Constructs outside the DDS DataType scope raise
+//! [`IdlOcamlError::Unsupported`].
 
 use std::fmt::Write as _;
 
@@ -14,13 +19,13 @@ use std::collections::{HashMap, HashSet};
 use zerodds_idl::ast::types::{
     Annotation, BinaryOp, BitmaskDecl, BitsetDecl, CaseLabel, ConstDecl, ConstExpr, ConstType,
     ConstrTypeDecl, Declarator, Definition, EnumDef, Export, FixedPtType, FloatingType,
-    IntegerType, InterfaceDcl, Literal, LiteralKind, Member, PrimitiveType, ScopedName,
-    SequenceType, Specification, StructDcl, StructDef, SwitchTypeSpec, TypeDecl, TypeSpec, UnaryOp,
-    UnionDcl, UnionDef,
+    IntegerType, InterfaceDcl, InterfaceDef, Literal, LiteralKind, Member, ParamAttribute,
+    PrimitiveType, ScopedName, SequenceType, Specification, StructDcl, StructDef, SwitchTypeSpec,
+    TypeDecl, TypeSpec, UnaryOp, UnionDcl, UnionDef,
 };
 use zerodds_idl::semantics::annotations::{
     BuiltinAnnotation, ExtensibilityKind, PlacementKind, enum_bit_bound, enum_wire_octets,
-    lower_annotations, lower_single,
+    lower_annotations,
 };
 
 use crate::error::{IdlOcamlError, Result};
@@ -60,6 +65,51 @@ thread_local! {
     /// narrows to 1/2 bytes instead of the former fixed 4.
     static ENUM_WIDTHS: std::cell::RefCell<HashMap<String, u32>> =
         std::cell::RefCell::new(HashMap::new());
+
+    /// Flattened qualified names of enums that declare a NEGATIVE enumerator.
+    /// The XTypes enum holder is SIGNED (XTypes 1.3 §7.4.5.1); a narrow holder
+    /// (`@bit_bound(8)`/`(16)`) or the default 4-byte holder is read UNSIGNED by
+    /// `Wire.get_u8`/`get_u16`/`get_u32`, so a negative enumerator must be
+    /// sign-extended on decode — otherwise `<enum>_of_int` never matches it and
+    /// the value falls back to the first constructor. Only enums with a negative
+    /// enumerator are registered; all-non-negative enums keep the unsigned read
+    /// (byte-identical to before, no risk to the goldens).
+    static ENUM_SIGNED: std::cell::RefCell<HashSet<String>> =
+        std::cell::RefCell::new(HashSet::new());
+
+    /// Const-expression symbol table for the whole spec, built once per run from
+    /// every top-level/nested `const` (and enum) declaration. Every collection
+    /// bound (`sequence`/`string`/`map`/array) and union label resolves through
+    /// it via the shared [`zerodds_idl::semantics::eval_bound`]/`evaluate`, so a
+    /// bound written as a named `const` or a const-expression (`N * 2`, `A + 1`)
+    /// resolves to the same size the other backends compute.
+    static SYMBOLS: std::cell::RefCell<Option<zerodds_idl::semantics::SymbolTable>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Evaluates a collection-bound / array-dimension const-expression to a
+/// non-negative `i64` through the shared symbol table (named `const`
+/// references, binary/unary const-expressions, enum values). Returns `None`
+/// when it does not resolve to a non-negative integer.
+fn eval_const_bound(e: &ConstExpr) -> Option<i64> {
+    SYMBOLS.with(|s| {
+        let b = s.borrow();
+        let syms = b.as_ref()?;
+        let v = zerodds_idl::semantics::eval_bound(e, syms)?;
+        i64::try_from(v).ok()
+    })
+}
+
+/// Evaluates a general const-expression to `i64` (union labels: named `const`,
+/// enum value, or const-expression). Returns `None` when it does not resolve to
+/// an integer.
+fn eval_const_i64(e: &ConstExpr) -> Option<i64> {
+    SYMBOLS.with(|s| {
+        let b = s.borrow();
+        let syms = b.as_ref()?;
+        let v = zerodds_idl::semantics::evaluate(e, syms).ok()?;
+        v.as_i64()
+    })
 }
 
 /// Signed wire holder width in octets (1/2/4) an enum named `name` serializes
@@ -69,6 +119,12 @@ fn enum_wire_width(name: &str) -> u32 {
     ENUM_WIDTHS
         .with(|m| m.borrow().get(name).copied())
         .unwrap_or(4)
+}
+
+/// `true` if the enum `name` declares a negative enumerator, so its (signed)
+/// wire holder must be sign-extended on decode.
+fn enum_is_signed(name: &str) -> bool {
+    ENUM_SIGNED.with(|s| s.borrow().contains(name))
 }
 
 /// OCaml codegen language aliases matched by `@verbatim(language="...")`
@@ -272,12 +328,18 @@ pub struct OcamlGenOptions {}
 const WIRE_MODULE: &str = r#"module Wire = struct
   type endian = LE | BE
 
-  type writer = { buf : Buffer.t; endian : endian }
+  (* [x1] selects the representation: false = XCDR2 (max alignment 4, DHEADER-
+     framed collections/@appendable, PL_CDR2 @mutable); true = XCDR1 / classic
+     CDR (max alignment 8, no DHEADER, PL_CDR1 @mutable). A nested composite
+     inherits the flag from the flowing writer, so one body serves both. *)
+  type writer = { buf : Buffer.t; endian : endian; x1 : bool }
 
-  let writer endian = { buf = Buffer.create 64; endian }
+  let writer endian = { buf = Buffer.create 64; endian; x1 = false }
+  let writer_x1 endian = { buf = Buffer.create 64; endian; x1 = true }
+  let is_x1 w = w.x1
 
   let align w a =
-    let cap = min a 4 in
+    let cap = min a (if w.x1 then 8 else 4) in
     let pad = (cap - (Buffer.length w.buf mod cap)) mod cap in
     for _ = 1 to pad do Buffer.add_char w.buf '\000' done
 
@@ -306,7 +368,9 @@ const WIRE_MODULE: &str = r#"module Wire = struct
       let byte = Int64.to_int (Int64.logand (Int64.shift_right_logical v (8 * i)) 0xffL) in
       Bytes.set b i (Char.chr byte)
     done;
-    put w 4 b
+    (* Alignment 8: under XCDR2 the [align] cap (4) reduces it to 4; under XCDR1
+       (max alignment 8) an 8-byte value aligns to 8 — classic CDR §15.3. *)
+    put w 8 b
 
   let put_f32 w (v : float) =
     let bits = Int32.bits_of_float v in
@@ -402,16 +466,45 @@ const WIRE_MODULE: &str = r#"module Wire = struct
       Bytes.set le (8 + i)
         (Char.chr (Int64.to_int (Int64.logand (Int64.shift_right_logical !hi (8 * i)) 0xFFL)))
     done;
-    put w 4 le
+    (* long double aligns to 8 under XCDR1 (cap reduces it to 4 under XCDR2). *)
+    put w 8 le
+
+  (* PL_CDR1 (@mutable, XCDR1) member: [PID][len][body][pad-to-4]. The PID
+     length field carries the UNPADDED body length; ids >= 0x3F00 or bodies
+     over 0xFFFF use the extended header (PID_EXTENDED 0x3F01, 32-bit id +
+     32-bit length). Mirrors zerodds_cdr::xcdr1::encode_pl_cdr1_member. *)
+  let put_pl_cdr1_member w id (body : bytes) =
+    let body_len = Bytes.length body in
+    let pad = (4 - (body_len mod 4)) mod 4 in
+    if id >= 0x3F00 || body_len > 0xFFFF then begin
+      put_u16 w 0x3F01;
+      put_u16 w 8;
+      put_u32 w id;
+      put_u32 w body_len;
+      Buffer.add_bytes w.buf body
+    end
+    else begin
+      put_u16 w id;
+      put_u16 w body_len;
+      Buffer.add_bytes w.buf body
+    end;
+    for _ = 1 to pad do Buffer.add_char w.buf '\000' done
+
+  (* PL_CDR1 sentinel terminator (PID_LIST_END = 0x3F02, length 0). *)
+  let put_pl_cdr1_sentinel w = put_u16 w 0x3F02; put_u16 w 0
 
   let bytes w = Buffer.to_bytes w.buf
 
-  type reader = { rbuf : bytes; mutable pos : int; rendian : endian }
+  type reader = { rbuf : bytes; mutable pos : int; rendian : endian; rx1 : bool }
 
-  let reader (b : bytes) endian = { rbuf = b; pos = 0; rendian = endian }
+  let reader (b : bytes) endian = { rbuf = b; pos = 0; rendian = endian; rx1 = false }
+  let reader_x1 (b : bytes) endian = { rbuf = b; pos = 0; rendian = endian; rx1 = true }
+  let r_is_x1 r = r.rx1
+  let reader_endian r = r.rendian
+  let reader_pos r = r.pos
 
   let ralign r a =
-    let cap = min a 4 in
+    let cap = min a (if r.rx1 then 8 else 4) in
     while r.pos mod cap <> 0 do r.pos <- r.pos + 1 done
 
   let get_u8 r =
@@ -437,7 +530,7 @@ const WIRE_MODULE: &str = r#"module Wire = struct
 
   let get_u16 r = Int64.to_int (get_le r 2 2)
   let get_u32 r = Int64.to_int (get_le r 4 4)
-  let get_u64 r = get_le r 4 8
+  let get_u64 r = get_le r 8 8
   let get_f32 r = Int32.float_of_bits (Int32.of_int (get_u32 r))
   let get_f64 r = Int64.float_of_bits (get_u64 r)
 
@@ -455,6 +548,37 @@ const WIRE_MODULE: &str = r#"module Wire = struct
   let get_seq_u8 r =
     let n = get_u32 r in
     get_bytes_n r n
+
+  (* Reads one PL_CDR1 (@mutable, XCDR1) member. Returns None at the sentinel
+     (PID_LIST_END). Strips the top two flag bits (MUST_UNDERSTAND / impl) from
+     the PID before comparing. Mirrors zerodds_cdr::xcdr1::read_pl_cdr1_member. *)
+  let read_pl_cdr1_member r =
+    let pid = get_u16 r land 0x3FFF in
+    let len = get_u16 r in
+    if pid = 0x3F02 then None
+    else begin
+      let mid, blen =
+        if pid = 0x3F01 then (let m = get_u32 r in let l = get_u32 r in (m, l))
+        else (pid, len)
+      in
+      let body = get_bytes_n r blen in
+      let pad = (4 - (blen mod 4)) mod 4 in
+      for _ = 1 to pad do
+        if r.pos < Bytes.length r.rbuf then r.pos <- r.pos + 1
+      done;
+      Some (mid, body)
+    end
+
+  (* Reads one PL_CDR2 (@mutable, XCDR2) member: EMHEADER (member id in the low
+     28 bits) + NEXTINT (u32 body length) + body. The OCaml encoder always
+     emits LC4 (explicit NEXTINT length), so the length word is always present.
+     Returns (member id, body bytes). *)
+  let read_emheader_member r =
+    let emh = get_u32 r in
+    let id = emh land 0x0FFFFFFF in
+    let len = get_u32 r in
+    let body = get_bytes_n r len in
+    (id, body)
 
   let get_wstring r =
     let n = get_u32 r / 2 in
@@ -480,7 +604,7 @@ const WIRE_MODULE: &str = r#"module Wire = struct
     Buffer.contents buf
 
   let get_long_double r =
-    ralign r 4;
+    ralign r 8;
     let le = Bytes.copy (get_bytes_n r 16) in
     if r.rendian = BE then
       for i = 0 to 7 do
@@ -557,8 +681,9 @@ let zd_fixed_enc (s : string) (p : int) (scale : int) : bytes =
 /// Generates a self-contained OCaml module from the IDL AST.
 ///
 /// # Errors
-/// Returns [`IdlOcamlError::Unsupported`] for constructs the OCaml backend does
-/// not yet emit (e.g. `@mutable` unions and non-literal array/sequence bounds).
+/// Returns [`IdlOcamlError::Unsupported`] for constructs outside the DDS
+/// DataType scope (e.g. `any`, or a bound that does not resolve to an integer
+/// const-expression).
 pub fn generate_ocaml_module(spec: &Specification, _opts: &OcamlGenOptions) -> Result<String> {
     let mut out = String::new();
     let _ = writeln!(
@@ -573,6 +698,11 @@ pub fn generate_ocaml_module(spec: &Specification, _opts: &OcamlGenOptions) -> R
     TYPE_PATHS.with(|t| t.borrow_mut().clear());
     register_type_paths(&spec.definitions, &mut Vec::new());
     USED_FIXED.with(|f| f.set(false));
+    // Build the const-expression symbol table once so every bound/label resolves
+    // named `const`s and const-expressions through the shared evaluator.
+    SYMBOLS.with(|s| {
+        *s.borrow_mut() = Some(zerodds_idl::semantics::build_symbol_table(spec));
+    });
 
     // §7.2.2.4.8 — `@verbatim(placement=BEGIN_FILE)` from all top-level defs
     // (source order), emitted after the wire prelude, before any type.
@@ -635,6 +765,16 @@ pub fn generate_ocaml_module(spec: &Specification, _opts: &OcamlGenOptions) -> R
                 name.clone(),
                 u32::from(enum_wire_octets(enum_bit_bound(&e.annotations))),
             );
+        }
+    });
+    // Register enums carrying a negative enumerator (signed-holder decode).
+    ENUM_SIGNED.with(|s| {
+        let mut s = s.borrow_mut();
+        s.clear();
+        for (name, e) in &enum_defs {
+            if enumerator_values(e).iter().any(|v| *v < 0) {
+                s.insert(name.clone());
+            }
         }
     });
 
@@ -801,6 +941,10 @@ fn emit_defs_ordered(
                     }
                 }
                 scope.pop();
+                // Native OCaml Client/Handler signatures for the interface's
+                // operations + attributes (#11). Emitted after the nested types
+                // so their promoted names resolve.
+                emit_interface_signatures(out, iface, scope, enum_names, struct_names, typedefs)?;
             }
             _ => {}
         }
@@ -1003,7 +1147,9 @@ fn eval_union_label(e: &ConstExpr, enum_vals: &HashMap<String, i64>) -> Option<i
         // (resolved by its simple, i.e. last, segment).
         ConstExpr::Scoped(sn) => {
             let last = sn.parts.last()?.text.clone();
-            enum_vals.get(&last).copied()
+            // An enumerator of the switch enum, else a named `const` resolved
+            // through the shared symbol table.
+            enum_vals.get(&last).copied().or_else(|| eval_const_i64(e))
         }
         ConstExpr::Unary { op, operand, .. } => {
             let v = eval_union_label(operand, enum_vals)?;
@@ -1013,25 +1159,39 @@ fn eval_union_label(e: &ConstExpr, enum_vals: &HashMap<String, i64>) -> Option<i
                 UnaryOp::BitNot => Some(!v),
             }
         }
-        ConstExpr::Binary { .. } => None,
+        // A const-expression label (`case A + 1:`, a named `const`, an enum
+        // value) — resolved through the shared symbol-table evaluator.
+        ConstExpr::Binary { .. } => eval_const_i64(e),
     }
 }
 
 /// Resolves each enumerator's discriminant: default 0..N-1, honoring `@value`
 /// (XTypes 1.3 §7.4.5.1 — the returned `i32` values match the wire encoding).
+/// The `@value` expression is evaluated through the shared const evaluator, so a
+/// NEGATIVE value (`@value(-1)`) or a const-expression (`@value(BASE + 2)`)
+/// resolves correctly — `lower_single`'s `Value(String)` drops the sign for a
+/// non-literal expression (`const_to_string` returns `None` → empty string).
 fn enumerator_values(e: &EnumDef) -> Vec<i32> {
     let mut values = Vec::with_capacity(e.enumerators.len());
     let mut next: i64 = 0;
     for en in &e.enumerators {
-        let explicit = en.annotations.iter().find_map(|a| match lower_single(a) {
-            Ok(Some(BuiltinAnnotation::Value(s))) => parse_int(&s),
-            _ => None,
-        });
+        let explicit = enumerator_value_expr(en).and_then(eval_const_i64);
         let v = explicit.unwrap_or(next);
         values.push(v as i32);
         next = i64::from(v as i32) + 1;
     }
     values
+}
+
+/// The `@value(EXPR)` const-expression of an enumerator, if present.
+fn enumerator_value_expr(en: &zerodds_idl::ast::types::Enumerator) -> Option<&ConstExpr> {
+    en.annotations.iter().find_map(|a| {
+        let is_value = a.name.parts.last().is_some_and(|p| p.text == "value");
+        match (&a.params, is_value) {
+            (zerodds_idl::ast::types::AnnotationParams::Single(e), true) => Some(e),
+            _ => None,
+        }
+    })
 }
 
 /// Parses a decimal or `0x` hex integer literal (possibly signed).
@@ -1438,12 +1598,19 @@ const UTF16_UNIT_COUNT_FN: &str = "(fun __zds -> let __zdi = ref 0 in let __zdc 
 /// zerodds-lint: recursion-depth 32
 fn bound_literal(e: &ConstExpr, construct: &str) -> Result<i64> {
     array_size(e)
-        .ok_or_else(|| IdlOcamlError::Unsupported(format!("non-literal {construct} bound")))
+        .ok_or_else(|| IdlOcamlError::Unsupported(format!("non-constant {construct} bound")))
 }
 
-/// Evaluates a fixed-array bound to its integer size (literal + unary sign).
+/// Evaluates a fixed-array / collection bound to its integer size. Resolves the
+/// full const-expression grammar (named `const` references, binary/unary
+/// arithmetic, enum values) via the shared symbol table
+/// ([`eval_const_bound`]), falling back to a bare literal/unary parse when the
+/// symbol table is unavailable (defensive — it is always populated per run).
 /// zerodds-lint: recursion-depth 32
 fn array_size(e: &ConstExpr) -> Option<i64> {
+    if let Some(v) = eval_const_bound(e) {
+        return Some(v);
+    }
     match e {
         ConstExpr::Literal(Literal {
             kind: LiteralKind::Integer,
@@ -1605,12 +1772,19 @@ fn emit_struct(
     let mut all_members: Vec<&Member> = Vec::new();
     collect_base_members(s, struct_defs, &mut all_members);
 
+    // `@autoid(HASH)` on the struct (XTypes 1.3 §7.3.1.2.1.1): members without a
+    // fixed id take a NameHash-derived id instead of the sequential default.
+    let container_autoid = zerodds_idl::semantics::container_autoid_hash(&s.annotations);
     let mut fields: Vec<FieldGen> = Vec::new();
-    let mut next_id: u32 = 0;
+    // Compacted positional index over serialized members only (gap-free — a
+    // `@non_serialized` member does not consume a slot). The shared resolver
+    // (`fixed_member_id`) overrides it with an explicit `@id`, a `@hashid` hash,
+    // or the struct's `@autoid(HASH)` hash — so the ids agree with idl-rust and
+    // the TypeObject builder (findings A31/A32).
+    let mut seq_idx: u32 = 0;
     for m in &all_members {
         let resolved = resolve_typedef(&m.type_spec, typedefs);
         let lowered = lower_annotations(&m.annotations).ok();
-        let explicit_id = lowered.as_ref().and_then(|l| l.explicit_id());
         let key = lowered.as_ref().is_some_and(|l| l.has_key());
         let optional = lowered.as_ref().is_some_and(|l| {
             l.builtins
@@ -1638,8 +1812,15 @@ fn emit_struct(
             let id = if non_serialized {
                 0
             } else {
-                let assigned = explicit_id.unwrap_or(next_id);
-                next_id = assigned + 1;
+                // Fixed id (`@id`/`@hashid`/container `@autoid(HASH)`) or the
+                // compacted positional fallback — the single shared derivation.
+                let assigned = zerodds_idl::semantics::fixed_member_id(
+                    container_autoid,
+                    &m.annotations,
+                    &d.name().text,
+                )
+                .unwrap_or(seq_idx);
+                seq_idx += 1;
                 assigned
             };
             let mut array_sizes: Option<Vec<i64>> = None;
@@ -1731,10 +1912,65 @@ fn emit_struct(
         "\n  let marshal_into (v : t) (w : Wire.writer) (endian : Wire.endian) : unit ="
     );
     let _ = writeln!(out, "    ignore endian;");
+    // Writes each serialized member sequentially into writer variable `wv`
+    // (used for @final in both reps and for @appendable under XCDR1, where the
+    // member block is inline with no DHEADER). Alignment (max 4 XCDR2 / max 8
+    // XCDR1) is a property of the writer, so one body serves both.
+    let emit_inline_members = |out: &mut String, wv: &str| {
+        for f in &fields {
+            if f.non_serialized {
+                continue;
+            }
+            if f.optional {
+                // uint8 presence flag then the value if present (§7.4.5.1.4).
+                let op = f.opt_put.replace("$w", wv);
+                let _ = writeln!(
+                    out,
+                    "    (match v.{name} with Some zdOpt -> Wire.put_u8 {wv} 1; {op} | None -> Wire.put_u8 {wv} 0);",
+                    name = f.name
+                );
+            } else {
+                let _ = writeln!(out, "    {};", f.put.replace("$w", wv));
+            }
+        }
+    };
     if ext == ExtensibilityKind::Mutable {
-        // @mutable: DHEADER-framed member list; each member = EMHEADER (LC4 =
-        // member id, plus the must-understand bit 31 — #A17) + NEXTINT (body
-        // length) + body (XTypes §7.4.3.4.2).
+        // @mutable: XCDR2 is PL_CDR2 (an outer DHEADER over an EMHEADER-tagged
+        // member list); XCDR1 is PL_CDR1 (a `[PID][len]`-framed member list
+        // terminated by the sentinel, no outer DHEADER). The writer's `x1` flag
+        // selects the branch.
+        let _ = writeln!(out, "    if Wire.is_x1 w then begin");
+        // --- XCDR1 PL_CDR1 ---
+        for f in &fields {
+            if f.non_serialized {
+                continue;
+            }
+            let (open, put_src, close) = if f.optional {
+                (
+                    format!("    (match v.{} with Some zdOpt ->\n", f.name),
+                    f.opt_put.clone(),
+                    "     | None -> ());".to_string(),
+                )
+            } else {
+                (String::new(), f.put.clone(), String::new())
+            };
+            out.push_str(&open);
+            let _ = writeln!(out, "    let zdMem = Wire.writer_x1 endian in");
+            let _ = writeln!(out, "    {};", put_src.replace("$w", "zdMem"));
+            let _ = writeln!(
+                out,
+                "    Wire.put_pl_cdr1_member w 0x{:08x} (Wire.bytes zdMem);",
+                f.id
+            );
+            if !close.is_empty() {
+                let _ = writeln!(out, "{close}");
+            }
+        }
+        let _ = writeln!(out, "    Wire.put_pl_cdr1_sentinel w");
+        let _ = writeln!(out, "    end else begin");
+        // --- XCDR2 PL_CDR2: DHEADER-framed member list; each member = EMHEADER
+        // (LC4 = member id, plus the must-understand bit 31 — #A17) + NEXTINT
+        // (body length) + body (XTypes §7.4.3.4.2). ---
         let _ = writeln!(out, "    let body = Wire.writer endian in");
         for f in &fields {
             if f.non_serialized {
@@ -1775,36 +2011,24 @@ fn emit_struct(
         }
         let _ = writeln!(out, "    Wire.put_u32 w (Bytes.length (Wire.bytes body));");
         let _ = writeln!(out, "    Wire.put_bytes w (Wire.bytes body)");
+        let _ = writeln!(out, "    end");
+    } else if ext == ExtensibilityKind::Final {
+        // @final: members inline in declaration order; no DHEADER in either rep.
+        emit_inline_members(out, "w");
+        let _ = writeln!(out, "    ()");
     } else {
-        let wv = if ext == ExtensibilityKind::Final {
-            "w"
-        } else {
-            let _ = writeln!(out, "    let body = Wire.writer endian in");
-            "body"
-        };
-        for f in &fields {
-            if f.non_serialized {
-                continue;
-            }
-            if f.optional {
-                // uint8 presence flag then the value if present (§7.4.5.1.4).
-                let op = f.opt_put.replace("$w", wv);
-                let _ = writeln!(
-                    out,
-                    "    (match v.{name} with Some zdOpt -> Wire.put_u8 {wv} 1; {op} | None -> Wire.put_u8 {wv} 0);",
-                    name = f.name
-                );
-            } else {
-                let _ = writeln!(out, "    {};", f.put.replace("$w", wv));
-            }
-        }
-        if ext != ExtensibilityKind::Final {
-            let _ = writeln!(out, "    let bb = Wire.bytes body in");
-            let _ = writeln!(out, "    Wire.put_u32 w (Bytes.length bb);");
-            let _ = writeln!(out, "    Wire.put_bytes w bb");
-        } else {
-            let _ = writeln!(out, "    ()");
-        }
+        // @appendable: XCDR2 length-prefixes the member block with a DHEADER;
+        // XCDR1 writes it inline (no DHEADER). The writer's `x1` flag selects.
+        let _ = writeln!(out, "    if Wire.is_x1 w then begin");
+        emit_inline_members(out, "w");
+        let _ = writeln!(out, "    ()");
+        let _ = writeln!(out, "    end else begin");
+        let _ = writeln!(out, "    let body = Wire.writer endian in");
+        emit_inline_members(out, "body");
+        let _ = writeln!(out, "    let bb = Wire.bytes body in");
+        let _ = writeln!(out, "    Wire.put_u32 w (Bytes.length bb);");
+        let _ = writeln!(out, "    Wire.put_bytes w bb");
+        let _ = writeln!(out, "    end");
     }
 
     let _ = writeln!(
@@ -1812,6 +2036,15 @@ fn emit_struct(
         "\n  let marshal (v : t) (endian : Wire.endian) : bytes ="
     );
     let _ = writeln!(out, "    let w = Wire.writer endian in");
+    let _ = writeln!(out, "    marshal_into v w endian;");
+    let _ = writeln!(out, "    Wire.bytes w");
+    // XCDR1 / classic CDR entry point: same member logic, max-alignment-8
+    // writer, no DHEADER, PL_CDR1 @mutable framing (writer `x1` flag).
+    let _ = writeln!(
+        out,
+        "\n  let marshal_xcdr1 (v : t) (endian : Wire.endian) : bytes ="
+    );
+    let _ = writeln!(out, "    let w = Wire.writer_x1 endian in");
     let _ = writeln!(out, "    marshal_into v w endian;");
     let _ = writeln!(out, "    Wire.bytes w");
     let mut zdkeys: Vec<&FieldGen> = fields
@@ -1885,7 +2118,25 @@ fn emit_struct(
     // then per member EMHEADER + NEXTINT (members in declaration order).
     let _ = writeln!(out, "\n  let read (r : Wire.reader) : t =");
     if ext == ExtensibilityKind::Mutable {
-        let _ = writeln!(out, "    ignore (Wire.get_u32 r);");
+        // XCDR1 (PL_CDR1): collect the `[PID][len]` member list into a table
+        // keyed by member id, then read each declared field from its member
+        // body (defaulting when absent). XCDR2 (PL_CDR2): skip the outer
+        // DHEADER, then ride the naive EMHEADER+NEXTINT member-order decode.
+        let _ = writeln!(
+            out,
+            "    let zdtbl : (int, bytes) Hashtbl.t = Hashtbl.create 8 in"
+        );
+        let _ = writeln!(out, "    if Wire.r_is_x1 r then begin");
+        let _ = writeln!(
+            out,
+            "      let rec zdcollect () = match Wire.read_pl_cdr1_member r with"
+        );
+        let _ = writeln!(
+            out,
+            "        | None -> () | Some (zdId, zdBody) -> Hashtbl.replace zdtbl zdId zdBody; zdcollect ()"
+        );
+        let _ = writeln!(out, "      in zdcollect ()");
+        let _ = writeln!(out, "    end else ignore (Wire.get_u32 r);");
         for f in &fields {
             if f.non_serialized {
                 // Off the wire: bind the field to its default so the record
@@ -1898,22 +2149,51 @@ fn emit_struct(
                 );
                 continue;
             }
-            let g = f.get.replace("$r", "r");
-            // @mutable @optional decode rides the naive member-order decoder:
-            // an absent member is omitted on encode, but this reader assumes a
-            // present member per declared field (documented gap — worklist
-            // "mutable-optional decode may ride the naive decoder"). Present
-            // members round-trip; absent ones are not recovered.
-            let g = if f.optional { format!("Some ({g})") } else { g };
+            // XCDR1 branch: read from the member table by id (absent → default,
+            // XTypes 1.3 §7.4.3.4.2). @optional absence is fully recovered here.
+            let g_x1 = f.get.replace("$r", "zdr");
+            let default = ocaml_default(&f.ocaml_type)?;
+            let x1_present = format!(
+                "let zdr = Wire.reader_x1 zdBody (Wire.reader_endian r) in {}",
+                if f.optional {
+                    format!("Some ({g_x1})")
+                } else {
+                    g_x1
+                }
+            );
+            let x1_absent = if f.optional {
+                "None".to_string()
+            } else {
+                default
+            };
+            let x1 = format!(
+                "(match Hashtbl.find_opt zdtbl {id} with Some zdBody -> {x1_present} | None -> {x1_absent})",
+                id = f.id
+            );
+            // XCDR2 branch: naive EMHEADER + NEXTINT + body in declaration order
+            // (present members round-trip; absent non-optional ones ride this
+            // decoder — documented gap for PL_CDR2).
+            let g_x2 = f.get.replace("$r", "r");
+            let g_x2 = if f.optional {
+                format!("Some ({g_x2})")
+            } else {
+                g_x2
+            };
+            let x2 = format!("(ignore (Wire.get_u32 r); ignore (Wire.get_u32 r); {g_x2})");
             let _ = writeln!(
                 out,
-                "    let {} = (ignore (Wire.get_u32 r); ignore (Wire.get_u32 r); {g}) in",
+                "    let {} = (if Wire.r_is_x1 r then {x1} else {x2}) in",
                 f.name
             );
         }
     } else {
         if ext == ExtensibilityKind::Appendable {
-            let _ = writeln!(out, "    ignore (Wire.get_u32 r);");
+            // @appendable: XCDR2 frames the member block with a DHEADER; XCDR1
+            // has none.
+            let _ = writeln!(
+                out,
+                "    if not (Wire.r_is_x1 r) then ignore (Wire.get_u32 r);"
+            );
         }
         for f in &fields {
             if f.non_serialized {
@@ -1954,6 +2234,11 @@ fn emit_struct(
         "\n  let unmarshal (b : bytes) (endian : Wire.endian) : t ="
     );
     let _ = writeln!(out, "    read (Wire.reader b endian)");
+    let _ = writeln!(
+        out,
+        "\n  let unmarshal_xcdr1 (b : bytes) (endian : Wire.endian) : t ="
+    );
+    let _ = writeln!(out, "    read (Wire.reader_x1 b endian)");
     // §7.2.2.4.8 — text as the last element inside the declaration.
     emit_verbatim_at(out, "  ", &s.annotations, PlacementKind::EndDeclaration);
     let _ = writeln!(out, "end");
@@ -1978,12 +2263,6 @@ fn emit_union(
         .ok()
         .and_then(|l| l.extensibility())
         .unwrap_or(ExtensibilityKind::Appendable);
-    if ext == ExtensibilityKind::Mutable {
-        return Err(IdlOcamlError::Unsupported(format!(
-            "@mutable union {} (EMHEADER framing not yet emitted)",
-            u.name.text
-        )));
-    }
     let (disc_type, disc_put) = map_type(
         &switch_typespec(&u.switch_type),
         "v.disc",
@@ -2070,48 +2349,131 @@ fn emit_union(
         let _ = writeln!(out, "    {} : {};", c.field, c.ty);
     }
     let _ = writeln!(out, "  }}");
+    // Emits `disc + (match … selected-member-put)` writing inline into writer
+    // variable `wv` (used for @final in both reps and @appendable under XCDR1).
+    let emit_disc_and_match = |out: &mut String, wv: &str| {
+        let _ = writeln!(out, "    {};", disc_put.replace("$w", wv));
+        let _ = writeln!(out, "    (match {} with", disc.subject("v.disc"));
+        for c in &cases {
+            if c.is_default {
+                let _ = writeln!(out, "     | _ -> {}", c.put.replace("$w", wv));
+            } else {
+                let lbl = c
+                    .labels
+                    .iter()
+                    .map(|n| disc.render_label(*n))
+                    .collect::<Vec<_>>()
+                    .join(" | ");
+                let _ = writeln!(out, "     | {lbl} -> {}", c.put.replace("$w", wv));
+            }
+        }
+        if need_fallback {
+            let _ = writeln!(out, "     | _ -> ()");
+        }
+        let _ = writeln!(out, "    );");
+    };
     let _ = writeln!(
         out,
         "\n  let marshal_into (v : t) (w : Wire.writer) (endian : Wire.endian) : unit ="
     );
     let _ = writeln!(out, "    ignore endian;");
-    let wv = if ext == ExtensibilityKind::Final {
-        "w"
+    if ext == ExtensibilityKind::Mutable {
+        // @mutable union (XTypes 1.3 §7.4.3.5.3): the discriminator is member id
+        // 0, the selected branch is member id (case-index + 1). XCDR2 = PL_CDR2
+        // (outer DHEADER + EMHEADER-tagged members, LC4/NEXTINT — the OCaml
+        // mutable convention); XCDR1 = PL_CDR1 PID list + sentinel.
+        // Each member value goes into a sub-writer whose rep follows `w`.
+        let emit_member = |out: &mut String, id: u32, put: &str, x1: bool| {
+            let mk = if x1 { "Wire.writer_x1" } else { "Wire.writer" };
+            let _ = writeln!(out, "    let zdMem = {mk} endian in");
+            let _ = writeln!(out, "    {};", put.replace("$w", "zdMem"));
+            if x1 {
+                let _ = writeln!(
+                    out,
+                    "    Wire.put_pl_cdr1_member w 0x{id:08x} (Wire.bytes zdMem);"
+                );
+            } else {
+                let emh = 0x8000_0000_u32 | 0x4000_0000_u32 | id;
+                let _ = writeln!(out, "    Wire.put_u32 zdBody 0x{emh:08x};");
+                let _ = writeln!(
+                    out,
+                    "    Wire.put_u32 zdBody (Bytes.length (Wire.bytes zdMem));"
+                );
+                let _ = writeln!(out, "    Wire.put_bytes zdBody (Wire.bytes zdMem);");
+            }
+        };
+        let emit_match = |out: &mut String, x1: bool| {
+            let _ = writeln!(out, "    (match {} with", disc.subject("v.disc"));
+            for (idx, c) in cases.iter().enumerate() {
+                let mid = (idx + 1) as u32;
+                let rhs = {
+                    let mut s = String::new();
+                    emit_member(&mut s, mid, &c.put, x1);
+                    // Trailing `()` so the block is a well-formed unit expression
+                    // (the member statements end with `;`).
+                    format!("begin\n{s}    ()\n    end")
+                };
+                if c.is_default {
+                    let _ = writeln!(out, "     | _ -> {rhs}");
+                } else {
+                    let lbl = c
+                        .labels
+                        .iter()
+                        .map(|n| disc.render_label(*n))
+                        .collect::<Vec<_>>()
+                        .join(" | ");
+                    let _ = writeln!(out, "     | {lbl} -> {rhs}");
+                }
+            }
+            if need_fallback {
+                let _ = writeln!(out, "     | _ -> ()");
+            }
+            let _ = writeln!(out, "    );");
+        };
+        let _ = writeln!(out, "    if Wire.is_x1 w then begin");
+        // --- XCDR1 PL_CDR1: disc = member 0, selected = member (idx+1). ---
+        emit_member(out, 0, &disc_put, true);
+        emit_match(out, true);
+        let _ = writeln!(out, "    Wire.put_pl_cdr1_sentinel w");
+        let _ = writeln!(out, "    end else begin");
+        // --- XCDR2 PL_CDR2: DHEADER over the EMHEADER-tagged member list. ---
+        let _ = writeln!(out, "    let zdBody = Wire.writer endian in");
+        emit_member(out, 0, &disc_put, false);
+        emit_match(out, false);
+        let _ = writeln!(
+            out,
+            "    Wire.put_u32 w (Bytes.length (Wire.bytes zdBody));"
+        );
+        let _ = writeln!(out, "    Wire.put_bytes w (Wire.bytes zdBody)");
+        let _ = writeln!(out, "    end");
+    } else if ext == ExtensibilityKind::Final {
+        emit_disc_and_match(out, "w");
+        let _ = writeln!(out, "    ()");
     } else {
+        // @appendable: XCDR1 inline (no DHEADER); XCDR2 DHEADER-framed body.
+        let _ = writeln!(out, "    if Wire.is_x1 w then begin");
+        emit_disc_and_match(out, "w");
+        let _ = writeln!(out, "    ()");
+        let _ = writeln!(out, "    end else begin");
         let _ = writeln!(out, "    let body = Wire.writer endian in");
-        "body"
-    };
-    let _ = writeln!(out, "    {};", disc_put.replace("$w", wv));
-    let _ = writeln!(out, "    (match {} with", disc.subject("v.disc"));
-    for c in &cases {
-        if c.is_default {
-            let _ = writeln!(out, "     | _ -> {}", c.put.replace("$w", wv));
-        } else {
-            let lbl = c
-                .labels
-                .iter()
-                .map(|n| disc.render_label(*n))
-                .collect::<Vec<_>>()
-                .join(" | ");
-            let _ = writeln!(out, "     | {lbl} -> {}", c.put.replace("$w", wv));
-        }
-    }
-    if need_fallback {
-        let _ = writeln!(out, "     | _ -> ()");
-    }
-    if ext != ExtensibilityKind::Final {
-        let _ = writeln!(out, "    );");
+        emit_disc_and_match(out, "body");
         let _ = writeln!(out, "    let bb = Wire.bytes body in");
         let _ = writeln!(out, "    Wire.put_u32 w (Bytes.length bb);");
         let _ = writeln!(out, "    Wire.put_bytes w bb");
-    } else {
-        let _ = writeln!(out, "    )");
+        let _ = writeln!(out, "    end");
     }
     let _ = writeln!(
         out,
         "\n  let marshal (v : t) (endian : Wire.endian) : bytes ="
     );
     let _ = writeln!(out, "    let w = Wire.writer endian in");
+    let _ = writeln!(out, "    marshal_into v w endian;");
+    let _ = writeln!(out, "    Wire.bytes w");
+    let _ = writeln!(
+        out,
+        "\n  let marshal_xcdr1 (v : t) (endian : Wire.endian) : bytes ="
+    );
+    let _ = writeln!(out, "    let w = Wire.writer_x1 endian in");
     let _ = writeln!(out, "    marshal_into v w endian;");
     let _ = writeln!(out, "    Wire.bytes w");
 
@@ -2141,36 +2503,233 @@ fn emit_union(
         format!("{{ disc; {body} }}")
     };
     let _ = writeln!(out, "\n  let read (r : Wire.reader) : t =");
-    if ext == ExtensibilityKind::Appendable {
-        let _ = writeln!(out, "    ignore (Wire.get_u32 r);");
-    }
-    let _ = writeln!(out, "    let disc = {} in", disc_get.replace("$r", "r"));
-    let _ = writeln!(out, "    (match {} with", disc.subject("disc"));
-    for c in &cases {
-        if c.is_default {
-            let _ = writeln!(out, "     | _ -> {}", record_for(Some(c)));
-        } else {
-            let lbl = c
-                .labels
+    if ext == ExtensibilityKind::Mutable {
+        // @mutable union decode: collect the framed members into a table keyed
+        // by id (XCDR1 PL_CDR1 to the sentinel; XCDR2 PL_CDR2 within the outer
+        // DHEADER length), read the discriminator from member 0, then read the
+        // selected branch (member case-index + 1) from its body; unselected
+        // members default.
+        let sub_reader = "(if Wire.r_is_x1 r then Wire.reader_x1 zdB (Wire.reader_endian r) else Wire.reader zdB (Wire.reader_endian r))";
+        let _ = writeln!(
+            out,
+            "    let zdtbl : (int, bytes) Hashtbl.t = Hashtbl.create 8 in"
+        );
+        let _ = writeln!(out, "    if Wire.r_is_x1 r then begin");
+        let _ = writeln!(
+            out,
+            "      let rec zdcollect () = match Wire.read_pl_cdr1_member r with"
+        );
+        let _ = writeln!(
+            out,
+            "        | None -> () | Some (zdId, zdBody) -> Hashtbl.replace zdtbl zdId zdBody; zdcollect ()"
+        );
+        let _ = writeln!(out, "      in zdcollect ()");
+        let _ = writeln!(out, "    end else begin");
+        let _ = writeln!(out, "      let zdlen = Wire.get_u32 r in");
+        let _ = writeln!(out, "      let zdstop = Wire.reader_pos r + zdlen in");
+        let _ = writeln!(out, "      while Wire.reader_pos r < zdstop do");
+        let _ = writeln!(
+            out,
+            "        let (zdId, zdBody) = Wire.read_emheader_member r in Hashtbl.replace zdtbl zdId zdBody"
+        );
+        let _ = writeln!(out, "      done");
+        let _ = writeln!(out, "    end;");
+        // Discriminator from member 0.
+        let disc_g = disc_get.replace("$r", "zdr");
+        let disc_default = ocaml_default(&disc_type)?;
+        let _ = writeln!(
+            out,
+            "    let disc = (match Hashtbl.find_opt zdtbl 0 with Some zdB -> let zdr = {sub_reader} in {disc_g} | None -> {disc_default}) in"
+        );
+        // Renders the record literal selecting case index `sel_idx` (reads its
+        // member body from the table; None = all defaulted).
+        let record_mut = |sel_idx: Option<usize>| -> String {
+            let body = cases
                 .iter()
-                .map(|n| disc.render_label(*n))
+                .zip(&defaults)
+                .enumerate()
+                .map(|(j, (c, def))| {
+                    let val = if sel_idx == Some(j) {
+                        let g = c.get.replace("$r", "zdr");
+                        let mid = j + 1;
+                        format!(
+                            "(match Hashtbl.find_opt zdtbl {mid} with Some zdB -> let zdr = {sub_reader} in {g} | None -> {def})"
+                        )
+                    } else {
+                        def.clone()
+                    };
+                    format!("{} = {val}", c.field)
+                })
                 .collect::<Vec<_>>()
-                .join(" | ");
-            let _ = writeln!(out, "     | {lbl} -> {}", record_for(Some(c)));
+                .join("; ");
+            format!("{{ disc; {body} }}")
+        };
+        let _ = writeln!(out, "    (match {} with", disc.subject("disc"));
+        for (idx, c) in cases.iter().enumerate() {
+            if c.is_default {
+                let _ = writeln!(out, "     | _ -> {}", record_mut(Some(idx)));
+            } else {
+                let lbl = c
+                    .labels
+                    .iter()
+                    .map(|n| disc.render_label(*n))
+                    .collect::<Vec<_>>()
+                    .join(" | ");
+                let _ = writeln!(out, "     | {lbl} -> {}", record_mut(Some(idx)));
+            }
         }
+        if need_fallback {
+            let _ = writeln!(out, "     | _ -> {}", record_mut(None));
+        }
+        let _ = writeln!(out, "    )");
+    } else {
+        if ext == ExtensibilityKind::Appendable {
+            // @appendable: XCDR2 frames the body with a DHEADER; XCDR1 has none.
+            let _ = writeln!(
+                out,
+                "    if not (Wire.r_is_x1 r) then ignore (Wire.get_u32 r);"
+            );
+        }
+        let _ = writeln!(out, "    let disc = {} in", disc_get.replace("$r", "r"));
+        let _ = writeln!(out, "    (match {} with", disc.subject("disc"));
+        for c in &cases {
+            if c.is_default {
+                let _ = writeln!(out, "     | _ -> {}", record_for(Some(c)));
+            } else {
+                let lbl = c
+                    .labels
+                    .iter()
+                    .map(|n| disc.render_label(*n))
+                    .collect::<Vec<_>>()
+                    .join(" | ");
+                let _ = writeln!(out, "     | {lbl} -> {}", record_for(Some(c)));
+            }
+        }
+        if need_fallback {
+            let _ = writeln!(out, "     | _ -> {}", record_for(None));
+        }
+        let _ = writeln!(out, "    )");
     }
-    if need_fallback {
-        let _ = writeln!(out, "     | _ -> {}", record_for(None));
-    }
-    let _ = writeln!(out, "    )");
     let _ = writeln!(
         out,
         "\n  let unmarshal (b : bytes) (endian : Wire.endian) : t ="
     );
     let _ = writeln!(out, "    read (Wire.reader b endian)");
+    let _ = writeln!(
+        out,
+        "\n  let unmarshal_xcdr1 (b : bytes) (endian : Wire.endian) : t ="
+    );
+    let _ = writeln!(out, "    read (Wire.reader_x1 b endian)");
     // §7.2.2.4.8 — text as the last element inside the declaration.
     emit_verbatim_at(out, "  ", &u.annotations, PlacementKind::EndDeclaration);
     let _ = writeln!(out, "end");
+    Ok(())
+}
+
+/// The OCaml type an IDL type-spec maps to (the record-field / parameter type),
+/// via the shared [`map_type`] (the put statement is discarded).
+fn ocaml_type_of(
+    ts: &TypeSpec,
+    typedefs: &HashMap<String, TypeSpec>,
+    enum_names: &HashSet<String>,
+    struct_names: &HashSet<String>,
+) -> Result<String> {
+    let resolved = resolve_typedef(ts, typedefs);
+    let (ty, _) = map_type(&resolved, "_", enum_names, struct_names)?;
+    Ok(ty)
+}
+
+/// Emits the native OCaml `<Iface>_Client` / `<Iface>_Handler` signatures for an
+/// IDL `interface` (operations + attributes). Both carry the SAME member set —
+/// the client-call and server-handler surface of the interface. Operations have
+/// no wire form here (there is no OCaml `zerodds-rpc` runtime to marshal them —
+/// the honest boundary is the typed signature, matching idl-ts / idl-swift's
+/// interface surface), so this recovers the `Export::Op`/`Export::Attr` that the
+/// backend otherwise drops (#11). `in`/`inout` params become curried arguments;
+/// the return folds `result + out + inout` into a tuple (bare type for one,
+/// `unit` for none). `parent_scope` is the enclosing module path (without the
+/// interface's own segment).
+fn emit_interface_signatures(
+    out: &mut String,
+    iface: &InterfaceDef,
+    parent_scope: &[String],
+    enum_names: &HashSet<String>,
+    struct_names: &HashSet<String>,
+    typedefs: &HashMap<String, TypeSpec>,
+) -> Result<()> {
+    // Resolve nested-type param references against the interface's own scope
+    // segment (its nested types are promoted under it — #A39).
+    let mut inner_scope = parent_scope.to_vec();
+    inner_scope.push(iface.name.text.clone());
+    CURRENT_SCOPE.with(|c| *c.borrow_mut() = inner_scope);
+
+    let iface_flat = module_name(&qualify(parent_scope, &iface.name.text));
+    // Base interfaces become module-type inclusion (protocol inheritance).
+    let base_flats: Vec<String> = iface
+        .bases
+        .iter()
+        .map(|b| {
+            let parts: Vec<String> = b.parts.iter().map(|p| p.text.clone()).collect();
+            module_name(&flatten_path(&parts))
+        })
+        .collect();
+
+    // Member signature lines, shared by the Client and Handler module types.
+    let mut lines: Vec<String> = Vec::new();
+    for ex in &iface.exports {
+        match ex {
+            Export::Op(op) => {
+                let vname = type_ident(&op.name.text);
+                let mut args: Vec<String> = Vec::new();
+                let mut rets: Vec<String> = Vec::new();
+                if let Some(rt) = &op.return_type {
+                    rets.push(ocaml_type_of(rt, typedefs, enum_names, struct_names)?);
+                }
+                for p in &op.params {
+                    let pty = ocaml_type_of(&p.type_spec, typedefs, enum_names, struct_names)?;
+                    match p.attribute {
+                        ParamAttribute::In => args.push(pty),
+                        ParamAttribute::Out => rets.push(pty),
+                        ParamAttribute::InOut => {
+                            args.push(pty.clone());
+                            rets.push(pty);
+                        }
+                    }
+                }
+                let arg_s = if args.is_empty() {
+                    "unit".to_string()
+                } else {
+                    args.join(" -> ")
+                };
+                let ret_s = match rets.as_slice() {
+                    [] => "unit".to_string(),
+                    [one] => one.clone(),
+                    many => format!("({})", many.join(" * ")),
+                };
+                lines.push(format!("  val {vname} : {arg_s} -> {ret_s}"));
+            }
+            Export::Attr(a) => {
+                let aty = ocaml_type_of(&a.type_spec, typedefs, enum_names, struct_names)?;
+                let an = type_ident(&a.name.text);
+                lines.push(format!("  val get_{an} : unit -> {aty}"));
+                if !a.readonly {
+                    lines.push(format!("  val set_{an} : {aty} -> unit"));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    for suffix in ["_Client", "_Handler"] {
+        let _ = writeln!(out, "\nmodule type {iface_flat}{suffix} = sig");
+        for b in &base_flats {
+            let _ = writeln!(out, "  include {b}{suffix}");
+        }
+        for l in &lines {
+            let _ = writeln!(out, "{l}");
+        }
+        let _ = writeln!(out, "end");
+    }
     Ok(())
 }
 
@@ -2218,12 +2777,22 @@ fn build_map_put(
             "({bound_check}let zdSorted = {sorted} in\n     Wire.put_u32 $w (List.length zdSorted);\n     List.iter (fun (zdKk, zdKv) -> {key_put}; {val_put}) zdSorted)"
         ))
     } else {
-        let kp = key_put.replace("$w", "zdSub");
-        let vp = val_put.replace("$w", "zdSub");
+        // Non-primitive pair: XCDR2 frames the `count + pairs` block with a
+        // collection DHEADER (built in a sub-writer); XCDR1 / classic CDR writes
+        // it inline into the flowing writer (no DHEADER). The writer's `x1` flag
+        // selects the branch.
+        let kp = val_put_ref(key_put, "zdSub");
+        let vp = val_put_ref(val_put, "zdSub");
         Ok(format!(
-            "({bound_check}let zdSorted = {sorted} in\n     let zdSub = Wire.writer endian in\n     Wire.put_u32 zdSub (List.length zdSorted);\n     List.iter (fun (zdKk, zdKv) -> {kp}; {vp}) zdSorted;\n     let zdBB = Wire.bytes zdSub in\n     Wire.put_u32 $w (Bytes.length zdBB);\n     Wire.put_bytes $w zdBB)"
+            "({bound_check}let zdSorted = {sorted} in\n     if Wire.is_x1 $w then begin\n       Wire.put_u32 $w (List.length zdSorted);\n       List.iter (fun (zdKk, zdKv) -> {key_put}; {val_put}) zdSorted\n     end else begin\n       let zdSub = Wire.writer endian in\n       Wire.put_u32 zdSub (List.length zdSorted);\n       List.iter (fun (zdKk, zdKv) -> {kp}; {vp}) zdSorted;\n       let zdBB = Wire.bytes zdSub in\n       Wire.put_u32 $w (Bytes.length zdBB);\n       Wire.put_bytes $w zdBB\n     end)"
         ))
     }
+}
+
+/// Replaces the `$w` writer placeholder in a put string with a concrete writer
+/// name (used to retarget a key/value put at a sub-writer in the XCDR2 branch).
+fn val_put_ref(put: &str, writer: &str) -> String {
+    put.replace("$w", writer)
 }
 
 /// zerodds-lint: recursion-depth 32
@@ -2364,14 +2933,24 @@ fn key_put(
             } else {
                 nested_keys
             };
+            let nested_autoid = zerodds_idl::semantics::container_autoid_hash(&sd.annotations);
             let mut ordered: Vec<(u32, &Member)> = effective
                 .iter()
                 .enumerate()
                 .map(|(i, m)| {
-                    let id = lower_annotations(&m.annotations)
-                        .ok()
-                        .and_then(|l| l.explicit_id())
-                        .unwrap_or(i as u32);
+                    // Key-order by member id, honoring `@id`/`@hashid`/
+                    // `@autoid(HASH)` (XTypes 1.3 §7.6.8), via the shared resolver.
+                    let raw = m
+                        .declarators
+                        .first()
+                        .map(|d| d.name().text.clone())
+                        .unwrap_or_default();
+                    let id = zerodds_idl::semantics::fixed_member_id(
+                        nested_autoid,
+                        &m.annotations,
+                        &raw,
+                    )
+                    .unwrap_or(i as u32);
                     (id, *m)
                 })
                 .collect();
@@ -2473,8 +3052,11 @@ fn map_sequence(
         let name = resolve_scoped_name(sn);
         if struct_names.contains(&name) {
             let m = module_name(&name);
+            // XCDR2 frames the elements with a collection DHEADER (sub-writer);
+            // XCDR1 / classic CDR writes `count + elements` inline (no DHEADER),
+            // stream-relative into the flowing writer. The `x1` flag selects.
             let put = format!(
-                "({bound_check}let sub = Wire.writer endian in                  Wire.put_u32 sub (List.length {expr});                  List.iter (fun e -> {m}.marshal_into e sub endian) {expr};                  let bb = Wire.bytes sub in                  Wire.put_u32 $w (Bytes.length bb); Wire.put_bytes $w bb)"
+                "({bound_check}if Wire.is_x1 $w then begin Wire.put_u32 $w (List.length {expr}); List.iter (fun e -> {m}.marshal_into e $w endian) {expr} end else begin let sub = Wire.writer endian in Wire.put_u32 sub (List.length {expr}); List.iter (fun e -> {m}.marshal_into e sub endian) {expr}; let bb = Wire.bytes sub in Wire.put_u32 $w (Bytes.length bb); Wire.put_bytes $w bb end)"
             );
             return Ok((format!("{m}.t list"), put));
         }
@@ -2641,11 +3223,22 @@ fn map_get(
             if enum_names.contains(&name) {
                 let ty = type_ident(&name);
                 // Read the @bit_bound-wide holder (XTypes 1.3 §7.4.5.1); mirrors
-                // the backend's int8/int16 reads (get_u8/get_u16).
-                let get = match enum_wire_width(&name) {
-                    1 => format!("({ty}_of_int (Wire.get_u8 $r))"),
-                    2 => format!("({ty}_of_int (Wire.get_u16 $r))"),
-                    _ => format!("({ty}_of_int (Wire.get_u32 $r))"),
+                // the backend's int8/int16 reads (get_u8/get_u16). The holder is
+                // SIGNED — for an enum with a negative enumerator, sign-extend
+                // the unsigned wire value into the holder's signed range before
+                // mapping, else `<ty>_of_int` never matches the negative value.
+                let width = enum_wire_width(&name);
+                let (raw, half, full) = match width {
+                    1 => ("Wire.get_u8 $r", 0x80_i64, 0x100_i64),
+                    2 => ("Wire.get_u16 $r", 0x8000, 0x1_0000),
+                    _ => ("Wire.get_u32 $r", 0x8000_0000, 0x1_0000_0000),
+                };
+                let get = if enum_is_signed(&name) {
+                    format!(
+                        "({ty}_of_int (let zdv = {raw} in if zdv >= {half} then zdv - {full} else zdv))"
+                    )
+                } else {
+                    format!("({ty}_of_int ({raw}))")
                 };
                 Ok(get)
             } else if struct_names.contains(&name) || is_bit_name(&name) {
@@ -2659,10 +3252,12 @@ fn map_get(
             let key_get = map_get(&m.key, enum_names, struct_names)?;
             let val_get = map_get(&m.value, enum_names, struct_names)?;
             let prim = is_primitive(&m.key, enum_names) && is_primitive(&m.value, enum_names);
+            // Non-primitive pair: XCDR2 leads with a collection DHEADER; XCDR1
+            // classic CDR does not — skip it only when not reading XCDR1.
             let dh = if prim {
                 ""
             } else {
-                "ignore (Wire.get_u32 $r); "
+                "(if not (Wire.r_is_x1 $r) then ignore (Wire.get_u32 $r)); "
             };
             // B1 follow-up (#22 decode-side parity): mirror the encode-side
             // map bound check on decode — XTypes 1.3 §7.4.3.
@@ -2761,8 +3356,9 @@ fn map_get_sequence(
                 }
                 None => String::new(),
             };
+            // XCDR2 leads with a collection DHEADER; XCDR1 classic CDR does not.
             return Ok(format!(
-                "(ignore (Wire.get_u32 $r); let zdn = Wire.get_u32 $r in {bound_check}let rec zdloop k acc = if k = 0 then List.rev acc else (let e = {m}.read $r in zdloop (k - 1) (e :: acc)) in zdloop zdn [])"
+                "((if not (Wire.r_is_x1 $r) then ignore (Wire.get_u32 $r)); let zdn = Wire.get_u32 $r in {bound_check}let rec zdloop k acc = if k = 0 then List.rev acc else (let e = {m}.read $r in zdloop (k - 1) (e :: acc)) in zdloop zdn [])"
             ));
         }
     }

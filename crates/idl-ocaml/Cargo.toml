@@ -22,3 +22,7 @@ path = "src/lib.rs"
 
 [dependencies]
 zerodds-idl = { version = "1.0.0-rc.7", path = "../idl" }
+
+[dev-dependencies]
+# NameHash MD5 member-id vectors for the @hashid/@autoid(HASH) parity tests.
+zerodds-types = { version = "1.0.0-rc.7", path = "../types", default-features = false, features = ["alloc"] }
