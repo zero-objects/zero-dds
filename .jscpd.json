@@ -1,0 +1,30 @@
+{
+  "minTokens": 50,
+  "threshold": 8.5,
+  "reporters": ["console", "threshold"],
+  "gitignore": true,
+  "absolute": false,
+  "ignore": [
+    "**/target/**",
+    "**/node_modules/**",
+    "**/dist/**",
+    "**/build/**",
+    "endpoints/*/build/**",
+    "**/_generated/**",
+    "**/snapshots/**",
+    "**/tests/snapshots/**",
+    "**/*.snap",
+    "**/goldens/**",
+    "**/*.golden",
+    "**/Cargo.lock",
+    "**/*.lock",
+    "**/package-lock.json",
+    "github/**",
+    "internal/**",
+    "docs/**",
+    "website/**",
+    "man/**",
+    "examples/tutorials/**",
+    "tests/compliance/**"
+  ]
+}

@@ -58,6 +58,73 @@ jobs:
           rust-version: "1.88.0"
 
   # ---------------------------------------------------------------------------
+  # jscpd — copy/paste-detection gate (catches code duplication).
+  #
+  # Why: a duplicate C# `ExtensibilityKind` enum slipped in and only surfaced
+  # at a build break. jscpd is language-agnostic (Rust, C#, Java, Kotlin, TS,
+  # Go, Zig, …) so it covers the WHOLE codebase, not just the Rust crates.
+  #
+  # Config lives in `.jscpd.json` at the repo root — `minTokens` (50), the
+  # `ignore` globs (build/generated output, content mirrors like docs/website,
+  # the release mirror, and intentional teaching duplication under
+  # examples/tutorials), and the `threshold`: the max duplicated-LINES % over
+  # all scanned files. The threshold (8.5) sits ~0.5pp above the measured
+  # cleaned baseline (8.01% lines on main, 2026-07), so the gate is GREEN
+  # today but trips on new large-scale copy-paste (a duplicated file / module
+  # / enum block — the ExtensibilityKind failure class). It is a RATCHET:
+  # lower it as the known real clones (crates/idl-* cross-backend emitters,
+  # the coap/mqtt/websocket bridge daemons, crates/ts-node ↔ crates/ts-wasm
+  # cdr code) get de-duplicated. Do NOT raise it to paper over new duplication.
+  #
+  # To whitelist a legitimate clone: add a narrow glob to `.jscpd.json`
+  # `ignore`, or wrap the block in `jscpd:ignore-start` / `jscpd:ignore-end`
+  # comments. `.jscpd.json` is auto-discovered; its `threshold` reporter exits
+  # non-zero when duplication% exceeds the threshold.
+  #
+  # This job MUST stay in sync with the `jscpd` job in .gitlab-ci.yml (the
+  # authoritative root/GitLab CI) — otherwise the mirror sync re-diverges the
+  # gate.
+  # ---------------------------------------------------------------------------
+  jscpd:
+    name: jscpd (copy/paste detection)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npx --yes jscpd@5 .
+
+  # ---------------------------------------------------------------------------
+  # cpd — the SECOND, token-based copy/paste gate (PMD CPD), run alongside the
+  # line-based `jscpd` job above. Two independent detectors on purpose: jscpd
+  # tokenizes by lines, PMD CPD by language tokens, so each catches clones the
+  # other misses (notably small same-language clones — the C#
+  # `ExtensibilityKind` class — that a repo-wide line-% budget does not fail
+  # on).
+  #
+  # All logic (per-language minimum-tokens + committed baselines, the shared
+  # exclude list mirroring .jscpd.json, and the PMD download) lives in ONE
+  # script, scripts/cpd-gate.sh, called identically here and in the GitLab CI
+  # so the gate can't drift. PMD 7.x is a JVM tool → setup-java; the script
+  # fetches pmd-dist at runtime (never committed). To re-baseline:
+  # `scripts/cpd-gate.sh --update-baseline` and copy the numbers into the file.
+  #
+  # This job MUST stay in sync with the `cpd` job in .gitlab-ci.yml (the
+  # authoritative root/GitLab CI) — otherwise the mirror sync re-diverges it.
+  # ---------------------------------------------------------------------------
+  cpd:
+    name: cpd (token-based copy/paste detection)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - run: bash scripts/cpd-gate.sh
+
+  # ---------------------------------------------------------------------------
   # Build & test matrix — Full profile on Linux x86_64 and ARM64.
   # Phase-0 scope per docs/architecture/06_roadmap.md §3.
   # Windows, macOS, QNX, and embedded targets land with later phases.
