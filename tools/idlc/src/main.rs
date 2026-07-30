@@ -299,6 +299,14 @@ struct CliOptions {
     /// `--default-extensibility` — Extensibility fuer un-annotierte
     /// struct/union/enum. `None` = OMG-Default belassen (Emitter-Fallback).
     default_ext: Option<DefaultExt>,
+    /// `--cyclone` — CycloneDDS-Interop-Intent. Ueber den reinen
+    /// Intent-Marker hinaus setzt es den Default fuer un-annotierte
+    /// Aggregate auf `@final` (Cyclones Generator-Default), damit
+    /// ZeroDDS-Output mit einem un-annotierten Cyclone-Peer auf der Wire
+    /// interoperiert. Explizite IDL-Annotation und explizites
+    /// `--default-extensibility` haben Vorrang (Aufloesung nach dem Parsen,
+    /// argument-order-unabhaengig). `--opendds` bleibt reiner No-op.
+    cyclone: bool,
     /// `--default-nested true` — un-annotierte Typen als `@nested`
     /// markieren. `None`/`Some(false)` = OMG-Default belassen.
     default_nested: Option<bool>,
@@ -441,7 +449,12 @@ fn run(args: &[String]) -> Result<(), CliError> {
             // Vendor-Eigenheiten sind #pragma-basiert (keylist,
             // DCPS_DATA_KEY) und werden ohnehin immer verarbeitet.
             // Die Flags sind als explizite Intent-Marker akzeptiert.
-            "--opendds" | "--cyclone" => {}
+            // `--opendds` is a pure intent marker (its vendor pragmas are
+            // processed unconditionally anyway). `--cyclone` additionally
+            // steers the default extensibility to `final` — resolved AFTER
+            // the whole loop so argument order never matters.
+            "--opendds" => {}
+            "--cyclone" => opts.cyclone = true,
             "-v" | "--verbose" => opts.verbose = opts.verbose.saturating_add(1),
             // Aggregierte Kurzform `-vv` / `-vvv`.
             other
@@ -616,6 +629,20 @@ fn run(args: &[String]) -> Result<(), CliError> {
                 "--corba is only supported by --cpp, --csharp, --java, --rust".to_string(),
             ));
         }
+    }
+    // `--cyclone`: adopt CycloneDDS' default extensibility (`final`) for
+    // un-annotated aggregates, so ZeroDDS output matches an un-annotated
+    // Cyclone peer on the wire (this is the concrete #27 interop path).
+    // Precedence, highest first: explicit IDL annotation (applied later, it
+    // only touches un-annotated types) > explicit `--default-extensibility`
+    // > `--cyclone` (final) > the global ZeroDDS default (`appendable`).
+    // Resolved here, after the entire argument loop, so order is irrelevant.
+    if opts.cyclone && opts.default_ext.is_none() {
+        opts.default_ext = Some(DefaultExt::Final);
+        opts.report(
+            1,
+            "--cyclone: un-annotated aggregates default to @final (CycloneDDS-compatible)",
+        );
     }
     let dump_action = opts.parse_only || opts.dump_deps || opts.dump_typeobject;
     // Modes that produce no backend code: the dump/parse actions plus
@@ -1497,7 +1524,9 @@ fn print_help() {
          \x20   --rti              RTI Connext-Grammar-Delta beim Parse\n\
          \x20   --opendds          OpenDDS-Intent (Vendor-Pragmas werden\n\
          \x20                      ohnehin verarbeitet) — Kompat-Flag\n\
-         \x20   --cyclone          Cyclone-DDS-Intent — Kompat-Flag\n\
+         \x20   --cyclone          CycloneDDS-Interop: un-annotierte Aggregate\n\
+         \x20                      als @final (Cyclone-Default) generieren;\n\
+         \x20                      @-Annotation/--default-extensibility gewinnen\n\
          \x20   --corba            CORBA-Service-Code zusaetzlich emittieren\n\
          \x20                      (--cpp/--csharp/--java: Annex-A.1 inline;\n\
          \x20                       --rust: Two-File-Output via zerodds-corba-rust)\n\
@@ -2824,6 +2853,73 @@ mod tests {
             "wobbly".to_string(),
         ]);
         assert!(matches!(result, Err(CliError::Usage(_))), "got {result:?}");
+    }
+
+    /// `--cyclone` must make un-annotated aggregates `@final` (CycloneDDS'
+    /// generator default), with the correct precedence and independent of
+    /// argument order. Marker: the Rust emitter uses
+    /// `zerodds_cdr::struct_enc::encode_appendable` only for `@appendable`
+    /// (the DHEADER path); its absence ⇒ `@final`. The default extensibility
+    /// is resolved once in `run()` before backend dispatch, so every selected
+    /// backend sees the same resolved default (checked here via `--rust`).
+    #[test]
+    fn cyclone_flag_sets_final_with_correct_precedence() {
+        let work = unique_workdir("cyc-prec");
+        std::fs::create_dir_all(&work).expect("mkdir");
+        let mut n = 0;
+        let mut emit_rs = |idl_src: &str, extra: &[&str]| -> String {
+            n += 1;
+            let idl = work.join(format!("r{n}.idl"));
+            std::fs::write(&idl, idl_src).expect("write idl");
+            let out = work.join(format!("o{n}"));
+            let mut args = vec!["--rust".to_string()];
+            for e in extra {
+                args.push((*e).to_string());
+            }
+            args.push("-o".to_string());
+            args.push(out.to_string_lossy().to_string());
+            args.push(idl.to_string_lossy().to_string());
+            let r = run(&args);
+            assert!(r.is_ok(), "run failed for {extra:?}: {r:?}");
+            std::fs::read_to_string(out.join(format!("r{n}.rs"))).expect("read gen")
+        };
+        let plain = "struct Robot { unsigned long id; unsigned long label; };";
+        let annotated = "@appendable\nstruct Robot { unsigned long id; unsigned long label; };";
+        let is_final = |src: &str| !src.contains("encode_appendable");
+
+        // 1) --cyclone alone → final.
+        assert!(
+            is_final(&emit_rs(plain, &["--cyclone"])),
+            "--cyclone alone must default un-annotated aggregates to @final"
+        );
+        // 2) no flag → the global ZeroDDS default stays @appendable (proves it
+        //    is --cyclone, not something else, that flips the default).
+        assert!(
+            !is_final(&emit_rs(plain, &[])),
+            "without --cyclone the default must remain @appendable"
+        );
+        // 3) explicit --default-extensibility wins over --cyclone.
+        assert!(
+            !is_final(&emit_rs(
+                plain,
+                &["--cyclone", "--default-extensibility", "appendable"]
+            )),
+            "explicit --default-extensibility must override --cyclone"
+        );
+        // 4) argument order must not matter.
+        assert!(
+            !is_final(&emit_rs(
+                plain,
+                &["--default-extensibility", "appendable", "--cyclone"]
+            )),
+            "argument order must not change the resolved default"
+        );
+        // 5) an explicit @appendable IDL annotation survives --cyclone.
+        assert!(
+            !is_final(&emit_rs(annotated, &["--cyclone"])),
+            "an explicit @appendable annotation must survive --cyclone"
+        );
+        std::fs::remove_dir_all(&work).ok();
     }
 
     #[test]
