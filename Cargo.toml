@@ -25,6 +25,7 @@ members = [
     "crates/idl-lua",
     "crates/idl-go",
     "crates/endpoint-e2e",
+    "crates/dotnet-build-lock",
     "crates/idl-zig",
     "crates/idl-java",
     "crates/idl-python",

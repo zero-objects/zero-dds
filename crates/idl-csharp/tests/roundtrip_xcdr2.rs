@@ -47,70 +47,6 @@ fn zerodds_cdr_csproj() -> String {
     p.to_string_lossy().into_owned()
 }
 
-/// Minimal `Omg.Types` container shim (ISequence/SequenceList/Any). The wire
-/// logic under test lives entirely in `ZeroDDS.Cdr`; this is just plumbing for
-/// the generated data records.
-const OMG_STUB: &str = r#"namespace Omg.Types {
-    using System.Collections;
-    using System.Collections.Generic;
-    public interface ITopicType<T> {}
-    public sealed class Any { public string? TypeId; public object? Value; }
-    [System.AttributeUsage(System.AttributeTargets.Property)]
-    public sealed class KeyAttribute : System.Attribute {}
-    [System.AttributeUsage(System.AttributeTargets.Property)]
-    public sealed class OptionalAttribute : System.Attribute {}
-    [System.AttributeUsage(System.AttributeTargets.Property)]
-    public sealed class MustUnderstandAttribute : System.Attribute {}
-    [System.AttributeUsage(System.AttributeTargets.Property)]
-    public sealed class IdAttribute : System.Attribute { public IdAttribute(uint id) {} }
-    [System.AttributeUsage(System.AttributeTargets.Property)]
-    public sealed class ExternalAttribute : System.Attribute {}
-    [System.AttributeUsage(System.AttributeTargets.Class)]
-    public sealed class NestedAttribute : System.Attribute {}
-    // `ExtensibilityKind` lives in `ZeroDDS.Cdr` (the real runtime); the
-    // generated `[Extensibility(ExtensibilityKind.X)]` resolves there. Do NOT
-    // redefine the enum in Omg.Types or it becomes ambiguous.
-    [System.AttributeUsage(System.AttributeTargets.Class | System.AttributeTargets.Struct)]
-    public sealed class ExtensibilityAttribute : System.Attribute { public ExtensibilityAttribute(ZeroDDS.Cdr.ExtensibilityKind kind) {} }
-    public interface ISequence<T> : System.Collections.Generic.IList<T> {}
-    public interface IBoundedSequence<T> : ISequence<T> { int Bound { get; } }
-    public sealed class BoundedList<T> : IBoundedSequence<T> {
-        private readonly List<T> _items;
-        public BoundedList(int bound) { Bound = bound; _items = new List<T>(bound); }
-        public int Bound { get; }
-        public int Count => _items.Count;
-        public bool IsReadOnly => false;
-        public T this[int i] { get => _items[i]; set => _items[i] = value; }
-        public void Add(T x) { if (_items.Count >= Bound) throw new System.ArgumentOutOfRangeException(nameof(x)); _items.Add(x); }
-        public void Insert(int i, T x) { if (_items.Count >= Bound) throw new System.ArgumentOutOfRangeException(nameof(x)); _items.Insert(i, x); }
-        public void Clear() => _items.Clear();
-        public bool Contains(T x) => _items.Contains(x);
-        public void CopyTo(T[] a, int i) => _items.CopyTo(a, i);
-        public IEnumerator<T> GetEnumerator() => _items.GetEnumerator();
-        public int IndexOf(T x) => _items.IndexOf(x);
-        public bool Remove(T x) => _items.Remove(x);
-        public void RemoveAt(int i) => _items.RemoveAt(i);
-        IEnumerator IEnumerable.GetEnumerator() => _items.GetEnumerator();
-    }
-    public sealed class SequenceList<T> : ISequence<T> {
-        private readonly List<T> _items = new();
-        public int Count => _items.Count;
-        public bool IsReadOnly => false;
-        public T this[int i] { get => _items[i]; set => _items[i] = value; }
-        public void Add(T x) => _items.Add(x);
-        public void Insert(int i, T x) => _items.Insert(i, x);
-        public void Clear() => _items.Clear();
-        public bool Contains(T x) => _items.Contains(x);
-        public void CopyTo(T[] a, int i) => _items.CopyTo(a, i);
-        public IEnumerator<T> GetEnumerator() => _items.GetEnumerator();
-        public int IndexOf(T x) => _items.IndexOf(x);
-        public bool Remove(T x) => _items.Remove(x);
-        public void RemoveAt(int i) => _items.RemoveAt(i);
-        IEnumerator IEnumerable.GetEnumerator() => _items.GetEnumerator();
-    }
-}
-"#;
-
 /// Generates C# for `idl`, writes `Program.cs` (= `main_body`), builds an exe
 /// that references the real `ZeroDDS.Cdr`, runs it, and returns stdout. Panics
 /// (with the full generated source) on build/run failure or non-zero exit.
@@ -145,12 +81,31 @@ fn run_roundtrip(idl: &str, main_body: &str) -> Option<String> {
     );
 
     std::fs::write(tmp.path().join("Generated.csproj"), csproj).unwrap();
-    std::fs::write(tmp.path().join("OmgTypesStub.cs"), OMG_STUB).unwrap();
     std::fs::write(tmp.path().join("Generated.cs"), &cs_source).unwrap();
     std::fs::write(tmp.path().join("Program.cs"), &program).unwrap();
 
+    // Build under the cross-process lock — every C# test builds the shared
+    // ZeroDDS.Cdr project, whose obj/ output races across parallel test
+    // binaries (CS2012). Then run the built exe WITHOUT the lock so the 25
+    // roundtrips stay concurrent; only the build step is serialized.
+    {
+        let _guard = zerodds_dotnet_build_lock::dotnet_build_guard();
+        let build = Command::new("dotnet")
+            .args(["build", "--nologo", "--verbosity", "quiet"])
+            .current_dir(tmp.path())
+            .output()
+            .expect("dotnet build");
+        if !build.status.success() {
+            panic!(
+                "dotnet build FAILED:\n--- idl ---\n{idl}\n--- generated ---\n{cs_source}\n--- program ---\n{program}\n--- stdout ---\n{}\n--- stderr ---\n{}",
+                String::from_utf8_lossy(&build.stdout),
+                String::from_utf8_lossy(&build.stderr)
+            );
+        }
+    }
+
     let out = Command::new("dotnet")
-        .args(["run", "--nologo", "--verbosity", "quiet"])
+        .args(["run", "--no-build", "--nologo", "--verbosity", "quiet"])
         .current_dir(tmp.path())
         .output()
         .expect("dotnet run");

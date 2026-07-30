@@ -116,6 +116,7 @@ namespace ZeroDDS.Cdr
         sb.AppendLine("#nullable enable");
         sb.AppendLine("using System;");
         sb.AppendLine("using ZeroDDS.Cdr;");
+        sb.AppendLine("using Omg.Types;"); // Canonical ExtensibilityKind (XTypes).
         sb.AppendLine();
         if (ns != null)
         {

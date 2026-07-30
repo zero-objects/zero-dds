@@ -7508,6 +7508,7 @@ name = "zerodds-conformance"
 version = "1.0.0-rc.7"
 dependencies = [
  "zerodds-coap-bridge",
+ "zerodds-dotnet-build-lock",
  "zerodds-grpc-bridge",
  "zerodds-hpack",
  "zerodds-http2",
@@ -7790,6 +7791,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "zerodds-dotnet-build-lock"
+version = "1.0.0-rc.7"
+dependencies = [
+ "libc",
+]
+
+[[package]]
 name = "zerodds-durability-service"
 version = "1.0.0-rc.7"
 dependencies = [
@@ -7870,6 +7878,7 @@ name = "zerodds-endpoint-e2e"
 version = "1.0.0-rc.7"
 dependencies = [
  "zerodds-cdr",
+ "zerodds-dotnet-build-lock",
  "zerodds-idl",
  "zerodds-idl-ada",
  "zerodds-idl-cpp",
@@ -8006,6 +8015,7 @@ version = "1.0.0-rc.7"
 dependencies = [
  "insta",
  "tempfile",
+ "zerodds-dotnet-build-lock",
  "zerodds-foundation",
  "zerodds-idl",
  "zerodds-idl-rust",
@@ -8031,6 +8041,7 @@ name = "zerodds-idl-go"
 version = "1.0.0-rc.7"
 dependencies = [
  "zerodds-idl",
+ "zerodds-rpc",
 ]
 
 [[package]]
@@ -8056,6 +8067,7 @@ dependencies = [
 name = "zerodds-idl-lua"
 version = "1.0.0-rc.7"
 dependencies = [
+ "zerodds-cdr",
  "zerodds-idl",
 ]
 

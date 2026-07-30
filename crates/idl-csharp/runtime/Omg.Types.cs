@@ -214,6 +214,20 @@ namespace Omg.Types
     {
     }
 
+    /// <summary>Reflective self-describing container for IDL <c>any</c>
+    /// (idl4-csharp §7.3). A member of IDL type <c>any</c> lowers to
+    /// <c>Omg.Types.Any</c>; such structs are gated out of the byte-oriented
+    /// TypeSupport codec (no static wire layout), so this only carries the
+    /// dynamically-typed value plus its TypeId for reflective handling.</summary>
+    public sealed class Any
+    {
+        /// <summary>The runtime type identifier of <see cref="Value"/>.</summary>
+        public string? TypeId;
+
+        /// <summary>The boxed value.</summary>
+        public object? Value;
+    }
+
     // -----------------------------------------------------------------------
     // Annotation-Bridge (§6.7)
     // -----------------------------------------------------------------------
@@ -264,6 +278,17 @@ namespace Omg.Types
         AttributeTargets.Property | AttributeTargets.Field,
         AllowMultiple = false)]
     public sealed class ExternalAttribute : Attribute
+    {
+    }
+
+    /// <summary>Maps IDL <c>@shared</c> onto generated members
+    /// (idl4-cpp / dds-psm-cxx §8.1.5: a pointer / reference-type member).
+    /// C# has no <c>shared_ptr</c> equivalent — the member is emitted as a
+    /// reference type and carries this marker.</summary>
+    [AttributeUsage(
+        AttributeTargets.Property | AttributeTargets.Field,
+        AllowMultiple = false)]
+    public sealed class SharedAttribute : Attribute
     {
     }
 

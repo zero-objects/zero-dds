@@ -5,6 +5,7 @@
 // Spec: zerodds-xcdr2-csharp-1.0 §2 / §3.
 
 using System;
+using Omg.Types; // Canonical ExtensibilityKind (XTypes) lives in the Omg.Types runtime.
 
 namespace ZeroDDS.Cdr;
 

@@ -81,12 +81,15 @@ fn compile_sources(sources: &[String]) -> Result<(), String> {
         zerodds_cdr_csproj()
     );
     std::fs::write(tmp.path().join("Generated.csproj"), csproj).map_err(|e| e.to_string())?;
-    std::fs::write(tmp.path().join("OmgTypesStub.cs"), OMG_STUB).map_err(|e| e.to_string())?;
     for (i, src) in sources.iter().enumerate() {
         std::fs::write(tmp.path().join(format!("Generated{i}.cs")), src)
             .map_err(|e| e.to_string())?;
     }
 
+    // Serialize against the other tests that build the shared ZeroDDS.Cdr
+    // project (cross-binary/-process `dotnet build` race → CS2012). Held only
+    // around the build.
+    let _guard = zerodds_dotnet_build_lock::dotnet_build_guard();
     let output = Command::new("dotnet")
         .args(["build", "--nologo", "--verbosity", "quiet"])
         .current_dir(tmp.path())
@@ -334,69 +337,3 @@ fn compose_two_independent_idls_compile_together() {
         panic!("composed multi-file set failed to compile:\n{e}");
     }
 }
-
-// ---------------------------------------------------------------------------
-// Minimal `Omg.Types` shim (mirrors roundtrip_xcdr2.rs). `ExtensibilityKind`
-// and the codec live in the real `ZeroDDS.Cdr` ProjectReference — do NOT
-// redefine them here or they become ambiguous.
-// ---------------------------------------------------------------------------
-
-const OMG_STUB: &str = r#"namespace Omg.Types {
-    using System.Collections;
-    using System.Collections.Generic;
-    public interface ITopicType<T> {}
-    public sealed class Any { public string? TypeId; public object? Value; }
-    [System.AttributeUsage(System.AttributeTargets.Property)]
-    public sealed class KeyAttribute : System.Attribute {}
-    [System.AttributeUsage(System.AttributeTargets.Property)]
-    public sealed class OptionalAttribute : System.Attribute {}
-    [System.AttributeUsage(System.AttributeTargets.Property)]
-    public sealed class MustUnderstandAttribute : System.Attribute {}
-    [System.AttributeUsage(System.AttributeTargets.Property)]
-    public sealed class IdAttribute : System.Attribute { public IdAttribute(uint id) {} }
-    [System.AttributeUsage(System.AttributeTargets.Property)]
-    public sealed class ExternalAttribute : System.Attribute {}
-    [System.AttributeUsage(System.AttributeTargets.Property)]
-    public sealed class SharedAttribute : System.Attribute {}
-    [System.AttributeUsage(System.AttributeTargets.Class)]
-    public sealed class NestedAttribute : System.Attribute {}
-    [System.AttributeUsage(System.AttributeTargets.Class | System.AttributeTargets.Struct)]
-    public sealed class ExtensibilityAttribute : System.Attribute { public ExtensibilityAttribute(ZeroDDS.Cdr.ExtensibilityKind kind) {} }
-    public interface ISequence<T> : System.Collections.Generic.IList<T> {}
-    public interface IBoundedSequence<T> : ISequence<T> { int Bound { get; } }
-    public sealed class BoundedList<T> : IBoundedSequence<T> {
-        private readonly List<T> _items;
-        public BoundedList(int bound) { Bound = bound; _items = new List<T>(bound); }
-        public int Bound { get; }
-        public int Count => _items.Count;
-        public bool IsReadOnly => false;
-        public T this[int i] { get => _items[i]; set => _items[i] = value; }
-        public void Add(T x) { if (_items.Count >= Bound) throw new System.ArgumentOutOfRangeException(nameof(x)); _items.Add(x); }
-        public void Insert(int i, T x) { if (_items.Count >= Bound) throw new System.ArgumentOutOfRangeException(nameof(x)); _items.Insert(i, x); }
-        public void Clear() => _items.Clear();
-        public bool Contains(T x) => _items.Contains(x);
-        public void CopyTo(T[] a, int i) => _items.CopyTo(a, i);
-        public IEnumerator<T> GetEnumerator() => _items.GetEnumerator();
-        public int IndexOf(T x) => _items.IndexOf(x);
-        public bool Remove(T x) => _items.Remove(x);
-        public void RemoveAt(int i) => _items.RemoveAt(i);
-        IEnumerator IEnumerable.GetEnumerator() => _items.GetEnumerator();
-    }
-    public sealed class SequenceList<T> : ISequence<T> {
-        private readonly List<T> _items = new();
-        public int Count => _items.Count;
-        public bool IsReadOnly => false;
-        public T this[int i] { get => _items[i]; set => _items[i] = value; }
-        public void Add(T x) => _items.Add(x);
-        public void Insert(int i, T x) => _items.Insert(i, x);
-        public void Clear() => _items.Clear();
-        public bool Contains(T x) => _items.Contains(x);
-        public void CopyTo(T[] a, int i) => _items.CopyTo(a, i);
-        public IEnumerator<T> GetEnumerator() => _items.GetEnumerator();
-        public int IndexOf(T x) => _items.IndexOf(x);
-        public bool Remove(T x) => _items.Remove(x);
-        public void RemoveAt(int i) => _items.RemoveAt(i);
-        IEnumerator IEnumerable.GetEnumerator() => _items.GetEnumerator();
-    }
-}
-"#;

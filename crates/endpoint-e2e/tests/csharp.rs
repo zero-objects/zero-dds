@@ -16,6 +16,7 @@
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 
+use zerodds_dotnet_build_lock::dotnet_build_guard;
 use zerodds_endpoint_e2e::{IDL, Peer, bind_peer, ping_pong};
 use zerodds_idl::config::ParserConfig;
 use zerodds_idl_csharp::{CsGenOptions, generate_csharp};
@@ -56,48 +57,12 @@ fn endpoint_sdk_source() -> String {
     std::fs::read_to_string(&p).expect("endpoints/csharp/Zerodds.cs must exist")
 }
 
-/// Minimal `Omg.Types` shim the generated records need (markers + attributes +
-/// sequence containers). Byte-for-byte the shim the idl-csharp roundtrip tests
-/// use; the wire logic lives in `ZeroDDS.Cdr`.
-const OMG_STUB: &str = r#"namespace Omg.Types {
-    using System.Collections;
-    using System.Collections.Generic;
-    public interface ITopicType<T> {}
-    public sealed class Any { public string? TypeId; public object? Value; }
-    [System.AttributeUsage(System.AttributeTargets.Property)]
-    public sealed class KeyAttribute : System.Attribute {}
-    [System.AttributeUsage(System.AttributeTargets.Property)]
-    public sealed class OptionalAttribute : System.Attribute {}
-    [System.AttributeUsage(System.AttributeTargets.Property)]
-    public sealed class MustUnderstandAttribute : System.Attribute {}
-    [System.AttributeUsage(System.AttributeTargets.Property)]
-    public sealed class IdAttribute : System.Attribute { public IdAttribute(uint id) {} }
-    [System.AttributeUsage(System.AttributeTargets.Property)]
-    public sealed class ExternalAttribute : System.Attribute {}
-    [System.AttributeUsage(System.AttributeTargets.Class)]
-    public sealed class NestedAttribute : System.Attribute {}
-    [System.AttributeUsage(System.AttributeTargets.Class | System.AttributeTargets.Struct)]
-    public sealed class ExtensibilityAttribute : System.Attribute { public ExtensibilityAttribute(ZeroDDS.Cdr.ExtensibilityKind kind) {} }
-    public interface ISequence<T> : System.Collections.Generic.IList<T> {}
-    public interface IBoundedSequence<T> : ISequence<T> { int Bound { get; } }
-    public sealed class SequenceList<T> : ISequence<T> {
-        private readonly List<T> _items = new();
-        public int Count => _items.Count;
-        public bool IsReadOnly => false;
-        public T this[int i] { get => _items[i]; set => _items[i] = value; }
-        public void Add(T x) => _items.Add(x);
-        public void Insert(int i, T x) => _items.Insert(i, x);
-        public void Clear() => _items.Clear();
-        public bool Contains(T x) => _items.Contains(x);
-        public void CopyTo(T[] a, int i) => _items.CopyTo(a, i);
-        public IEnumerator<T> GetEnumerator() => _items.GetEnumerator();
-        public int IndexOf(T x) => _items.IndexOf(x);
-        public bool Remove(T x) => _items.Remove(x);
-        public void RemoveAt(int i) => _items.RemoveAt(i);
-        IEnumerator IEnumerable.GetEnumerator() => _items.GetEnumerator();
-    }
-}
-"#;
+// The generated records reference `Omg.Types` (ITopicType, the [Key]/[Id]/…/
+// [Extensibility] attributes, ExtensibilityKind, the sequence containers). Those
+// types are compiled into `ZeroDDS.Cdr` (its .csproj `<Compile Include>`s
+// `idl-csharp/runtime/Omg.Types.cs`), and the app references `ZeroDDS.Cdr` — so
+// it gets the canonical Omg.Types from there. No local stub: a duplicate would
+// collide (CS0436) with `ZeroDDS.Cdr`'s Omg.Types.
 
 /// The `.csproj`: an exe on net8.0 referencing the real `ZeroDDS.Cdr` runtime.
 fn csproj() -> String {
@@ -229,7 +194,6 @@ fn build_app(dotnet: &str, dir: &Path) -> PathBuf {
 
     std::fs::create_dir_all(dir).expect("mkdir");
     std::fs::write(dir.join("app.csproj"), csproj()).expect("csproj");
-    std::fs::write(dir.join("OmgTypesStub.cs"), OMG_STUB).expect("omg stub");
     std::fs::write(dir.join("Generated.cs"), &generated).expect("generated");
     std::fs::write(dir.join("Zerodds.cs"), endpoint_sdk_source()).expect("sdk");
     std::fs::write(dir.join("Program.cs"), PROGRAM).expect("program");
@@ -238,6 +202,13 @@ fn build_app(dotnet: &str, dir: &Path) -> PathBuf {
     // Build up front (off the peer's clock) so the app starts — and sends its
     // Ping — promptly once spawned; the first restore/build can exceed the
     // peer's recv timeout otherwise.
+    //
+    // Serialize the build: every csharp/conformance test references the SAME
+    // ZeroDDS.Cdr project, so concurrent `dotnet build`s race on its obj/ output
+    // (CS2012) — across test binaries and processes, not just this binary's
+    // threads. A cross-process advisory lock (held only around the build)
+    // removes the race; the built apps still run concurrently.
+    let guard = dotnet_build_guard();
     let build = Command::new(dotnet)
         .args(["build", "-c", "Release", "--nologo", "-v", "quiet", "-o"])
         .arg(&out)
@@ -247,6 +218,7 @@ fn build_app(dotnet: &str, dir: &Path) -> PathBuf {
         .env("DOTNET_CLI_TELEMETRY_OPTOUT", "1")
         .output()
         .expect("dotnet build spawn");
+    drop(guard);
     assert!(
         build.status.success(),
         "dotnet build FAILED:\n--- stdout ---\n{}\n--- stderr ---\n{}\n--- generated ---\n{generated}",

@@ -13,6 +13,7 @@
 
 using System;
 using ZeroDDS.Cdr;
+using Omg.Types; // ExtensibilityKind
 
 namespace ZeroDDS.Examples;
 

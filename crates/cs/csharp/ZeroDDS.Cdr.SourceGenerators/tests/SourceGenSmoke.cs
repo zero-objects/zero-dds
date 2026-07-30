@@ -5,6 +5,7 @@ using System;
 using System.Linq;
 using Xunit;
 using ZeroDDS.Cdr;
+using Omg.Types; // ExtensibilityKind
 
 namespace ZeroDDS.Cdr.SourceGenerators.Tests;
 

@@ -19,6 +19,7 @@ zerodds-cdr = { path = "../cdr" }
 zerodds-xrce = { path = "../xrce" }
 
 [dev-dependencies]
+zerodds-dotnet-build-lock = { path = "../dotnet-build-lock" }
 zerodds-idl = { path = "../idl" }
 zerodds-idl-go = { path = "../idl-go" }
 zerodds-idl-nim = { path = "../idl-nim" }

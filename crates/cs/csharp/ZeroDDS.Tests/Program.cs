@@ -411,8 +411,8 @@ namespace demo
 
         public string TypeName => "demo::DemoTemp";
         public bool IsKeyed => false;
-        public ZeroDDS.Cdr.ExtensibilityKind Extensibility =>
-            ZeroDDS.Cdr.ExtensibilityKind.Appendable;
+        public Omg.Types.ExtensibilityKind Extensibility =>
+            Omg.Types.ExtensibilityKind.Appendable;
 
         public byte[] Encode(DemoTemp sample) =>
             Encode(sample, ZeroDDS.Cdr.EndianMode.LittleEndian);
@@ -455,8 +455,8 @@ namespace demo
 
         public string TypeName => "demo::KeyedRec";
         public bool IsKeyed => true;
-        public ZeroDDS.Cdr.ExtensibilityKind Extensibility =>
-            ZeroDDS.Cdr.ExtensibilityKind.Appendable;
+        public Omg.Types.ExtensibilityKind Extensibility =>
+            Omg.Types.ExtensibilityKind.Appendable;
 
         public byte[] Encode(KeyedRec sample) =>
             Encode(sample, ZeroDDS.Cdr.EndianMode.LittleEndian);
