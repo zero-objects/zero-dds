@@ -214,11 +214,12 @@ impl BufferWriter {
     /// # Errors
     /// `ValueOutOfRange` if `pos + 4` is past the current end.
     pub fn patch_u32_at(&mut self, pos: usize, value: u32) -> Result<(), EncodeError> {
-        let end = pos.checked_add(4).filter(|&e| e <= self.bytes.len()).ok_or(
-            EncodeError::ValueOutOfRange {
+        let end = pos
+            .checked_add(4)
+            .filter(|&e| e <= self.bytes.len())
+            .ok_or(EncodeError::ValueOutOfRange {
                 message: "patch_u32_at position out of bounds",
-            },
-        )?;
+            })?;
         self.bytes[pos..end].copy_from_slice(&self.endianness.write_u32(value));
         Ok(())
     }
