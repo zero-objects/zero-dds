@@ -83,13 +83,13 @@ Implementation:
 
 **Spec:** §5/§11 — further IDL constructs.
 
-**Repo:** — (`idl-ts codegen::Unsupported`).
+**Repo:** `crates/idl-ts/src/` (union, `map<>`, array, nested-struct, `wchar`/`wstring`/`long double` emit arms).
 
 **Tests:** —
 
-**Status:** n/a (rejected)
+**Status:** done
 
-**Decision record:** deliberately out of v1.0 scope, uniform across all 17 backends (the core = the primitive/string/sequence<octet> of the @final golden). Roadmap-tracked; backends honestly return `Unsupported` instead of a wrong wire.
+**Decision record:** The `idl-ts` codegen emits these constructs (unions, `map<>`, arrays, nested-struct members, `wchar`, `wstring`, `long double`). Only `@mutable` unions remain deferred (see §6.a).
 
 ## §6 Extensibility
 
@@ -107,13 +107,13 @@ Implementation:
 
 **Spec:** §6 — @mutable EMHEADER framing.
 
-**Repo:** — (`Unsupported`).
+**Repo:** `crates/idl-ts/src/` (`@mutable` PL_CDR2 EMHEADER / PL_CDR1 paths).
 
 **Tests:** —
 
-**Status:** n/a (rejected)
+**Status:** done (structs); `@mutable` unions deferred
 
-**Decision record:** @mutable EMHEADER is not emitted uniformly across all 17 backends; @final+@appendable cover the common case. A cross-cutting follow-up (roadmap), deliberately deferred. `idl-ts` returns `Unsupported`.
+**Decision record:** `@mutable` structs are emitted — PL_CDR2 EMHEADER framing under XCDR2, PL_CDR1 under XCDR1. Only `@mutable` unions are not yet emitted → `Unsupported`.
 
 ## §7 Key extraction
 
@@ -179,9 +179,9 @@ Implementation:
 
 ### §11 Honest non-goals
 
-**Spec:** §11 — decode codegen, keyHash codegen, @mutable, wchar/wstring/map/array/nested/union/long double.
+**Spec:** §11 — decode codegen, keyHash codegen, `@mutable` unions.
 
-**Repo:** see §3.a/§5.a/§6.a/§7.a (each `n/a (rejected)` with a decision record).
+**Repo:** see §3.a and §7.a (each `n/a (rejected)` with a decision record); §5.a and §6.a are now `done`.
 
 **Tests:** —
 

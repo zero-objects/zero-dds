@@ -13,7 +13,7 @@ Crate: [`crates/idl-go`](../crates/idl-go) · registered in `tools/idlc`
 
 ```sh
 zerodds-idlc types.idl --go        # emits types.go
-zerodds-idlc types.idl --all       # all eight backends, incl. Go
+zerodds-idlc types.idl --all       # all 17 backends, incl. Go
 ```
 
 ## Mapping
@@ -30,8 +30,9 @@ zerodds-idlc types.idl --all       # all eight backends, incl. Go
 | `sequence<octet>` | `[]byte` |
 | `sequence<primitive>` | `[]T` (u32 count + per-element) |
 
-`@mutable`, unions, nested-struct members, maps, `long double`, `wchar`, and
-`wstring` currently raise `IdlGoError::Unsupported` (tracked for follow-up).
+Unions (incl. `@mutable`), maps, nested-struct members, struct inheritance,
+`const`, `long double`, `wchar`, and `wstring` are emitted; only non-literal
+array/sequence bounds currently raise `IdlGoError::Unsupported`.
 
 ## Byte-identity (CI job `idl-go`)
 

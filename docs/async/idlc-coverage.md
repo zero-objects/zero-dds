@@ -33,16 +33,16 @@ the languages with an OMG-standard or established DDS IDL mapping.
 | TypeScript | ✅ `--ts` | ✅ `endpoints/node` | complete |
 | **Kotlin** | ↳ via `idl-java` | ✅ `endpoints/kotlin` | **covered by inheritance** — Kotlin is JVM and consumes the `idl-java` output directly (Java interop); a separate backend would duplicate it. |
 | **F#** | ↳ via `idl-csharp` | ✅ `endpoints/fsharp` | **covered by inheritance** — F# is .NET and consumes the `idl-csharp` output directly; a separate backend would duplicate it. |
-| Ada (Obj + 83) | ✅ `--ada` (`idl-ada`) | ✅ `endpoints/ada-native`, `ada-83` | **complete** — byte-identical, [idl-ada.md](../idl-ada.md) |
-| Go | ✅ `--go` (`idl-go`) | ✅ `endpoints/go` | **complete** — byte-identical, [idl-go.md](../idl-go.md) |
-| Zig | ✅ `--zig` (`idl-zig`) | ✅ `endpoints/zig` | **complete** — byte-identical, [idl-zig.md](../idl-zig.md) |
-| Elixir | ✅ `--elixir` (`idl-elixir`) | ✅ `endpoints/elixir` | **complete** — byte-identical, [idl-elixir.md](../idl-elixir.md) |
-| OCaml | ✅ `--ocaml` (`idl-ocaml`) | ✅ `endpoints/ocaml` | **complete** — byte-identical, [idl-ocaml.md](../idl-ocaml.md) |
-| Julia | ✅ `--julia` (`idl-julia`) | ✅ `endpoints/julia` | **complete** — byte-identical, [idl-julia.md](../idl-julia.md) |
-| Nim | ✅ `--nim` (`idl-nim`) | ✅ `endpoints/nim` | **complete** — byte-identical, [idl-nim.md](../idl-nim.md) |
-| D | ✅ `--d` (`idl-d`) | ✅ `endpoints/d` | **complete** — byte-identical, [idl-d.md](../idl-d.md) |
-| Lua | ✅ `--lua` (`idl-lua`) | ✅ `endpoints/lua` | **complete** — byte-identical, [idl-lua.md](../idl-lua.md) |
-| Swift | ✅ `--swift` (`idl-swift`) | ✅ `endpoints/swift` | **complete** — byte-identical (verified on macOS), [idl-swift.md](../idl-swift.md) |
+| Ada (Obj + 83) | ✅ `--ada` (`idl-ada`) | ✅ `endpoints/ada-native`, `ada-83` | **complete** — byte-identical, [idl-ada.md](../idl/idl-ada.md) |
+| Go | ✅ `--go` (`idl-go`) | ✅ `endpoints/go` | **complete** — byte-identical, [idl-go.md](../idl/idl-go.md) |
+| Zig | ✅ `--zig` (`idl-zig`) | ✅ `endpoints/zig` | **complete** — byte-identical, [idl-zig.md](../idl/idl-zig.md) |
+| Elixir | ✅ `--elixir` (`idl-elixir`) | ✅ `endpoints/elixir` | **complete** — byte-identical, [idl-elixir.md](../idl/idl-elixir.md) |
+| OCaml | ✅ `--ocaml` (`idl-ocaml`) | ✅ `endpoints/ocaml` | **complete** — byte-identical, [idl-ocaml.md](../idl/idl-ocaml.md) |
+| Julia | ✅ `--julia` (`idl-julia`) | ✅ `endpoints/julia` | **complete** — byte-identical, [idl-julia.md](../idl/idl-julia.md) |
+| Nim | ✅ `--nim` (`idl-nim`) | ✅ `endpoints/nim` | **complete** — byte-identical, [idl-nim.md](../idl/idl-nim.md) |
+| D | ✅ `--d` (`idl-d`) | ✅ `endpoints/d` | **complete** — byte-identical, [idl-d.md](../idl/idl-d.md) |
+| Lua | ✅ `--lua` (`idl-lua`) | ✅ `endpoints/lua` | **complete** — byte-identical, [idl-lua.md](../idl/idl-lua.md) |
+| Swift | ✅ `--swift` (`idl-swift`) | ✅ `endpoints/swift` | **complete** — byte-identical (verified on macOS), [idl-swift.md](../idl/idl-swift.md) |
 
 ## Former candidate backends — closed
 

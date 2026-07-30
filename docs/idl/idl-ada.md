@@ -30,8 +30,9 @@ zerodds-idlc types.idl --ada      # emits types.ads + types.adb
 | `string` | `Ada.Strings.Unbounded.Unbounded_String` |
 | `sequence<octet>` | `Unbounded_String` (raw bytes) |
 
-`@mutable`, unions, nested-struct members, maps, `long double`, `wchar`, and
-`wstring` currently raise `IdlAdaError::Unsupported`.
+Only `@mutable` unions and non-literal array/collection bounds currently raise
+`IdlAdaError::Unsupported`; unions, nested-struct members, maps, `long double`,
+`wchar`, and `wstring` are emitted.
 
 ## Byte-identity (CI job `idl-ada`)
 

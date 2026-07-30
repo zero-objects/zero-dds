@@ -30,8 +30,9 @@ zerodds-idlc types.idl --ocaml    # emits types.ml
 | `sequence<octet>` | `bytes` |
 
 Each struct is its own module, so record field names never clash across types.
-`@mutable`, unions, nested-struct members, maps, `long double`, `wchar`, and
-`wstring` currently raise `IdlOcamlError::Unsupported`.
+Only `@mutable` unions and non-literal array/collection bounds currently raise
+`IdlOcamlError::Unsupported`; unions, nested-struct members, maps, `long double`,
+`wchar`, and `wstring` are emitted.
 
 ## Byte-identity (CI job `idl-ocaml`)
 

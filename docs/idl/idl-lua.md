@@ -28,8 +28,9 @@ zerodds-idlc types.idl --lua      # emits types.lua
 | `string` | CDR string (u32 len + bytes + NUL) |
 | `sequence<octet>` | a Lua string (u32 len + bytes) |
 
-`@mutable`, unions, nested-struct members, maps, `long double`, `wchar`, and
-`wstring` currently raise `IdlLuaError::Unsupported`.
+Only `@mutable` unions and non-literal array/collection bounds currently raise
+`IdlLuaError::Unsupported`; unions, nested-struct members, maps, `long double`,
+`wchar`, and `wstring` are emitted.
 
 ## Byte-identity (CI job `idl-lua`)
 

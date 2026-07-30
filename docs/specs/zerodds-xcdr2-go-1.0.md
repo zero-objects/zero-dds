@@ -57,8 +57,9 @@ Per IDL `struct`, `zerodds-idlc --go` MUST emit:
 3. The shared `Writer` wire-core (self-contained, so the file compiles with no
    external module).
 
-Extensibility drives the framing (§6). `@mutable`, unions, nested-struct members,
-maps, `long double`, `wchar`, `wstring` raise `IdlGoError::Unsupported` (§11).
+Extensibility drives the framing (§6). Unions, nested-struct members, maps,
+`long double`, `wchar`, `wstring`, and `@mutable` structs are emitted; only
+`@mutable` unions and non-literal bounds raise `IdlGoError::Unsupported` (§11).
 
 ## §5 Wire-Type-Mapping
 
@@ -86,7 +87,8 @@ big-endian target produces the same wire as an x86-64 host.
 
 - `@final` — compact, no DHEADER.
 - `@appendable` — a DHEADER: `uint32` body length + body bytes.
-- `@mutable` — EMHEADER framing; **not yet emitted** → `Unsupported` (§11).
+- `@mutable` structs — DHEADER + per-member EMHEADER (LC4) list, emitted.
+  `@mutable` **unions** are not yet emitted → `Unsupported` (§11).
 
 ## §7 Key-Extraction
 
@@ -125,5 +127,6 @@ kind `0x1234`, flags `0x5A`, value `3.5`, stamp `0x0102030405060708`, label
 - Generated `UnmarshalXCDR` (decode) — not emitted; consumers hand-write a
   `Reader` walk. Open.
 - Per-struct generated `KeyHash` from `@key` — open (§7).
-- `@mutable`, unions, nested-struct members, `map<>`, arrays, `wchar`, `wstring`,
-  `long double` — `Unsupported` in `idl-go` today.
+- `@mutable` unions and non-literal bounds — `Unsupported` in `idl-go` today.
+  Unions, nested-struct members, `map<>`, arrays, `wchar`, `wstring`, `long
+  double`, and `@mutable` structs are emitted.

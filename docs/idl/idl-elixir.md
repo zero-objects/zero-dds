@@ -28,8 +28,9 @@ zerodds-idlc types.idl --elixir    # emits types.ex
 | `string` | CDR string (u32 len + bytes + NUL) |
 | `sequence<octet>` | a binary (u32 len + bytes) |
 
-`@mutable`, unions, nested-struct members, maps, `long double`, `wchar`, and
-`wstring` currently raise `IdlElixirError::Unsupported`.
+Only `@mutable` unions and non-literal array/collection bounds currently raise
+`IdlElixirError::Unsupported`; unions, nested-struct members, maps, `long double`,
+`wchar`, and `wstring` are emitted.
 
 ## Byte-identity (CI job `idl-elixir`)
 

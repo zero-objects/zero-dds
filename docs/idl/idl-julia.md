@@ -29,8 +29,9 @@ zerodds-idlc types.idl --julia    # emits types.jl
 | `string` | `String` |
 | `sequence<octet>` | `Vector{UInt8}` |
 
-`@mutable`, unions, nested-struct members, maps, `long double`, `wchar`, and
-`wstring` currently raise `IdlJuliaError::Unsupported`.
+Only `@mutable` unions and non-literal array/collection bounds currently raise
+`IdlJuliaError::Unsupported`; unions, nested-struct members, maps, `long double`,
+`wchar`, and `wstring` are emitted.
 
 ## Byte-identity (CI job `idl-julia`)
 

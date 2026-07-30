@@ -29,8 +29,9 @@ zerodds-idlc types.idl --d      # emits types.d
 | `string` | `string` |
 | `sequence<octet>` | `ubyte[]` |
 
-`@mutable`, unions, nested-struct members, maps, `long double`, `wchar`, and
-`wstring` currently raise `IdlDError::Unsupported`.
+Only `@mutable` unions and non-literal array/collection bounds currently raise
+`IdlDError::Unsupported`; unions, nested-struct members, maps, `long double`,
+`wchar`, and `wstring` are emitted.
 
 ## Byte-identity (CI job `idl-d`)
 

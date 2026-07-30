@@ -28,8 +28,9 @@ zerodds-idlc types.idl --zig      # emits types.zig
 | `boolean` / `char` | `bool` / `u8` |
 | `string` / `sequence<octet>` | `[]const u8` |
 
-`@mutable`, unions, nested-struct members, maps, `long double`, `wchar`, and
-`wstring` currently raise `IdlZigError::Unsupported`.
+Only `@mutable` unions and non-literal array/collection bounds currently raise
+`IdlZigError::Unsupported`; unions, nested-struct members, maps, `long double`,
+`wchar`, and `wstring` are emitted.
 
 ## Byte-identity (CI job `idl-zig`)
 

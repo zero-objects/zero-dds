@@ -9,21 +9,40 @@ normiert in [`reliable-endpoint-1.0`](reliable-endpoint-1.0.md).
 
 ## §1 XRCE-Framing
 
-Der C-Endpoint MUSS DDS-XRCE-1.0-konforme Frames sowohl für paketbasierte
-Transporte (UDP) als auch für serielle Byte-Strom-Transporte (RS-485, UART)
-erzeugen und parsen.
+Der C-Endpoint MUSS DDS-XRCE-1.0-konforme **Framing-Struktur** — Message-Header
+(§8.3.2) und Submessage-Header (§8.3.4) — sowohl für paketbasierte Transporte
+(UDP) als auch für serielle Byte-Strom-Transporte (RS-485, UART) erzeugen und
+parsen.
 
-### §1.1 WRITE_DATA-Frame
+Der **Datensubmessage-Payload** des C-Endpoints ist derzeit das *ZeroDDS
+Endpoint Profile* (§1.1): der WRITE_DATA-/DATA-Body ist der reine XCDR-Sample,
+ohne den von DDS-XRCE §8.3.5.8/§7.7.8 geforderten `BaseObjectRequest`
+(`request_id` + `object_id`) vor den Nutzdaten. Ein fremder XRCE-Agent kann
+diesen Frame damit keinem DataWriter zuordnen — der Frame ist auf Header-Ebene
+konform, auf Payload-Ebene noch nicht.
+
+Die spec-konforme DDS-XRCE-Wire-Form der Datensubmessages (WRITE_DATA/READ_DATA/
+DATA mit vorangestelltem `BaseObjectRequest`) ist im Rust-Ursprung `crates/xrce`
+implementiert (`WriteDataPayload`/`ReadDataPayload`/`DataPayload`) und über einen
+client↔agent-Roundtrip belegt (`crates/endpoint-e2e/src/lib.rs`,
+`endpoints/xrce-agent-demo`). Die Portierung dieses C-Endpoints auf die
+konforme Payload-Form ist **Phase 2**.
+
+### §1.1 WRITE_DATA-Frame (ZeroDDS Endpoint Profile)
 
 Message-Header (`session_id`, `stream_id`, `sequence_nr` LE — DDS-XRCE 1.0
 §8.3.2.3) gefolgt vom WRITE_DATA-Submessage-Header (id=7, Flags, Länge LE —
 §8.3.4) gefolgt vom XCDR-Sample-Body. Best-effort-Betrieb ohne ClientKey:
-`session_id ≥ 128`.
+`session_id ≥ 128`. Dies ist die Profile-Form ohne `BaseObjectRequest`; die
+konforme DDS-XRCE-Form ergänzt `request_id` + `object_id` vor dem Sample
+(§8.3.5.8).
 
 ### §1.2 Empfangspfad (DATA-Message)
 
 Der Endpoint MUSS DATA-Submessages (id=9, §8.3.4), die der Agent an den
-Client pusht, über denselben Unwrap-Pfad wie WRITE_DATA parsen können.
+Client pusht, über denselben Unwrap-Pfad wie WRITE_DATA parsen können — in der
+Profile-Form ohne, in der konformen Form (Phase 2) mit vorangestelltem
+`BaseObjectRequest`.
 
 ### §1.3 Serielles HDLC-Framing (Annex C)
 

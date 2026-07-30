@@ -75,7 +75,7 @@ Byte order is an explicit parameter, so a big-endian target produces the same wi
 ## §6 Extensibility
 
 `@final` — compact. `@appendable` — DHEADER (`uint32` body length + body).
-`@mutable` — EMHEADER; not yet emitted → `Unsupported` (§11). The hand-written
+`@mutable` structs — DHEADER + per-member EMHEADER (LC4) list. `@mutable` unions are not yet emitted → `Unsupported` (§11). The hand-written
 `endpoints/ocaml` types are `@final`.
 
 ## §7 Key-Extraction
@@ -108,7 +108,7 @@ Conformant iff the `@final` golden encoding equals `golden_le.bin` /
 
 ## §11 Errata + Open-Questions
 
-Consciously out of v1.0 scope, uniform across all 17 idlc backends: generated
-decode, per-struct `keyHash` from `@key`, `@mutable` EMHEADER, and
-`wchar`/`wstring`/`map`/array/nested-struct/union/`long double` (raise
-`Unsupported`). See the coverage doc's decision records.
+Consciously out of v1.0 scope: generated decode and per-struct `keyHash` from
+`@key`. `@mutable` unions and non-literal bounds also raise `Unsupported`;
+`@mutable` structs, unions, `wchar`, `wstring`, `map`, arrays, nested-struct
+members, and `long double` are emitted. See the coverage doc's decision records.

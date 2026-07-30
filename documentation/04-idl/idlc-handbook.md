@@ -706,16 +706,16 @@ counts (sensor packets, telemetry).
 | `--java` | `<package>/<Type>.java` (+ `TypeObjects.java`) | `pom.xml` |
 | `--python` | `<base>.py` | `pyproject.toml` |
 | `--ts` | `<base>.ts` | `package.json`, `tsconfig.json` |
-| `--go` | `<base>.go` | see [`idl-go.md`](../../docs/idl-go.md) |
-| `--ada` | `<base>.ads`/`.adb` | see [`idl-ada.md`](../../docs/idl-ada.md) |
-| `--zig` | `<base>.zig` | see [`idl-zig.md`](../../docs/idl-zig.md) |
-| `--nim` | `<base>.nim` | see [`idl-nim.md`](../../docs/idl-nim.md) |
-| `--d` | `<base>.d` | see [`idl-d.md`](../../docs/idl-d.md) |
-| `--elixir` | `<base>.ex` | see [`idl-elixir.md`](../../docs/idl-elixir.md) |
-| `--ocaml` | `<base>.ml` | see [`idl-ocaml.md`](../../docs/idl-ocaml.md) |
-| `--julia` | `<base>.jl` | see [`idl-julia.md`](../../docs/idl-julia.md) |
-| `--lua` | `<base>.lua` | see [`idl-lua.md`](../../docs/idl-lua.md) |
-| `--swift` | `<base>.swift` | see [`idl-swift.md`](../../docs/idl-swift.md) |
+| `--go` | `<base>.go` | see [`idl-go.md`](../../docs/idl/idl-go.md) |
+| `--ada` | `<base>.ads`/`.adb` | see [`idl-ada.md`](../../docs/idl/idl-ada.md) |
+| `--zig` | `<base>.zig` | see [`idl-zig.md`](../../docs/idl/idl-zig.md) |
+| `--nim` | `<base>.nim` | see [`idl-nim.md`](../../docs/idl/idl-nim.md) |
+| `--d` | `<base>.d` | see [`idl-d.md`](../../docs/idl/idl-d.md) |
+| `--elixir` | `<base>.ex` | see [`idl-elixir.md`](../../docs/idl/idl-elixir.md) |
+| `--ocaml` | `<base>.ml` | see [`idl-ocaml.md`](../../docs/idl/idl-ocaml.md) |
+| `--julia` | `<base>.jl` | see [`idl-julia.md`](../../docs/idl/idl-julia.md) |
+| `--lua` | `<base>.lua` | see [`idl-lua.md`](../../docs/idl/idl-lua.md) |
+| `--swift` | `<base>.swift` | see [`idl-swift.md`](../../docs/idl/idl-swift.md) |
 
 `<base>` is the input file stem (`Robot.idl` → `Robot`). All paths are
 relative to the backend's output directory (`--out-<lang>` if given,

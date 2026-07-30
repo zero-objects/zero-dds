@@ -29,8 +29,9 @@ zerodds-idlc types.idl --nim      # emits types.nim
 | `string` | `string` |
 | `sequence<octet>` | `seq[byte]` |
 
-`@mutable`, unions, nested-struct members, maps, `long double`, `wchar`, and
-`wstring` currently raise `IdlNimError::Unsupported`.
+Only `@mutable` unions and non-literal array/collection bounds currently raise
+`IdlNimError::Unsupported`; unions, nested-struct members, maps, `long double`,
+`wchar`, and `wstring` are emitted.
 
 ## Byte-identity (CI job `idl-nim`)
 

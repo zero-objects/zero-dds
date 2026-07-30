@@ -79,7 +79,8 @@ explicit parameter, so a big-endian target produces the same wire.
 
 - `@final` — compact, no DHEADER.
 - `@appendable` — a DHEADER: `uint32` body length + body bytes.
-- `@mutable` — EMHEADER framing; not yet emitted → `Unsupported` (§11).
+- `@mutable` structs — DHEADER + per-member EMHEADER (LC4) list, emitted.
+  `@mutable` unions are not yet emitted → `Unsupported` (§11).
 
 ## §7 Key-Extraction
 
@@ -113,7 +114,8 @@ flags `0x5A`, value `3.5`, stamp `0x0102030405060708`, label `"bay-12"`, raw
 
 ## §11 Errata + Open-Questions
 
-Consciously out of v1.0 scope, uniform across all 17 idlc backends: generated
-decode (`unmarshalXCDR`), per-struct `keyHash` from `@key`, `@mutable` EMHEADER,
-and `wchar`/`wstring`/`map`/array/nested-struct/union/`long double` (raise
-`Unsupported`). See the coverage doc's decision records.
+Consciously out of v1.0 scope: generated decode (`unmarshalXCDR`) and per-struct
+`keyHash` from `@key`. `@mutable` unions and non-literal bounds also raise
+`Unsupported`; `@mutable` structs, `wchar`, `wstring`, `map`, arrays,
+nested-struct members, unions, and `long double` are emitted. See the coverage
+doc's decision records.

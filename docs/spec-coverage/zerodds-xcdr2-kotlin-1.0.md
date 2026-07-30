@@ -83,13 +83,13 @@ Implementation:
 
 **Spec:** §5/§11 — weitere IDL-Konstrukte.
 
-**Repo:** — (`idl-java codegen::Unsupported`).
+**Repo:** `crates/idl-java/src/` (union-, `map<>`-, Array-, Nested-Struct-, `wchar`/`wstring`/`long double`-Emit-Arme).
 
 **Tests:** —
 
-**Status:** n/a (rejected)
+**Status:** done
 
-**Decision-Record:** Bewusst außerhalb v1.0-Scope, einheitlich über alle 17 Backends (Kern = primitiv/string/sequence<octet> des @final-Golden). Roadmap-getrackt; Backends geben ehrlich `Unsupported` statt falscher Wire.
+**Decision-Record:** Das `idl-java`-Codegen emittiert diese Konstrukte (Unions, `map<>`, Arrays, Nested-Struct-Member, `wchar`, `wstring`, `long double`). Nur `@mutable`-Unions bleiben zurückgestellt (siehe §6.a).
 
 ## §6 Extensibility
 
@@ -107,13 +107,13 @@ Implementation:
 
 **Spec:** §6 — @mutable-EMHEADER-Framing.
 
-**Repo:** — (`Unsupported`).
+**Repo:** `crates/idl-java/src/` (`@mutable` PL_CDR2-EMHEADER- / PL_CDR1-Pfade).
 
 **Tests:** —
 
-**Status:** n/a (rejected)
+**Status:** done (Structs); `@mutable`-Unions zurückgestellt
 
-**Decision-Record:** @mutable-EMHEADER über alle 17 Backends einheitlich nicht emittiert; @final+@appendable decken den gängigen Fall. Cross-cutting Follow-up (roadmap), bewusst zurückgestellt. `idl-java` gibt `Unsupported`.
+**Decision-Record:** `@mutable`-Structs werden emittiert — PL_CDR2-EMHEADER-Framing unter XCDR2, PL_CDR1 unter XCDR1. Nur `@mutable`-Unions werden noch nicht emittiert → `Unsupported`.
 
 ## §7 Key-Extraction
 
@@ -179,9 +179,9 @@ Implementation:
 
 ### §11 Ehrliche Nicht-Ziele
 
-**Spec:** §11 — decode-codegen, keyHash-codegen, @mutable, wchar/wstring/map/array/nested/union/long double.
+**Spec:** §11 — decode-codegen, keyHash-codegen, `@mutable`-Unions.
 
-**Repo:** siehe §3.a/§5.a/§6.a/§7.a (je `n/a (rejected)` mit Decision-Record).
+**Repo:** siehe §3.a und §7.a (je `n/a (rejected)` mit Decision-Record); §5.a und §6.a sind jetzt `done`.
 
 **Tests:** —
 

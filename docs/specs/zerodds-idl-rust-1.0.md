@@ -96,12 +96,12 @@ Nested types werden via `pub mod`-Hierarchie referenzierbar (`M::N::S`).
 
 | Annotation | Wire-Form | Codegen |
 |---|---|---|
-| `@final` (default) | XCDR2 final encoding (kein DHEADER) | direkter encode in deklarations-Reihenfolge |
-| `@appendable` | XCDR2 appendable (DHEADER + body, XTypes §7.4.3.4.5) | `zerodds_cdr::struct_enc::encode_appendable(writer, |w| { … })` |
+| `@final` | XCDR2 final encoding (kein DHEADER) | direkter encode in deklarations-Reihenfolge |
+| `@appendable` (default) | XCDR2 appendable (DHEADER + body, XTypes §7.4.3.4.5) | `zerodds_cdr::struct_enc::encode_appendable(writer, |w| { … })` |
 | `@mutable` | XCDR2 mutable (DHEADER + member-id-tagged members, §7.4.3.4.4) | `zerodds_cdr::struct_enc::MutableStructEncoder::new(...).encode(|enc| { enc.member(id, must_understand, |w| { … })?; … })` |
 | `@extensibility(FINAL\|APPENDABLE\|MUTABLE)` | wie obige | gleichwertig zu spezifischer Annotation |
 
-**Default-Wahl:** ZeroDDS-Codegen nimmt `final` als Default (kompakter Wire, keine Header). Wer den XTypes-1.3-spec-konformen Default `appendable` will, annotiert explizit `@appendable`.
+**Default-Wahl:** ZeroDDS-Codegen nimmt `appendable` als Default (XTypes-1.3-spec-konform, §7.3.3.1). Wer den kompakteren `final`-Wire ohne DHEADER will, annotiert explizit `@final` oder setzt `--default-extensibility final` (bzw. das Cargo-Feature `ext-default-final`).
 
 ### §3.2 @key
 

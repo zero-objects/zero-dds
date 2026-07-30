@@ -29,8 +29,9 @@ zerodds-idlc types.idl --swift    # emits types.swift
 | `string` | `String` |
 | `sequence<octet>` | `[UInt8]` |
 
-`@mutable`, unions, nested-struct members, maps, `long double`, `wchar`, and
-`wstring` currently raise `IdlSwiftError::Unsupported`.
+Only `@mutable` unions and non-literal array/collection bounds currently raise
+`IdlSwiftError::Unsupported`; unions, nested-struct members, maps, `long double`,
+`wchar`, and `wstring` are emitted.
 
 ## Byte-identity
 
