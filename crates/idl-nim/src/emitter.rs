@@ -1409,11 +1409,19 @@ fn emit_struct(
     // #A37: Nim identifiers are style-insensitive; keep member field names
     // distinct under that equality so `my_field`/`myField` do not redefine.
     let mut used_names: Vec<String> = Vec::new();
-    let mut next_id: u32 = 0;
+    // Container-level `@autoid(HASH)` (XTypes 1.3 §7.3.1.2.1.1). When set, every
+    // member with no explicit `@id`/`@hashid` takes a name-hashed member id
+    // instead of a sequential one. Resolved through the shared frontend so the
+    // ids match idl-rust/idl-cpp and the TypeObject (findings A31/A32).
+    let container_hash = zerodds_idl::semantics::member_id::container_autoid_hash(&s.annotations);
+    // Sequential fallback counter (`@autoid(SEQUENTIAL)`): advances ONLY for
+    // members that take the positional default — an explicit `@id`, `@hashid`,
+    // or `@autoid(HASH)` id does not consume a slot, matching the canonical
+    // `resolve_member_ids` in `zerodds-types`.
+    let mut next_seq: u32 = 0;
     for m in &all_members {
         let resolved = resolve_typedef(&m.type_spec, typedefs);
         let lowered = lower_annotations(&m.annotations).ok();
-        let explicit_id = lowered.as_ref().and_then(|l| l.explicit_id());
         let key = lowered.as_ref().is_some_and(|l| l.has_key());
         let optional = lowered.as_ref().is_some_and(|l| {
             l.builtins
@@ -1430,13 +1438,25 @@ fn emit_struct(
         let non_serialized =
             zerodds_idl::semantics::annotations::member_is_non_serialized(&m.annotations);
         for d in &m.declarators {
-            let nim_name = escape_nim_ident(&dedup_nim_ident(&mut used_names, &d.name().text));
+            // Raw IDL member name (never the escaped Nim identifier): the wire
+            // member-id hash is over the source spelling (XTypes §7.3.1.2.1.4).
+            let raw_name = d.name().text.clone();
+            let nim_name = escape_nim_ident(&dedup_nim_ident(&mut used_names, &raw_name));
             let id = if non_serialized {
                 0
             } else {
-                let assigned = explicit_id.unwrap_or(next_id);
-                next_id = assigned + 1;
-                assigned
+                match zerodds_idl::semantics::member_id::fixed_member_id(
+                    container_hash,
+                    &m.annotations,
+                    &raw_name,
+                ) {
+                    Some(fixed) => fixed,
+                    None => {
+                        let seq = next_seq;
+                        next_seq += 1;
+                        seq
+                    }
+                }
             };
             let (nim_type, put, get, key_type) = match d {
                 Declarator::Simple(_) => {
@@ -2123,14 +2143,27 @@ fn map_key_type(
             } else {
                 nested_keys
             };
+            // Nested-struct key members serialize in ascending member-id order
+            // (XTypes 1.3 §7.6.8), honoring the nested struct's own
+            // `@autoid(HASH)` plus per-member `@id`/`@hashid` — mirrors idl-rust
+            // `compute_key_holder_max_size`/`encode_key_holder` (findings A31/A32).
+            let nested_hash =
+                zerodds_idl::semantics::member_id::container_autoid_hash(&sd.annotations);
             let mut ordered: Vec<(u32, &Member)> = effective
                 .iter()
                 .enumerate()
                 .map(|(idx, m)| {
-                    let id = lower_annotations(&m.annotations)
-                        .ok()
-                        .and_then(|l| l.explicit_id())
-                        .unwrap_or(idx as u32);
+                    let raw_name = m
+                        .declarators
+                        .first()
+                        .map(|d| d.name().text.clone())
+                        .unwrap_or_default();
+                    let id = zerodds_idl::semantics::member_id::resolved_member_id(
+                        nested_hash,
+                        &m.annotations,
+                        &raw_name,
+                        idx as u32,
+                    );
                     (id, *m)
                 })
                 .collect();

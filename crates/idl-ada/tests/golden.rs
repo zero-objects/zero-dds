@@ -123,6 +123,7 @@ fn cross_module_reference_compiles_with_gnatmake() {
          module b { @final struct S { a::R r; }; };",
         &AdaGenOptions {
             package_name: "Xmod_Gen".to_string(),
+            xcdr1: false,
         },
     );
     let dir = std::env::temp_dir().join(format!("idlada_xmod_{}", std::process::id()));
@@ -332,6 +333,7 @@ fn enum_member_is_byte_identical_i32() {
         ENUM_IDL,
         &AdaGenOptions {
             package_name: "Enum_Gen".to_string(),
+            xcdr1: false,
         },
     );
     let dir = std::env::temp_dir().join(format!("idlada_enum_{}", std::process::id()));
@@ -444,6 +446,7 @@ fn nested_is_byte_identical_vs_rust_golden() {
         NESTED_IDL,
         &AdaGenOptions {
             package_name: "Nested_Gen".to_string(),
+            xcdr1: false,
         },
     );
     let dir = std::env::temp_dir().join(format!("idlada_nested_{}", std::process::id()));
@@ -498,6 +501,7 @@ fn byte_identity_vs_rust_goldens() {
         GOLDEN_IDL,
         &AdaGenOptions {
             package_name: "Golden_Gen".to_string(),
+            xcdr1: false,
         },
     );
     let dir = std::env::temp_dir().join(format!("idlada_golden_{}", std::process::id()));
@@ -604,6 +608,7 @@ fn typedef_is_byte_identical_vs_rust_golden() {
         TYPEDEF_IDL,
         &AdaGenOptions {
             package_name: "Typedef_Gen".to_string(),
+            xcdr1: false,
         },
     );
     let dir = std::env::temp_dir().join(format!("idlada_typedef_{}", std::process::id()));
@@ -711,6 +716,7 @@ fn array_is_byte_identical_vs_rust_golden() {
         ARRAY_IDL,
         &AdaGenOptions {
             package_name: "Array_Gen".to_string(),
+            xcdr1: false,
         },
     );
     let dir = std::env::temp_dir().join(format!("idlada_array_{}", std::process::id()));
@@ -840,6 +846,7 @@ fn union_is_byte_identical_vs_rust_golden() {
         UNION_IDL,
         &AdaGenOptions {
             package_name: "Union_Gen".to_string(),
+            xcdr1: false,
         },
     );
     let dir = std::env::temp_dir().join(format!("idlada_union_{}", std::process::id()));
@@ -949,6 +956,7 @@ fn map_is_byte_identical_vs_rust_golden() {
         MAP_IDL,
         &AdaGenOptions {
             package_name: "Map_Gen".to_string(),
+            xcdr1: false,
         },
     );
     let dir = std::env::temp_dir().join(format!("idlada_map_{}", std::process::id()));
@@ -1038,6 +1046,7 @@ fn mutable_is_byte_identical_vs_rust_golden() {
         MUTABLE_IDL,
         &AdaGenOptions {
             package_name: "Mutable_Gen".to_string(),
+            xcdr1: false,
         },
     );
     let dir = std::env::temp_dir().join(format!("idlada_mutable_{}", std::process::id()));
@@ -1110,6 +1119,7 @@ fn run_ada(idl: &str, pkg: &str, main_adb: &str, stem: &str) {
         idl,
         &AdaGenOptions {
             package_name: pkg.to_string(),
+            xcdr1: false,
         },
     );
     let dir = std::env::temp_dir().join(format!("idlada_{stem}_{}", std::process::id()));
@@ -1256,6 +1266,7 @@ fn keyhash_is_byte_identical_vs_rust_golden() {
         KEYHASH_IDL,
         &AdaGenOptions {
             package_name: "Kh_Gen".to_string(),
+            xcdr1: false,
         },
     );
     let dir = std::env::temp_dir().join(format!("idlada_kh_{}", std::process::id()));
@@ -1315,6 +1326,7 @@ fn run_roundtrip(idl: &str, type_name: &str, le_file: &str, be_file: &str) {
         idl,
         &AdaGenOptions {
             package_name: "Rt_Gen".to_string(),
+            xcdr1: false,
         },
     );
     let main = format!(
@@ -1526,6 +1538,7 @@ fn keyhash_md5_is_byte_identical_vs_rust_golden() {
         KEYHASH_MD5_IDL,
         &AdaGenOptions {
             package_name: "Md5kh_Gen".to_string(),
+            xcdr1: false,
         },
     );
     let dir = std::env::temp_dir().join(format!("idlada_kh_md5_{}", std::process::id()));
@@ -1580,6 +1593,7 @@ fn compile_run(idl: &str, pkg: &str, main_adb: &str, stem: &str) -> Option<Vec<S
         idl,
         &AdaGenOptions {
             package_name: pkg.to_string(),
+            xcdr1: false,
         },
     );
     let dir = std::env::temp_dir().join(format!("idlada_{stem}_{}", std::process::id()));

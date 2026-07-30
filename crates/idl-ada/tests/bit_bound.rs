@@ -39,14 +39,19 @@ fn bit_bound_selects_enum_wire_width() {
         src.contains("Put_U32 (W, Def_To_U32 (V.d))"),
         "4-byte enum encode missing:\n{src}"
     );
-    // Decode: read the matching narrow holder (Get_U8 takes no Endian).
+    // Decode: read the matching narrow holder (Get_U8 takes no Endian) and
+    // SIGN-extend it to the 32-bit wire value — the enum holder is signed
+    // (§7.4.5.1), so a negative enumerator under a narrow bound roundtrips
+    // (mirrors idl-rust's `i32::from(i8)`).
     assert!(
-        src.contains("Small_Of_U32 (Unsigned_32 (Get_U8 (Data, Pos)))"),
-        "1-byte enum decode missing:\n{src}"
+        src.contains("Small_Of_U32 (Unsigned_32'Mod (Integer_32 (U8_I8 (Get_U8 (Data, Pos)))))"),
+        "1-byte enum sign-extended decode missing:\n{src}"
     );
     assert!(
-        src.contains("Med_Of_U32 (Unsigned_32 (Get_U16 (Data, Pos, Endian)))"),
-        "2-byte enum decode missing:\n{src}"
+        src.contains(
+            "Med_Of_U32 (Unsigned_32'Mod (Integer_32 (U16_I16 (Get_U16 (Data, Pos, Endian)))))"
+        ),
+        "2-byte enum sign-extended decode missing:\n{src}"
     );
     assert!(
         src.contains("Def_Of_U32 (Get_U32 (Data, Pos, Endian))"),

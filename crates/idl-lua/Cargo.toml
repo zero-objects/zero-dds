@@ -22,3 +22,10 @@ path = "src/lib.rs"
 
 [dependencies]
 zerodds-idl = { version = "1.0.0-rc.7", path = "../idl" }
+
+[dev-dependencies]
+# XCDR1 byte-vector oracle for the classic-CDR conformance tests: the generated
+# Lua `marshalCdr1` output is asserted byte-for-byte against `zerodds_cdr`'s
+# authoritative XCDR1 writer (`BufferWriter` defaults to XCDR1 cap-8) and its
+# PL_CDR1 `@mutable` framing (`xcdr1::encode_pl_cdr1_member` / sentinel).
+zerodds-cdr = { version = "1.0.0-rc.7", path = "../cdr", default-features = false, features = ["alloc"] }

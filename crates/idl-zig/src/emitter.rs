@@ -2,10 +2,14 @@
 // Copyright 2026 ZeroDDS Contributors
 
 //! IDL4 → Zig emitter. Walks the `zerodds-idl` AST and emits a self-contained
-//! Zig source file: a shared XCDR2 `Writer` (byte-identical to `endpoints/zig`)
-//! plus, per IDL `struct`, a Zig struct with a `marshalXCDR(endian, allocator)`
-//! method. `@final` and `@appendable` are supported; other extensibilities and
-//! constructs raise [`IdlZigError::Unsupported`].
+//! Zig source file: a shared `Writer`/`Reader` (XCDR2 byte-identical to
+//! `endpoints/zig`) plus, per IDL type, a Zig type with `marshalXCDR`/
+//! `unmarshalXCDR` (XCDR2) and `marshalXCDR1`/`unmarshalXCDR1` (XCDR1 / classic
+//! CDR) methods. All three extensibilities are emitted: `@final` (inline),
+//! `@appendable` (XCDR2 DHEADER / XCDR1 inline) and `@mutable` (XCDR2 PL_CDR2
+//! EMHEADER / XCDR1 PL_CDR1 parameter list). Collection and array bounds resolve
+//! named constants and folded `const_expr` arithmetic (§7.4.1.4.4). Constructs
+//! the backend does not express raise [`IdlZigError::Unsupported`].
 
 use std::cell::Cell;
 use std::fmt::Write as _;
@@ -13,8 +17,8 @@ use std::fmt::Write as _;
 use std::collections::{HashMap, HashSet};
 
 use zerodds_idl::ast::types::{
-    Annotation, BitValue, BitmaskDecl, BitsetDecl, CaseLabel, ConstDecl, ConstExpr, ConstType,
-    ConstrTypeDecl, Declarator, Definition, EnumDef, Export, FloatingType, IntegerType,
+    Annotation, BinaryOp, BitValue, BitmaskDecl, BitsetDecl, CaseLabel, ConstDecl, ConstExpr,
+    ConstType, ConstrTypeDecl, Declarator, Definition, EnumDef, Export, FloatingType, IntegerType,
     InterfaceDcl, Literal, LiteralKind, Member, PrimitiveType, ScopedName, SequenceType,
     Specification, StructDcl, StructDef, SwitchTypeSpec, TypeDecl, TypeSpec, UnaryOp, UnionDcl,
     UnionDef,
@@ -54,6 +58,22 @@ thread_local! {
     /// enum encode/decode site so a `@bit_bound(8)`/`@bit_bound(16)` enum
     /// narrows to 1/2 bytes instead of the former fixed 4.
     static ENUM_WIDTHS: std::cell::RefCell<HashMap<String, u32>> =
+        std::cell::RefCell::new(HashMap::new());
+
+    /// Simple (last-segment) name → value expression of every `const`
+    /// declaration in the spec, populated once per run. A collection bound or a
+    /// union `case` label that names a constant (`sequence<octet, MAX>`,
+    /// `case FOO:`) resolves through this map, matching idl-rust's `CONST_VALUES`
+    /// (§7.4.1.4.4 const_expr). Keyed by the simple name so a partially- or
+    /// fully-qualified reference resolves by its last segment, exactly as
+    /// idl-rust does.
+    static CONST_VALUES: std::cell::RefCell<HashMap<String, ConstExpr>> =
+        std::cell::RefCell::new(HashMap::new());
+
+    /// Simple (last-segment) enumerator name → its `i64` discriminant, for every
+    /// enum in the spec. Lets a named enumerator used as a bound or `case` label
+    /// fold to its integer value (mirrors idl-rust's `ENUM_LITERAL_VALUES`).
+    static ENUM_LITERAL_VALUES: std::cell::RefCell<HashMap<String, i64>> =
         std::cell::RefCell::new(HashMap::new());
 }
 
@@ -361,8 +381,12 @@ fn emit_bitmask(out: &mut String, m: &BitmaskDecl, scope: &[String]) {
     let _ = writeln!(out, "}};");
 }
 
-/// Emits the shared `marshalInto`/`marshalXCDR`/`readFrom`/`unmarshalXCDR`
-/// wire methods for a bitset/bitmask holder over backing integer `sty`.
+/// Emits the shared `marshalInto`/`marshalXCDR`/`marshalXCDR1`/`readFrom`/
+/// `unmarshalXCDR`/`unmarshalXCDR1` wire methods for a bitset/bitmask holder
+/// over backing integer `sty`. A holder is a single fixed-width integer, so the
+/// two representations differ only in the alignment cap the shared Writer/Reader
+/// apply (identical bytes for a top-level holder); the XCDR1 entry points exist
+/// for API parity with the struct/union backends.
 fn emit_holder_wire(out: &mut String, ty: &str, width: u32) {
     let put = storage_put(width);
     let get = storage_get(width);
@@ -376,11 +400,19 @@ fn emit_holder_wire(out: &mut String, ty: &str, width: u32) {
     );
     let _ = writeln!(
         out,
+        "    pub fn marshalXCDR1(self: {ty}, endian: Endian, alloc: std.mem.Allocator) ![]u8 {{ var w = Writer.initRep(alloc, endian, true); errdefer w.deinit(); try self.marshalInto(&w); return try w.buf.toOwnedSlice(); }}"
+    );
+    let _ = writeln!(
+        out,
         "    pub fn readFrom(r: *Reader) !{ty} {{ return .{{ .storage = r.{get}() }}; }}"
     );
     let _ = writeln!(
         out,
         "    pub fn unmarshalXCDR(buf: []const u8, endian: Endian, alloc: std.mem.Allocator) !{ty} {{ var r = Reader.init(buf, endian, alloc); return try {ty}.readFrom(&r); }}"
+    );
+    let _ = writeln!(
+        out,
+        "    pub fn unmarshalXCDR1(buf: []const u8, endian: Endian, alloc: std.mem.Allocator) !{ty} {{ var r = Reader.initRep(buf, endian, alloc, true); return try {ty}.readFrom(&r); }}"
     );
 }
 
@@ -392,15 +424,28 @@ pub const Endian = enum { little, big };
 pub const Writer = struct {
     buf: std.ArrayList(u8),
     endian: Endian,
+    // Representation flag: false = XCDR2 (alignment capped at 4, DHEADER
+    // framing, PL_CDR2 EMHEADER for @mutable); true = XCDR1 / classic CDR
+    // (alignment up to 8, no DHEADER, PL_CDR1 parameter list for @mutable).
+    xcdr1: bool = false,
 
     pub fn init(alloc: std.mem.Allocator, endian: Endian) Writer {
-        return .{ .buf = std.ArrayList(u8).init(alloc), .endian = endian };
+        return .{ .buf = std.ArrayList(u8).init(alloc), .endian = endian, .xcdr1 = false };
+    }
+    pub fn initRep(alloc: std.mem.Allocator, endian: Endian, xcdr1: bool) Writer {
+        return .{ .buf = std.ArrayList(u8).init(alloc), .endian = endian, .xcdr1 = xcdr1 };
+    }
+    // A fresh member-relative sub-writer inheriting this writer's endianness and
+    // representation (nested composites and @mutable member bodies).
+    pub fn sub(self: *Writer) Writer {
+        return Writer.initRep(self.buf.allocator, self.endian, self.xcdr1);
     }
     pub fn deinit(self: *Writer) void {
         self.buf.deinit();
     }
     fn alignTo(self: *Writer, a: usize) !void {
-        const cap: usize = if (a > 4) 4 else a;
+        // XCDR1 aligns 8-byte primitives to 8; XCDR2 caps all alignment at 4.
+        const cap: usize = if (self.xcdr1) a else (if (a > 4) 4 else a);
         while (self.buf.items.len % cap != 0) try self.buf.append(0);
     }
     fn putLE(self: *Writer, a: usize, le: []const u8) !void {
@@ -432,7 +477,8 @@ pub const Writer = struct {
             @truncate(v),       @truncate(v >> 8),  @truncate(v >> 16), @truncate(v >> 24),
             @truncate(v >> 32), @truncate(v >> 40), @truncate(v >> 48), @truncate(v >> 56),
         };
-        try self.putLE(4, &le);
+        // Natural alignment 8; alignTo caps it at 4 under XCDR2.
+        try self.putLE(8, &le);
     }
     pub fn putF32(self: *Writer, v: f32) !void {
         const bits: u32 = @bitCast(v);
@@ -488,7 +534,8 @@ pub const Writer = struct {
             le[i] = @truncate(lo >> @intCast(8 * i));
             le[8 + i] = @truncate(hi >> @intCast(8 * i));
         }
-        try self.putLE(4, &le);
+        // long double aligns to 8 under classic CDR; XCDR2 caps at 4.
+        try self.putLE(8, &le);
     }
     pub fn putFixed(self: *Writer, dec: []const u8, comptime zdP: usize, comptime zdS: usize) !void {
         var positive = true;
@@ -541,6 +588,32 @@ pub const Writer = struct {
             try self.buf.append((nibbles[k] << 4) | nibbles[k + 1]);
         }
     }
+    // PL_CDR1 (XCDR1 @mutable) parameter member: a standard [id:u16][len:u16]
+    // header, or the extended [0x3F01][8][id:u32][len:u32] header when the id
+    // reaches the reserved 0x3F00 range or the body exceeds 0xFFFF (XTypes 1.3
+    // §7.4.1.2). `len` is the UNPADDED body length; the body is then padded to
+    // the next 4-byte boundary (pad bytes are not counted in `len`).
+    pub fn putPlCdr1Member(self: *Writer, id: u32, body: []const u8) !void {
+        const needs_ext = id >= 0x3F00 or body.len > 0xFFFF;
+        if (needs_ext) {
+            try self.putU16(0x3F01);
+            try self.putU16(8);
+            try self.putU32(id);
+            try self.putU32(@intCast(body.len));
+        } else {
+            try self.putU16(@intCast(id));
+            try self.putU16(@intCast(body.len));
+        }
+        try self.putBytes(body);
+        const pad = (4 - (body.len % 4)) % 4;
+        var i: usize = 0;
+        while (i < pad) : (i += 1) try self.buf.append(0);
+    }
+    // PL_CDR1 list terminator (PID_LIST_END = 0x3F02, length 0).
+    pub fn putPlCdr1Sentinel(self: *Writer) !void {
+        try self.putU16(0x3F02);
+        try self.putU16(0);
+    }
     pub fn bytes(self: *Writer) []const u8 {
         return self.buf.items;
     }
@@ -551,13 +624,42 @@ pub const Reader = struct {
     pos: usize,
     endian: Endian,
     alloc: std.mem.Allocator,
+    xcdr1: bool = false,
+    // Alignment origin: reads align relative to `base` (0 = stream origin).
+    // A PL_CDR1 @mutable member sets it to the member-body start so the body
+    // decodes member-relative, exactly as it was encoded (member-relative
+    // sub-writer), then restores it to 0.
+    base: usize = 0,
 
     pub fn init(buf: []const u8, endian: Endian, alloc: std.mem.Allocator) Reader {
-        return .{ .buf = buf, .pos = 0, .endian = endian, .alloc = alloc };
+        return .{ .buf = buf, .pos = 0, .endian = endian, .alloc = alloc, .xcdr1 = false, .base = 0 };
+    }
+    pub fn initRep(buf: []const u8, endian: Endian, alloc: std.mem.Allocator, xcdr1: bool) Reader {
+        return .{ .buf = buf, .pos = 0, .endian = endian, .alloc = alloc, .xcdr1 = xcdr1, .base = 0 };
     }
     fn ralign(self: *Reader, a: usize) void {
-        const cap: usize = if (a > 4) 4 else a;
-        while (self.pos % cap != 0) self.pos += 1;
+        const cap: usize = if (self.xcdr1) a else (if (a > 4) 4 else a);
+        while ((self.pos - self.base) % cap != 0) self.pos += 1;
+    }
+    // Reads one PL_CDR1 parameter header, leaving `pos` AT the member-body
+    // start; returns {id, len} or null at the sentinel. The two RTPS PID flag
+    // bits (0x8000 IMPL-SPECIFIC, 0x4000 MUST_UNDERSTAND) are stripped before
+    // the id is compared against the sentinel / extended markers (XTypes 1.3
+    // §7.4.1.2). The caller decodes `len` body bytes (member-relative, via
+    // `base`) then advances past the body and its 4-byte pad.
+    pub fn readPlCdr1Header(self: *Reader) ?struct { id: u32, len: usize } {
+        const pid = self.getU16() & 0x3FFF;
+        const short_len = self.getU16();
+        if (pid == 0x3F02) return null;
+        var id: u32 = pid;
+        var len: usize = short_len;
+        if (pid == 0x3F01) {
+            // Extended header: [0x3F01][8][id:u32][len:u32]. `short_len` was the
+            // header length (8), superseded by the 32-bit id/len that follow.
+            id = self.getU32();
+            len = self.getU32();
+        }
+        return .{ .id = id, .len = len };
     }
     fn getLE(self: *Reader, a: usize, n: usize) u64 {
         self.ralign(a);
@@ -590,7 +692,7 @@ pub const Reader = struct {
         return @intCast(self.getLE(4, 4));
     }
     pub fn getU64(self: *Reader) u64 {
-        return self.getLE(4, 8);
+        return self.getLE(8, 8);
     }
     pub fn getF32(self: *Reader) f32 {
         return @bitCast(self.getU32());
@@ -663,7 +765,7 @@ pub const Reader = struct {
         return try out.toOwnedSlice();
     }
     pub fn getLongDouble(self: *Reader) f64 {
-        self.ralign(4);
+        self.ralign(8);
         var le: [16]u8 = undefined;
         @memcpy(&le, self.getBytesN(16));
         if (self.endian == .big) std.mem.reverse(u8, &le);
@@ -724,6 +826,12 @@ pub fn generate_zig_module(spec: &Specification, _opts: &ZigGenOptions) -> Resul
     // #A39 interface-nested types are registered under the interface scope).
     TYPE_PATHS.with(|t| t.borrow_mut().clear());
     register_type_paths(&spec.definitions, &mut Vec::new());
+
+    // Register named `const`s and enumerators so a collection bound or union
+    // `case` label that references one resolves to its integer value (§7.4.1.4.4).
+    CONST_VALUES.with(|m| m.borrow_mut().clear());
+    ENUM_LITERAL_VALUES.with(|m| m.borrow_mut().clear());
+    register_const_values(&spec.definitions);
 
     // `module X { ... }` content is promoted to the top level, each definition
     // paired with its module scope path (see `flatten_module_defs`).
@@ -1270,6 +1378,66 @@ fn char_literal_value(raw: &str) -> Option<i64> {
 /// zerodds-lint: recursion-depth 32 (label expression tree; bounded by the IDL
 /// grammar's expression nesting).
 fn eval_union_label(e: &ConstExpr, enum_vals: &HashMap<String, i64>) -> Option<i64> {
+    eval_const_int(e, enum_vals, 0)
+}
+
+/// Registers every `const` value expression and every enumerator value in the
+/// spec into [`CONST_VALUES`] / [`ENUM_LITERAL_VALUES`], keyed by simple name,
+/// so [`eval_const_int`] can resolve a named bound (`sequence<octet, MAX>`) or a
+/// named `case` label (§7.4.1.4.4 const_expr). Recurses into modules and
+/// interface bodies.
+/// zerodds-lint: recursion-depth 32 (module/interface nesting; bounded by grammar).
+fn register_const_values(defs: &[Definition]) {
+    for def in defs {
+        match def {
+            Definition::Const(c) => {
+                CONST_VALUES.with(|m| {
+                    m.borrow_mut().insert(c.name.text.clone(), c.value.clone());
+                });
+            }
+            Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Enum(e))) => {
+                for (en, val) in e.enumerators.iter().zip(enumerator_values(e)) {
+                    ENUM_LITERAL_VALUES.with(|m| {
+                        m.borrow_mut().insert(en.name.text.clone(), i64::from(val));
+                    });
+                }
+            }
+            Definition::Module(m) => register_const_values(&m.definitions),
+            Definition::Interface(InterfaceDcl::Def(iface)) => {
+                for ex in &iface.exports {
+                    match ex {
+                        Export::Const(c) => {
+                            CONST_VALUES.with(|m| {
+                                m.borrow_mut().insert(c.name.text.clone(), c.value.clone());
+                            });
+                        }
+                        Export::Type(TypeDecl::Constr(ConstrTypeDecl::Enum(e))) => {
+                            for (en, val) in e.enumerators.iter().zip(enumerator_values(e)) {
+                                ENUM_LITERAL_VALUES.with(|m| {
+                                    m.borrow_mut().insert(en.name.text.clone(), i64::from(val));
+                                });
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Evaluates a constant expression to a signed integer, resolving named
+/// constants (via [`CONST_VALUES`]), enumerator names (via [`ENUM_LITERAL_VALUES`]
+/// or `locals`) and folding IDL arithmetic/bitwise operators (§7.4.1.4.4).
+/// Mirrors idl-rust's `eval_const_i128` so a bound or `case` label evaluates to
+/// the SAME integer in both backends. `locals` supplies the switch enum's
+/// enumerators (union path); `depth` bounds const-reference chains.
+/// zerodds-lint: recursion-depth 32 (const-reference chain; explicitly bounded).
+fn eval_const_int(e: &ConstExpr, locals: &HashMap<String, i64>, depth: u32) -> Option<i64> {
+    if depth > 32 {
+        return None;
+    }
     match e {
         ConstExpr::Literal(Literal { kind, raw, .. }) => match kind {
             LiteralKind::Integer => parse_int(raw),
@@ -1277,21 +1445,44 @@ fn eval_union_label(e: &ConstExpr, enum_vals: &HashMap<String, i64>) -> Option<i
             LiteralKind::Boolean => Some(i64::from(raw.trim().eq_ignore_ascii_case("true"))),
             _ => None,
         },
-        // `case ENUMERATOR:` — the label names an enumerator of the switch enum
-        // (resolved by its simple, i.e. last, segment).
+        // A named enumerator or constant, resolved by its simple (last) segment:
+        // the switch enum's enumerators first (union `case` path), then the
+        // spec-wide enumerator set, then a named `const` (recursively evaluated).
         ConstExpr::Scoped(sn) => {
             let last = sn.parts.last()?.text.clone();
-            enum_vals.get(&last).copied()
+            if let Some(v) = locals.get(&last) {
+                return Some(*v);
+            }
+            if let Some(v) = ENUM_LITERAL_VALUES.with(|m| m.borrow().get(&last).copied()) {
+                return Some(v);
+            }
+            let value = CONST_VALUES.with(|m| m.borrow().get(&last).cloned())?;
+            eval_const_int(&value, locals, depth + 1)
         }
         ConstExpr::Unary { op, operand, .. } => {
-            let v = eval_union_label(operand, enum_vals)?;
+            let v = eval_const_int(operand, locals, depth + 1)?;
             match op {
                 UnaryOp::Plus => Some(v),
-                UnaryOp::Minus => Some(-v),
+                UnaryOp::Minus => v.checked_neg(),
                 UnaryOp::BitNot => Some(!v),
             }
         }
-        ConstExpr::Binary { .. } => None,
+        ConstExpr::Binary { op, lhs, rhs, .. } => {
+            let a = eval_const_int(lhs, locals, depth + 1)?;
+            let b = eval_const_int(rhs, locals, depth + 1)?;
+            match op {
+                BinaryOp::Or => Some(a | b),
+                BinaryOp::Xor => Some(a ^ b),
+                BinaryOp::And => Some(a & b),
+                BinaryOp::Shl => u32::try_from(b).ok().map(|s| a << s),
+                BinaryOp::Shr => u32::try_from(b).ok().map(|s| a >> s),
+                BinaryOp::Add => a.checked_add(b),
+                BinaryOp::Sub => a.checked_sub(b),
+                BinaryOp::Mul => a.checked_mul(b),
+                BinaryOp::Div => a.checked_div(b),
+                BinaryOp::Mod => a.checked_rem(b),
+            }
+        }
     }
 }
 
@@ -1318,25 +1509,15 @@ fn resolve_typedef(t: &TypeSpec, typedefs: &HashMap<String, TypeSpec>) -> TypeSp
     }
 }
 
-/// Evaluates a fixed-array bound to its integer size (literal + unary sign).
+/// Evaluates a fixed-array bound / collection bound / `fixed<P,S>` digit count
+/// to its integer size. Resolves literals, unary signs, named `const`s, named
+/// enumerators and folded binary arithmetic via [`eval_const_int`] (§7.4.1.4.4)
+/// — so `sequence<octet, MAX>` and `char[LEN]` no longer degrade to unbounded /
+/// `Unsupported` when the bound names a constant.
 /// zerodds-lint: recursion-depth 32
 fn array_size(e: &ConstExpr) -> Option<i64> {
-    match e {
-        ConstExpr::Literal(Literal {
-            kind: LiteralKind::Integer,
-            raw,
-            ..
-        }) => parse_int(raw),
-        ConstExpr::Unary { op, operand, .. } => {
-            let v = array_size(operand)?;
-            match op {
-                UnaryOp::Plus => Some(v),
-                UnaryOp::Minus => Some(-v),
-                UnaryOp::BitNot => Some(!v),
-            }
-        }
-        _ => None,
-    }
+    static EMPTY: std::sync::OnceLock<HashMap<String, i64>> = std::sync::OnceLock::new();
+    eval_const_int(e, EMPTY.get_or_init(HashMap::new), 0)
 }
 
 /// A type is "primitive" for the map-DHEADER rule if it is fully descriptive on
@@ -1383,7 +1564,7 @@ fn build_map_put(
         let kp = key_put.replace("$w", "zdSub");
         let vp = val_put.replace("$w", "zdSub");
         format!(
-            "{{ {head} var zdSub = Writer.init($w.buf.allocator, $w.endian); \
+            "{{ {head} var zdSub = $w.sub(); \
              defer zdSub.deinit(); try zdSub.putU32(@intCast(zdTmp.len)); \
              for (zdTmp) |zdE| {{ {kp} {vp} }} \
              const zdBB = zdSub.bytes(); try $w.putU32(@intCast(zdBB.len)); \
@@ -1631,91 +1812,136 @@ fn emit_struct(
     }
 
     // marshalInto writes into an existing writer (nested composites call this so
-    // alignment stays stream-relative). @final: inline; @appendable: DHEADER.
+    // alignment stays stream/member-relative). The writer's representation flag
+    // (`w.xcdr1`) selects the framing at runtime: XCDR2 (DHEADER for
+    // @appendable, PL_CDR2 EMHEADER for @mutable) vs XCDR1 / classic CDR (no
+    // DHEADER, PL_CDR1 parameter list for @mutable). @final is inline and
+    // identical in both — only primitive alignment (capped at 4 under XCDR2,
+    // up to 8 under XCDR1) differs, and that is handled inside the Writer.
     let _ = writeln!(
         out,
         "\n    pub fn marshalInto(self: {ty}, w: *Writer) !void {{"
     );
-    if ext == ExtensibilityKind::Mutable {
-        // @mutable: DHEADER-framed member list; each member = EMHEADER (LC4 =
-        // member id, must-understand bit 31 when @must_understand — #A17) +
-        // NEXTINT (body length) + body (XTypes §7.4.3.4.2). An `@optional`
-        // member is simply OMITTED from the member list when absent — the
-        // missing EMHEADER is the presence signal, so no presence byte goes
-        // into the body (#A18), unlike the @final/@appendable inline shape.
-        let _ = writeln!(
-            out,
-            "        var body_s = Writer.init(w.buf.allocator, w.endian);"
-        );
-        let _ = writeln!(out, "        defer body_s.deinit();");
-        let _ = writeln!(out, "        const body = &body_s;");
-        for f in &fields {
-            if f.non_serialized {
-                continue;
-            }
-            let mu = if f.must_understand {
-                0x8000_0000_u32
-            } else {
-                0
-            };
-            let emh = mu | 0x4000_0000 | f.id;
-            // Value-only put: for an optional member use the presence-flag-free
-            // form (guarded below), else the normal put.
-            let put = if f.optional {
-                f.opt_inner_put.clone()
-            } else {
-                f.put.clone()
-            };
-            let indent = if f.optional {
-                "            "
-            } else {
-                "        "
-            };
-            if f.optional {
-                let _ = writeln!(out, "        if (self.{}) |zdOptV| {{", f.zig_name);
-            }
-            let _ = writeln!(out, "{indent}try body.putU32(0x{emh:08x});");
-            let _ = writeln!(out, "{indent}{{");
-            let _ = writeln!(
-                out,
-                "{indent}    var zdMem_s = Writer.init(w.buf.allocator, w.endian);"
-            );
-            let _ = writeln!(out, "{indent}    defer zdMem_s.deinit();");
-            let _ = writeln!(out, "{indent}    const zdMem = &zdMem_s;");
-            let _ = writeln!(out, "{indent}    {}", put.replace("$w", "zdMem"));
-            let _ = writeln!(
-                out,
-                "{indent}    try body.putU32(@intCast(zdMem.bytes().len));"
-            );
-            let _ = writeln!(out, "{indent}    try body.putBytes(zdMem.bytes());");
-            let _ = writeln!(out, "{indent}}}");
-            if f.optional {
-                let _ = writeln!(out, "        }}");
+    match ext {
+        ExtensibilityKind::Final => {
+            for f in &fields {
+                if f.non_serialized {
+                    continue;
+                }
+                let _ = writeln!(out, "        {}", f.put.replace("$w", "w"));
             }
         }
-        let _ = writeln!(out, "        try w.putU32(@intCast(body.bytes().len));");
-        let _ = writeln!(out, "        try w.putBytes(body.bytes());");
-    } else {
-        let wv = if ext == ExtensibilityKind::Final {
-            "w"
-        } else {
-            let _ = writeln!(
-                out,
-                "        var body_s = Writer.init(w.buf.allocator, w.endian);"
-            );
-            let _ = writeln!(out, "        defer body_s.deinit();");
-            let _ = writeln!(out, "        const body = &body_s;");
-            "body"
-        };
-        for f in &fields {
-            if f.non_serialized {
-                continue;
+        ExtensibilityKind::Appendable => {
+            // XCDR1: inline, no DHEADER.
+            let _ = writeln!(out, "        if (w.xcdr1) {{");
+            for f in &fields {
+                if f.non_serialized {
+                    continue;
+                }
+                let _ = writeln!(out, "            {}", f.put.replace("$w", "w"));
             }
-            let _ = writeln!(out, "        {}", f.put.replace("$w", wv));
+            // XCDR2: DHEADER-framed body.
+            let _ = writeln!(out, "        }} else {{");
+            let _ = writeln!(out, "            var body_s = w.sub();");
+            let _ = writeln!(out, "            defer body_s.deinit();");
+            let _ = writeln!(out, "            const body = &body_s;");
+            for f in &fields {
+                if f.non_serialized {
+                    continue;
+                }
+                let _ = writeln!(out, "            {}", f.put.replace("$w", "body"));
+            }
+            let _ = writeln!(out, "            try w.putU32(@intCast(body.bytes().len));");
+            let _ = writeln!(out, "            try w.putBytes(body.bytes());");
+            let _ = writeln!(out, "        }}");
         }
-        if ext != ExtensibilityKind::Final {
-            let _ = writeln!(out, "        try w.putU32(@intCast(body.bytes().len));");
-            let _ = writeln!(out, "        try w.putBytes(body.bytes());");
+        ExtensibilityKind::Mutable => {
+            // XCDR1 @mutable = PL_CDR1: a [PID][length] parameter list written
+            // straight into `w` (no outer DHEADER), each member body built in a
+            // fresh member-relative sub-writer, terminated by the sentinel. An
+            // `@optional` member is OMITTED when absent (#A18).
+            let _ = writeln!(out, "        if (w.xcdr1) {{");
+            for f in &fields {
+                if f.non_serialized {
+                    continue;
+                }
+                let put = if f.optional {
+                    f.opt_inner_put.clone()
+                } else {
+                    f.put.clone()
+                };
+                let indent = if f.optional {
+                    "                "
+                } else {
+                    "            "
+                };
+                if f.optional {
+                    let _ = writeln!(out, "            if (self.{}) |zdOptV| {{", f.zig_name);
+                }
+                let _ = writeln!(out, "{indent}{{");
+                let _ = writeln!(out, "{indent}    var zdMem_s = w.sub();");
+                let _ = writeln!(out, "{indent}    defer zdMem_s.deinit();");
+                let _ = writeln!(out, "{indent}    const zdMem = &zdMem_s;");
+                let _ = writeln!(out, "{indent}    {}", put.replace("$w", "zdMem"));
+                let _ = writeln!(
+                    out,
+                    "{indent}    try w.putPlCdr1Member({}, zdMem.bytes());",
+                    f.id
+                );
+                let _ = writeln!(out, "{indent}}}");
+                if f.optional {
+                    let _ = writeln!(out, "            }}");
+                }
+            }
+            let _ = writeln!(out, "            try w.putPlCdr1Sentinel();");
+            // XCDR2 @mutable = PL_CDR2: DHEADER-framed EMHEADER (LC4 = member id,
+            // must-understand bit 31 — #A17) + NEXTINT (body length) + body.
+            let _ = writeln!(out, "        }} else {{");
+            let _ = writeln!(out, "            var body_s = w.sub();");
+            let _ = writeln!(out, "            defer body_s.deinit();");
+            let _ = writeln!(out, "            const body = &body_s;");
+            for f in &fields {
+                if f.non_serialized {
+                    continue;
+                }
+                let mu = if f.must_understand {
+                    0x8000_0000_u32
+                } else {
+                    0
+                };
+                let emh = mu | 0x4000_0000 | f.id;
+                let put = if f.optional {
+                    f.opt_inner_put.clone()
+                } else {
+                    f.put.clone()
+                };
+                let indent = if f.optional {
+                    "                "
+                } else {
+                    "            "
+                };
+                if f.optional {
+                    let _ = writeln!(out, "            if (self.{}) |zdOptV| {{", f.zig_name);
+                }
+                let _ = writeln!(out, "{indent}try body.putU32(0x{emh:08x});");
+                let _ = writeln!(out, "{indent}{{");
+                let _ = writeln!(out, "{indent}    var zdMem_s = w.sub();");
+                let _ = writeln!(out, "{indent}    defer zdMem_s.deinit();");
+                let _ = writeln!(out, "{indent}    const zdMem = &zdMem_s;");
+                let _ = writeln!(out, "{indent}    {}", put.replace("$w", "zdMem"));
+                let _ = writeln!(
+                    out,
+                    "{indent}    try body.putU32(@intCast(zdMem.bytes().len));"
+                );
+                let _ = writeln!(out, "{indent}    try body.putBytes(zdMem.bytes());");
+                let _ = writeln!(out, "{indent}}}");
+                if f.optional {
+                    let _ = writeln!(out, "            }}");
+                }
+            }
+            let _ = writeln!(out, "            try w.putU32(@intCast(body.bytes().len));");
+            let _ = writeln!(out, "            try w.putBytes(body.bytes());");
+            let _ = writeln!(out, "        }}");
         }
     }
     let _ = writeln!(out, "    }}");
@@ -1725,6 +1951,17 @@ fn emit_struct(
         "\n    pub fn marshalXCDR(self: {ty}, endian: Endian, alloc: std.mem.Allocator) ![]u8 {{"
     );
     let _ = writeln!(out, "        var w = Writer.init(alloc, endian);");
+    let _ = writeln!(out, "        errdefer w.deinit();");
+    let _ = writeln!(out, "        try self.marshalInto(&w);");
+    let _ = writeln!(out, "        return try w.buf.toOwnedSlice();");
+    let _ = writeln!(out, "    }}");
+    // XCDR1 / classic-CDR entry point (PLAIN_CDR / PL_CDR1). Same members, the
+    // representation-1 writer selects classic alignment + PL_CDR1 framing.
+    let _ = writeln!(
+        out,
+        "\n    pub fn marshalXCDR1(self: {ty}, endian: Endian, alloc: std.mem.Allocator) ![]u8 {{"
+    );
+    let _ = writeln!(out, "        var w = Writer.initRep(alloc, endian, true);");
     let _ = writeln!(out, "        errdefer w.deinit();");
     let _ = writeln!(out, "        try self.marshalInto(&w);");
     let _ = writeln!(out, "        return try w.buf.toOwnedSlice();");
@@ -1811,40 +2048,96 @@ fn emit_struct(
     // EMHEADER + NEXTINT (members in declaration order).
     let _ = writeln!(out, "\n    pub fn readFrom(r: *Reader) !{ty} {{");
     let _ = writeln!(out, "        var v: {ty} = undefined;");
-    if ext == ExtensibilityKind::Mutable {
-        // Positional @mutable decoder: assumes every member present in id order
-        // (rides the existing naive decoder). An `@optional` member reads its
-        // value straight from the body (no presence byte — #A18) and is stored
-        // non-null; a member OMITTED on encode does NOT round-trip here, matching
-        // the go backend's documented scope. A fully-present value round-trips.
-        let _ = writeln!(out, "        _ = r.getU32();");
-        for f in &fields {
-            if f.non_serialized {
-                continue;
-            }
-            let _ = writeln!(out, "        _ = r.getU32();");
-            let _ = writeln!(out, "        _ = r.getU32();");
-            if f.optional {
-                let _ = writeln!(
-                    out,
-                    "        {{ var zdOptTmp: {} = undefined; {} v.{} = zdOptTmp; }}",
-                    f.opt_inner_type,
-                    f.opt_inner_get.replace("$r", "r"),
-                    f.zig_name
-                );
-            } else {
+    match ext {
+        ExtensibilityKind::Final => {
+            for f in &fields {
+                if f.non_serialized {
+                    continue;
+                }
                 let _ = writeln!(out, "        {}", f.get.replace("$r", "r"));
             }
         }
-    } else {
-        if ext == ExtensibilityKind::Appendable {
-            let _ = writeln!(out, "        _ = r.getU32();");
-        }
-        for f in &fields {
-            if f.non_serialized {
-                continue;
+        ExtensibilityKind::Appendable => {
+            // XCDR1: no DHEADER; XCDR2: skip the DHEADER length prefix.
+            let _ = writeln!(out, "        if (!r.xcdr1) {{ _ = r.getU32(); }}");
+            for f in &fields {
+                if f.non_serialized {
+                    continue;
+                }
+                let _ = writeln!(out, "        {}", f.get.replace("$r", "r"));
             }
-            let _ = writeln!(out, "        {}", f.get.replace("$r", "r"));
+        }
+        ExtensibilityKind::Mutable => {
+            let _ = writeln!(out, "        if (r.xcdr1) {{");
+            // XCDR1 PL_CDR1: sentinel-terminated parameter list, dispatched by
+            // member id. Each member body decodes member-relative (r.base set to
+            // the body start). An `@optional` member defaults to null and is set
+            // non-null when its id appears (#A18).
+            for f in &fields {
+                if f.non_serialized || !f.optional {
+                    continue;
+                }
+                let _ = writeln!(out, "            v.{} = null;", f.zig_name);
+            }
+            let _ = writeln!(out, "            while (true) {{");
+            let _ = writeln!(
+                out,
+                "                const zdH = r.readPlCdr1Header() orelse break;"
+            );
+            let _ = writeln!(out, "                const zdBody = r.pos;");
+            let _ = writeln!(out, "                switch (zdH.id) {{");
+            for f in &fields {
+                if f.non_serialized {
+                    continue;
+                }
+                let _ = writeln!(out, "                    {} => {{", f.id);
+                let _ = writeln!(out, "                        r.base = zdBody;");
+                if f.optional {
+                    let _ = writeln!(
+                        out,
+                        "                        {{ var zdOptTmp: {} = undefined; {} v.{} = zdOptTmp; }}",
+                        f.opt_inner_type,
+                        f.opt_inner_get.replace("$r", "r"),
+                        f.zig_name
+                    );
+                } else {
+                    let _ = writeln!(out, "                        {}", f.get.replace("$r", "r"));
+                }
+                let _ = writeln!(out, "                        r.base = 0;");
+                let _ = writeln!(out, "                    }},");
+            }
+            let _ = writeln!(out, "                    else => {{}},");
+            let _ = writeln!(out, "                }}");
+            let _ = writeln!(
+                out,
+                "                const zdPad = (4 - (zdH.len % 4)) % 4;"
+            );
+            let _ = writeln!(out, "                r.pos = zdBody + zdH.len + zdPad;");
+            let _ = writeln!(out, "                r.base = 0;");
+            let _ = writeln!(out, "            }}");
+            // XCDR2 PL_CDR2: positional decoder (every member present in id
+            // order); skips outer DHEADER then per-member EMHEADER + NEXTINT.
+            let _ = writeln!(out, "        }} else {{");
+            let _ = writeln!(out, "            _ = r.getU32();");
+            for f in &fields {
+                if f.non_serialized {
+                    continue;
+                }
+                let _ = writeln!(out, "            _ = r.getU32();");
+                let _ = writeln!(out, "            _ = r.getU32();");
+                if f.optional {
+                    let _ = writeln!(
+                        out,
+                        "            {{ var zdOptTmp: {} = undefined; {} v.{} = zdOptTmp; }}",
+                        f.opt_inner_type,
+                        f.opt_inner_get.replace("$r", "r"),
+                        f.zig_name
+                    );
+                } else {
+                    let _ = writeln!(out, "            {}", f.get.replace("$r", "r"));
+                }
+            }
+            let _ = writeln!(out, "        }}");
         }
     }
     let _ = writeln!(out, "        return v;");
@@ -1854,6 +2147,17 @@ fn emit_struct(
         "\n    pub fn unmarshalXCDR(buf: []const u8, endian: Endian, alloc: std.mem.Allocator) !{ty} {{"
     );
     let _ = writeln!(out, "        var r = Reader.init(buf, endian, alloc);");
+    let _ = writeln!(out, "        return try {ty}.readFrom(&r);");
+    let _ = writeln!(out, "    }}");
+    // XCDR1 / classic-CDR decode entry point (inverse of `marshalXCDR1`).
+    let _ = writeln!(
+        out,
+        "\n    pub fn unmarshalXCDR1(buf: []const u8, endian: Endian, alloc: std.mem.Allocator) !{ty} {{"
+    );
+    let _ = writeln!(
+        out,
+        "        var r = Reader.initRep(buf, endian, alloc, true);"
+    );
     let _ = writeln!(out, "        return try {ty}.readFrom(&r);");
     let _ = writeln!(out, "    }}");
     emit_verbatim_at(out, "    ", &s.annotations, PlacementKind::EndDeclaration);
@@ -1988,72 +2292,90 @@ fn emit_union(
         out,
         "\n    pub fn marshalInto(self: {ty}, w: *Writer) !void {{"
     );
-    if ext == ExtensibilityKind::Mutable {
-        // #A16: EMHEADER-framed member list. Discriminator = member id 0; the
-        // selected branch = its 1-based case index.
-        let _ = writeln!(
-            out,
-            "        var body_s = Writer.init(w.buf.allocator, w.endian);"
-        );
-        let _ = writeln!(out, "        defer body_s.deinit();");
-        let _ = writeln!(out, "        const body = &body_s;");
-        emit_union_mutable_member(out, "        ", 0, &disc_put);
-        let _ = writeln!(out, "        switch ({scrut_enc}) {{");
-        for (i, c) in cases.iter().enumerate() {
-            let id = u32::try_from(i + 1).unwrap_or(0);
-            let head = if c.is_default {
-                "            else =>".to_string()
-            } else {
-                format!("            {} =>", labels_of(c))
-            };
-            let _ = writeln!(out, "{head} {{");
-            emit_union_mutable_member(out, "                ", id, &c.put);
-            let _ = writeln!(out, "            }},");
-        }
-        if need_else {
-            let _ = writeln!(out, "            else => {{}},");
-        }
-        let _ = writeln!(out, "        }}");
-        let _ = writeln!(out, "        try w.putU32(@intCast(body.bytes().len));");
-        let _ = writeln!(out, "        try w.putBytes(body.bytes());");
-    } else {
-        let wv = if ext == ExtensibilityKind::Final {
-            "w"
-        } else {
-            let _ = writeln!(
-                out,
-                "        var body_s = Writer.init(w.buf.allocator, w.endian);"
-            );
-            let _ = writeln!(out, "        defer body_s.deinit();");
-            let _ = writeln!(out, "        const body = &body_s;");
-            "body"
-        };
-        let _ = writeln!(out, "        {}", disc_put.replace("$w", wv));
-        let _ = writeln!(out, "        switch ({scrut_enc}) {{");
-        for c in &cases {
-            // Block form (`=> { put; }`): the generated put already ends in `;`.
-            if c.is_default {
-                let _ = writeln!(
-                    out,
-                    "            else => {{ {} }},",
-                    c.put.replace("$w", wv)
-                );
-            } else {
-                let _ = writeln!(
-                    out,
-                    "            {} => {{ {} }},",
-                    labels_of(c),
-                    c.put.replace("$w", wv)
-                );
+    // Emits `switch (scrut) { <case> => { <body per case> }, ... }`. `case_body`
+    // renders the body for a given case; `default_body` for the `else` prong.
+    let emit_switch =
+        |out: &mut String, case_body: &dyn Fn(usize, &UnionCase) -> String, default_extra: bool| {
+            let _ = writeln!(out, "            switch ({scrut_enc}) {{");
+            for (i, c) in cases.iter().enumerate() {
+                if c.is_default {
+                    let _ = writeln!(out, "            else => {{ {} }},", case_body(i, c));
+                } else {
+                    let _ = writeln!(
+                        out,
+                        "            {} => {{ {} }},",
+                        labels_of(c),
+                        case_body(i, c)
+                    );
+                }
             }
+            if need_else && default_extra {
+                let _ = writeln!(out, "            else => {{}},");
+            }
+            let _ = writeln!(out, "            }}");
+        };
+    match ext {
+        ExtensibilityKind::Final => {
+            let _ = writeln!(out, "        {}", disc_put.replace("$w", "w"));
+            emit_switch(out, &|_i, c| c.put.replace("$w", "w"), true);
         }
-        if need_else {
-            let _ = writeln!(out, "            else => {{}},");
+        ExtensibilityKind::Appendable => {
+            // XCDR1: inline, no DHEADER.
+            let _ = writeln!(out, "        if (w.xcdr1) {{");
+            let _ = writeln!(out, "            {}", disc_put.replace("$w", "w"));
+            emit_switch(out, &|_i, c| c.put.replace("$w", "w"), true);
+            // XCDR2: DHEADER-framed body.
+            let _ = writeln!(out, "        }} else {{");
+            let _ = writeln!(out, "            var body_s = w.sub();");
+            let _ = writeln!(out, "            defer body_s.deinit();");
+            let _ = writeln!(out, "            const body = &body_s;");
+            let _ = writeln!(out, "            {}", disc_put.replace("$w", "body"));
+            emit_switch(out, &|_i, c| c.put.replace("$w", "body"), true);
+            let _ = writeln!(out, "            try w.putU32(@intCast(body.bytes().len));");
+            let _ = writeln!(out, "            try w.putBytes(body.bytes());");
+            let _ = writeln!(out, "        }}");
         }
-        let _ = writeln!(out, "        }}");
-        if ext != ExtensibilityKind::Final {
-            let _ = writeln!(out, "        try w.putU32(@intCast(body.bytes().len));");
-            let _ = writeln!(out, "        try w.putBytes(body.bytes());");
+        ExtensibilityKind::Mutable => {
+            // XCDR1 PL_CDR1: discriminator = member id 0, the selected branch =
+            // its 1-based case index, no outer DHEADER, sentinel-terminated.
+            let _ = writeln!(out, "        if (w.xcdr1) {{");
+            emit_union_pl_cdr1_member(out, "            ", 0, &disc_put.replace("$w", "zdMem"));
+            emit_switch(
+                out,
+                &|i, c| {
+                    let id = u32::try_from(i + 1).unwrap_or(0);
+                    let mut s = String::new();
+                    emit_union_pl_cdr1_member(&mut s, "", id, &c.put.replace("$w", "zdMem"));
+                    s
+                },
+                true,
+            );
+            let _ = writeln!(out, "            try w.putPlCdr1Sentinel();");
+            // XCDR2 PL_CDR2: EMHEADER-framed member list (#A16).
+            let _ = writeln!(out, "        }} else {{");
+            let _ = writeln!(out, "            var body_s = w.sub();");
+            let _ = writeln!(out, "            defer body_s.deinit();");
+            let _ = writeln!(out, "            const body = &body_s;");
+            emit_union_mutable_member(out, "            ", 0, &disc_put);
+            let _ = writeln!(out, "            switch ({scrut_enc}) {{");
+            for (i, c) in cases.iter().enumerate() {
+                let id = u32::try_from(i + 1).unwrap_or(0);
+                let head = if c.is_default {
+                    "            else =>".to_string()
+                } else {
+                    format!("            {} =>", labels_of(c))
+                };
+                let _ = writeln!(out, "{head} {{");
+                emit_union_mutable_member(out, "                ", id, &c.put);
+                let _ = writeln!(out, "            }},");
+            }
+            if need_else {
+                let _ = writeln!(out, "            else => {{}},");
+            }
+            let _ = writeln!(out, "            }}");
+            let _ = writeln!(out, "            try w.putU32(@intCast(body.bytes().len));");
+            let _ = writeln!(out, "            try w.putBytes(body.bytes());");
+            let _ = writeln!(out, "        }}");
         }
     }
     let _ = writeln!(out, "    }}");
@@ -2066,6 +2388,16 @@ fn emit_union(
     let _ = writeln!(out, "        try self.marshalInto(&w);");
     let _ = writeln!(out, "        return try w.buf.toOwnedSlice();");
     let _ = writeln!(out, "    }}");
+    // XCDR1 / classic-CDR entry point.
+    let _ = writeln!(
+        out,
+        "\n    pub fn marshalXCDR1(self: {ty}, endian: Endian, alloc: std.mem.Allocator) ![]u8 {{"
+    );
+    let _ = writeln!(out, "        var w = Writer.initRep(alloc, endian, true);");
+    let _ = writeln!(out, "        errdefer w.deinit();");
+    let _ = writeln!(out, "        try self.marshalInto(&w);");
+    let _ = writeln!(out, "        return try w.buf.toOwnedSlice();");
+    let _ = writeln!(out, "    }}");
 
     // Decode: read the discriminator, then read only the selected member.
     // @appendable skips the leading DHEADER; @mutable skips DHEADER, reads the
@@ -2073,34 +2405,83 @@ fn emit_union(
     // branch's EMHEADER+NEXTINT + value. Unread members stay undefined.
     let _ = writeln!(out, "\n    pub fn readFrom(r: *Reader) !{ty} {{");
     let _ = writeln!(out, "        var v: {ty} = undefined;");
-    if ext != ExtensibilityKind::Final {
-        let _ = writeln!(out, "        _ = r.getU32();");
-    }
+    // Renders the switch that reads the selected branch given the decoded
+    // discriminator. `body_of` produces the per-case read body.
+    let emit_dec_switch = |out: &mut String, body_of: &dyn Fn(&UnionCase) -> String| {
+        let _ = writeln!(out, "            switch ({scrut_dec}) {{");
+        for c in &cases {
+            if c.is_default {
+                let _ = writeln!(out, "            else => {{ {} }},", body_of(c));
+            } else {
+                let _ = writeln!(out, "            {} => {{ {} }},", labels_of(c), body_of(c));
+            }
+        }
+        if need_else {
+            let _ = writeln!(out, "            else => {{}},");
+        }
+        let _ = writeln!(out, "            }}");
+    };
     if ext == ExtensibilityKind::Mutable {
-        let _ = writeln!(out, "        _ = r.getU32();");
-        let _ = writeln!(out, "        _ = r.getU32();");
-    }
-    let _ = writeln!(out, "        {}", disc_get.replace("$r", "r"));
-    let _ = writeln!(out, "        switch ({scrut_dec}) {{");
-    for c in &cases {
-        let body = if ext == ExtensibilityKind::Mutable {
+        // XCDR1 PL_CDR1: id-dispatched parameter list — member id 0 is the
+        // discriminator, each 1-based branch id its case value; member-relative
+        // via r.base. Read the whole list first (order-independent), then the
+        // discriminator selects which decoded branch field is valid.
+        let _ = writeln!(out, "        if (r.xcdr1) {{");
+        let _ = writeln!(out, "            while (true) {{");
+        let _ = writeln!(
+            out,
+            "                const zdH = r.readPlCdr1Header() orelse break;"
+        );
+        let _ = writeln!(out, "                const zdBody = r.pos;");
+        let _ = writeln!(out, "                r.base = zdBody;");
+        let _ = writeln!(out, "                switch (zdH.id) {{");
+        let _ = writeln!(
+            out,
+            "                    0 => {{ {} }},",
+            disc_get.replace("$r", "r")
+        );
+        for (i, c) in cases.iter().enumerate() {
+            let id = u32::try_from(i + 1).unwrap_or(0);
+            let _ = writeln!(
+                out,
+                "                    {} => {{ {} }},",
+                id,
+                c.get.replace("$r", "r")
+            );
+        }
+        let _ = writeln!(out, "                    else => {{}},");
+        let _ = writeln!(out, "                }}");
+        let _ = writeln!(out, "                r.base = 0;");
+        let _ = writeln!(
+            out,
+            "                const zdPad = (4 - (zdH.len % 4)) % 4;"
+        );
+        let _ = writeln!(out, "                r.pos = zdBody + zdH.len + zdPad;");
+        let _ = writeln!(out, "            }}");
+        // XCDR2 PL_CDR2: skip outer DHEADER, disc EMHEADER+NEXTINT, then the
+        // selected branch's EMHEADER+NEXTINT + value.
+        let _ = writeln!(out, "        }} else {{");
+        let _ = writeln!(out, "            _ = r.getU32();");
+        let _ = writeln!(out, "            _ = r.getU32();");
+        let _ = writeln!(out, "            _ = r.getU32();");
+        let _ = writeln!(out, "            {}", disc_get.replace("$r", "r"));
+        emit_dec_switch(out, &|c| {
             format!(
                 "_ = r.getU32(); _ = r.getU32(); {}",
                 c.get.replace("$r", "r")
             )
-        } else {
-            c.get.replace("$r", "r")
-        };
-        if c.is_default {
-            let _ = writeln!(out, "            else => {{ {body} }},");
-        } else {
-            let _ = writeln!(out, "            {} => {{ {body} }},", labels_of(c));
-        }
+        });
+        let _ = writeln!(out, "        }}");
+    } else if ext == ExtensibilityKind::Appendable {
+        // XCDR1: no DHEADER; XCDR2: skip the DHEADER length prefix.
+        let _ = writeln!(out, "        if (!r.xcdr1) {{ _ = r.getU32(); }}");
+        let _ = writeln!(out, "        {}", disc_get.replace("$r", "r"));
+        emit_dec_switch(out, &|c| c.get.replace("$r", "r"));
+    } else {
+        // @final: inline, identical framing in both representations.
+        let _ = writeln!(out, "        {}", disc_get.replace("$r", "r"));
+        emit_dec_switch(out, &|c| c.get.replace("$r", "r"));
     }
-    if need_else {
-        let _ = writeln!(out, "            else => {{}},");
-    }
-    let _ = writeln!(out, "        }}");
     let _ = writeln!(out, "        return v;");
     let _ = writeln!(out, "    }}");
     let _ = writeln!(
@@ -2110,9 +2491,36 @@ fn emit_union(
     let _ = writeln!(out, "        var r = Reader.init(buf, endian, alloc);");
     let _ = writeln!(out, "        return try {ty}.readFrom(&r);");
     let _ = writeln!(out, "    }}");
+    // XCDR1 / classic-CDR decode entry point.
+    let _ = writeln!(
+        out,
+        "\n    pub fn unmarshalXCDR1(buf: []const u8, endian: Endian, alloc: std.mem.Allocator) !{ty} {{"
+    );
+    let _ = writeln!(
+        out,
+        "        var r = Reader.initRep(buf, endian, alloc, true);"
+    );
+    let _ = writeln!(out, "        return try {ty}.readFrom(&r);");
+    let _ = writeln!(out, "    }}");
     emit_verbatim_at(out, "    ", &u.annotations, PlacementKind::EndDeclaration);
     let _ = writeln!(out, "}};");
     Ok(())
+}
+
+/// Writes one PL_CDR1 (XCDR1 `@mutable`) union member into the outer writer `w`:
+/// a member-relative sub-writer body framed by `putPlCdr1Member`. `put` is
+/// already rewritten to target `zdMem`.
+fn emit_union_pl_cdr1_member(out: &mut String, indent: &str, id: u32, put: &str) {
+    let _ = writeln!(out, "{indent}{{");
+    let _ = writeln!(out, "{indent}    var zdMem_s = w.sub();");
+    let _ = writeln!(out, "{indent}    defer zdMem_s.deinit();");
+    let _ = writeln!(out, "{indent}    const zdMem = &zdMem_s;");
+    let _ = writeln!(out, "{indent}    {put}");
+    let _ = writeln!(
+        out,
+        "{indent}    try w.putPlCdr1Member({id}, zdMem.bytes());"
+    );
+    let _ = writeln!(out, "{indent}}}");
 }
 
 /// Writes one `@mutable` union member into the `body` writer: its EMHEADER (LC4
@@ -2122,10 +2530,7 @@ fn emit_union_mutable_member(out: &mut String, indent: &str, id: u32, put: &str)
     let emh = 0x4000_0000_u32 | id;
     let _ = writeln!(out, "{indent}try body.putU32(0x{emh:08x});");
     let _ = writeln!(out, "{indent}{{");
-    let _ = writeln!(
-        out,
-        "{indent}    var zdMem_s = Writer.init(body.buf.allocator, body.endian);"
-    );
+    let _ = writeln!(out, "{indent}    var zdMem_s = body.sub();");
     let _ = writeln!(out, "{indent}    defer zdMem_s.deinit();");
     let _ = writeln!(out, "{indent}    const zdMem = &zdMem_s;");
     let _ = writeln!(out, "{indent}    {}", put.replace("$w", "zdMem"));
@@ -2261,7 +2666,7 @@ fn map_type(
                 let kp = key_put.replace("$w", &format!("zdKvSub{n}"));
                 let vp = val_put.replace("$w", &format!("zdKvSub{n}"));
                 format!(
-                    "{{ {bound_check}{head} var zdKvSub{n} = Writer.init($w.buf.allocator, $w.endian); \
+                    "{{ {bound_check}{head} var zdKvSub{n} = $w.sub(); \
                      defer zdKvSub{n}.deinit(); try zdKvSub{n}.putU32(@intCast(zdKvS{n}.len)); \
                      for (zdKvS{n}) |zdKvE{n}| {{ {kp} {vp} }} \
                      const zdKvBB{n} = zdKvSub{n}.bytes(); try $w.putU32(@intCast(zdKvBB{n}.len)); \
@@ -2419,7 +2824,7 @@ fn map_sequence(
         let name = resolve_scoped_name(sn);
         if struct_names.contains(&name) {
             let put = format!(
-                "{{ {bound_check}var subw = Writer.init($w.buf.allocator, $w.endian); defer subw.deinit();                  const sub = &subw; try sub.putU32(@intCast({expr}.len));                  for ({expr}) |elem| try elem.marshalInto(sub);                  try $w.putU32(@intCast(sub.bytes().len)); try $w.putBytes(sub.bytes()); }}"
+                "{{ {bound_check}var subw = $w.sub(); defer subw.deinit();                  const sub = &subw; try sub.putU32(@intCast({expr}.len));                  for ({expr}) |elem| try elem.marshalInto(sub);                  try $w.putU32(@intCast(sub.bytes().len)); try $w.putBytes(sub.bytes()); }}"
             );
             return Ok((format!("[]const {}", escape_zig_ident(&name)), put));
         }

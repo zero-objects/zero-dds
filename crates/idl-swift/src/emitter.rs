@@ -12,11 +12,11 @@ use std::fmt::Write as _;
 use std::collections::{HashMap, HashSet};
 
 use zerodds_idl::ast::types::{
-    Annotation, BinaryOp, BitmaskDecl, BitsetDecl, CaseLabel, ConstDecl, ConstExpr, ConstType,
-    ConstrTypeDecl, Declarator, Definition, EnumDef, Export, FixedPtType, FloatingType,
-    IntegerType, InterfaceDcl, Literal, LiteralKind, Member, PrimitiveType, ScopedName,
-    SequenceType, Specification, StructDcl, StructDef, SwitchTypeSpec, TypeDecl, TypeSpec, UnaryOp,
-    UnionDcl, UnionDef,
+    Annotation, AttrDecl, BinaryOp, BitmaskDecl, BitsetDecl, CaseLabel, ConstDecl, ConstExpr,
+    ConstType, ConstrTypeDecl, Declarator, Definition, EnumDef, Export, FixedPtType, FloatingType,
+    IntegerType, InterfaceDcl, InterfaceDef, Literal, LiteralKind, Member, OpDecl, ParamAttribute,
+    PrimitiveType, ScopedName, SequenceType, Specification, StructDcl, StructDef, SwitchTypeSpec,
+    TypeDecl, TypeSpec, UnaryOp, UnionDcl, UnionDef,
 };
 use zerodds_idl::semantics::annotations::{
     BuiltinAnnotation, ExtensibilityKind, PlacementKind, enum_bit_bound, enum_wire_octets,
@@ -226,10 +226,17 @@ const WIRE_PRELUDE: &str = r#"public enum Endianness { case little, big }
 public struct Writer {
     public private(set) var buf: [UInt8] = []
     let endian: Endianness
+    // Wire representation: false = XCDR2 (max alignment 4, DHEADER-framed
+    // appendable/mutable + non-primitive collections); true = XCDR1 / classic
+    // CDR (max alignment 8, no DHEADER, PL_CDR1 @mutable). A nested composite
+    // called via `marshalInto(&w)` inherits this flag, so the mode propagates
+    // down the stream automatically.
+    public var isXcdr1 = false
     public init(_ endian: Endianness) { self.endian = endian }
 
     mutating func align(_ a: Int) {
-        let cap = a > 4 ? 4 : a
+        let m = isXcdr1 ? 8 : 4
+        let cap = a > m ? m : a
         while buf.count % cap != 0 { buf.append(0) }
     }
     mutating func putLE(_ a: Int, _ le: [UInt8]) {
@@ -247,7 +254,7 @@ public struct Writer {
     public mutating func putU64(_ v: UInt64) {
         var le = [UInt8]()
         for i in 0..<8 { le.append(UInt8((v >> (8 * UInt64(i))) & 0xff)) }
-        putLE(4, le)
+        putLE(8, le)
     }
     public mutating func putF32(_ v: Float) { putU32(v.bitPattern) }
     public mutating func putF64(_ v: Double) { putU64(v.bitPattern) }
@@ -280,8 +287,28 @@ public struct Writer {
             le[i] = UInt8((lo >> (8 * UInt64(i))) & 0xff)
             le[8 + i] = UInt8((hi >> (8 * UInt64(i))) & 0xff)
         }
-        putLE(4, le)
+        putLE(8, le)
     }
+    // PL_CDR1 (@mutable, XCDR1) member: `[PID][len][body][pad-to-4]`. The PID
+    // length carries the UNPADDED body length; member ids >= 0x3F00 or bodies
+    // over 0xFFFF use the extended header (PID_EXTENDED, 32-bit id + length).
+    // Matches `zerodds_cdr::xcdr1::encode_pl_cdr1_member`.
+    public mutating func writePlCdr1Member(_ id: UInt32, _ body: [UInt8]) {
+        if id >= 0x3F00 || body.count > 0xFFFF {
+            putU16(0x3F01) // PID_EXTENDED
+            putU16(8)
+            putU32(id)
+            putU32(UInt32(body.count))
+        } else {
+            putU16(UInt16(id))
+            putU16(UInt16(body.count))
+        }
+        putBytes(body)
+        let pad = (4 - (body.count % 4)) % 4
+        for _ in 0..<pad { putU8(0) }
+    }
+    // PL_CDR1 sentinel terminator (PID_LIST_END = 0x3F02, length 0).
+    public mutating func writePlCdr1Sentinel() { putU16(0x3F02); putU16(0) }
     public func bytes() -> [UInt8] { buf }
 }
 
@@ -289,9 +316,11 @@ public struct Reader {
     let buf: [UInt8]
     var pos: Int = 0
     let endian: Endianness
+    // See `Writer.isXcdr1`: false = XCDR2, true = XCDR1 / classic CDR.
+    public var isXcdr1 = false
     public init(_ buf: [UInt8], _ endian: Endianness) { self.buf = buf; self.endian = endian }
 
-    mutating func ralign(_ a: Int) { let cap = a > 4 ? 4 : a; while pos % cap != 0 { pos += 1 } }
+    mutating func ralign(_ a: Int) { let m = isXcdr1 ? 8 : 4; let cap = a > m ? m : a; while pos % cap != 0 { pos += 1 } }
     mutating func getLE(_ a: Int, _ n: Int) -> UInt64 {
         ralign(a)
         var v: UInt64 = 0
@@ -307,7 +336,7 @@ public struct Reader {
     public mutating func getBool() -> Bool { return getU8() != 0 }
     public mutating func getU16() -> UInt16 { return UInt16(getLE(2, 2)) }
     public mutating func getU32() -> UInt32 { return UInt32(getLE(4, 4)) }
-    public mutating func getU64() -> UInt64 { return getLE(4, 8) }
+    public mutating func getU64() -> UInt64 { return getLE(8, 8) }
     public mutating func getF32() -> Float { return Float(bitPattern: getU32()) }
     public mutating func getF64() -> Double { return Double(bitPattern: getU64()) }
     public mutating func getBytesN(_ n: Int) -> [UInt8] { let b = Array(buf[pos..<pos + n]); pos += n; return b }
@@ -324,7 +353,7 @@ public struct Reader {
         return String(decoding: units, as: UTF16.self)
     }
     public mutating func getLongDouble() -> Double {
-        ralign(4)
+        ralign(8)
         var le = getBytesN(16)
         if endian == .big { le.reverse() }
         var lo: UInt64 = 0
@@ -338,6 +367,28 @@ public struct Reader {
         let mant = ((hi & 0xFFFFFFFFFFFF) << 4) | (lo >> 60)
         let bits = (exp == 0 && mant == 0) ? (sign << 63) : ((sign << 63) | ((exp - 16383 + 1023) << 52) | mant)
         return Double(bitPattern: bits)
+    }
+    // Reads one PL_CDR1 (@mutable, XCDR1) member. Returns nil at the sentinel
+    // (PID_LIST_END). The RTPS MUST_UNDERSTAND / impl-specific flag bits (top
+    // two of the 16-bit PID) are stripped before comparing against the reserved
+    // PIDs. Mirrors `zerodds_cdr::xcdr1::read_pl_cdr1_member`.
+    public mutating func readPlCdr1Member() -> (UInt32, [UInt8])? {
+        let pid = getU16() & 0x3FFF
+        let len = getU16()
+        if pid == 0x3F02 { return nil } // PID_LIST_END
+        let memberId: UInt32
+        let bodyLen: Int
+        if pid == 0x3F01 { // PID_EXTENDED
+            memberId = getU32()
+            bodyLen = Int(getU32())
+        } else {
+            memberId = UInt32(pid)
+            bodyLen = Int(len)
+        }
+        let body = getBytesN(bodyLen)
+        let pad = (4 - (bodyLen % 4)) % 4
+        for _ in 0..<pad { if pos < buf.count { pos += 1 } }
+        return (memberId, body)
     }
 }
 
@@ -528,6 +579,18 @@ fn generate(spec: &Specification, _opts: &SwiftGenOptions, emit_prelude: bool) -
             // #A5/P1 — a top-level `const` was silently dropped by the former
             // catch-all arm; emit it as a Swift file-level constant.
             Definition::Const(c) => emit_const(&mut out, c, scope),
+            // #11 — interface operations/attributes (previously dropped) emit as
+            // native Swift `<Iface>_Client`/`<Iface>_Handler` protocols, matching
+            // the idl-ts / idl-rust interface surface. The interface's nested
+            // TYPES are still emitted separately (#A39, `iface_types`).
+            Definition::Interface(InterfaceDcl::Def(iface)) => emit_interface_protocols(
+                &mut out,
+                iface,
+                scope,
+                &enum_names,
+                &struct_names,
+                &typedefs,
+            )?,
             _ => {}
         }
         // §7.2.2.4.8 — text directly after the annotated declaration.
@@ -1188,6 +1251,158 @@ struct UnionCase {
     zero: String,
 }
 
+/// Emits the `<Iface>_Client` / `<Iface>_Handler` Swift protocols for an
+/// interface's operations and attributes (#11). Operations carry no wire form,
+/// so these are pure native-Swift service surfaces mirroring the idl-ts
+/// Client/Handler interfaces; the interface's nested data TYPES round-trip
+/// separately (#A39). An operation/attribute whose signature references a type
+/// the Swift backend cannot map is emitted as a `//` placeholder rather than
+/// aborting the whole module.
+fn emit_interface_protocols(
+    out: &mut String,
+    iface: &InterfaceDef,
+    scope: &[String],
+    enum_names: &HashSet<String>,
+    struct_names: &HashSet<String>,
+    typedefs: &HashMap<String, TypeSpec>,
+) -> Result<()> {
+    // Param/return type references resolve against the interface's own scope so
+    // an interface-nested type (`interface I { struct C; ret op(in C c); }`)
+    // maps to the promoted `I_C` name (#A39).
+    let mut inner_scope = scope.to_vec();
+    inner_scope.push(iface.name.text.clone());
+    CURRENT_SCOPE.with(|c| *c.borrow_mut() = inner_scope);
+
+    let base = escape_swift_ident(&qualify(scope, &iface.name.text));
+    let bases_clause = |suffix: &str| -> String {
+        if iface.bases.is_empty() {
+            String::new()
+        } else {
+            let list = iface
+                .bases
+                .iter()
+                .map(|b| format!("{}{suffix}", escape_swift_ident(&resolve_scoped_name(b))))
+                .collect::<Vec<_>>()
+                .join(", ");
+            format!(": {list}")
+        }
+    };
+
+    // The member list is identical for the Client and Handler protocols.
+    let mut members = String::new();
+    for ex in &iface.exports {
+        match ex {
+            Export::Op(op) => match op_swift_signature(op, enum_names, struct_names, typedefs) {
+                Some(sig) => {
+                    let _ = writeln!(members, "    {sig}");
+                }
+                None => {
+                    let _ = writeln!(
+                        members,
+                        "    // unsupported operation `{}` (type not representable in Swift)",
+                        op.name.text
+                    );
+                }
+            },
+            Export::Attr(attr) => {
+                attr_swift_accessors(&mut members, attr, enum_names, struct_names, typedefs);
+            }
+            _ => {}
+        }
+    }
+
+    for suffix in ["_Client", "_Handler"] {
+        let _ = writeln!(
+            out,
+            "\npublic protocol {base}{suffix}{} {{",
+            bases_clause(suffix)
+        );
+        out.push_str(&members);
+        let _ = writeln!(out, "}}");
+    }
+    Ok(())
+}
+
+/// Builds a Swift protocol method signature for an IDL operation. `in`/`inout`
+/// params become function parameters; `out`/`inout` params (plus the return
+/// value) fold into a labelled return tuple when more than one, a bare type for
+/// exactly one, nothing for `void`. Returns `None` if any type is unmappable.
+fn op_swift_signature(
+    op: &OpDecl,
+    enum_names: &HashSet<String>,
+    struct_names: &HashSet<String>,
+    typedefs: &HashMap<String, TypeSpec>,
+) -> Option<String> {
+    let map = |t: &TypeSpec| -> Option<String> {
+        let resolved = resolve_typedef(t, typedefs);
+        map_type(&resolved, "_", enum_names, struct_names, 0)
+            .ok()
+            .map(|(ty, _)| ty)
+    };
+    let mut params: Vec<String> = Vec::new();
+    let mut out_entries: Vec<String> = Vec::new();
+    for p in &op.params {
+        let ty = map(&p.type_spec)?;
+        let pname = escape_swift_ident(&p.name.text);
+        match p.attribute {
+            ParamAttribute::In => params.push(format!("{pname}: {ty}")),
+            ParamAttribute::InOut => {
+                params.push(format!("{pname}: {ty}"));
+                out_entries.push(format!("{pname}: {ty}"));
+            }
+            ParamAttribute::Out => out_entries.push(format!("{pname}: {ty}")),
+        }
+    }
+    let mut entries: Vec<String> = Vec::new();
+    if let Some(t) = &op.return_type {
+        entries.push(format!("result: {}", map(t)?));
+    }
+    entries.extend(out_entries);
+    let ret_clause = match entries.len() {
+        0 => String::new(),
+        1 => {
+            // Single value: a bare type (drop the tuple label). `split_once`
+            // keeps a map type's own `[K: V]` intact.
+            let ty = entries[0].split_once(": ").map_or("", |x| x.1);
+            format!(" -> {ty}")
+        }
+        _ => format!(" -> ({})", entries.join(", ")),
+    };
+    let name = escape_swift_ident(&op.name.text);
+    Some(format!(
+        "func {name}({}) throws{ret_clause}",
+        params.join(", ")
+    ))
+}
+
+/// Emits the getter (and, unless `readonly`, setter) protocol methods for an
+/// IDL interface attribute.
+fn attr_swift_accessors(
+    out: &mut String,
+    attr: &AttrDecl,
+    enum_names: &HashSet<String>,
+    struct_names: &HashSet<String>,
+    typedefs: &HashMap<String, TypeSpec>,
+) {
+    let resolved = resolve_typedef(&attr.type_spec, typedefs);
+    let ty = match map_type(&resolved, "_", enum_names, struct_names, 0) {
+        Ok((t, _)) => t,
+        Err(_) => {
+            let _ = writeln!(
+                out,
+                "    // unsupported attribute `{}` (type not representable in Swift)",
+                attr.name.text
+            );
+            return;
+        }
+    };
+    let name = escape_swift_ident(&attr.name.text);
+    let _ = writeln!(out, "    func get_{name}() throws -> {ty}");
+    if !attr.readonly {
+        let _ = writeln!(out, "    func set_{name}(_ value: {ty}) throws");
+    }
+}
+
 fn emit_struct(
     out: &mut String,
     s: &StructDef,
@@ -1340,8 +1555,33 @@ fn emit_struct(
         }
     }
 
+    // Emits the inline positional member puts into writer var `wv` (shared by
+    // @final and the XCDR1/XCDR2 @appendable branches). Alignment (max 4 XCDR2 /
+    // max 8 XCDR1) is a property of the writer mode, so one body serves both.
+    let emit_inline_puts = |out: &mut String, wv: &str| {
+        for f in &fields {
+            if f.non_serialized {
+                continue;
+            }
+            let put = f.put.replace("$w", wv);
+            if f.optional {
+                // uint8 presence flag then the value if present (§7.4.5.1.4).
+                let _ = writeln!(
+                    out,
+                    "        {wv}.putU8({name}_present ? 1 : 0)\n        if {name}_present {{ {put} }}",
+                    name = f.name
+                );
+            } else {
+                let _ = writeln!(out, "        {put}");
+            }
+        }
+    };
+
     // marshalInto writes into an existing writer (nested composites call this so
-    // alignment stays stream-relative). @final: inline; @appendable: DHEADER.
+    // alignment stays stream-relative). @final: inline; @appendable: DHEADER
+    // (XCDR2) or inline (XCDR1); @mutable: PL_CDR2 EMHEADER list (XCDR2) or
+    // PL_CDR1 PID list (XCDR1). The writer's `isXcdr1` flag selects the branch
+    // at runtime so a single generated type serves both wire representations.
     // `throws`: a bounded member's encode-side check (XTypes §7.4.3) throws
     // `XcdrBoundError` on an over-bound value (B1 blocker fix — was
     // `fatalError`, an uncatchable process abort).
@@ -1350,7 +1590,37 @@ fn emit_struct(
         "\n    public func marshalInto(_ w: inout Writer) throws {{"
     );
     if ext == ExtensibilityKind::Mutable {
-        // @mutable: DHEADER-framed member list; each member = EMHEADER (LC4 =
+        // XCDR1 classic CDR: @mutable is PL_CDR1 — a `[PID][len]` member list
+        // with no outer DHEADER, each member body built member-relative in an
+        // XCDR1 sub-writer, terminated by the sentinel.
+        let _ = writeln!(out, "        if w.isXcdr1 {{");
+        for f in &fields {
+            if f.non_serialized {
+                continue;
+            }
+            if f.optional {
+                let _ = writeln!(out, "        if {}_present {{", f.name);
+            }
+            let _ = writeln!(out, "        do {{");
+            let _ = writeln!(
+                out,
+                "            var zdMem = Writer(w.endian); zdMem.isXcdr1 = true"
+            );
+            let _ = writeln!(out, "            {}", f.put.replace("$w", "zdMem"));
+            let _ = writeln!(
+                out,
+                "            w.writePlCdr1Member({}, zdMem.bytes())",
+                f.id
+            );
+            let _ = writeln!(out, "        }}");
+            if f.optional {
+                let _ = writeln!(out, "        }}");
+            }
+        }
+        let _ = writeln!(out, "        w.writePlCdr1Sentinel()");
+        let _ = writeln!(out, "        return");
+        let _ = writeln!(out, "        }}");
+        // XCDR2: DHEADER-framed member list; each member = EMHEADER (LC4 =
         // member id, plus the must-understand bit 31 when @must_understand —
         // #A17) + NEXTINT (body length) + body (XTypes §7.4.3.4.2). The LC4
         // length code stays (the byte-identical shared-reference form — #A19 is
@@ -1386,34 +1656,19 @@ fn emit_struct(
         let _ = writeln!(out, "        let zdBB = body.bytes()");
         let _ = writeln!(out, "        w.putU32(UInt32(zdBB.count))");
         let _ = writeln!(out, "        w.putBytes(zdBB)");
+    } else if ext == ExtensibilityKind::Appendable {
+        // XCDR1: inline (no DHEADER). XCDR2: length-prefixed member block.
+        let _ = writeln!(out, "        if w.isXcdr1 {{");
+        emit_inline_puts(out, "w");
+        let _ = writeln!(out, "        return");
+        let _ = writeln!(out, "        }}");
+        let _ = writeln!(out, "        var body = Writer(w.endian)");
+        emit_inline_puts(out, "body");
+        let _ = writeln!(out, "        let bb = body.bytes()");
+        let _ = writeln!(out, "        w.putU32(UInt32(bb.count))");
+        let _ = writeln!(out, "        w.putBytes(bb)");
     } else {
-        let wv = if ext == ExtensibilityKind::Final {
-            "w"
-        } else {
-            let _ = writeln!(out, "        var body = Writer(w.endian)");
-            "body"
-        };
-        for f in &fields {
-            if f.non_serialized {
-                continue;
-            }
-            let put = f.put.replace("$w", wv);
-            if f.optional {
-                // uint8 presence flag then the value if present (§7.4.5.1.4).
-                let _ = writeln!(
-                    out,
-                    "        {wv}.putU8({name}_present ? 1 : 0)\n        if {name}_present {{ {put} }}",
-                    name = f.name
-                );
-            } else {
-                let _ = writeln!(out, "        {put}");
-            }
-        }
-        if ext != ExtensibilityKind::Final {
-            let _ = writeln!(out, "        let bb = body.bytes()");
-            let _ = writeln!(out, "        w.putU32(UInt32(bb.count))");
-            let _ = writeln!(out, "        w.putBytes(bb)");
-        }
+        emit_inline_puts(out, "w");
     }
     let _ = writeln!(out, "    }}");
 
@@ -1422,6 +1677,17 @@ fn emit_struct(
         "\n    public func marshalXCDR(_ endian: Endianness) throws -> [UInt8] {{"
     );
     let _ = writeln!(out, "        var w = Writer(endian)");
+    let _ = writeln!(out, "        try self.marshalInto(&w)");
+    let _ = writeln!(out, "        return w.bytes()");
+    let _ = writeln!(out, "    }}");
+
+    // XCDR1 (classic CDR) entry point: same member logic, max-alignment-8 writer,
+    // no DHEADER, PL_CDR1 @mutable framing.
+    let _ = writeln!(
+        out,
+        "\n    public func marshalCDR1(_ endian: Endianness) throws -> [UInt8] {{"
+    );
+    let _ = writeln!(out, "        var w = Writer(endian); w.isXcdr1 = true");
     let _ = writeln!(out, "        try self.marshalInto(&w)");
     let _ = writeln!(out, "        return w.bytes()");
     let _ = writeln!(out, "    }}");
@@ -1437,11 +1703,9 @@ fn emit_struct(
         "\n    public static func unmarshalFrom(_ r: inout Reader) throws -> {ty} {{"
     );
     if ext == ExtensibilityKind::Mutable {
-        // @mutable + @optional: an absent member is omitted from the wire member
-        // list, which the naive positional decoder cannot detect. Decode
-        // therefore assumes presence (rides the naive decoder — documented
-        // limitation); present-only values round-trip.
-        let _ = writeln!(out, "        _ = r.getU32() // DHEADER");
+        // Pre-declare every field (default-initialised) so both the XCDR1
+        // (PL_CDR1) and XCDR2 (EMHEADER) branches assign into the same locals
+        // consumed by the memberwise init below.
         for f in &fields {
             if f.non_serialized {
                 // Off the wire: bind the in-memory field to its default so the
@@ -1456,14 +1720,58 @@ fn emit_struct(
             if f.optional {
                 let _ = writeln!(out, "        var {}_present: Bool = true", f.name);
             }
-            let _ = writeln!(out, "        var {}: {}", f.name, f.swift_type);
+            let _ = writeln!(
+                out,
+                "        var {}: {} = {}",
+                f.name, f.swift_type, f.default_value
+            );
+        }
+        // XCDR1: PL_CDR1 PID-keyed member list (no outer DHEADER). Collect each
+        // member body, then decode it from its own member-relative XCDR1 reader.
+        // An absent id leaves the field at its default (and clears the presence
+        // flag) — the correct @optional / omitted-member behaviour.
+        let _ = writeln!(out, "        if r.isXcdr1 {{");
+        let _ = writeln!(out, "        let zdEndian = r.endian");
+        let _ = writeln!(out, "        var zdPl: [UInt32: [UInt8]] = [:]");
+        let _ = writeln!(
+            out,
+            "        while let zdM = r.readPlCdr1Member() {{ zdPl[zdM.0] = zdM.1 }}"
+        );
+        for f in &fields {
+            if f.non_serialized {
+                continue;
+            }
+            if f.optional {
+                let _ = writeln!(out, "        {}_present = zdPl[{}] != nil", f.name, f.id);
+            }
+            let _ = writeln!(out, "        if let zdBody = zdPl[{}] {{", f.id);
+            let _ = writeln!(
+                out,
+                "            var r = Reader(zdBody, zdEndian); r.isXcdr1 = true"
+            );
+            let _ = writeln!(out, "            {}", f.get);
+            let _ = writeln!(out, "        }}");
+        }
+        let _ = writeln!(out, "        }} else {{");
+        // XCDR2 + @optional: an absent member is omitted from the wire member
+        // list, which the naive positional decoder cannot detect. Decode
+        // therefore assumes presence (rides the naive decoder — documented
+        // limitation); present-only values round-trip.
+        let _ = writeln!(out, "        _ = r.getU32() // DHEADER");
+        for f in &fields {
+            if f.non_serialized {
+                continue;
+            }
             let _ = writeln!(out, "        _ = r.getU32() // EMHEADER");
             let _ = writeln!(out, "        _ = r.getU32() // NEXTINT");
             let _ = writeln!(out, "        {}", f.get);
         }
+        let _ = writeln!(out, "        }}");
     } else {
         if ext == ExtensibilityKind::Appendable {
-            let _ = writeln!(out, "        _ = r.getU32() // DHEADER");
+            // XCDR2 frames the appendable member block with a DHEADER; XCDR1
+            // classic CDR has none.
+            let _ = writeln!(out, "        if !r.isXcdr1 {{ _ = r.getU32() }} // DHEADER");
         }
         for f in &fields {
             if f.non_serialized {
@@ -1511,6 +1819,13 @@ fn emit_struct(
         "\n    public static func unmarshalXCDR(_ buf: [UInt8], _ endian: Endianness) throws -> {ty} {{"
     );
     let _ = writeln!(out, "        var r = Reader(buf, endian)");
+    let _ = writeln!(out, "        return try unmarshalFrom(&r)");
+    let _ = writeln!(out, "    }}");
+    let _ = writeln!(
+        out,
+        "\n    public static func unmarshalCDR1(_ buf: [UInt8], _ endian: Endianness) throws -> {ty} {{"
+    );
+    let _ = writeln!(out, "        var r = Reader(buf, endian); r.isXcdr1 = true");
     let _ = writeln!(out, "        return try unmarshalFrom(&r)");
     let _ = writeln!(out, "    }}");
 
@@ -1782,13 +2097,66 @@ fn emit_union(
     for c in &cases {
         let _ = writeln!(out, "    public var {}: {}", c.field, c.ty);
     }
+    // Inline disc + selected-branch puts into writer var `wv` (shared by @final
+    // and both @appendable branches; alignment handled by the writer mode).
+    let emit_union_inline = |out: &mut String, wv: &str| {
+        let _ = writeln!(out, "        {}", disc_put.replace("$w", wv));
+        let _ = writeln!(out, "        switch {} {{", switch_on("disc"));
+        for c in &cases {
+            if c.is_default {
+                let _ = writeln!(out, "        default:");
+            } else {
+                let _ = writeln!(out, "        case {}:", render_labels(&c.labels));
+            }
+            let _ = writeln!(out, "            {}", c.put.replace("$w", wv));
+        }
+        if !has_default {
+            let _ = writeln!(out, "        default: break");
+        }
+        let _ = writeln!(out, "        }}");
+    };
+
     let _ = writeln!(
         out,
         "\n    public func marshalInto(_ w: inout Writer) throws {{"
     );
     if ext == ExtensibilityKind::Mutable {
-        // #A16: EMHEADER-framed member list — discriminator is member id 0, each
-        // branch its 1-based id, wrapped in the struct's DHEADER.
+        // XCDR1 PL_CDR1: disc = member id 0, selected branch = member id
+        // (case-index + 1), no outer DHEADER, terminated by the sentinel.
+        let _ = writeln!(out, "        if w.isXcdr1 {{");
+        let _ = writeln!(
+            out,
+            "        do {{ var zdMem = Writer(w.endian); zdMem.isXcdr1 = true"
+        );
+        let _ = writeln!(out, "            {}", disc_put.replace("$w", "zdMem"));
+        let _ = writeln!(out, "            w.writePlCdr1Member(0, zdMem.bytes()) }}");
+        let _ = writeln!(out, "        switch {} {{", switch_on("disc"));
+        for (i, c) in cases.iter().enumerate() {
+            if c.is_default {
+                let _ = writeln!(out, "        default:");
+            } else {
+                let _ = writeln!(out, "        case {}:", render_labels(&c.labels));
+            }
+            let id = u32::try_from(i + 1).unwrap_or(0);
+            let _ = writeln!(
+                out,
+                "            do {{ var zdMem = Writer(w.endian); zdMem.isXcdr1 = true"
+            );
+            let _ = writeln!(out, "                {}", c.put.replace("$w", "zdMem"));
+            let _ = writeln!(
+                out,
+                "                w.writePlCdr1Member({id}, zdMem.bytes()) }}"
+            );
+        }
+        if !has_default {
+            let _ = writeln!(out, "        default: break");
+        }
+        let _ = writeln!(out, "        }}");
+        let _ = writeln!(out, "        w.writePlCdr1Sentinel()");
+        let _ = writeln!(out, "        return");
+        let _ = writeln!(out, "        }}");
+        // XCDR2 #A16: EMHEADER-framed member list — discriminator is member id
+        // 0, each branch its 1-based id, wrapped in the struct's DHEADER.
         let _ = writeln!(out, "        var body = Writer(w.endian)");
         write_mutable_member_encode_swift(out, "        ", "body", 0, false, &disc_put);
         let _ = writeln!(out, "        switch {} {{", switch_on("disc"));
@@ -1808,32 +2176,19 @@ fn emit_union(
         let _ = writeln!(out, "        let zdBB = body.bytes()");
         let _ = writeln!(out, "        w.putU32(UInt32(zdBB.count))");
         let _ = writeln!(out, "        w.putBytes(zdBB)");
-    } else {
-        let wv = if ext == ExtensibilityKind::Final {
-            "w"
-        } else {
-            let _ = writeln!(out, "        var body = Writer(w.endian)");
-            "body"
-        };
-        let _ = writeln!(out, "        {}", disc_put.replace("$w", wv));
-        let _ = writeln!(out, "        switch {} {{", switch_on("disc"));
-        for c in &cases {
-            if c.is_default {
-                let _ = writeln!(out, "        default:");
-            } else {
-                let _ = writeln!(out, "        case {}:", render_labels(&c.labels));
-            }
-            let _ = writeln!(out, "            {}", c.put.replace("$w", wv));
-        }
-        if !has_default {
-            let _ = writeln!(out, "        default: break");
-        }
+    } else if ext == ExtensibilityKind::Appendable {
+        // XCDR1: inline (no DHEADER). XCDR2: length-prefixed member block.
+        let _ = writeln!(out, "        if w.isXcdr1 {{");
+        emit_union_inline(out, "w");
+        let _ = writeln!(out, "        return");
         let _ = writeln!(out, "        }}");
-        if ext != ExtensibilityKind::Final {
-            let _ = writeln!(out, "        let bb = body.bytes()");
-            let _ = writeln!(out, "        w.putU32(UInt32(bb.count))");
-            let _ = writeln!(out, "        w.putBytes(bb)");
-        }
+        let _ = writeln!(out, "        var body = Writer(w.endian)");
+        emit_union_inline(out, "body");
+        let _ = writeln!(out, "        let bb = body.bytes()");
+        let _ = writeln!(out, "        w.putU32(UInt32(bb.count))");
+        let _ = writeln!(out, "        w.putBytes(bb)");
+    } else {
+        emit_union_inline(out, "w");
     }
     let _ = writeln!(out, "    }}");
     let _ = writeln!(
@@ -1841,6 +2196,15 @@ fn emit_union(
         "\n    public func marshalXCDR(_ endian: Endianness) throws -> [UInt8] {{"
     );
     let _ = writeln!(out, "        var w = Writer(endian)");
+    let _ = writeln!(out, "        try self.marshalInto(&w)");
+    let _ = writeln!(out, "        return w.bytes()");
+    let _ = writeln!(out, "    }}");
+    // XCDR1 (classic CDR) entry point (see the struct emitter).
+    let _ = writeln!(
+        out,
+        "\n    public func marshalCDR1(_ endian: Endianness) throws -> [UInt8] {{"
+    );
+    let _ = writeln!(out, "        var w = Writer(endian); w.isXcdr1 = true");
     let _ = writeln!(out, "        try self.marshalInto(&w)");
     let _ = writeln!(out, "        return w.bytes()");
     let _ = writeln!(out, "    }}");
@@ -1859,46 +2223,101 @@ fn emit_union(
         out,
         "\n    public static func unmarshalFrom(_ r: inout Reader) throws -> {ty} {{"
     );
-    if ext != ExtensibilityKind::Final {
-        let _ = writeln!(out, "        _ = r.getU32() // DHEADER");
-    }
-    let _ = writeln!(out, "        var zdDisc: {disc_type}");
-    if ext == ExtensibilityKind::Mutable {
-        write_mutable_member_decode_swift(out, "        ", &disc_get);
-    } else {
-        let _ = writeln!(out, "        {disc_get}");
-    }
     let zeros = cases
         .iter()
         .map(|c| format!("{}: {}", c.field, c.zero))
         .collect::<Vec<_>>()
         .join(", ");
     let sep = if cases.is_empty() { "" } else { ", " };
-    let _ = writeln!(out, "        var v = {ty}(disc: zdDisc{sep}{zeros})");
-    let _ = writeln!(out, "        switch {} {{", switch_on("zdDisc"));
-    for c in &cases {
-        if c.is_default {
-            let _ = writeln!(out, "        default:");
-        } else {
-            let _ = writeln!(out, "        case {}:", render_labels(&c.labels));
+    // Emits `switch zdDisc { … }` filling `v` via `render` per case (used by the
+    // final/appendable path and the XCDR2 mutable branch — both positional).
+    let emit_switch = |out: &mut String, render: &dyn Fn(&mut String, &UnionCase)| {
+        let _ = writeln!(out, "        switch {} {{", switch_on("zdDisc"));
+        for c in &cases {
+            if c.is_default {
+                let _ = writeln!(out, "        default:");
+            } else {
+                let _ = writeln!(out, "        case {}:", render_labels(&c.labels));
+            }
+            render(out, c);
         }
-        if ext == ExtensibilityKind::Mutable {
+        if !has_default {
+            let _ = writeln!(out, "        default: break");
+        }
+        let _ = writeln!(out, "        }}");
+    };
+
+    if ext == ExtensibilityKind::Mutable {
+        let _ = writeln!(out, "        var zdDisc: {disc_type}");
+        // XCDR1: PL_CDR1 PID-keyed member list. Disc = member id 0, selected
+        // branch = member id (case-index + 1); each decoded from its own
+        // member-relative XCDR1 reader.
+        let _ = writeln!(out, "        if r.isXcdr1 {{");
+        let _ = writeln!(out, "        let zdEndian = r.endian");
+        let _ = writeln!(out, "        var zdPl: [UInt32: [UInt8]] = [:]");
+        let _ = writeln!(
+            out,
+            "        while let zdM = r.readPlCdr1Member() {{ zdPl[zdM.0] = zdM.1 }}"
+        );
+        let _ = writeln!(
+            out,
+            "        do {{ let zdBody = zdPl[0] ?? []; var r = Reader(zdBody, zdEndian); r.isXcdr1 = true; {disc_get} }}"
+        );
+        let _ = writeln!(out, "        var v = {ty}(disc: zdDisc{sep}{zeros})");
+        let _ = writeln!(out, "        switch {} {{", switch_on("zdDisc"));
+        for (i, c) in cases.iter().enumerate() {
+            if c.is_default {
+                let _ = writeln!(out, "        default:");
+            } else {
+                let _ = writeln!(out, "        case {}:", render_labels(&c.labels));
+            }
+            let id = u32::try_from(i + 1).unwrap_or(0);
+            let _ = writeln!(
+                out,
+                "            if let zdBody = zdPl[{id}] {{ var r = Reader(zdBody, zdEndian); r.isXcdr1 = true; {} }}",
+                c.get
+            );
+        }
+        if !has_default {
+            let _ = writeln!(out, "        default: break");
+        }
+        let _ = writeln!(out, "        }}");
+        let _ = writeln!(out, "        return v");
+        let _ = writeln!(out, "        }}");
+        // XCDR2: DHEADER + EMHEADER-framed positional decode.
+        let _ = writeln!(out, "        _ = r.getU32() // DHEADER");
+        write_mutable_member_decode_swift(out, "        ", &disc_get);
+        let _ = writeln!(out, "        var v = {ty}(disc: zdDisc{sep}{zeros})");
+        emit_switch(out, &|out, c| {
             write_mutable_member_decode_swift(out, "            ", &c.get);
-        } else {
-            let _ = writeln!(out, "            {}", c.get);
+        });
+        let _ = writeln!(out, "        return v");
+    } else {
+        if ext == ExtensibilityKind::Appendable {
+            // XCDR2 frames the member block with a DHEADER; XCDR1 has none.
+            let _ = writeln!(out, "        if !r.isXcdr1 {{ _ = r.getU32() }} // DHEADER");
         }
+        let _ = writeln!(out, "        var zdDisc: {disc_type}");
+        let _ = writeln!(out, "        {disc_get}");
+        let _ = writeln!(out, "        var v = {ty}(disc: zdDisc{sep}{zeros})");
+        emit_switch(out, &|out, c| {
+            let _ = writeln!(out, "            {}", c.get);
+        });
+        let _ = writeln!(out, "        return v");
     }
-    if !has_default {
-        let _ = writeln!(out, "        default: break");
-    }
-    let _ = writeln!(out, "        }}");
-    let _ = writeln!(out, "        return v");
     let _ = writeln!(out, "    }}");
     let _ = writeln!(
         out,
         "\n    public static func unmarshalXCDR(_ buf: [UInt8], _ endian: Endianness) throws -> {ty} {{"
     );
     let _ = writeln!(out, "        var r = Reader(buf, endian)");
+    let _ = writeln!(out, "        return try unmarshalFrom(&r)");
+    let _ = writeln!(out, "    }}");
+    let _ = writeln!(
+        out,
+        "\n    public static func unmarshalCDR1(_ buf: [UInt8], _ endian: Endianness) throws -> {ty} {{"
+    );
+    let _ = writeln!(out, "        var r = Reader(buf, endian); r.isXcdr1 = true");
     let _ = writeln!(out, "        return try unmarshalFrom(&r)");
     let _ = writeln!(out, "    }}");
     emit_verbatim_at(out, "    ", &u.annotations, PlacementKind::EndDeclaration);
@@ -1944,8 +2363,10 @@ fn build_map_put(expr: &str, key_put: &str, val_put: &str, prim: bool, depth: us
         let bb = format!("zdBB{depth}");
         let kp = key_put.replace("$w", &sub);
         let vp = val_put.replace("$w", &sub);
+        // XCDR2: collection DHEADER over the sub-writer body. XCDR1 classic CDR:
+        // no DHEADER, entries written stream-relative into `$w`.
         format!(
-            "do {{ var {sub} = Writer($w.endian)\n        {sub}.putU32(UInt32({expr}.count))\n        for {k} in {expr}.keys.sorted() {{ {kp}; {vp} }}\n        let {bb} = {sub}.bytes()\n        $w.putU32(UInt32({bb}.count)); $w.putBytes({bb}) }}"
+            "if $w.isXcdr1 {{ $w.putU32(UInt32({expr}.count))\n        for {k} in {expr}.keys.sorted() {{ {key_put}; {val_put} }} }} else {{ var {sub} = Writer($w.endian)\n        {sub}.putU32(UInt32({expr}.count))\n        for {k} in {expr}.keys.sorted() {{ {kp}; {vp} }}\n        let {bb} = {sub}.bytes()\n        $w.putU32(UInt32({bb}.count)); $w.putBytes({bb}) }}"
         )
     }
 }
@@ -2210,8 +2631,12 @@ fn map_sequence(
                 format!("zdElem{depth}"),
                 format!("zdBB{depth}"),
             );
+            // XCDR2: a collection DHEADER (byte length) frames the count +
+            // elements, built member-relative in a sub-writer. XCDR1 classic CDR:
+            // no DHEADER — count + elements are written stream-relative into `$w`
+            // so each nested struct aligns against the real stream position.
             let put = format!(
-                "{bound_check}do {{ var {sub} = Writer($w.endian); {sub}.putU32(UInt32({expr}.count)); for {e} in {expr} {{ try {e}.marshalInto(&{sub}) }}; let {bb} = {sub}.bytes(); $w.putU32(UInt32({bb}.count)); $w.putBytes({bb}) }}"
+                "{bound_check}if $w.isXcdr1 {{ $w.putU32(UInt32({expr}.count)); for {e} in {expr} {{ try {e}.marshalInto(&$w) }} }} else {{ var {sub} = Writer($w.endian); {sub}.putU32(UInt32({expr}.count)); for {e} in {expr} {{ try {e}.marshalInto(&{sub}) }}; let {bb} = {sub}.bytes(); $w.putU32(UInt32({bb}.count)); $w.putBytes({bb}) }}"
             );
             return Ok((format!("[{}]", escape_swift_ident(&name)), put));
         }
@@ -2355,7 +2780,13 @@ fn map_get(
             let key_get = map_get(&m.key, &k, enum_names, struct_names, depth + 1)?;
             let val_get = map_get(&m.value, &v, enum_names, struct_names, depth + 1)?;
             let prim = is_primitive(&m.key, enum_names) && is_primitive(&m.value, enum_names);
-            let dh = if prim { "" } else { "_ = r.getU32()\n        " };
+            // XCDR2 frames a non-primitive map with a collection DHEADER; XCDR1
+            // classic CDR has none.
+            let dh = if prim {
+                ""
+            } else {
+                "if !r.isXcdr1 { _ = r.getU32() }\n        "
+            };
             let bound_check = m.bound.as_ref().and_then(array_size).map(|bv| {
                 format!("if {n} > {bv} {{ throw XcdrBoundError(\"decoded map length exceeds its IDL bound ({bv})\") }}; ")
             }).unwrap_or_default();
@@ -2438,8 +2869,9 @@ fn map_get_sequence(
                 })
                 .unwrap_or_default();
             let esc = escape_swift_ident(&name);
+            // XCDR2 leads with a collection DHEADER; XCDR1 classic CDR does not.
             return Ok(format!(
-                "_ = r.getU32()\n        do {{ let {n} = Int(r.getU32()); {bound_check}{target} = []\n        for _ in 0..<{n} {{ {target}.append(try {esc}.unmarshalFrom(&r)) }} }}"
+                "if !r.isXcdr1 {{ _ = r.getU32() }}\n        do {{ let {n} = Int(r.getU32()); {bound_check}{target} = []\n        for _ in 0..<{n} {{ {target}.append(try {esc}.unmarshalFrom(&r)) }} }}"
             ));
         }
     }

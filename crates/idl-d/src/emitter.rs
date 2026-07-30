@@ -60,6 +60,18 @@ thread_local! {
     /// narrows to 1/2 bytes instead of the former fixed 4.
     static ENUM_WIDTHS: std::cell::RefCell<HashMap<String, u32>> =
         std::cell::RefCell::new(HashMap::new());
+
+    /// Integer value of every named `const` and enum literal, keyed by its
+    /// simple (last-segment) name. Populated by [`register_named_int_values`]
+    /// before emission so a collection bound / array dimension / `fixed<P,S>`
+    /// written as a named constant or arithmetic expression
+    /// (`long v[N]`, `sequence<long, MAX>`, `fixed<PREC, SCALE>` — IDL 4.2
+    /// §7.4.1.4.4.5) resolves to its integer value instead of aborting with
+    /// `Unsupported`. Mirrors `idl-python`'s `CONST_VALUES`/`ENUM_VALUES` and
+    /// `idl-rust`'s `CONST_VALUES` (type_map). Consts are folded in declaration
+    /// order (§7.4.1.4.4): a const may reference only an earlier one.
+    static NAMED_INT_VALUES: std::cell::RefCell<HashMap<String, i64>> =
+        std::cell::RefCell::new(HashMap::new());
 }
 
 /// Signed wire holder width in octets (1/2/4) an enum named `name` serializes
@@ -435,6 +447,10 @@ pub fn generate_d_module(spec: &Specification, _opts: &DGenOptions) -> Result<St
     // resolve a `ScopedName` against its enclosing scope (#21 cross-module).
     TYPE_PATHS.with(|t| t.borrow_mut().clear());
     register_type_paths(&spec.definitions, &mut Vec::new());
+    // Fold every named `const`/enum literal so a bound / array dimension /
+    // `fixed<P,S>` written as a named constant or arithmetic resolves (§7.4.1.4.4.5).
+    NAMED_INT_VALUES.with(|m| m.borrow_mut().clear());
+    register_named_int_values(&spec.definitions);
     USED_FIXED.with(|f| f.set(false));
 
     // §7.2.2.4.8 — `@verbatim(placement=BEGIN_FILE)` from all top-level defs
@@ -787,13 +803,118 @@ fn enumerator_values(e: &EnumDef) -> Vec<i32> {
     values
 }
 
-/// Parses a decimal or `0x` hex integer literal (possibly signed).
+/// Parses an IDL integer literal: hex (`0x…`), octal (leading `0`), binary
+/// (`0b…`) or decimal, optionally signed and with an ignored `u`/`U`/`l`/`L`
+/// suffix (IDL 4.2 §7.2.6.2). Mirrors `idl-python`'s `parse_integer_literal`
+/// and `idl-rust`'s `parse_integer_literal` so a `0x`/octal/suffixed bound or
+/// `@value` folds to the same integer across backends.
 fn parse_int(s: &str) -> Option<i64> {
-    let t = s.trim();
+    let t = s.trim().trim_end_matches(['u', 'U', 'l', 'L']);
     if let Some(hex) = t.strip_prefix("0x").or_else(|| t.strip_prefix("0X")) {
         i64::from_str_radix(hex, 16).ok()
+    } else if let Some(rest) = t.strip_prefix("-0x").or_else(|| t.strip_prefix("-0X")) {
+        i64::from_str_radix(rest, 16).ok().map(|n| -n)
+    } else if let Some(bin) = t.strip_prefix("0b").or_else(|| t.strip_prefix("0B")) {
+        i64::from_str_radix(bin, 2).ok()
+    } else if let Some(oct) = t.strip_prefix("0o").or_else(|| t.strip_prefix("0O")) {
+        i64::from_str_radix(oct, 8).ok()
+    } else if t.starts_with('0') && t.len() > 1 && t.bytes().all(|b| b.is_ascii_digit()) {
+        // OMG IDL octal: a leading `0` on an all-digit literal (strict, so a
+        // plain `0` stays decimal 0 and a malformed `08` yields None).
+        i64::from_str_radix(&t[1..], 8).ok()
     } else {
         t.parse::<i64>().ok()
+    }
+}
+
+/// Records the integer value of every named `const` and enum literal (by simple
+/// name) into [`NAMED_INT_VALUES`], so a collection bound / array dimension /
+/// `fixed<P,S>` written as a named constant or arithmetic expression resolves
+/// (IDL 4.2 §7.4.1.4.4.5). Enum literals are registered first (all visible),
+/// then consts in declaration order — a const folds only against already-seen
+/// names, matching IDL §7.4.1.4.4. Mirrors `idl-python`'s
+/// `register_enum_values` + const registration.
+/// zerodds-lint: recursion-depth 16 (module nesting; bounded by the IDL grammar).
+fn register_named_int_values(defs: &[Definition]) {
+    for def in defs {
+        if let Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Enum(e))) = def {
+            for (en, v) in e.enumerators.iter().zip(enumerator_values(e)) {
+                NAMED_INT_VALUES.with(|m| {
+                    m.borrow_mut().insert(en.name.text.clone(), i64::from(v));
+                });
+            }
+        }
+    }
+    for def in defs {
+        match def {
+            Definition::Module(m) => register_named_int_values(&m.definitions),
+            Definition::Const(c) => {
+                if let Some(v) = eval_const_int(&c.value) {
+                    NAMED_INT_VALUES.with(|m| {
+                        m.borrow_mut().insert(c.name.text.clone(), v);
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Evaluates a `ConstExpr` to a signed integer, resolving named consts and enum
+/// literals through [`NAMED_INT_VALUES`] and folding unary/binary arithmetic
+/// (IDL 4.2 §7.4.1.4.4 const_expr). Returns `None` for a non-integer or
+/// unresolved reference. Mirrors `idl-python`'s `eval_const_int` and
+/// `idl-rust`'s `eval_const_i128`.
+/// zerodds-lint: recursion-depth 64 (const expression tree; bounded by the IDL
+/// grammar's expression nesting).
+fn eval_const_int(e: &ConstExpr) -> Option<i64> {
+    match e {
+        ConstExpr::Literal(Literal {
+            kind: LiteralKind::Integer,
+            raw,
+            ..
+        }) => parse_int(raw),
+        ConstExpr::Literal(Literal {
+            kind: LiteralKind::Char | LiteralKind::WideChar,
+            raw,
+            ..
+        }) => char_literal_value(raw),
+        ConstExpr::Literal(Literal {
+            kind: LiteralKind::Boolean,
+            raw,
+            ..
+        }) => Some(i64::from(raw.trim().eq_ignore_ascii_case("true"))),
+        // A float/fixed/string literal is not an integer bound.
+        ConstExpr::Literal(_) => None,
+        // A named const or enum literal, resolved by its simple (last) segment.
+        ConstExpr::Scoped(sn) => {
+            let last = sn.parts.last()?.text.clone();
+            NAMED_INT_VALUES.with(|m| m.borrow().get(&last).copied())
+        }
+        ConstExpr::Unary { op, operand, .. } => {
+            let v = eval_const_int(operand)?;
+            Some(match op {
+                UnaryOp::Plus => v,
+                UnaryOp::Minus => v.checked_neg()?,
+                UnaryOp::BitNot => !v,
+            })
+        }
+        ConstExpr::Binary { op, lhs, rhs, .. } => {
+            let l = eval_const_int(lhs)?;
+            let r = eval_const_int(rhs)?;
+            match op {
+                BinaryOp::Or => Some(l | r),
+                BinaryOp::Xor => Some(l ^ r),
+                BinaryOp::And => Some(l & r),
+                BinaryOp::Shl => l.checked_shl(u32::try_from(r).ok()?),
+                BinaryOp::Shr => l.checked_shr(u32::try_from(r).ok()?),
+                BinaryOp::Add => l.checked_add(r),
+                BinaryOp::Sub => l.checked_sub(r),
+                BinaryOp::Mul => l.checked_mul(r),
+                BinaryOp::Div => l.checked_div(r),
+                BinaryOp::Mod => l.checked_rem(r),
+            }
+        }
     }
 }
 
@@ -1106,25 +1227,14 @@ fn resolve_typedef(t: &TypeSpec, typedefs: &HashMap<String, TypeSpec>) -> TypeSp
     }
 }
 
-/// Evaluates a fixed-array bound to its integer size (literal + unary sign).
+/// Evaluates a fixed-array bound / collection bound / `fixed<P,S>` argument to
+/// its integer size, resolving named consts and folding arithmetic via
+/// [`eval_const_int`] (IDL 4.2 §7.4.1.4.4.5). Previously only a bare integer
+/// literal or a unary-signed one resolved, so `long v[N]` / `sequence<T, MAX>`
+/// with a named-const or computed bound aborted with `Unsupported`.
 /// zerodds-lint: recursion-depth 32
 fn array_size(e: &ConstExpr) -> Option<i64> {
-    match e {
-        ConstExpr::Literal(Literal {
-            kind: LiteralKind::Integer,
-            raw,
-            ..
-        }) => parse_int(raw),
-        ConstExpr::Unary { op, operand, .. } => {
-            let v = array_size(operand)?;
-            match op {
-                UnaryOp::Plus => Some(v),
-                UnaryOp::Minus => Some(-v),
-                UnaryOp::BitNot => Some(!v),
-            }
-        }
-        _ => None,
-    }
+    eval_const_int(e)
 }
 
 /// Wraps a per-element put (`$elem`) in nested row-major `for` loops over a

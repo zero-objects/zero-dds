@@ -119,6 +119,7 @@ fn compile_pkg(idl: &str, pkg: &str, stem: &str) -> Result<(), String> {
         &ast,
         &AdaGenOptions {
             package_name: pkg.to_string(),
+            xcdr1: false,
         },
     )
     .map_err(|e| format!("gen: {e:?}"))?;
@@ -300,6 +301,7 @@ fn compose_multifile_compiles_together() {
         &zerodds_idl::parse("@final struct Alpha { long a; };", &cfg).expect("parse a"),
         &AdaGenOptions {
             package_name: "Pkg_A".to_string(),
+            xcdr1: false,
         },
     )
     .expect("gen a");
@@ -307,6 +309,7 @@ fn compose_multifile_compiles_together() {
         &zerodds_idl::parse("@final struct Beta { double b; };", &cfg).expect("parse b"),
         &AdaGenOptions {
             package_name: "Pkg_B".to_string(),
+            xcdr1: false,
         },
     )
     .expect("gen b");

@@ -769,6 +769,22 @@ fn generate(spec: &Specification, opts: &GoGenOptions, emit_prelude: bool) -> Re
         )?;
     }
 
+    // DDS-RPC (OMG DDS-RPC 1.0, Enhanced mapping): every interface that carries
+    // operations gets its per-operation request/reply wire structs (byte-identical
+    // to idl-rust's `emit_service_rpc`). Emitted after the data types so any
+    // referenced payload struct is already defined. See `crate::rpc`.
+    for (scope, iface) in flatten_iface_defs(&spec.definitions) {
+        crate::rpc::emit_service_rpc(
+            &mut body,
+            iface,
+            &scope,
+            &enum_names,
+            &struct_names,
+            &typedefs,
+            &structs,
+        )?;
+    }
+
     // §7.2.2.4.8 — `@verbatim(placement=END_FILE)` from all top-level defs.
     for def in &spec.definitions {
         emit_verbatim_at(&mut body, "", def_annotations(def), PlacementKind::EndFile);
@@ -879,6 +895,45 @@ fn flatten_iface_types_into<'a>(
                     }
                 }
                 scope.pop();
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Collects every `interface` definition that carries at least one operation
+/// (`Export::Op`), paired with the scope path of its **enclosing module** (the
+/// interface name is deliberately excluded: the generated DDS-RPC request/reply
+/// struct names already embed the service name, so two interfaces in one module
+/// cannot collide — matching `idl-rust`'s `emit_service_rpc`, which emits into
+/// the module scope). An interface with no operations is skipped.
+/// zerodds-lint: recursion-depth 16 (module nesting; bounded by the IDL grammar).
+fn flatten_iface_defs(
+    defs: &[Definition],
+) -> Vec<(Vec<String>, &zerodds_idl::ast::types::InterfaceDef)> {
+    let mut out = Vec::new();
+    let mut scope = Vec::new();
+    flatten_iface_defs_into(defs, &mut scope, &mut out);
+    out
+}
+
+/// zerodds-lint: recursion-depth 16 (module nesting; bounded by the IDL grammar).
+fn flatten_iface_defs_into<'a>(
+    defs: &'a [Definition],
+    scope: &mut Vec<String>,
+    out: &mut Vec<(Vec<String>, &'a zerodds_idl::ast::types::InterfaceDef)>,
+) {
+    for d in defs {
+        match d {
+            Definition::Module(m) => {
+                scope.push(m.name.text.clone());
+                flatten_iface_defs_into(&m.definitions, scope, out);
+                scope.pop();
+            }
+            Definition::Interface(InterfaceDcl::Def(iface)) => {
+                if iface.exports.iter().any(|e| matches!(e, Export::Op(_))) {
+                    out.push((scope.clone(), iface));
+                }
             }
             _ => {}
         }
@@ -1756,7 +1811,7 @@ fn build_array_put(field: &str, sizes: &[i64], elem_put: &str) -> String {
     body
 }
 
-fn emit_struct(
+pub(crate) fn emit_struct(
     out: &mut String,
     s: &StructDef,
     scope: &[String],

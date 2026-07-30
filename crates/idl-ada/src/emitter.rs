@@ -49,6 +49,23 @@ thread_local! {
     /// narrows to 1/2 bytes instead of the former fixed 4.
     static ENUM_WIDTHS: std::cell::RefCell<HashMap<String, u32>> =
         std::cell::RefCell::new(HashMap::new());
+
+    /// Simple (last-segment) name → integer value of every `const` and every
+    /// enumerator in the spec, populated once per run before any aggregate is
+    /// built. Lets [`eval_int`] resolve a named-constant / enumerator reference
+    /// inside an array/sequence/map bound or a union label
+    /// (`sequence<long, MAX>`, `long a[N + 1]`, `case COLOR::RED:`), matching
+    /// `idl-rust`'s `const_expr_as_i128` (`CONST_VALUES` + `ENUM_LITERAL_VALUES`).
+    /// Keyed by the last path segment, exactly like the Rust backend resolves a
+    /// scoped constant reference.
+    static CONST_VALUES: std::cell::RefCell<HashMap<String, i64>> =
+        std::cell::RefCell::new(HashMap::new());
+}
+
+/// Looks up a named constant / enumerator value by its simple (last-segment)
+/// name in the per-run [`CONST_VALUES`] registry.
+fn lookup_const(simple: &str) -> Option<i64> {
+    CONST_VALUES.with(|m| m.borrow().get(simple).copied())
 }
 
 /// Signed wire holder width in octets (1/2/4) an enum named `name` serializes
@@ -183,12 +200,21 @@ fn flatten_path(path: &[String]) -> String {
 pub struct AdaGenOptions {
     /// The Ada package (unit) name; GNAT maps it to `<lower>.ads` / `.adb`.
     pub package_name: String,
+    /// Emit the classic XCDR1 / PL_CDR1 wire (XTypes 1.3 §7.4.1.2 / §7.4.2)
+    /// instead of the default XCDR2 (§7.4.2). Under XCDR1 the stream max
+    /// alignment is 8 (not capped at 4), `@appendable` carries NO DHEADER
+    /// (serialized like `@final`), and `@mutable` uses a PL_CDR1 parameter
+    /// list (PID-framed members terminated by the `0x3F02` sentinel) instead
+    /// of the XCDR2 DHEADER + EMHEADER framing. The XCDR2 output is unchanged
+    /// (byte-stable) when this is `false`, the default.
+    pub xcdr1: bool,
 }
 
 impl Default for AdaGenOptions {
     fn default() -> Self {
         Self {
             package_name: "Zdgen".to_string(),
+            xcdr1: false,
         }
     }
 }
@@ -207,16 +233,17 @@ pub struct AdaModule {
 const WIRE_BODY: &str = r#"   Max_Buffer : constant := 4096;
 
    type Buf_T is record
-      Data   : Byte_Array (0 .. Max_Buffer - 1) := (others => 0);
-      Len    : Natural := 0;
-      Endian : Endianness := Little;
+      Data      : Byte_Array (0 .. Max_Buffer - 1) := (others => 0);
+      Len       : Natural := 0;
+      Endian    : Endianness := Little;
+      Max_Align : Positive := 4;
    end record;
 
    function F32_Bits is new Ada.Unchecked_Conversion (IEEE_Float_32, Unsigned_32);
    function F64_Bits is new Ada.Unchecked_Conversion (IEEE_Float_64, Unsigned_64);
 
    procedure Align (W : in out Buf_T; A : Positive) is
-      Cap : constant Positive := (if A > 4 then 4 else A);
+      Cap : constant Positive := (if A > W.Max_Align then W.Max_Align else A);
    begin
       while (W.Len mod Cap) /= 0 loop
          W.Data (W.Len) := 0;
@@ -267,7 +294,7 @@ const WIRE_BODY: &str = r#"   Max_Buffer : constant := 4096;
 
    procedure Put_U64 (W : in out Buf_T; V : Unsigned_64) is
    begin
-      Put_LE (W, 4,
+      Put_LE (W, 8,
         (Byte (V and 16#FF#),
          Byte (Shift_Right (V, 8) and 16#FF#),
          Byte (Shift_Right (V, 16) and 16#FF#),
@@ -358,7 +385,7 @@ const WIRE_BODY: &str = r#"   Max_Buffer : constant := 4096;
          LE (I) := Byte (Shift_Right (Lo, 8 * I) and 16#FF#);
          LE (8 + I) := Byte (Shift_Right (Hi, 8 * I) and 16#FF#);
       end loop;
-      Put_LE (W, 4, LE);
+      Put_LE (W, 8, LE);
    end Put_Long_Double;
 
    procedure Append (W : in out Buf_T; Src : Buf_T) is
@@ -379,7 +406,7 @@ const WIRE_BODY: &str = r#"   Max_Buffer : constant := 4096;
    function U64_I64 is new Ada.Unchecked_Conversion (Unsigned_64, Integer_64);
 
    procedure Ralign (Pos : in out Natural; A : Positive) is
-      Cap : constant Positive := (if A > 4 then 4 else A);
+      Cap : constant Positive := (if A > Stream_Max_Align then Stream_Max_Align else A);
    begin
       while (Pos mod Cap) /= 0 loop
          Pos := Pos + 1;
@@ -430,7 +457,7 @@ const WIRE_BODY: &str = r#"   Max_Buffer : constant := 4096;
 
    function Get_U64 (Data : Byte_Array; Pos : in out Natural; Endian : Endianness) return Unsigned_64 is
    begin
-      return Get_LE (Data, Pos, 4, 8, Endian);
+      return Get_LE (Data, Pos, 8, 8, Endian);
    end Get_U64;
 
    function Get_F32 (Data : Byte_Array; Pos : in out Natural; Endian : Endianness) return IEEE_Float_32 is
@@ -511,7 +538,7 @@ const WIRE_BODY: &str = r#"   Max_Buffer : constant := 4096;
       Lo : Unsigned_64 := 0;
       Hi : Unsigned_64 := 0;
    begin
-      Ralign (Pos, 4);
+      Ralign (Pos, 8);
       for I in 0 .. 15 loop
          LE (I) := Data (Data'First + Pos + I);
       end loop;
@@ -555,6 +582,7 @@ const WIRE_BODY: &str = r#"   Max_Buffer : constant := 4096;
 /// yet emit (e.g. `@mutable` unions and non-literal array/sequence bounds).
 pub fn generate_ada_module(spec: &Specification, opts: &AdaGenOptions) -> Result<AdaModule> {
     let pkg = &opts.package_name;
+    let xcdr1 = opts.xcdr1;
 
     // Rewrite interfaces into modules holding their type/const exports so
     // interface-nested declarations are emitted like any other type (§7.4.7).
@@ -605,6 +633,56 @@ pub fn generate_ada_module(spec: &Specification, opts: &AdaGenOptions) -> Result
             }
         }
     });
+
+    // Populate the named-constant / enumerator value registry so array,
+    // sequence, map, `fixed<>` and bitfield bounds (and union labels) may name a
+    // `const` or enumerator (`sequence<long, MAX>`), resolved by `eval_int`.
+    // Enumerators first (their values never reference a `const`); then `const`s
+    // in a fixpoint so a `const` chain (`const long B = A + 1;`) resolves
+    // regardless of declaration order — bounded by the number of consts.
+    CONST_VALUES.with(|m| {
+        let mut m = m.borrow_mut();
+        m.clear();
+        for (_, d) in &flat {
+            if let Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Enum(e))) = d {
+                let mut next: i64 = 0;
+                for en in &e.enumerators {
+                    let explicit = en.annotations.iter().find_map(|a| match lower_single(a) {
+                        Ok(Some(BuiltinAnnotation::Value(s))) => parse_int(&s),
+                        _ => None,
+                    });
+                    let v = explicit.unwrap_or(next);
+                    m.insert(en.name.text.clone(), v);
+                    next = v + 1;
+                }
+            }
+        }
+    });
+    let const_defs: Vec<&ConstDecl> = flat
+        .iter()
+        .filter_map(|(_, d)| match d {
+            Definition::Const(cd) => Some(cd),
+            _ => None,
+        })
+        .collect();
+    for _ in 0..=const_defs.len() {
+        let mut progressed = false;
+        for cd in &const_defs {
+            let already = CONST_VALUES.with(|m| m.borrow().contains_key(&cd.name.text));
+            if already {
+                continue;
+            }
+            if let Some(v) = eval_int(&cd.value) {
+                CONST_VALUES.with(|m| {
+                    m.borrow_mut().insert(cd.name.text.clone(), v);
+                });
+                progressed = true;
+            }
+        }
+        if !progressed {
+            break;
+        }
+    }
 
     let real_struct_names: HashSet<String> = flat
         .iter()
@@ -964,6 +1042,15 @@ pub fn generate_ada_module(spec: &Specification, opts: &AdaGenOptions) -> Result
         let _ = writeln!(body_src, "with GNAT.MD5;");
     }
     let _ = writeln!(body_src, "package body {pkg} is\n");
+    // Stream max alignment: XCDR2 caps at 4 (§7.4.2), classic XCDR1 uses the
+    // full natural alignment 8 (§7.4.1). Read by the reader `Ralign`; the writer
+    // uses the per-buffer `Max_Align` field (default 4) so the KeyHash buffer
+    // stays PLAIN_CDR2 cap-4 even in an XCDR1 module (XTypes 1.3 §7.6.8).
+    let _ = writeln!(
+        body_src,
+        "   Stream_Max_Align : constant Positive := {};\n",
+        if xcdr1 { 8 } else { 4 }
+    );
     body_src.push_str(WIRE_BODY);
     if any_fixed {
         body_src.push_str(FIXED_BODY);
@@ -973,16 +1060,16 @@ pub fn generate_ada_module(spec: &Specification, opts: &AdaGenOptions) -> Result
         emit_u32_to_enum(&mut body_src, eg);
     }
     for bg in &bitsets {
-        emit_bitset_body(&mut body_src, bg);
+        emit_bitset_body(&mut body_src, bg, xcdr1);
     }
     for mg in &bitmasks {
-        emit_bitmask_body(&mut body_src, mg);
+        emit_bitmask_body(&mut body_src, mg, xcdr1);
     }
     for sg in &structs {
-        emit_marshal(&mut body_src, sg);
+        emit_marshal(&mut body_src, sg, xcdr1);
     }
     for ug in &unions {
-        emit_union_marshal(&mut body_src, ug);
+        emit_union_marshal(&mut body_src, ug, xcdr1);
     }
     let _ = writeln!(body_src, "\nend {pkg};");
 
@@ -1369,7 +1456,7 @@ fn emit_pseudo_struct_ops_decl(out: &mut String, n: &str, vectors: &HashSet<Stri
     );
 }
 
-fn emit_bitset_body(out: &mut String, bg: &BitsetGen) {
+fn emit_bitset_body(out: &mut String, bg: &BitsetGen, xcdr1: bool) {
     let n = &bg.ada_name;
     let st = bg.storage_type;
     for (field, offset, width) in &bg.fields {
@@ -1403,16 +1490,16 @@ fn emit_bitset_body(out: &mut String, bg: &BitsetGen) {
         }
         let _ = writeln!(out, "   end Set_{field};");
     }
-    emit_pseudo_struct_body(out, n, st, bg.put_suffix);
+    emit_pseudo_struct_body(out, n, st, bg.put_suffix, xcdr1);
 }
 
-fn emit_bitmask_body(out: &mut String, mg: &BitmaskGen) {
-    emit_pseudo_struct_body(out, &mg.ada_name, mg.storage_type, mg.put_suffix);
+fn emit_bitmask_body(out: &mut String, mg: &BitmaskGen, xcdr1: bool) {
+    emit_pseudo_struct_body(out, &mg.ada_name, mg.storage_type, mg.put_suffix, xcdr1);
 }
 
 /// The `Marshal_Into`/`Marshal`/`Read_`/`Unmarshal` body for a pseudo-struct:
 /// the backing integer is written/read directly (the bitset/bitmask wire form).
-fn emit_pseudo_struct_body(out: &mut String, n: &str, st: &str, suffix: &str) {
+fn emit_pseudo_struct_body(out: &mut String, n: &str, st: &str, suffix: &str, xcdr1: bool) {
     let _ = writeln!(
         out,
         "\n   procedure Marshal_Into (V : {n}; W : in out Buf_T) is"
@@ -1428,6 +1515,9 @@ fn emit_pseudo_struct_body(out: &mut String, n: &str, st: &str, suffix: &str) {
     let _ = writeln!(out, "      W : Buf_T;");
     let _ = writeln!(out, "   begin");
     let _ = writeln!(out, "      W.Endian := Endian;");
+    if xcdr1 {
+        let _ = writeln!(out, "      W.Max_Align := 8;");
+    }
     let _ = writeln!(out, "      Marshal_Into (V, W);");
     let _ = writeln!(out, "      return W.Data (0 .. W.Len - 1);");
     let _ = writeln!(out, "   end Marshal;");
@@ -1605,25 +1695,16 @@ struct StructGen {
     key_puts: Vec<String>,
 }
 
-/// Evaluates a fixed-array bound to its integer size (literal + unary sign).
-/// zerodds-lint: recursion-depth 32
+/// Evaluates a fixed-array / sequence / map / fixed<> / bitfield bound to its
+/// integer size. Delegates to [`eval_int`], so a bound may be a full const
+/// expression — a literal, a named `const`/enumerator reference, or arithmetic
+/// over them (`N + 1`, `1 << 3`, `MAX`) — not only a bare literal. This matches
+/// `idl-rust`'s `const_expr_as_usize` (bounds go through the same folder as
+/// union labels); previously only `Literal`/`Unary` were accepted, so
+/// `sequence<long, MAX>` or `long a[N + 1]` were loudly rejected.
+/// zerodds-lint: recursion-depth 64 (const-expr tree; bounded by IDL nesting).
 fn array_size(e: &ConstExpr) -> Option<i64> {
-    match e {
-        ConstExpr::Literal(Literal {
-            kind: LiteralKind::Integer,
-            raw,
-            ..
-        }) => parse_int(raw),
-        ConstExpr::Unary { op, operand, .. } => {
-            let v = array_size(operand)?;
-            match op {
-                UnaryOp::Plus => Some(v),
-                UnaryOp::Minus => Some(-v),
-                UnaryOp::BitNot => Some(!v),
-            }
-        }
-        _ => None,
-    }
+    eval_int(e)
 }
 
 /// Evaluates a constant integer expression (literals, unary, and the binary
@@ -1665,7 +1746,12 @@ fn eval_int(e: &ConstExpr) -> Option<i64> {
                 BinaryOp::Mod => a.checked_rem(b),
             }
         }
-        ConstExpr::Literal(_) | ConstExpr::Scoped(_) => None,
+        // A named `const` or enumerator reference (`MAX`, `COLOR::RED`): resolve
+        // by the last path segment against the per-run [`CONST_VALUES`] registry,
+        // exactly like `idl-rust`'s `eval_const_i128` resolves `CONST_VALUES` /
+        // `ENUM_LITERAL_VALUES`. Enables named bounds/labels.
+        ConstExpr::Scoped(sn) => sn.parts.last().and_then(|p| lookup_const(&p.text)),
+        ConstExpr::Literal(_) => None,
     }
 }
 
@@ -1883,6 +1969,10 @@ fn build_struct(
         )));
     }
     let struct_ada_name = escape_ada_ident(&qualify(scope, &s.name.text));
+    // Struct-level `@autoid(HASH)` (XTypes 1.3 §7.3.1.2.1.1): members without an
+    // explicit `@id`/`@hashid` take a member id hashed from their name, not the
+    // sequential positional default.
+    let autoid_hash = zerodds_idl::semantics::member_id::container_autoid_hash(&s.annotations);
     let mut fields = Vec::new();
     let mut array_types = Vec::new();
     let mut opt_types = Vec::new();
@@ -1903,12 +1993,30 @@ fn build_struct(
         let non_serialized =
             zerodds_idl::semantics::annotations::member_is_non_serialized(&m.annotations);
         for d in &m.declarators {
-            let name = dedup.unique(&escape_ada_ident(&d.name().text));
+            let raw_member_name = d.name().text.clone();
+            let name = dedup.unique(&escape_ada_ident(&raw_member_name));
+            // Member id precedence (XTypes 1.3 §7.3.1.2.1): explicit `@id(n)`,
+            // then `@hashid` (per-member MD5 hash), then struct `@autoid(HASH)`
+            // (MD5 hash of the member name), else the sequential positional
+            // fallback. Resolved by the ONE central semantic-layer function so
+            // the EMHEADER/PID ids stay byte-identical to the TypeObject's
+            // member ids. A hashed id does not disturb the sequential counter;
+            // an explicit `@id(n)` advances it to `n + 1` (unchanged behavior).
+            let fixed = zerodds_idl::semantics::member_id::fixed_member_id(
+                autoid_hash,
+                &m.annotations,
+                &raw_member_name,
+            );
             let id = if non_serialized {
                 0
+            } else if let Some(fixed) = fixed {
+                if explicit_id.is_some() {
+                    next_id = fixed + 1;
+                }
+                fixed
             } else {
-                let assigned = explicit_id.unwrap_or(next_id);
-                next_id = assigned + 1;
+                let assigned = next_id;
+                next_id += 1;
                 assigned
             };
             let simple = matches!(d, Declarator::Simple(_));
@@ -2005,7 +2113,7 @@ fn build_struct(
                         )
                     } else {
                         format!(
-                            "{put_check}declare B2 : Buf_T; begin B2.Endian := $w.Endian; \
+                            "{put_check}declare B2 : Buf_T; begin B2.Endian := $w.Endian; B2.Max_Align := $w.Max_Align; \
                              Put_U32 (B2, Unsigned_32 (Natural (V.{name}.Length))); {} \
                              Put_U32 ($w, Unsigned_32 (B2.Len)); Append ($w, B2); end;",
                             loop_body("B2")
@@ -2189,14 +2297,25 @@ fn emit_key_struct_member(
     } else {
         nested_keys
     };
+    let nested_autoid = zerodds_idl::semantics::member_id::container_autoid_hash(&sd.annotations);
     let mut ordered: Vec<(u32, &Member)> = effective
         .iter()
         .enumerate()
         .map(|(idx, m)| {
-            let id = lower_annotations(&m.annotations)
-                .ok()
-                .and_then(|l| l.explicit_id())
-                .unwrap_or(idx as u32);
+            // Same member-id precedence as the top-level path (§7.3.1.2.1) so a
+            // nested-key struct with `@id`/`@hashid`/`@autoid(HASH)` orders its
+            // key members by their real wire ids.
+            let raw = m
+                .declarators
+                .first()
+                .map(|d| d.name().text.clone())
+                .unwrap_or_default();
+            let id = zerodds_idl::semantics::member_id::resolved_member_id(
+                nested_autoid,
+                &m.annotations,
+                &raw,
+                idx as u32,
+            );
             (id, *m)
         })
         .collect();
@@ -2236,23 +2355,155 @@ fn emit_key_struct_member(
     Ok(())
 }
 
-fn emit_marshal(out: &mut String, sg: &StructGen) {
+/// Emits one XCDR1 / PL_CDR1 member (XTypes 1.3 §7.4.1.2) into writer `dst`. The
+/// body is written into a fresh `M2` buffer so its alignment restarts at offset
+/// 0 — byte-identical to `zerodds_cdr::xcdr1::encode_pl_cdr1_member`, which
+/// encodes each parameter value in its own buffer — then framed by a PID
+/// header (standard 16-bit-id/16-bit-length, or the extended PID_EXTENDED
+/// `0x3F01` + 32-bit id + 32-bit length when the id is in the reserved `0x3FXX`
+/// band or the body exceeds `0xFFFF`) and padded to the next 4-byte boundary.
+/// The PID length carries the UNPADDED body length. `body_put` uses the `$w`
+/// writer placeholder; `ind` is the leading indentation.
+fn emit_pl_cdr1_member(out: &mut String, ind: &str, dst: &str, id: u32, body_put: &str) {
+    let _ = writeln!(out, "{ind}declare");
+    let _ = writeln!(out, "{ind}   M2 : Buf_T;");
+    let _ = writeln!(out, "{ind}begin");
+    let _ = writeln!(out, "{ind}   M2.Endian := {dst}.Endian;");
+    let _ = writeln!(out, "{ind}   M2.Max_Align := {dst}.Max_Align;");
+    let _ = writeln!(out, "{ind}   {}", body_put.replace("$w", "M2"));
+    if id >= 0x3F00 {
+        // Id in the reserved 0x3FXX band → the extended header is mandatory.
+        let _ = writeln!(out, "{ind}   Put_U16 ({dst}, 16#3F01#);");
+        let _ = writeln!(out, "{ind}   Put_U16 ({dst}, 8);");
+        let _ = writeln!(out, "{ind}   Put_U32 ({dst}, {id});");
+        let _ = writeln!(out, "{ind}   Put_U32 ({dst}, Unsigned_32 (M2.Len));");
+    } else {
+        // Standard header unless the runtime body length forces the extended one.
+        let _ = writeln!(out, "{ind}   if M2.Len > 16#FFFF# then");
+        let _ = writeln!(out, "{ind}      Put_U16 ({dst}, 16#3F01#);");
+        let _ = writeln!(out, "{ind}      Put_U16 ({dst}, 8);");
+        let _ = writeln!(out, "{ind}      Put_U32 ({dst}, {id});");
+        let _ = writeln!(out, "{ind}      Put_U32 ({dst}, Unsigned_32 (M2.Len));");
+        let _ = writeln!(out, "{ind}   else");
+        let _ = writeln!(out, "{ind}      Put_U16 ({dst}, Unsigned_16 ({id}));");
+        let _ = writeln!(out, "{ind}      Put_U16 ({dst}, Unsigned_16 (M2.Len));");
+        let _ = writeln!(out, "{ind}   end if;");
+    }
+    let _ = writeln!(out, "{ind}   Append ({dst}, M2);");
+    let _ = writeln!(
+        out,
+        "{ind}   while ({dst}.Len mod 4) /= 0 loop Put_U8 ({dst}, 0); end loop;"
+    );
+    let _ = writeln!(out, "{ind}end;");
+}
+
+/// Writes the PL_CDR1 sentinel terminator (PID_LIST_END `0x3F02`, length 0) into
+/// `dst` (XTypes 1.3 §7.4.1.2.4).
+fn emit_pl_cdr1_sentinel(out: &mut String, ind: &str, dst: &str) {
+    let _ = writeln!(out, "{ind}Put_U16 ({dst}, 16#3F02#);");
+    let _ = writeln!(out, "{ind}Put_U16 ({dst}, 0);");
+}
+
+/// Emits the PL_CDR1 decode dispatch loop: reads PID-framed members until the
+/// sentinel, dispatching each body (re-based to its own offset 0 so the member's
+/// internal alignment matches the encoder's fresh buffer) to the matching
+/// `case` arm keyed by member id. `arms` is `(member_id, get_stmt)`; `get_stmt`
+/// uses the reader identifiers `Data`/`Pos`/`Endian`, which the inner block
+/// re-binds to the extracted body slice.
+fn emit_pl_cdr1_decode_loop(out: &mut String, ind: &str, arms: &[(u32, String)]) {
+    let _ = writeln!(out, "{ind}declare");
+    let _ = writeln!(out, "{ind}   Zdone : Boolean := False;");
+    let _ = writeln!(out, "{ind}begin");
+    let _ = writeln!(out, "{ind}   while not Zdone loop");
+    let _ = writeln!(out, "{ind}      exit when Pos + 4 > Data'Length;");
+    let _ = writeln!(out, "{ind}      declare");
+    let _ = writeln!(
+        out,
+        "{ind}         Zpid  : constant Unsigned_16 := Get_U16 (Data, Pos, Endian) and 16#3FFF#;"
+    );
+    let _ = writeln!(
+        out,
+        "{ind}         Zln   : constant Unsigned_16 := Get_U16 (Data, Pos, Endian);"
+    );
+    let _ = writeln!(out, "{ind}         Zmid  : Unsigned_32 := 0;");
+    let _ = writeln!(out, "{ind}         Zblen : Natural := 0;");
+    let _ = writeln!(out, "{ind}         Zbs   : Natural;");
+    let _ = writeln!(out, "{ind}      begin");
+    let _ = writeln!(out, "{ind}         if Zpid = 16#3F02# then");
+    let _ = writeln!(out, "{ind}            Zdone := True;");
+    let _ = writeln!(out, "{ind}         else");
+    let _ = writeln!(out, "{ind}            if Zpid = 16#3F01# then");
+    let _ = writeln!(
+        out,
+        "{ind}               Zmid  := Get_U32 (Data, Pos, Endian);"
+    );
+    let _ = writeln!(
+        out,
+        "{ind}               Zblen := Natural (Get_U32 (Data, Pos, Endian));"
+    );
+    let _ = writeln!(out, "{ind}            else");
+    let _ = writeln!(out, "{ind}               Zmid  := Unsigned_32 (Zpid);");
+    let _ = writeln!(out, "{ind}               Zblen := Natural (Zln);");
+    let _ = writeln!(out, "{ind}            end if;");
+    let _ = writeln!(out, "{ind}            Zbs := Pos;");
+    let _ = writeln!(out, "{ind}            declare");
+    let _ = writeln!(
+        out,
+        "{ind}               MB : Byte_Array (0 .. Zblen - 1) := (others => 0);"
+    );
+    let _ = writeln!(out, "{ind}            begin");
+    let _ = writeln!(out, "{ind}               for I in 0 .. Zblen - 1 loop");
+    let _ = writeln!(
+        out,
+        "{ind}                  MB (I) := Data (Data'First + Zbs + I);"
+    );
+    let _ = writeln!(out, "{ind}               end loop;");
+    let _ = writeln!(out, "{ind}               declare");
+    let _ = writeln!(out, "{ind}                  Data : Byte_Array renames MB;");
+    let _ = writeln!(out, "{ind}                  Pos  : Natural := 0;");
+    let _ = writeln!(out, "{ind}               begin");
+    let _ = writeln!(out, "{ind}                  case Zmid is");
+    for (id, get) in arms {
+        let _ = writeln!(out, "{ind}                     when {id} => {get}");
+    }
+    let _ = writeln!(out, "{ind}                     when others => null;");
+    let _ = writeln!(out, "{ind}                  end case;");
+    let _ = writeln!(out, "{ind}               end;");
+    let _ = writeln!(out, "{ind}            end;");
+    let _ = writeln!(out, "{ind}            Pos := Zbs + Zblen;");
+    let _ = writeln!(
+        out,
+        "{ind}            while (Pos mod 4) /= 0 loop Pos := Pos + 1; end loop;"
+    );
+    let _ = writeln!(out, "{ind}         end if;");
+    let _ = writeln!(out, "{ind}      end;");
+    let _ = writeln!(out, "{ind}   end loop;");
+    let _ = writeln!(out, "{ind}end;");
+}
+
+fn emit_marshal(out: &mut String, sg: &StructGen, xcdr1: bool) {
     // Body-local Marshal_Into: writes into an existing writer (nested composites
     // call this so alignment stays stream-relative). Overloaded by the record
-    // type. @final: fields inline; @appendable: DHEADER-framed body.
+    // type. @final: fields inline; @appendable: DHEADER-framed body (XCDR2) or
+    // inline like @final (XCDR1); @mutable: EMHEADER member list (XCDR2) or a
+    // PL_CDR1 parameter list terminated by the 0x3F02 sentinel (XCDR1).
+    let pl_cdr1_mutable = sg.mutable && xcdr1;
+    let dheader_appendable = sg.appendable && !xcdr1;
+    let dheader_mutable = sg.mutable && !xcdr1;
     let _ = writeln!(
         out,
         "\n   procedure Marshal_Into (V : {}; W : in out Buf_T) is",
         sg.ada_name
     );
-    if sg.appendable || sg.mutable {
+    if dheader_appendable || dheader_mutable {
         let _ = writeln!(out, "      B : Buf_T;");
     }
     let _ = writeln!(out, "   begin");
-    if sg.mutable {
-        // @mutable: DHEADER-framed member list; each member = EMHEADER (LC4 =
-        // member id) + NEXTINT (body length) + body (XTypes §7.4.3.4.2).
+    if dheader_mutable {
+        // @mutable XCDR2: DHEADER-framed member list; each member = EMHEADER (LC4
+        // = member id) + NEXTINT (body length) + body (XTypes §7.4.3.4.2).
         let _ = writeln!(out, "      B.Endian := W.Endian;");
+        let _ = writeln!(out, "      B.Max_Align := W.Max_Align;");
         for f in &sg.fields {
             if f.non_serialized {
                 continue;
@@ -2263,6 +2514,7 @@ fn emit_marshal(out: &mut String, sg: &StructGen) {
             let _ = writeln!(out, "         M2 : Buf_T;");
             let _ = writeln!(out, "      begin");
             let _ = writeln!(out, "         M2.Endian := W.Endian;");
+            let _ = writeln!(out, "         M2.Max_Align := W.Max_Align;");
             let _ = writeln!(out, "         {}", f.put.replace("$w", "M2"));
             let _ = writeln!(out, "         Put_U32 (B, Unsigned_32 (M2.Len));");
             let _ = writeln!(out, "         Append (B, M2);");
@@ -2270,9 +2522,23 @@ fn emit_marshal(out: &mut String, sg: &StructGen) {
         }
         let _ = writeln!(out, "      Put_U32 (W, Unsigned_32 (B.Len));");
         let _ = writeln!(out, "      Append (W, B);");
+    } else if pl_cdr1_mutable {
+        // @mutable XCDR1: a PL_CDR1 parameter list written directly into W (no
+        // outer DHEADER), each member PID-framed, terminated by the sentinel.
+        let mut any = false;
+        for f in &sg.fields {
+            if f.non_serialized {
+                continue;
+            }
+            emit_pl_cdr1_member(out, "      ", "W", f.id, &f.put);
+            any = true;
+        }
+        let _ = any;
+        emit_pl_cdr1_sentinel(out, "      ", "W");
     } else {
-        let wv = if sg.appendable {
+        let wv = if dheader_appendable {
             let _ = writeln!(out, "      B.Endian := W.Endian;");
+            let _ = writeln!(out, "      B.Max_Align := W.Max_Align;");
             "B"
         } else {
             "W"
@@ -2283,7 +2549,7 @@ fn emit_marshal(out: &mut String, sg: &StructGen) {
             }
             let _ = writeln!(out, "      {}", f.put.replace("$w", wv));
         }
-        if sg.appendable {
+        if dheader_appendable {
             let _ = writeln!(out, "      Put_U32 (W, Unsigned_32 (B.Len));");
             let _ = writeln!(out, "      Append (W, B);");
         } else {
@@ -2300,6 +2566,9 @@ fn emit_marshal(out: &mut String, sg: &StructGen) {
     let _ = writeln!(out, "      W : Buf_T;");
     let _ = writeln!(out, "   begin");
     let _ = writeln!(out, "      W.Endian := Endian;");
+    if xcdr1 {
+        let _ = writeln!(out, "      W.Max_Align := 8;");
+    }
     let _ = writeln!(out, "      Marshal_Into (V, W);");
     let _ = writeln!(out, "      return W.Data (0 .. W.Len - 1);");
     let _ = writeln!(out, "   end Marshal;");
@@ -2375,7 +2644,17 @@ fn emit_marshal(out: &mut String, sg: &StructGen) {
     );
     let _ = writeln!(out, "      V : {n};");
     let _ = writeln!(out, "   begin");
-    if sg.mutable {
+    if pl_cdr1_mutable {
+        // @mutable XCDR1: a PL_CDR1 dispatch loop keyed by member id (each body
+        // re-based to offset 0), terminated by the sentinel.
+        let arms: Vec<(u32, String)> = sg
+            .fields
+            .iter()
+            .filter(|f| !f.non_serialized)
+            .map(|f| (f.id, f.get.clone()))
+            .collect();
+        emit_pl_cdr1_decode_loop(out, "      ", &arms);
+    } else if dheader_mutable {
         let _ = writeln!(out, "      Skip_U32 (Data, Pos, Endian);");
         for f in &sg.fields {
             if f.non_serialized {
@@ -2386,7 +2665,7 @@ fn emit_marshal(out: &mut String, sg: &StructGen) {
             let _ = writeln!(out, "      {}", f.get);
         }
     } else {
-        if sg.appendable {
+        if dheader_appendable {
             let _ = writeln!(out, "      Skip_U32 (Data, Pos, Endian);");
         }
         for f in &sg.fields {
@@ -2396,7 +2675,7 @@ fn emit_marshal(out: &mut String, sg: &StructGen) {
             let _ = writeln!(out, "      {}", f.get);
         }
     }
-    if sg.fields.is_empty() {
+    if sg.fields.is_empty() && !pl_cdr1_mutable {
         let _ = writeln!(out, "      null;");
     }
     let _ = writeln!(out, "      return V;");
@@ -2763,19 +3042,22 @@ fn ada_string_from_raw(e: &ConstExpr) -> Option<String> {
 }
 
 /// Emits a union's body-local `Marshal_Into` (discriminator + `case` dispatch)
-/// and its `Marshal` wrapper (XCDR2 §7.4.3.5.4).
-fn emit_union_marshal(out: &mut String, ug: &UnionGen) {
+/// and its `Marshal` wrapper (XCDR2 §7.4.3.5.4 / XCDR1 §7.4.1.2).
+fn emit_union_marshal(out: &mut String, ug: &UnionGen, xcdr1: bool) {
+    let pl_cdr1_mutable = ug.mutable && xcdr1;
+    let dheader_appendable = ug.appendable && !xcdr1;
+    let dheader_mutable = ug.mutable && !xcdr1;
     let _ = writeln!(
         out,
         "\n   procedure Marshal_Into (V : {}; W : in out Buf_T) is",
         ug.ada_name
     );
-    if ug.appendable || ug.mutable {
+    if dheader_appendable || dheader_mutable {
         let _ = writeln!(out, "      B : Buf_T;");
     }
     let _ = writeln!(out, "   begin");
     let has_default = ug.cases.iter().any(|c| c.is_default);
-    if ug.mutable {
+    if dheader_mutable {
         // @mutable union (XTypes 1.3 §7.4.3.5.3): PL_CDR2 — an outer DHEADER
         // framing an EMHEADER-tagged member list, exactly like a @mutable
         // struct. The discriminator is member id 0; the selected branch is a
@@ -2784,9 +3066,31 @@ fn emit_union_marshal(out: &mut String, ug: &UnionGen) {
         // struct path); a compact-LC variant is the coordinated cross-backend
         // wire change tracked separately.
         emit_union_mutable_marshal_body(out, ug, has_default);
+    } else if pl_cdr1_mutable {
+        // @mutable union XCDR1 (PL_CDR1): a parameter list written directly into
+        // W — discriminator as member id 0, the selected branch as member id
+        // (branch-index + 1) — terminated by the 0x3F02 sentinel.
+        emit_pl_cdr1_member(out, "      ", "W", 0, &ug.disc_put);
+        let _ = writeln!(out, "      case V.disc is");
+        for (idx, c) in ug.cases.iter().enumerate() {
+            let id = u32::try_from(idx).unwrap_or(0) + 1;
+            let choice = if c.is_default {
+                "others".to_string()
+            } else {
+                c.labels.join(" | ")
+            };
+            let _ = writeln!(out, "         when {choice} =>");
+            emit_pl_cdr1_member(out, "            ", "W", id, &c.put);
+        }
+        if !has_default {
+            let _ = writeln!(out, "         when others => null;");
+        }
+        let _ = writeln!(out, "      end case;");
+        emit_pl_cdr1_sentinel(out, "      ", "W");
     } else {
-        let wv = if ug.appendable {
+        let wv = if dheader_appendable {
             let _ = writeln!(out, "      B.Endian := W.Endian;");
+            let _ = writeln!(out, "      B.Max_Align := W.Max_Align;");
             "B"
         } else {
             "W"
@@ -2805,7 +3109,7 @@ fn emit_union_marshal(out: &mut String, ug: &UnionGen) {
             let _ = writeln!(out, "         when others => null;");
         }
         let _ = writeln!(out, "      end case;");
-        if ug.appendable {
+        if dheader_appendable {
             let _ = writeln!(out, "      Put_U32 (W, Unsigned_32 (B.Len));");
             let _ = writeln!(out, "      Append (W, B);");
         }
@@ -2820,6 +3124,9 @@ fn emit_union_marshal(out: &mut String, ug: &UnionGen) {
     let _ = writeln!(out, "      W : Buf_T;");
     let _ = writeln!(out, "   begin");
     let _ = writeln!(out, "      W.Endian := Endian;");
+    if xcdr1 {
+        let _ = writeln!(out, "      W.Max_Align := 8;");
+    }
     let _ = writeln!(out, "      Marshal_Into (V, W);");
     let _ = writeln!(out, "      return W.Data (0 .. W.Len - 1);");
     let _ = writeln!(out, "   end Marshal;");
@@ -2834,36 +3141,47 @@ fn emit_union_marshal(out: &mut String, ug: &UnionGen) {
     );
     let _ = writeln!(out, "      V : {n};");
     let _ = writeln!(out, "   begin");
-    // @appendable skips the leading DHEADER; @mutable skips the DHEADER then
-    // the discriminator's EMHEADER + NEXTINT (members read in fixed order, so
-    // the member-id/length tags are skipped, not interpreted).
-    if ug.appendable || ug.mutable {
-        let _ = writeln!(out, "      Skip_U32 (Data, Pos, Endian);");
-    }
-    if ug.mutable {
-        let _ = writeln!(out, "      Skip_U32 (Data, Pos, Endian);");
-        let _ = writeln!(out, "      Skip_U32 (Data, Pos, Endian);");
-    }
-    let _ = writeln!(out, "      {}", ug.disc_get);
-    let _ = writeln!(out, "      case V.disc is");
-    for c in &ug.cases {
-        // For @mutable, the selected branch is EMHEADER + NEXTINT framed.
-        let skip = if ug.mutable {
-            "Skip_U32 (Data, Pos, Endian); Skip_U32 (Data, Pos, Endian); "
-        } else {
-            ""
-        };
-        if c.is_default {
-            let _ = writeln!(out, "         when others => {skip}{}", c.get);
-        } else {
-            let labels = c.labels.join(" | ");
-            let _ = writeln!(out, "         when {labels} => {skip}{}", c.get);
+    if pl_cdr1_mutable {
+        // @mutable union XCDR1 (PL_CDR1): dispatch loop — member id 0 fills the
+        // discriminator, id (branch-index + 1) fills the selected branch; both
+        // bodies re-based to their own offset 0.
+        let mut arms: Vec<(u32, String)> = vec![(0, ug.disc_get.clone())];
+        for (idx, c) in ug.cases.iter().enumerate() {
+            arms.push((u32::try_from(idx).unwrap_or(0) + 1, c.get.clone()));
         }
+        emit_pl_cdr1_decode_loop(out, "      ", &arms);
+    } else {
+        // @appendable skips the leading DHEADER; @mutable skips the DHEADER then
+        // the discriminator's EMHEADER + NEXTINT (members read in fixed order, so
+        // the member-id/length tags are skipped, not interpreted).
+        if dheader_appendable || dheader_mutable {
+            let _ = writeln!(out, "      Skip_U32 (Data, Pos, Endian);");
+        }
+        if dheader_mutable {
+            let _ = writeln!(out, "      Skip_U32 (Data, Pos, Endian);");
+            let _ = writeln!(out, "      Skip_U32 (Data, Pos, Endian);");
+        }
+        let _ = writeln!(out, "      {}", ug.disc_get);
+        let _ = writeln!(out, "      case V.disc is");
+        for c in &ug.cases {
+            // For @mutable, the selected branch is EMHEADER + NEXTINT framed.
+            let skip = if dheader_mutable {
+                "Skip_U32 (Data, Pos, Endian); Skip_U32 (Data, Pos, Endian); "
+            } else {
+                ""
+            };
+            if c.is_default {
+                let _ = writeln!(out, "         when others => {skip}{}", c.get);
+            } else {
+                let labels = c.labels.join(" | ");
+                let _ = writeln!(out, "         when {labels} => {skip}{}", c.get);
+            }
+        }
+        if !has_default {
+            let _ = writeln!(out, "         when others => null;");
+        }
+        let _ = writeln!(out, "      end case;");
     }
-    if !has_default {
-        let _ = writeln!(out, "         when others => null;");
-    }
-    let _ = writeln!(out, "      end case;");
     let _ = writeln!(out, "      return V;");
     let _ = writeln!(out, "   end Read_{n};");
     let _ = writeln!(
@@ -2883,12 +3201,14 @@ fn emit_union_marshal(out: &mut String, ug: &UnionGen) {
 /// into `B`, then flushes `B` behind an outer DHEADER.
 fn emit_union_mutable_marshal_body(out: &mut String, ug: &UnionGen, has_default: bool) {
     let _ = writeln!(out, "      B.Endian := W.Endian;");
+    let _ = writeln!(out, "      B.Max_Align := W.Max_Align;");
     // Discriminator — member id 0.
     let _ = writeln!(out, "      Put_U32 (B, 16#40000000#);");
     let _ = writeln!(out, "      declare");
     let _ = writeln!(out, "         M2 : Buf_T;");
     let _ = writeln!(out, "      begin");
     let _ = writeln!(out, "         M2.Endian := W.Endian;");
+    let _ = writeln!(out, "         M2.Max_Align := W.Max_Align;");
     let _ = writeln!(out, "         {}", ug.disc_put.replace("$w", "M2"));
     let _ = writeln!(out, "         Put_U32 (B, Unsigned_32 (M2.Len));");
     let _ = writeln!(out, "         Append (B, M2);");
@@ -2898,7 +3218,7 @@ fn emit_union_mutable_marshal_body(out: &mut String, ug: &UnionGen, has_default:
     for (idx, c) in ug.cases.iter().enumerate() {
         let emh = 0x4000_0000_u32 | (u32::try_from(idx).unwrap_or(0) + 1);
         let branch = format!(
-            "declare M2 : Buf_T; begin M2.Endian := W.Endian; Put_U32 (B, 16#{emh:08X}#); {} Put_U32 (B, Unsigned_32 (M2.Len)); Append (B, M2); end;",
+            "declare M2 : Buf_T; begin M2.Endian := W.Endian; M2.Max_Align := W.Max_Align; Put_U32 (B, 16#{emh:08X}#); {} Put_U32 (B, Unsigned_32 (M2.Len)); Append (B, M2); end;",
             c.put.replace("$w", "M2")
         );
         if c.is_default {
@@ -3101,7 +3421,7 @@ fn map_sequence(
                 .map(|s| format!("{s} "))
                 .unwrap_or_default();
             let put = format!(
-                "{check}declare Sub : Buf_T; begin Sub.Endian := $w.Endian;                  Put_U32 (Sub, Unsigned_32 (Natural ({expr}.Length)));                  for E of {expr} loop Marshal_Into (E, Sub); end loop;                  Put_U32 ($w, Unsigned_32 (Sub.Len)); Append ($w, Sub); end;"
+                "{check}declare Sub : Buf_T; begin Sub.Endian := $w.Endian; Sub.Max_Align := $w.Max_Align;                  Put_U32 (Sub, Unsigned_32 (Natural ({expr}.Length)));                  for E of {expr} loop Marshal_Into (E, Sub); end loop;                  Put_U32 ($w, Unsigned_32 (Sub.Len)); Append ($w, Sub); end;"
             );
             return Ok((format!("{}_Vectors.Vector", escape_ada_ident(&name)), put));
         }
@@ -3222,11 +3542,21 @@ fn map_get(
             let esc = escape_ada_ident(&name);
             if enum_names.contains(&name) {
                 // Read the @bit_bound-wide holder (XTypes 1.3 §7.4.5.1); Get_U8
-                // takes no Endian, Get_U16/Get_U32 do.
+                // takes no Endian, Get_U16/Get_U32 do. The enum holder is a
+                // SIGNED integer (§7.4.5.1), so a narrow 1/2-octet holder must be
+                // SIGN-extended to the full 32-bit wire value before the reverse
+                // map — otherwise a negative enumerator (`@value(-1)` under
+                // `@bit_bound(8)`) reads back as `0xFF` (255), never matches the
+                // `0xFFFFFFFF` case, and falls to the fallback. `U8_I8`/`U16_I16`
+                // reinterpret the narrow octets as signed, then `Unsigned_32'Mod`
+                // rebuilds the two's-complement 32-bit pattern. Mirrors
+                // `idl-rust`'s `i32::from(i8)` narrow-enum decode.
                 let get = match enum_wire_width(&name) {
-                    1 => format!("{target} := {esc}_Of_U32 (Unsigned_32 (Get_U8 (Data, Pos)));"),
+                    1 => format!(
+                        "{target} := {esc}_Of_U32 (Unsigned_32'Mod (Integer_32 (U8_I8 (Get_U8 (Data, Pos)))));"
+                    ),
                     2 => format!(
-                        "{target} := {esc}_Of_U32 (Unsigned_32 (Get_U16 (Data, Pos, Endian)));"
+                        "{target} := {esc}_Of_U32 (Unsigned_32'Mod (Integer_32 (U16_I16 (Get_U16 (Data, Pos, Endian)))));"
                     ),
                     _ => format!("{target} := {esc}_Of_U32 (Get_U32 (Data, Pos, Endian));"),
                 };

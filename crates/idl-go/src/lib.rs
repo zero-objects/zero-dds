@@ -42,6 +42,12 @@
 //! inheritance, `@mutable` structs, `const`, `long double`, `wchar`, and
 //! `wstring` are emitted; only non-literal collection bounds currently raise
 //! [`error::IdlGoError::Unsupported`].
+//!
+//! An `interface` carrying operations (DDS-RPC) emits its per-operation
+//! request/reply wire structs (Enhanced mapping, OMG DDS-RPC 1.0), byte-identical
+//! to `idl-rust`'s `emit_service_rpc`. The typed client/server wrappers
+//! (`Requester`/`Replier`) are **not** emitted: Go has no `zerodds-rpc` runtime
+//! (that lives in `endpoints/go`, off this crate's surface). See [`rpc`].
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
@@ -49,6 +55,7 @@
 pub mod emitter;
 pub mod error;
 mod keywords;
+pub mod rpc;
 
 pub use emitter::{GoGenOptions, generate_go_fragment, generate_go_module};
 pub use error::{IdlGoError, Result};
