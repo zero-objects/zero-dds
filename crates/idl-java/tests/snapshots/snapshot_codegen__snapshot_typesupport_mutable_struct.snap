@@ -20,6 +20,17 @@ public final class MTypeSupport implements org.zerodds.cdr.TopicTypeSupport<M> {
     public org.zerodds.cdr.ExtensibilityKind getExtensibility() { return org.zerodds.cdr.ExtensibilityKind.MUTABLE; }
 
     @Override
+    public byte[] typeObject() { return TYPE_OBJECT.clone(); }
+    private static final byte[] TYPE_OBJECT = new byte[] {
+        (byte) 0xf2, (byte) 0x51, (byte) 0x04, (byte) 0x00, (byte) 0x0a, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x00, 
+        (byte) 0x02, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x4d, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x2c, (byte) 0x00, (byte) 0x00, (byte) 0x00, 
+        (byte) 0x02, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x10, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x01, (byte) 0x00, (byte) 0x00, (byte) 0x00, 
+        (byte) 0x01, (byte) 0x00, (byte) 0x04, (byte) 0x00, (byte) 0x02, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x61, (byte) 0x00, (byte) 0x00, (byte) 0x00, 
+        (byte) 0x10, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x02, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x01, (byte) 0x00, (byte) 0x70, (byte) 0x00, 
+        (byte) 0x02, (byte) 0x00, (byte) 0x00, (byte) 0x00, (byte) 0x62, (byte) 0x00, (byte) 0x00, (byte) 0x00, 
+    };
+
+    @Override
     public byte[] encode(M sample) { return encode(sample, org.zerodds.cdr.EndianMode.LITTLE_ENDIAN); }
 
     @Override

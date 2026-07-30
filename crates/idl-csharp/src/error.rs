@@ -18,7 +18,7 @@ pub enum CsGenError {
         context: Option<String>,
     },
     /// Identifier collides with a reserved C# keyword.
-    /// Unlike C++, C# does not reject but escapes with an
+    /// C# does not reject but escapes with an
     /// `@` prefix (spec behavior, §6 IDL4-CS mapping).
     /// This error only occurs if the name itself would still be
     /// invalid after escaping (empty string, double `@`, ...).

@@ -131,12 +131,14 @@ pub(crate) const TIME_DURATION_TYPES: &[(&str, &str)] = &[
 
 /// Produces a complete C++17 header from an IDL specification.
 ///
+/// Reserved C++ keywords used as IDL identifiers are ESCAPED (trailing `_`,
+/// e.g. `class` → `class_`), not rejected — the DDS wire type name reported by
+/// `type_name()` stays the original IDL FQN (escaping is name-local).
+///
 /// # Errors
 /// - [`CppGenError::UnsupportedConstruct`]: IDL construct outside the current scope
 ///   (e.g. `interface`, `valuetype`, `fixed`, `any`, `map`, `bitset`,
 ///   `bitmask`).
-/// - [`CppGenError::InvalidName`]: An identifier collides with a
-///   reserved C++ keyword.
 /// - [`CppGenError::InheritanceCycle`]: Direct or indirect
 ///   self-inheritance in the struct graph.
 pub fn generate_cpp_header(
@@ -272,8 +274,10 @@ mod tests {
     fn enum_emits_enum_class_int32_t() {
         let cpp = gen_cpp("enum Color { RED, GREEN, BLUE };");
         assert!(cpp.contains("enum class Color : int32_t"));
-        assert!(cpp.contains("RED,"));
-        assert!(cpp.contains("BLUE,"));
+        // Enumerators carry explicit wire values (XTypes 1.3 §7.4.5.1).
+        assert!(cpp.contains("RED = 0,"));
+        assert!(cpp.contains("GREEN = 1,"));
+        assert!(cpp.contains("BLUE = 2,"));
     }
 
     #[test]
@@ -410,15 +414,38 @@ mod tests {
     }
 
     #[test]
-    fn reserved_field_name_is_rejected() {
-        let ast = zerodds_idl::parse("struct S { long class_field; };", &ParserConfig::default())
-            .expect("parse");
-        // "class_field" is not reserved; test with an annotation trick:
-        // we force a reserved name via the builder API.
-        // Instead, we check the path directly through check_identifier:
+    fn reserved_field_name_is_escaped_not_rejected() {
+        // Issue #14: the FULL C++ backend now ESCAPES reserved-word collisions
+        // (trailing `_`) instead of rejecting them. A struct member named after
+        // a C++ keyword (`operator`, not an IDL keyword) generates fine and the
+        // emitted field/accessor is the escaped token.
+        let cpp = gen_cpp("struct S { long operator; };");
+        // Public accessor is the clean escaped identifier `operator_()`; the
+        // private storage keeps the `<accessor>_` convention (`operator__`).
+        assert!(
+            cpp.contains("int32_t& operator_()"),
+            "accessor must be escaped:\n{cpp}"
+        );
+        // Private storage stays `__`-free (no reserved double-underscore).
+        assert!(
+            cpp.contains("int32_t operator_field;"),
+            "storage field must be __-free:\n{cpp}"
+        );
+        assert!(
+            !cpp.contains("operator__"),
+            "must not emit a reserved __ identifier:\n{cpp}"
+        );
+        assert!(
+            !cpp.contains("int32_t operator;"),
+            "raw keyword must not be emitted"
+        );
+
+        // The low-level escape helper maps the keyword to its escaped form,
+        // while `check_identifier` (retained for the RPC/legacy path) still
+        // reports the collision.
+        assert_eq!(type_map::escape_cpp_ident("class"), "class_");
         let res = type_map::check_identifier("class");
         assert!(matches!(res, Err(CppGenError::InvalidName { .. })));
-        let _ = ast; // unused but illustrates the idea
     }
 
     #[test]

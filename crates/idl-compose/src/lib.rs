@@ -39,10 +39,12 @@
 pub mod compose;
 pub mod default_ext;
 pub mod key_pragmas;
+pub mod project;
 pub mod resolver;
 pub mod typeobject;
 
 pub use compose::{ComposeError, ComposeOptions, ComposeOutput, compose};
 pub use default_ext::DefaultExt;
+pub use project::{ProjectComposition, compose_project, strip_top_level_modules_rust};
 pub use resolver::FsResolver;
 pub use typeobject::TypeObjectBlob;

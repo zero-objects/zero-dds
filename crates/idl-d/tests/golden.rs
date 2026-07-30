@@ -40,7 +40,8 @@ fn emit(src: &str) -> String {
 #[test]
 fn module_wrapped_struct_is_emitted_not_dropped() {
     let d = emit("module Telemetry { @final struct Reading { long value; }; };");
-    assert!(d.contains("struct Reading {"), "{d}");
+    // #21: a module-wrapped type is emitted with its module-qualified name.
+    assert!(d.contains("struct Telemetry_Reading {"), "{d}");
     assert!(d.contains("int value;"), "{d}");
 }
 
@@ -52,8 +53,86 @@ fn reopened_module_emits_both_structs() {
         "module M { @final struct A { long x; }; }; \
          module M { @final struct B { long y; }; };",
     );
-    assert!(d.contains("struct A {"), "{d}");
-    assert!(d.contains("struct B {"), "{d}");
+    // #21: both halves emit under the module-qualified name `M_*`.
+    assert!(d.contains("struct M_A {"), "{d}");
+    assert!(d.contains("struct M_B {"), "{d}");
+}
+
+/// #21 cross-module collision: two different modules each declaring `Reading`
+/// must emit distinct, module-qualified D types, never a duplicate bare type.
+#[test]
+fn cross_module_same_name_types_are_qualified() {
+    let d = emit(
+        "module a { @final struct Reading { long v; }; }; \
+         module b { @final struct Reading { double w; }; };",
+    );
+    assert!(d.contains("struct a_Reading {"), "{d}");
+    assert!(d.contains("struct b_Reading {"), "{d}");
+    assert!(!d.contains("struct Reading {"), "{d}");
+    assert!(d.contains("int v;"), "{d}");
+    assert!(d.contains("double w;"), "{d}");
+}
+
+/// #21 cross-module reference: `module b`'s struct references `a::R`, which
+/// must resolve to the qualified type `a_R`, not the bare `R`.
+#[test]
+fn cross_module_reference_resolves_to_qualified_type() {
+    let d = emit(
+        "module a { @final struct R { long v; }; }; \
+         module b { @final struct S { a::R r; }; };",
+    );
+    assert!(d.contains("struct a_R {"), "{d}");
+    assert!(d.contains("struct b_S {"), "{d}");
+    // S's member `r` has the qualified type a_R.
+    assert!(d.contains("a_R r;"), "{d}");
+    assert!(d.contains("r.marshalInto"), "{d}");
+    assert!(!d.contains(" R r;"), "{d}");
+}
+
+/// #21 compile gate: a two-module spec with a cross-module reference must
+/// produce compilable D.
+#[test]
+fn cross_module_reference_compiles_with_gdc() {
+    if Command::new("gdc").arg("--version").output().is_err() {
+        eprintln!("SKIP cross_module_reference_compiles_with_gdc: `gdc` not on PATH");
+        return;
+    }
+    let mut src = emit(
+        "module a { @final struct R { long v; }; }; \
+         module b { @final struct S { a::R r; }; };",
+    );
+    src.push_str(
+        r#"
+void main() {
+    import std.stdio : writeln;
+    b_S s;
+    s.r.v = 7;
+    auto b = s.marshalXCDR(Endian.LE);
+    auto s2 = UnmarshalXCDRb_S(b, Endian.LE);
+    assert(s2.r.v == 7);
+    writeln("ok");
+}
+"#,
+    );
+    let dir = std::env::temp_dir().join(format!("idld_xmod_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    std::fs::write(dir.join("main.d"), &src).expect("write");
+    let build = Command::new("gdc")
+        .args(["main.d", "-o", "main_bin"])
+        .current_dir(&dir)
+        .output()
+        .expect("gdc");
+    assert!(
+        build.status.success(),
+        "gdc failed:\n{}\n--- src ---\n{src}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let run = Command::new("./main_bin")
+        .current_dir(&dir)
+        .output()
+        .expect("run");
+    assert_eq!(String::from_utf8_lossy(&run.stdout).trim(), "ok");
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
@@ -821,7 +900,10 @@ fn nested_struct_key_excludes_non_key_fields() {
         + d[outer..]
             .find("ubyte[16] keyHash() {")
             .expect("keyHash method");
-    let end = d[start..].find("\n    }\n").map(|i| start + i).unwrap_or(d.len());
+    let end = d[start..]
+        .find("\n    }\n")
+        .map(|i| start + i)
+        .unwrap_or(d.len());
     let body = &d[start..end];
     assert!(body.contains("i.x"), "{body}");
     assert!(body.contains("i.y"), "{body}");
@@ -846,7 +928,10 @@ fn nested_struct_key_small_takes_zero_pad_branch() {
         + d[outer..]
             .find("ubyte[16] keyHash() {")
             .expect("keyHash method");
-    let end = d[start..].find("\n    }\n").map(|i| start + i).unwrap_or(d.len());
+    let end = d[start..]
+        .find("\n    }\n")
+        .map(|i| start + i)
+        .unwrap_or(d.len());
     let body = &d[start..end];
     assert!(
         body.contains("foreach (i, x; b) if (i < 16) outk[i] = x;"),
@@ -1035,4 +1120,389 @@ fn hex_of(p: std::path::PathBuf) -> String {
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect()
+}
+
+// ===========================================================================
+// Section-F Wave-1: bitset/bitmask, @optional, fixed<d,s>, sequence-arbitrary,
+// @verbatim. Always-on source-asserts + gdc-gated compile-and-run tests whose
+// expected wire hex is derived from the spec IN the test (no GOLDEN_DIR oracle).
+// ===========================================================================
+
+/// Compiles `emit(idl) + D_HEX + main_body` with `gdc`, runs it, and returns
+/// the trimmed stdout lines. `None` (skip) if `gdc` is not on PATH.
+fn gdc_lines(idl: &str, main_body: &str, tag: &str) -> Option<Vec<String>> {
+    if Command::new("gdc").arg("--version").output().is_err() {
+        eprintln!("SKIP {tag}: `gdc` not on PATH");
+        return None;
+    }
+    let mut src = emit(idl);
+    src.push_str(D_HEX);
+    src.push_str(main_body);
+    let dir = std::env::temp_dir().join(format!("idld_{tag}_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    std::fs::write(dir.join("main.d"), &src).expect("write");
+    let build = Command::new("gdc")
+        .args(["main.d", "-o", "main_bin"])
+        .current_dir(&dir)
+        .output()
+        .expect("gdc");
+    assert!(
+        build.status.success(),
+        "gdc failed:\n{}\n--- src ---\n{src}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let run = Command::new("./main_bin")
+        .current_dir(&dir)
+        .output()
+        .expect("run");
+    assert!(
+        run.status.success(),
+        "run failed:\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let out = String::from_utf8(run.stdout).expect("utf8");
+    let lines: Vec<String> = out.lines().map(|l| l.trim().to_string()).collect();
+    let _ = std::fs::remove_dir_all(&dir);
+    Some(lines)
+}
+
+// ---- bitset -------------------------------------------------------------
+
+const BITSET_IDL: &str = "bitset Flags { bitfield<4> a; bitfield<8> b; };";
+
+#[test]
+fn bitset_emits_holder_struct_and_accessors() {
+    let d = emit(BITSET_IDL);
+    // 4 + 8 = 12 bits → ushort backing (XTypes §7.4.7).
+    assert!(d.contains("struct Flags {"), "{d}");
+    assert!(d.contains("ushort storage;"), "{d}");
+    assert!(d.contains("ushort a()"), "{d}");
+    assert!(d.contains("ushort b()"), "{d}");
+    assert!(
+        d.contains("void marshalInto(ref Writer w) { w.putU16(storage); }"),
+        "{d}"
+    );
+    assert!(d.contains("unmarshalFromFlags"), "{d}");
+}
+
+#[test]
+fn bitset_wire_is_backing_int() {
+    // storage 0xABCD as a ushort → LE "cdab", BE "abcd"; round-trips.
+    let body = r#"
+void main() {
+    import std.stdio : writeln;
+    Flags f;
+    f.storage = 0xABCD;
+    writeln(toHex(f.marshalXCDR(Endian.LE)));
+    writeln(toHex(f.marshalXCDR(Endian.BE)));
+    writeln(toHex(UnmarshalXCDRFlags(f.marshalXCDR(Endian.LE), Endian.LE).marshalXCDR(Endian.LE)));
+}
+"#;
+    let Some(l) = gdc_lines(BITSET_IDL, body, "bitset") else {
+        return;
+    };
+    assert_eq!(l[0], "cdab", "LE");
+    assert_eq!(l[1], "abcd", "BE");
+    assert_eq!(l[2], "cdab", "round-trip");
+}
+
+// ---- bitmask ------------------------------------------------------------
+
+const BITMASK_IDL: &str = "bitmask Perms { PERM_READ, PERM_WRITE, PERM_EXEC };";
+
+#[test]
+fn bitmask_emits_holder_and_constants() {
+    let d = emit(BITMASK_IDL);
+    // Default @bit_bound = 32 → uint backing (XTypes §7.3.1.2.1.1).
+    assert!(d.contains("struct Perms {"), "{d}");
+    assert!(d.contains("uint storage;"), "{d}");
+    assert!(
+        d.contains("enum uint PERM_READ = cast(uint)(1) << 0;"),
+        "{d}"
+    );
+    assert!(
+        d.contains("enum uint PERM_EXEC = cast(uint)(1) << 2;"),
+        "{d}"
+    );
+    assert!(
+        d.contains("void marshalInto(ref Writer w) { w.putU32(storage); }"),
+        "{d}"
+    );
+}
+
+#[test]
+fn bitmask_wire_is_backing_uint32() {
+    // PERM_READ | PERM_EXEC = 0x05 → LE "05000000", BE "00000005"; round-trips.
+    let body = r#"
+void main() {
+    import std.stdio : writeln;
+    Perms p;
+    p.storage = Perms.PERM_READ | Perms.PERM_EXEC;
+    writeln(toHex(p.marshalXCDR(Endian.LE)));
+    writeln(toHex(p.marshalXCDR(Endian.BE)));
+    writeln(toHex(UnmarshalXCDRPerms(p.marshalXCDR(Endian.BE), Endian.BE).marshalXCDR(Endian.BE)));
+}
+"#;
+    let Some(l) = gdc_lines(BITMASK_IDL, body, "bitmask") else {
+        return;
+    };
+    assert_eq!(l[0], "05000000", "LE");
+    assert_eq!(l[1], "00000005", "BE");
+    assert_eq!(l[2], "00000005", "round-trip");
+}
+
+#[test]
+fn bitmask_bit_bound_narrows_backing() {
+    let d = emit("@bit_bound(8) bitmask Small { A, B };");
+    assert!(d.contains("ubyte storage;"), "{d}");
+    assert!(
+        d.contains("void marshalInto(ref Writer w) { w.putU8(storage); }"),
+        "{d}"
+    );
+}
+
+// ---- fixed<d,s> ---------------------------------------------------------
+
+const FIXED_IDL: &str = "@final struct HasFixed { fixed<5,2> price; };";
+
+#[test]
+fn fixed_emits_bcd_field_and_prelude() {
+    let d = emit(FIXED_IDL);
+    assert!(d.contains("ubyte[] price;"), "{d}");
+    assert!(d.contains("w.putBytes(price);"), "{d}");
+    assert!(
+        d.contains("ubyte[] zdFixedEnc(string s, uint P, uint S)"),
+        "{d}"
+    );
+}
+
+#[test]
+fn fixed_wire_is_packed_bcd() {
+    // fixed<5,2> 123.45 → BCD "12 34 5c" (odd P, no pad, CORBA §9.3.2.7).
+    let body = r#"
+void main() {
+    import std.stdio : writeln;
+    HasFixed h;
+    h.price = zdFixedEnc("123.45", 5, 2);
+    writeln(toHex(h.marshalXCDR(Endian.LE)));
+    writeln(toHex(h.marshalXCDR(Endian.BE)));
+    writeln(toHex(UnmarshalXCDRHasFixed(h.marshalXCDR(Endian.LE), Endian.LE).marshalXCDR(Endian.LE)));
+}
+"#;
+    let Some(l) = gdc_lines(FIXED_IDL, body, "fixed") else {
+        return;
+    };
+    // Raw BCD bytes: identical for LE and BE (no byte-swap, no length prefix).
+    assert_eq!(l[0], "12345c", "LE");
+    assert_eq!(l[1], "12345c", "BE");
+    assert_eq!(l[2], "12345c", "round-trip");
+}
+
+#[test]
+fn fixed_even_p_keeps_msd() {
+    // fixed<4,0> 1234 → BCD "01 23 4c" (leading pad nibble; even P keeps MSD).
+    let body = r#"
+void main() {
+    import std.stdio : writeln;
+    HasFixed h;
+    h.price = zdFixedEnc("1234", 4, 0);
+    writeln(toHex(h.marshalXCDR(Endian.LE)));
+}
+"#;
+    let Some(l) = gdc_lines(
+        "@final struct HasFixed { fixed<4,0> price; };",
+        body,
+        "fixed40",
+    ) else {
+        return;
+    };
+    assert_eq!(l[0], "01234c");
+}
+
+// ---- sequence-arbitrary -------------------------------------------------
+
+const SEQARB_IDL: &str = "@final struct S { sequence<long> xs; };";
+
+#[test]
+fn sequence_arbitrary_emits_count_and_loop() {
+    let d = emit(SEQARB_IDL);
+    assert!(d.contains("int[] xs;"), "{d}");
+    assert!(d.contains("w.putU32(cast(uint) xs.length);"), "{d}");
+    assert!(d.contains("foreach (zdElem; xs)"), "{d}");
+}
+
+#[test]
+fn sequence_arbitrary_wire_count_plus_elements() {
+    // [0x01020304, 0x05060708] → u32 count 2 + two i32 elements, no DHEADER.
+    let body = r#"
+void main() {
+    import std.stdio : writeln;
+    S s;
+    s.xs = [0x01020304, 0x05060708];
+    writeln(toHex(s.marshalXCDR(Endian.LE)));
+    writeln(toHex(s.marshalXCDR(Endian.BE)));
+    writeln(toHex(UnmarshalXCDRS(s.marshalXCDR(Endian.LE), Endian.LE).marshalXCDR(Endian.LE)));
+}
+"#;
+    let Some(l) = gdc_lines(SEQARB_IDL, body, "seqarb") else {
+        return;
+    };
+    assert_eq!(l[0], "020000000403020108070605", "LE");
+    assert_eq!(l[1], "000000020102030405060708", "BE");
+    assert_eq!(l[2], "020000000403020108070605", "round-trip");
+}
+
+#[test]
+fn sequence_of_enum_is_arbitrary_path() {
+    // A `sequence<enum>` must now emit (was rejected pre-Wave-1).
+    let d = emit("enum E { E0, E1 }; @final struct SE { sequence<E> es; };");
+    assert!(d.contains("E[] es;"), "{d}");
+    assert!(d.contains("foreach (zdElem; es)"), "{d}");
+    assert!(d.contains("w.putU32(cast(uint) es.length);"), "{d}");
+}
+
+// ---- @optional ----------------------------------------------------------
+
+const OPT_IDL: &str = "@final struct Opt { uint32 a; @optional uint32 b; };";
+
+#[test]
+fn optional_emits_presence_flag() {
+    let d = emit(OPT_IDL);
+    assert!(d.contains("bool b_present;"), "{d}");
+    assert!(
+        d.contains("w.putU8(b_present ? 1 : 0); if (b_present) {"),
+        "{d}"
+    );
+    assert!(
+        d.contains("v.b_present = r.getBool(); if (v.b_present) {"),
+        "{d}"
+    );
+}
+
+#[test]
+fn optional_final_wire_present_and_absent() {
+    // present: u32 a, u8 flag=1, pad(3), u32 b. absent: u32 a, u8 flag=0.
+    let body = r#"
+void main() {
+    import std.stdio : writeln;
+    Opt p;
+    p.a = 0x11223344;
+    p.b_present = true;
+    p.b = 0xAABBCCDD;
+    writeln(toHex(p.marshalXCDR(Endian.LE)));
+    writeln(toHex(p.marshalXCDR(Endian.BE)));
+    Opt q;
+    q.a = 0x11223344;
+    q.b_present = false;
+    writeln(toHex(q.marshalXCDR(Endian.LE)));
+    // round-trips
+    writeln(toHex(UnmarshalXCDROpt(p.marshalXCDR(Endian.LE), Endian.LE).marshalXCDR(Endian.LE)));
+    writeln(toHex(UnmarshalXCDROpt(q.marshalXCDR(Endian.LE), Endian.LE).marshalXCDR(Endian.LE)));
+}
+"#;
+    let Some(l) = gdc_lines(OPT_IDL, body, "opt") else {
+        return;
+    };
+    assert_eq!(l[0], "4433221101000000ddccbbaa", "present LE");
+    assert_eq!(l[1], "1122334401000000aabbccdd", "present BE");
+    assert_eq!(l[2], "4433221100", "absent LE");
+    assert_eq!(l[3], "4433221101000000ddccbbaa", "present round-trip");
+    assert_eq!(l[4], "4433221100", "absent round-trip");
+}
+
+#[test]
+fn optional_appendable_round_trips() {
+    // Appendable body is DHEADER-framed; verify decode∘encode identity for
+    // both present and absent, without hand-computing the DHEADER length.
+    let idl = "@appendable struct OptA { uint32 a; @optional uint32 b; };";
+    let body = r#"
+void main() {
+    import std.stdio : writeln;
+    OptA p;
+    p.a = 0xCAFEBABE;
+    p.b_present = true;
+    p.b = 0x01020304;
+    auto pe = p.marshalXCDR(Endian.LE);
+    writeln(toHex(pe));
+    writeln(toHex(UnmarshalXCDROptA(pe, Endian.LE).marshalXCDR(Endian.LE)));
+    OptA q;
+    q.a = 0xCAFEBABE;
+    q.b_present = false;
+    auto qe = q.marshalXCDR(Endian.LE);
+    writeln(toHex(qe));
+    writeln(toHex(UnmarshalXCDROptA(qe, Endian.LE).marshalXCDR(Endian.LE)));
+}
+"#;
+    let Some(l) = gdc_lines(idl, body, "opta") else {
+        return;
+    };
+    assert_eq!(l[0], l[1], "present round-trip");
+    assert_eq!(l[2], l[3], "absent round-trip");
+}
+
+// ---- @verbatim ----------------------------------------------------------
+
+#[test]
+fn verbatim_placements_inject_text() {
+    let d = emit(
+        "@verbatim(language=\"d\", placement=BEGIN_FILE, text=\"// zd-begin-file\")\n\
+         @verbatim(language=\"d\", placement=BEFORE_DECLARATION, text=\"// zd-before\")\n\
+         @verbatim(language=\"d\", placement=BEGIN_DECLARATION, text=\"// zd-begin-decl\")\n\
+         @verbatim(language=\"d\", placement=END_DECLARATION, text=\"// zd-end-decl\")\n\
+         @verbatim(language=\"d\", placement=AFTER_DECLARATION, text=\"// zd-after\")\n\
+         @verbatim(language=\"d\", placement=END_FILE, text=\"// zd-end-file\")\n\
+         @final struct V { uint32 a; };",
+    );
+    for marker in [
+        "// zd-begin-file",
+        "// zd-before",
+        "// zd-begin-decl",
+        "// zd-end-decl",
+        "// zd-after",
+        "// zd-end-file",
+    ] {
+        assert!(d.contains(marker), "missing {marker}:\n{d}");
+    }
+    // Ordering: begin-file before the struct; before-decl before `struct V`;
+    // begin-decl after the opening brace; after-decl/end-file trail the type.
+    let sidx = d.find("struct V {").expect("struct");
+    assert!(d.find("// zd-begin-file").unwrap() < sidx, "{d}");
+    assert!(d.find("// zd-before").unwrap() < sidx, "{d}");
+    assert!(d.find("// zd-begin-decl").unwrap() > sidx, "{d}");
+    assert!(d.find("// zd-end-file").unwrap() > sidx, "{d}");
+}
+
+#[test]
+fn verbatim_language_filter_excludes_other_langs() {
+    // A non-D language tag must NOT leak into the D output.
+    let d = emit(
+        "@verbatim(language=\"java\", placement=BEFORE_DECLARATION, text=\"// java-only\")\n\
+         @final struct V { uint32 a; };",
+    );
+    assert!(!d.contains("// java-only"), "{d}");
+    // The wildcard `*` still matches D.
+    let d2 = emit(
+        "@verbatim(placement=BEFORE_DECLARATION, text=\"// wildcard\")\n\
+         @final struct V { uint32 a; };",
+    );
+    assert!(d2.contains("// wildcard"), "{d2}");
+}
+
+#[test]
+fn verbatim_output_still_compiles() {
+    let idl = "@verbatim(language=\"d\", placement=BEGIN_FILE, text=\"// zd file header\")\n\
+         @verbatim(language=\"d\", placement=BEGIN_DECLARATION, text=\"// zd inside struct\")\n\
+         @final struct V { uint32 a; };";
+    let body = r#"
+void main() {
+    import std.stdio : writeln;
+    V v;
+    v.a = 0x2A;
+    writeln(toHex(v.marshalXCDR(Endian.LE)));
+}
+"#;
+    let Some(l) = gdc_lines(idl, body, "verbatim") else {
+        return;
+    };
+    assert_eq!(l[0], "2a000000");
 }

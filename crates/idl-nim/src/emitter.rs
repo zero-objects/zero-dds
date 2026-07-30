@@ -12,16 +12,226 @@ use std::fmt::Write as _;
 use std::collections::{HashMap, HashSet};
 
 use zerodds_idl::ast::types::{
-    CaseLabel, ConstExpr, ConstrTypeDecl, Declarator, Definition, EnumDef, FloatingType,
-    IntegerType, Literal, LiteralKind, Member, PrimitiveType, SequenceType, Specification,
-    StructDcl, StructDef, SwitchTypeSpec, TypeDecl, TypeSpec, UnaryOp, UnionDcl, UnionDef,
+    Annotation, BinaryOp, BitmaskDecl, BitsetDecl, CaseLabel, ConstDecl, ConstExpr, ConstType,
+    ConstrTypeDecl, Declarator, Definition, EnumDef, Export, FixedPtType, FloatingType,
+    IntegerType, InterfaceDcl, Literal, LiteralKind, Member, PrimitiveType, ScopedName,
+    SequenceType, Specification, StructDcl, StructDef, SwitchTypeSpec, TypeDecl, TypeSpec, UnaryOp,
+    UnionDcl, UnionDef,
 };
 use zerodds_idl::semantics::annotations::{
-    BuiltinAnnotation, ExtensibilityKind, lower_annotations, lower_single,
+    BuiltinAnnotation, ExtensibilityKind, PlacementKind, enum_bit_bound, enum_wire_octets,
+    lower_annotations, lower_single,
 };
 
 use crate::error::{IdlNimError, Result};
-use crate::keywords::escape_nim_ident;
+use crate::keywords::{escape_nim_ident, nim_identifiers_equal};
+
+thread_local! {
+    /// Fully-qualified IDL scope path of every named type declaration
+    /// (e.g. `["a", "Reading"]`), populated by [`register_type_paths`] at the
+    /// start of each run. A reference site resolves a (possibly partially
+    /// qualified) `ScopedName` against the enclosing module scope by walking
+    /// outward and matching one of these paths (§7.5.2), then flattens the
+    /// match the SAME way [`qualify`] flattens the definition (#21).
+    static TYPE_PATHS: std::cell::RefCell<Vec<Vec<String>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+
+    /// Module scope of the aggregate currently being emitted. Set at the top of
+    /// [`emit_struct`]/[`emit_union`]; empty at global scope.
+    static CURRENT_SCOPE: std::cell::RefCell<Vec<String>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+
+    /// Flattened logical names of every `bitset`/`bitmask` declaration. A
+    /// reference to one of these maps to a Nim holder `object` whose wire form
+    /// is a single backing integer (`marshalInto`/`read<name>`) — no collection
+    /// DHEADER, so it is treated as fully-descriptive (primitive) by the
+    /// sequence/map framing rules (XTypes 1.3 §7.4.7).
+    static BIT_NAMES: std::cell::RefCell<HashSet<String>> =
+        std::cell::RefCell::new(HashSet::new());
+
+    /// Set whenever a `fixed<P,S>` member is emitted, so the BCD prelude helper
+    /// is appended exactly once (and only when needed).
+    static USED_FIXED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+
+    /// Flattened qualified enum name → signed wire holder width in OCTETS
+    /// (1/2/4), from `@bit_bound` (XTypes 1.3 §7.3.1.2.1.9 + §7.4.5.1) via the
+    /// shared [`enum_wire_octets`]. Populated once per run; read at the single
+    /// enum encode/decode site so a `@bit_bound(8)`/`@bit_bound(16)` enum
+    /// narrows to 1/2 bytes instead of the former fixed 4.
+    static ENUM_WIDTHS: std::cell::RefCell<HashMap<String, u32>> =
+        std::cell::RefCell::new(HashMap::new());
+}
+
+/// Signed wire holder width in octets (1/2/4) an enum named `name` serializes
+/// at, per its `@bit_bound`. Defaults to 4 for an unregistered name / no
+/// `@bit_bound` (XTypes 1.3 §7.4.5.1 default bound 32).
+fn enum_wire_width(name: &str) -> u32 {
+    ENUM_WIDTHS
+        .with(|m| m.borrow().get(name).copied())
+        .unwrap_or(4)
+}
+
+/// Nim codegen language aliases matched by `@verbatim(language="...")`
+/// (case-insensitive; the spec wildcard `"*"` always matches — see
+/// [`Lowered::verbatims_for_language`]).
+const NIM_LANG_ALIASES: &[&str] = &["nim", "nimlang"];
+
+/// `true` if `name` resolves to a `bitset`/`bitmask` declaration (its wire form
+/// is a single backing integer — fully descriptive, no collection DHEADER).
+fn is_bit_name(name: &str) -> bool {
+    BIT_NAMES.with(|b| b.borrow().contains(name))
+}
+
+/// Emits every `@verbatim` block from `anns` whose language matches the Nim
+/// codegen and whose `placement` equals `placement`, each line prefixed with
+/// `indent`. Source order preserved; text spliced unmodified (no wire impact —
+/// XTypes 1.3 §7.2.2.4.8 / IDL 4.2 §8.3.5.1). Mirrors `idl-d`/`idl-rust`.
+fn emit_verbatim_at(out: &mut String, indent: &str, anns: &[Annotation], placement: PlacementKind) {
+    let Ok(lowered) = lower_annotations(anns) else {
+        return;
+    };
+    for v in lowered.verbatims_for_language(NIM_LANG_ALIASES) {
+        if v.placement != placement {
+            continue;
+        }
+        for line in v.text.lines() {
+            out.push_str(indent);
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+}
+
+/// Top-level annotations of a definition, for file-scope (`BEGIN_FILE` /
+/// `END_FILE`) and per-declaration `@verbatim` placement.
+fn def_annotations(d: &Definition) -> &[Annotation] {
+    match d {
+        Definition::Module(m) => &m.annotations,
+        Definition::Type(TypeDecl::Constr(c)) => match c {
+            ConstrTypeDecl::Struct(StructDcl::Def(s)) => &s.annotations,
+            ConstrTypeDecl::Union(UnionDcl::Def(u)) => &u.annotations,
+            ConstrTypeDecl::Enum(e) => &e.annotations,
+            ConstrTypeDecl::Bitset(b) => &b.annotations,
+            ConstrTypeDecl::Bitmask(b) => &b.annotations,
+            _ => &[],
+        },
+        Definition::Type(TypeDecl::Typedef(t)) => &t.annotations,
+        Definition::Const(c) => &c.annotations,
+        Definition::Except(e) => &e.annotations,
+        _ => &[],
+    }
+}
+
+/// Collision-free flattened name for a declaration `simple` in module `scope`:
+/// `scope.join("_") + "_" + simple`, or the bare `simple` at global scope (so
+/// every existing top-level golden is unchanged). Two same-simple-name types in
+/// different modules become distinct types `a_Reading`/`b_Reading` (#21).
+fn qualify(scope: &[String], simple: &str) -> String {
+    if scope.is_empty() {
+        simple.to_string()
+    } else {
+        let mut parts = scope.to_vec();
+        parts.push(simple.to_string());
+        flatten_path(&parts)
+    }
+}
+
+/// Injectively flattens a module-qualified path (`["a", "b", "C"]`) into a
+/// single Nim identifier. Each segment's own underscores are doubled and the
+/// segments joined by a single underscore, so `module A_B { struct C }`
+/// (`["A_B","C"]` → `A__B_C`) never collides with `module A { module B {
+/// struct C }}` (`["A","B","C"]` → `A_B_C`) — the previous `join("_")` mapped
+/// both to `A_B_C` (#A35, non-injective flatten). A single (global-scope)
+/// segment is returned verbatim so every existing top-level golden is
+/// unchanged, and any segment without underscores (the common case) passes
+/// through untouched.
+fn flatten_path(parts: &[String]) -> String {
+    if parts.len() <= 1 {
+        return parts.first().cloned().unwrap_or_default();
+    }
+    parts
+        .iter()
+        .map(|p| p.replace('_', "__"))
+        .collect::<Vec<_>>()
+        .join("_")
+}
+
+/// Records the fully-qualified path of every named type declaration before
+/// emission, so reference resolution can flatten a name the same way the
+/// definition site does.
+/// zerodds-lint: recursion-depth 16 (module nesting; bounded by the IDL grammar).
+fn register_type_paths(defs: &[Definition], scope: &mut Vec<String>) {
+    for def in defs {
+        match def {
+            Definition::Module(m) => {
+                scope.push(m.name.text.clone());
+                register_type_paths(&m.definitions, scope);
+                scope.pop();
+            }
+            Definition::Type(td) => register_type_decl_path(td, scope),
+            // #A39: type declarations nested in an interface body are promoted
+            // under the interface's own scope segment, so their reference paths
+            // resolve the same way at the definition and use sites.
+            Definition::Interface(InterfaceDcl::Def(iface)) => {
+                scope.push(iface.name.text.clone());
+                for ex in &iface.exports {
+                    if let Export::Type(td) = ex {
+                        register_type_decl_path(td, scope);
+                    }
+                }
+                scope.pop();
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Records the flattened path(s) of a single (module- or interface-nested)
+/// `TypeDecl`.
+fn register_type_decl_path(td: &TypeDecl, scope: &[String]) {
+    match td {
+        TypeDecl::Constr(ConstrTypeDecl::Struct(StructDcl::Def(s))) => {
+            push_type_path(scope, &s.name.text);
+        }
+        TypeDecl::Constr(ConstrTypeDecl::Enum(e)) => push_type_path(scope, &e.name.text),
+        TypeDecl::Constr(ConstrTypeDecl::Union(UnionDcl::Def(u))) => {
+            push_type_path(scope, &u.name.text);
+        }
+        TypeDecl::Constr(ConstrTypeDecl::Bitset(b)) => push_type_path(scope, &b.name.text),
+        TypeDecl::Constr(ConstrTypeDecl::Bitmask(b)) => push_type_path(scope, &b.name.text),
+        TypeDecl::Typedef(td) => {
+            for d in &td.declarators {
+                push_type_path(scope, &d.name().text);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn push_type_path(scope: &[String], simple: &str) {
+    let mut path = scope.to_vec();
+    path.push(simple.to_string());
+    TYPE_PATHS.with(|t| t.borrow_mut().push(path));
+}
+
+/// Resolves a referenced `ScopedName` against [`CURRENT_SCOPE`], returning the
+/// flattened logical name (`join("_")`) of the matching declaration. Mirrors
+/// IDL name lookup (§7.5.2): for each prefix of the enclosing scope (longest
+/// first), then the global scope, check whether `prefix + parts` is a known
+/// type path. Falls back to the literal flattening of the written parts.
+fn resolve_scoped_name(sn: &ScopedName) -> String {
+    let parts: Vec<String> = sn.parts.iter().map(|p| p.text.clone()).collect();
+    let scope = CURRENT_SCOPE.with(|s| s.borrow().clone());
+    let known: Vec<Vec<String>> = TYPE_PATHS.with(|t| t.borrow().clone());
+    for cut in (0..=scope.len()).rev() {
+        let mut cand = scope[..cut].to_vec();
+        cand.extend(parts.iter().cloned());
+        if known.contains(&cand) {
+            return flatten_path(&cand);
+        }
+    }
+    flatten_path(&parts)
+}
 
 /// Options for the Nim backend.
 #[derive(Debug, Clone, Default)]
@@ -239,11 +449,50 @@ proc getLongDouble*(r: var Reader): float64 =
   cast[float64](bits)
 "#;
 
+/// BCD codec for `fixed<P,S>`. Appended once when any `fixed` member is emitted.
+/// Builds the packed-BCD octet sequence (CORBA/GIOP §9.3.2.7 ≡ XCDR2 §7.4.4.5)
+/// from a decimal string: an optional leading pad nibble (so the nibble count
+/// is even), `P` digit nibbles most-significant first, then the sign nibble
+/// (`0xC` positive, `0xD` negative). Byte count `(P+2)/2`, no length prefix.
+const FIXED_PRELUDE: &str = r#"
+proc zdFixedEnc*(s: string, P: int, S: int): seq[byte] =
+  var sign = true
+  var i = 0
+  if s.len > 0 and (s[0] == '-' or s[0] == '+'):
+    sign = s[0] != '-'
+    i = 1
+  let rest = s[i .. ^1]
+  var dot = rest.len
+  for k in 0 ..< rest.len:
+    if rest[k] == '.':
+      dot = k
+      break
+  let ip = rest[0 ..< dot]
+  let fp = if dot < rest.len: rest[dot + 1 .. ^1] else: ""
+  var db = ""
+  let intNeeded = P - S
+  if ip.len < intNeeded:
+    for zj in ip.len ..< intNeeded: db.add('0')
+  db.add(ip)
+  db.add(fp)
+  if fp.len < S:
+    for zj in fp.len ..< S: db.add('0')
+  var nib: seq[byte] = @[]
+  if (P + 1) mod 2 == 1: nib.add(0'u8)
+  for c in db: nib.add(byte(ord(c) - ord('0')))
+  nib.add(byte(if sign: 0x0C else: 0x0D))
+  result = @[]
+  var k = 0
+  while k < nib.len:
+    result.add(byte((nib[k] shl 4) or nib[k + 1]))
+    k += 2
+"#;
+
 /// Generates a self-contained Nim module from the IDL AST.
 ///
 /// # Errors
 /// Returns [`IdlNimError::Unsupported`] for constructs the Nim backend does not
-/// yet emit (unions, nested-struct members, maps, `long double`, `@mutable`, …).
+/// yet emit (e.g. `@mutable` unions and non-literal array/sequence bounds).
 pub fn generate_nim_module(spec: &Specification, _opts: &NimGenOptions) -> Result<String> {
     let mut out = String::new();
     let _ = writeln!(
@@ -253,61 +502,137 @@ pub fn generate_nim_module(spec: &Specification, _opts: &NimGenOptions) -> Resul
     let _ = writeln!(out, "# SPDX-License-Identifier: Apache-2.0\n");
     out.push_str(WIRE_PRELUDE);
 
-    // `module X { ... }` content is promoted into the same flat, top-level
-    // definition list (see `flatten_module_defs`) so it is no longer
-    // silently dropped (swarm59 #21b).
+    // Register every named type's fully-qualified path so reference sites can
+    // resolve a `ScopedName` against its enclosing scope (#21 cross-module).
+    TYPE_PATHS.with(|t| t.borrow_mut().clear());
+    register_type_paths(&spec.definitions, &mut Vec::new());
+    USED_FIXED.with(|f| f.set(false));
+
+    // §7.2.2.4.8 — `@verbatim(placement=BEGIN_FILE)` from all top-level defs
+    // (source order), emitted after the wire prelude, before any type.
+    for def in &spec.definitions {
+        emit_verbatim_at(&mut out, "", def_annotations(def), PlacementKind::BeginFile);
+    }
+
+    // `module X { ... }` content is promoted to the top level, each definition
+    // paired with its module scope path (see `flatten_module_defs`).
     let flat = flatten_module_defs(&spec.definitions);
+    // #A39: type declarations nested in an interface body, promoted to the top
+    // level under the interface's own scope segment, so their DDS data types
+    // survive instead of being silently dropped with the interface body.
+    let iface_types = flatten_iface_types(&spec.definitions);
 
-    // Named enums: an enum member is a 32-bit signed integer on the wire
-    // (XTypes 1.3 §7.4.5.1), byte-identical to the int32/uint32 path.
-    let enum_names: HashSet<String> = flat
-        .iter()
-        .filter_map(|d| match d {
-            Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Enum(e))) => {
-                Some(e.name.text.clone())
+    // Every named type decl (module-level + interface-nested), for the
+    // reference-resolution name sets below.
+    let all_type_decls = || {
+        flat.iter()
+            .filter_map(|(s, d)| match d {
+                Definition::Type(td) => Some((s, td)),
+                _ => None,
+            })
+            .chain(iface_types.iter().map(|(s, td)| (s, *td)))
+    };
+
+    // Named enums/structs keyed by their flattened module-qualified name. An
+    // enum member is a 32-bit signed integer on the wire (XTypes 1.3 §7.4.5.1).
+    // `enum_defs` additionally keeps the def so an enum-discriminated union can
+    // resolve `case ENUMERATOR:` labels (#P4/A11).
+    let mut enum_names: HashSet<String> = HashSet::new();
+    let mut struct_names: HashSet<String> = HashSet::new();
+    let mut bit_names: HashSet<String> = HashSet::new();
+    let mut enum_defs: HashMap<String, &EnumDef> = HashMap::new();
+    // Qualified-name -> StructDef, so a nested-struct `@key` member's own `@key`
+    // subset (and `keyhash::uses_md5`'s static max-size analysis), plus a
+    // `struct D : Base` base's members (#A10), can be resolved.
+    let mut structs: HashMap<String, &StructDef> = HashMap::new();
+    for (scope, td) in all_type_decls() {
+        match td {
+            TypeDecl::Constr(ConstrTypeDecl::Enum(e)) => {
+                let n = qualify(scope, &e.name.text);
+                enum_defs.insert(n.clone(), e);
+                enum_names.insert(n);
             }
-            _ => None,
-        })
-        .collect();
-
-    let struct_names: HashSet<String> = flat
-        .iter()
-        .filter_map(|d| match d {
-            Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Struct(StructDcl::Def(s)))) => {
-                Some(s.name.text.clone())
+            TypeDecl::Constr(ConstrTypeDecl::Struct(StructDcl::Def(s))) => {
+                let n = qualify(scope, &s.name.text);
+                struct_names.insert(n.clone());
+                structs.insert(n, s);
             }
-            _ => None,
-        })
-        .collect();
-
-    // Name -> StructDef, so a nested-struct `@key` member's own `@key` subset
-    // (and `keyhash::uses_md5`'s static max-size analysis) can be resolved —
-    // mirrors `struct_names` above, just keeping the full def instead of only
-    // the name.
-    let structs: HashMap<String, &StructDef> = spec
-        .definitions
-        .iter()
-        .filter_map(|d| match d {
-            Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Struct(StructDcl::Def(s)))) => {
-                Some((s.name.text.clone(), s))
+            TypeDecl::Constr(ConstrTypeDecl::Bitset(b)) => {
+                bit_names.insert(qualify(scope, &b.name.text));
             }
-            _ => None,
-        })
-        .collect();
-
-    let typedefs = collect_typedefs(spec);
-
-    for def in &flat {
-        match def {
-            Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Enum(e))) => emit_enum(&mut out, e),
-            Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Struct(StructDcl::Def(s)))) => {
-                emit_struct(&mut out, s, &enum_names, &struct_names, &structs, &typedefs)?;
-            }
-            Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Union(UnionDcl::Def(u)))) => {
-                emit_union(&mut out, u, &enum_names, &struct_names, &typedefs)?;
+            TypeDecl::Constr(ConstrTypeDecl::Bitmask(b)) => {
+                bit_names.insert(qualify(scope, &b.name.text));
             }
             _ => {}
         }
+    }
+    BIT_NAMES.with(|b| *b.borrow_mut() = bit_names);
+    // Register each enum's @bit_bound-derived wire width (1/2/4 octets), P1.
+    ENUM_WIDTHS.with(|m| {
+        let mut m = m.borrow_mut();
+        m.clear();
+        for (name, e) in &enum_defs {
+            m.insert(
+                name.clone(),
+                u32::from(enum_wire_octets(enum_bit_bound(&e.annotations))),
+            );
+        }
+    });
+
+    // typedef qualified-name → aliased type-spec (wire-transparent; resolved
+    // before mapping). Interface-nested typedefs are folded in too (#A39).
+    let mut typedefs = collect_typedefs(spec);
+    for (scope, td) in &iface_types {
+        if let TypeDecl::Typedef(tdd) = td {
+            for d in &tdd.declarators {
+                if let Declarator::Simple(name) = d {
+                    typedefs.insert(qualify(scope, &name.text), tdd.type_spec.clone());
+                }
+            }
+        }
+    }
+
+    for (scope, def) in &flat {
+        let anns = def_annotations(def);
+        // §7.2.2.4.8 — text directly before the annotated declaration.
+        emit_verbatim_at(&mut out, "", anns, PlacementKind::BeforeDeclaration);
+        match def {
+            Definition::Type(td) => emit_type_decl(
+                &mut out,
+                td,
+                scope,
+                &enum_names,
+                &struct_names,
+                &structs,
+                &typedefs,
+                &enum_defs,
+            )?,
+            // #A5/P1 — a top-level `const` was silently dropped by the former
+            // catch-all arm; emit it as a Nim module-level constant.
+            Definition::Const(c) => emit_const(&mut out, c, scope),
+            _ => {}
+        }
+        // §7.2.2.4.8 — text directly after the annotated declaration.
+        emit_verbatim_at(&mut out, "", anns, PlacementKind::AfterDeclaration);
+    }
+
+    // Interface-nested types (#A39), emitted after the module-level defs.
+    for (scope, td) in &iface_types {
+        emit_type_decl(
+            &mut out,
+            td,
+            scope,
+            &enum_names,
+            &struct_names,
+            &structs,
+            &typedefs,
+            &enum_defs,
+        )?;
+    }
+
+    // §7.2.2.4.8 — `@verbatim(placement=END_FILE)` from all top-level defs.
+    for def in &spec.definitions {
+        emit_verbatim_at(&mut out, "", def_annotations(def), PlacementKind::EndFile);
     }
     // Top-of-file imports on demand: `tables`+`algorithm` for map members,
     // `md5` for the KeyHash MD5 branch.
@@ -325,7 +650,340 @@ pub fn generate_nim_module(spec: &Specification, _opts: &NimGenOptions) -> Resul
             1,
         );
     }
+    // The BCD codec prelude is appended once if any `fixed<P,S>` was emitted.
+    if USED_FIXED.with(std::cell::Cell::get) {
+        out.push_str(FIXED_PRELUDE);
+    }
     Ok(out)
+}
+
+/// Emits a single `TypeDecl` (module-level or interface-nested) into `out`.
+#[allow(clippy::too_many_arguments)]
+fn emit_type_decl(
+    out: &mut String,
+    td: &TypeDecl,
+    scope: &[String],
+    enum_names: &HashSet<String>,
+    struct_names: &HashSet<String>,
+    structs: &HashMap<String, &StructDef>,
+    typedefs: &HashMap<String, TypeSpec>,
+    enum_defs: &HashMap<String, &EnumDef>,
+) -> Result<()> {
+    match td {
+        TypeDecl::Constr(ConstrTypeDecl::Enum(e)) => emit_enum(out, e, scope),
+        TypeDecl::Constr(ConstrTypeDecl::Struct(StructDcl::Def(s))) => {
+            emit_struct(out, s, scope, enum_names, struct_names, structs, typedefs)?;
+        }
+        TypeDecl::Constr(ConstrTypeDecl::Union(UnionDcl::Def(u))) => {
+            emit_union(out, u, scope, enum_names, struct_names, typedefs, enum_defs)?;
+        }
+        TypeDecl::Constr(ConstrTypeDecl::Bitset(b)) => emit_bitset(out, b, scope)?,
+        TypeDecl::Constr(ConstrTypeDecl::Bitmask(b)) => emit_bitmask(out, b, scope),
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Recursively descends into `Definition::Interface` bodies, returning every
+/// interface-nested `Export::Type` declaration paired with the scope path
+/// `enclosing_module… + interface_name` (#A39). Nim has no interface / nested-
+/// type construct, so these are promoted to the top level under the interface's
+/// own name segment (two interfaces in one module therefore do not collide).
+/// zerodds-lint: recursion-depth 16 (module nesting; bounded by the IDL grammar).
+fn flatten_iface_types(defs: &[Definition]) -> Vec<(Vec<String>, &TypeDecl)> {
+    let mut out = Vec::new();
+    let mut scope = Vec::new();
+    flatten_iface_types_into(defs, &mut scope, &mut out);
+    out
+}
+
+/// zerodds-lint: recursion-depth 16 (module nesting; bounded by the IDL grammar).
+fn flatten_iface_types_into<'a>(
+    defs: &'a [Definition],
+    scope: &mut Vec<String>,
+    out: &mut Vec<(Vec<String>, &'a TypeDecl)>,
+) {
+    for d in defs {
+        match d {
+            Definition::Module(m) => {
+                scope.push(m.name.text.clone());
+                flatten_iface_types_into(&m.definitions, scope, out);
+                scope.pop();
+            }
+            Definition::Interface(InterfaceDcl::Def(iface)) => {
+                scope.push(iface.name.text.clone());
+                for ex in &iface.exports {
+                    if let Export::Type(td) = ex {
+                        out.push((scope.clone(), td));
+                    }
+                }
+                scope.pop();
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Emits an IDL `const` as a Nim module-level constant (#A5/P1 — a top-level
+/// const was silently dropped by the former catch-all arm). The name is
+/// module-qualified and keyword-escaped; the value is skipped only when it
+/// references another (scoped) const the Nim backend cannot re-express.
+fn emit_const(out: &mut String, c: &ConstDecl, scope: &[String]) {
+    let Some(val) = const_expr_to_nim(&c.value) else {
+        return;
+    };
+    let name = escape_nim_ident(&qualify(scope, &c.name.text));
+    match const_nim_type(&c.type_) {
+        Some(ty) => {
+            let _ = writeln!(out, "\nconst {name}*: {ty} = {val}");
+        }
+        None => {
+            let _ = writeln!(out, "\nconst {name}* = {val}");
+        }
+    }
+}
+
+/// Nim type for a `const` declaration (`None` = emit an untyped constant so Nim
+/// infers it — used for `char`/`wchar`/`fixed`/scoped values).
+fn const_nim_type(ct: &ConstType) -> Option<&'static str> {
+    Some(match ct {
+        ConstType::Integer(i) => nim_int_type(*i),
+        ConstType::Floating(FloatingType::Float) => "float32",
+        ConstType::Floating(FloatingType::Double | FloatingType::LongDouble) => "float64",
+        ConstType::Boolean => "bool",
+        ConstType::Octet => "uint8",
+        ConstType::String { .. } => "string",
+        // `char`/`wchar`/`fixed`/scoped values are left untyped: a char literal
+        // infers `char`, a fixed decimal is a `string`, and an enum-valued
+        // scoped reference is skipped by `const_expr_to_nim`.
+        ConstType::Char | ConstType::WideChar | ConstType::Fixed | ConstType::Scoped(_) => {
+            return None;
+        }
+    })
+}
+
+/// The Nim integer type for an IDL integer type (matches `map_integer`).
+fn nim_int_type(i: IntegerType) -> &'static str {
+    match i {
+        IntegerType::Int8 => "int8",
+        IntegerType::UInt8 => "uint8",
+        IntegerType::Short | IntegerType::Int16 => "int16",
+        IntegerType::UShort | IntegerType::UInt16 => "uint16",
+        IntegerType::Long | IntegerType::Int32 => "int32",
+        IntegerType::ULong | IntegerType::UInt32 => "uint32",
+        IntegerType::LongLong | IntegerType::Int64 => "int64",
+        IntegerType::ULongLong | IntegerType::UInt64 => "uint64",
+    }
+}
+
+/// Renders a `ConstExpr` as a Nim constant expression, or `None` for a form the
+/// Nim backend does not express (an enum-valued / const-alias scoped reference —
+/// a wrong Nim identifier would break the build, and the const is only a codegen
+/// convenience).
+/// zerodds-lint: recursion-depth 32 (const expression tree; bounded by the IDL
+/// grammar's expression nesting).
+fn const_expr_to_nim(e: &ConstExpr) -> Option<String> {
+    match e {
+        ConstExpr::Literal(l) => const_literal_to_nim(l),
+        ConstExpr::Scoped(_) => None,
+        ConstExpr::Unary { op, operand, .. } => {
+            let v = const_expr_to_nim(operand)?;
+            let o = match op {
+                UnaryOp::Plus => "+",
+                UnaryOp::Minus => "-",
+                UnaryOp::BitNot => "not ",
+            };
+            Some(format!("{o}{v}"))
+        }
+        ConstExpr::Binary { op, lhs, rhs, .. } => {
+            let l = const_expr_to_nim(lhs)?;
+            let r = const_expr_to_nim(rhs)?;
+            let o = match op {
+                BinaryOp::Or => "or",
+                BinaryOp::Xor => "xor",
+                BinaryOp::And => "and",
+                BinaryOp::Shl => "shl",
+                BinaryOp::Shr => "shr",
+                BinaryOp::Add => "+",
+                BinaryOp::Sub => "-",
+                BinaryOp::Mul => "*",
+                BinaryOp::Div => "div",
+                BinaryOp::Mod => "mod",
+            };
+            Some(format!("({l} {o} {r})"))
+        }
+    }
+}
+
+/// Renders a single literal as valid Nim source.
+fn const_literal_to_nim(l: &Literal) -> Option<String> {
+    let raw = l.raw.trim();
+    Some(match l.kind {
+        // Nim accepts decimal / `0x` / `0o` / `0b` integer literals as-is.
+        LiteralKind::Integer => raw.to_string(),
+        // Strip a trailing IDL float/fixed suffix (`d`/`f`/`l`) Nim rejects.
+        LiteralKind::Floating => raw
+            .trim_end_matches(['d', 'D', 'f', 'F', 'l', 'L'])
+            .to_string(),
+        // A `fixed` decimal has no native Nim type — render as a string.
+        LiteralKind::Fixed => format!(
+            "\"{}\"",
+            raw.trim_end_matches(['d', 'D']).replace('"', "\\\"")
+        ),
+        // Normalize the IDL boolean keyword to Nim's `true`/`false` (never emit a
+        // bare `TRUE`/`FALSE` token, which is not a Nim identifier — #A13).
+        LiteralKind::Boolean => {
+            if raw.eq_ignore_ascii_case("true") {
+                "true".to_string()
+            } else {
+                "false".to_string()
+            }
+        }
+        // Narrow string/char literals pass through; wide literals drop the `L`
+        // prefix (`L"x"`/`L'x'` is not valid Nim — #A7-pattern).
+        LiteralKind::String | LiteralKind::Char => raw.to_string(),
+        LiteralKind::WideString | LiteralKind::WideChar => {
+            raw.strip_prefix('L').unwrap_or(raw).to_string()
+        }
+    })
+}
+
+/// Collects a struct's effective members base-first (#A10/P3): the base struct's
+/// members (recursively) precede the derived struct's own, so the generated Nim
+/// `object` and its wire form carry the inherited fields — matching cpp/csharp/
+/// java. Without this a `struct D : Base` dropped every inherited field from both
+/// the type and the wire.
+/// zerodds-lint: recursion-depth 16 (struct inheritance chain; bounded by the
+/// IDL aggregate nesting depth).
+fn collect_base_members<'a>(
+    s: &'a StructDef,
+    structs: &HashMap<String, &'a StructDef>,
+    out: &mut Vec<&'a Member>,
+) {
+    if let Some(base) = &s.base {
+        if let Some(bs) = structs.get(&resolve_scoped_name(base)) {
+            collect_base_members(bs, structs, out);
+        }
+    }
+    for m in &s.members {
+        out.push(m);
+    }
+}
+
+/// Evaluates a union case label `e` to its integer discriminant, resolving enum
+/// enumerators (via `enum_vals`, name → value of the switch enum), `char` code
+/// points, and the `boolean` keywords `TRUE`/`FALSE` (#P4: A11/A12/A13).
+/// zerodds-lint: recursion-depth 64 (Const-Expr-Tree; bounded by IDL nesting)
+fn eval_union_label(e: &ConstExpr, enum_vals: &HashMap<String, i64>) -> Option<i64> {
+    match e {
+        ConstExpr::Literal(Literal { kind, raw, .. }) => match kind {
+            LiteralKind::Integer => parse_int(raw),
+            LiteralKind::Char | LiteralKind::WideChar => char_literal_value(raw),
+            LiteralKind::Boolean => Some(i64::from(raw.trim().eq_ignore_ascii_case("true"))),
+            _ => None,
+        },
+        // `case ENUMERATOR:` — the label names an enumerator of the switch enum
+        // (resolved by its simple, i.e. last, segment).
+        ConstExpr::Scoped(sn) => enum_vals.get(&sn.parts.last()?.text).copied(),
+        ConstExpr::Unary { op, operand, .. } => {
+            let v = eval_union_label(operand, enum_vals)?;
+            Some(match op {
+                UnaryOp::Plus => v,
+                UnaryOp::Minus => -v,
+                UnaryOp::BitNot => !v,
+            })
+        }
+        ConstExpr::Binary { .. } => None,
+    }
+}
+
+/// Evaluates a `char`/`wchar` literal (`'A'`, `L'x'`, `'\n'`, `'\xHH'`) to its
+/// code point. Used by the union label evaluator (#A12) so `case 'A':` resolves
+/// to the discriminant 65.
+fn char_literal_value(raw: &str) -> Option<i64> {
+    let s = raw.trim();
+    let s = s.strip_prefix('L').unwrap_or(s);
+    let inner = s.strip_prefix('\'')?.strip_suffix('\'')?;
+    let mut it = inner.chars();
+    let c = it.next()?;
+    if c == '\\' {
+        let e = it.next()?;
+        let v = match e {
+            'n' => 0x0A,
+            't' => 0x09,
+            'r' => 0x0D,
+            '0' => 0x00,
+            '\\' => 0x5C,
+            '\'' => 0x27,
+            '"' => 0x22,
+            'a' => 0x07,
+            'b' => 0x08,
+            'f' => 0x0C,
+            'v' => 0x0B,
+            'x' => return i64::from_str_radix(it.as_str(), 16).ok(),
+            _ => return None,
+        };
+        Some(v)
+    } else {
+        Some(i64::from(u32::from(c)))
+    }
+}
+
+/// De-duplicates `name` against `used` under Nim's style-insensitive identifier
+/// equality (#A37: `my_field` and `myField` are the *same* Nim identifier). The
+/// first spelling is kept verbatim (so single-name goldens are unchanged); a
+/// later colliding member gets `_2`, `_3`, … appended until distinct. The raw
+/// (pre-escape) spelling is tracked, since escaping only wraps keywords.
+fn dedup_nim_ident(used: &mut Vec<String>, name: &str) -> String {
+    let collides =
+        |cand: &str, used: &[String]| used.iter().any(|u| nim_identifiers_equal(u, cand));
+    if !collides(name, used) {
+        used.push(name.to_string());
+        return name.to_string();
+    }
+    let mut i = 2;
+    loop {
+        let cand = format!("{name}_{i}");
+        if !collides(&cand, used) {
+            used.push(cand.clone());
+            return cand;
+        }
+        i += 1;
+    }
+}
+
+/// Writes one `@mutable` member into writer `wv`: its EMHEADER (must-understand
+/// bit 31 when `mu` — #A17) then NEXTINT (body length, LC4 per the coordinated
+/// wire baseline — see the A19 scope note) then the member body. `put` uses the
+/// `$w` placeholder; every line is emitted at `base` + two spaces.
+fn write_mutable_member_encode(
+    out: &mut String,
+    base: &str,
+    wv: &str,
+    id: u32,
+    mu: bool,
+    put: &str,
+) {
+    let mu_bit = if mu { 0x8000_0000_u32 } else { 0 };
+    let emh = mu_bit | 0x4000_0000 | (id & 0x0FFF_FFFF);
+    let _ = writeln!(out, "{base}  {wv}.putU32(uint32(0x{emh:08x}))");
+    let _ = writeln!(out, "{base}  block:");
+    let _ = writeln!(out, "{base}    var mem = initWriter({wv}.endian)");
+    for line in put.replace("$w", "mem").lines() {
+        let _ = writeln!(out, "{base}    {line}");
+    }
+    let _ = writeln!(out, "{base}    {wv}.putU32(uint32(mem.bytes().len))");
+    let _ = writeln!(out, "{base}    {wv}.putBytes(mem.bytes())");
+}
+
+/// Reads one `@mutable` member (its EMHEADER + NEXTINT, then the value via `get`,
+/// `$r` placeholder) — the positional inverse of [`write_mutable_member_encode`].
+fn write_mutable_member_decode(out: &mut String, base: &str, get: &str) {
+    let _ = writeln!(out, "{base}discard r.getU32()");
+    let _ = writeln!(out, "{base}discard r.getU32()");
+    for line in get.replace("$r", "r").lines() {
+        let _ = writeln!(out, "{base}{line}");
+    }
 }
 
 /// Resolves each enumerator's discriminant: default 0..N-1, honoring `@value`
@@ -356,14 +1014,14 @@ fn parse_int(s: &str) -> Option<i64> {
 }
 
 /// Emits an IDL `enum` as a Nim `enum` with explicit i32 enumerator values.
-fn emit_enum(out: &mut String, e: &EnumDef) {
+fn emit_enum(out: &mut String, e: &EnumDef, scope: &[String]) {
     let values = enumerator_values(e);
     // `raw_ty` prefixes every enumerator (`{raw_ty}{enumerator}` is always a
     // single fused identifier, never a standalone keyword token, so it is
     // never escaped); the `type` declaration itself is a standalone
-    // identifier and needs the escaped form.
-    let raw_ty = &e.name.text;
-    let ty = escape_nim_ident(raw_ty);
+    // identifier and needs the escaped form. Module-qualified (#21).
+    let raw_ty = qualify(scope, &e.name.text);
+    let ty = escape_nim_ident(&raw_ty);
     let _ = writeln!(out, "\ntype {ty}* = enum");
     for (en, value) in e.enumerators.iter().zip(&values) {
         let _ = writeln!(out, "  {raw_ty}{} = {value}", en.name.text);
@@ -377,43 +1035,234 @@ fn extensibility(s: &StructDef) -> ExtensibilityKind {
         .unwrap_or(ExtensibilityKind::Appendable)
 }
 
+/// Backing-integer storage for a bit container of `total_bits` bits: XTypes 1.3
+/// §7.4.7 — the smallest holder that fits (`≤8`→uint8, `≤16`→uint16, `≤32`→
+/// uint32, else uint64). Returns `(Nim type, marshal-put statement referencing
+/// `self.storage`, reader expression reading from `r`)`.
+fn bit_storage(total_bits: usize) -> (&'static str, &'static str, &'static str) {
+    match total_bits {
+        0..=8 => ("uint8", "w.putU8(int(self.storage))", "uint8(r.getU8())"),
+        9..=16 => (
+            "uint16",
+            "w.putU16(int(self.storage))",
+            "uint16(r.getU16())",
+        ),
+        17..=32 => ("uint32", "w.putU32(self.storage)", "r.getU32()"),
+        _ => ("uint64", "w.putU64(self.storage)", "r.getU64()"),
+    }
+}
+
+/// Effective `@bit_bound` of a bitmask (default 32 — XTypes 1.3 §7.3.1.2.1.1:
+/// an unannotated bitmask is a UInt32 on the wire, NOT the count of bits).
+fn bitmask_bit_bound(anns: &[Annotation]) -> u32 {
+    lower_annotations(anns)
+        .ok()
+        .and_then(|l| {
+            l.builtins.iter().find_map(|a| match a {
+                BuiltinAnnotation::BitBound(n) => Some(u32::from(*n)),
+                _ => None,
+            })
+        })
+        .unwrap_or(32)
+}
+
+/// `@position(n)` of a bitmask value, if present.
+fn bit_position(anns: &[Annotation]) -> Option<u32> {
+    lower_annotations(anns).ok().and_then(|l| {
+        l.builtins.iter().find_map(|a| match a {
+            BuiltinAnnotation::Position(n) => Some(*n),
+            _ => None,
+        })
+    })
+}
+
+/// Emits an IDL `bitset` as a Nim holder `object` over its backing integer, a
+/// bit-accessor pair per named bitfield, and an XCDR2 marshal/unmarshal that
+/// writes the backing integer (XTypes 1.3 §7.4.7 — wire = backing int).
+///
+/// # Errors
+/// [`IdlNimError::Unsupported`] if a bitfield width is not a codegen-time integer.
+fn emit_bitset(out: &mut String, b: &BitsetDecl, scope: &[String]) -> Result<()> {
+    let mut widths: Vec<usize> = Vec::with_capacity(b.bitfields.len());
+    for bf in &b.bitfields {
+        let w = array_size(&bf.spec.width)
+            .filter(|w| *w >= 0)
+            .ok_or_else(|| {
+                IdlNimError::Unsupported(format!(
+                    "non-integer bitfield width in bitset {}",
+                    b.name.text
+                ))
+            })? as usize;
+        widths.push(w);
+    }
+    let total: usize = widths.iter().sum();
+    let (storage, put, get) = bit_storage(total);
+    let raw_ty = qualify(scope, &b.name.text);
+    let ty = escape_nim_ident(&raw_ty);
+
+    let _ = writeln!(out, "\ntype {ty}* = object");
+    let _ = writeln!(out, "  storage*: {storage}");
+    // §7.2.2.4.8 — text as the first element inside the declaration.
+    emit_verbatim_at(out, "", &b.annotations, PlacementKind::BeginDeclaration);
+    let mut offset: usize = 0;
+    for (bf, width) in b.bitfields.iter().zip(&widths) {
+        if let Some(name) = &bf.name {
+            let field = escape_nim_ident(&name.text);
+            if *width == 1 {
+                let _ = writeln!(
+                    out,
+                    "\nproc {field}*(self: {ty}): bool = ((self.storage shr {offset}) and 1) != 0"
+                );
+                let _ = writeln!(out, "proc `set_{field}`*(self: var {ty}, v: bool) =");
+                let _ = writeln!(out, "  let m = {storage}(1) shl {offset}");
+                let _ = writeln!(out, "  if v: self.storage = self.storage or m");
+                let _ = writeln!(out, "  else: self.storage = self.storage and not m");
+            } else {
+                let mask: u128 = if *width >= 128 {
+                    u128::MAX
+                } else {
+                    (1u128 << *width) - 1
+                };
+                let _ = writeln!(
+                    out,
+                    "\nproc {field}*(self: {ty}): {storage} = {storage}((self.storage shr {offset}) and {storage}({mask}))"
+                );
+                let _ = writeln!(out, "proc `set_{field}`*(self: var {ty}, v: {storage}) =");
+                let _ = writeln!(out, "  let m = {storage}({mask}) shl {offset}");
+                let _ = writeln!(
+                    out,
+                    "  self.storage = (self.storage and not m) or ((v and {storage}({mask})) shl {offset})"
+                );
+            }
+        }
+        offset += width;
+    }
+    // §7.2.2.4.8 — text as the last element inside the declaration.
+    emit_verbatim_at(out, "", &b.annotations, PlacementKind::EndDeclaration);
+    let _ = writeln!(out, "\nproc marshalInto*(self: {ty}, w: var Writer) =");
+    let _ = writeln!(out, "  {put}");
+    let _ = writeln!(
+        out,
+        "\nproc marshalXCDR*(self: {ty}, endian: Endian): seq[byte] ="
+    );
+    let _ = writeln!(out, "  var w = initWriter(endian)");
+    let _ = writeln!(out, "  self.marshalInto(w)");
+    let _ = writeln!(out, "  w.bytes()");
+    let _ = writeln!(out, "\nproc read{raw_ty}(r: var Reader): {ty} =");
+    let _ = writeln!(out, "  result.storage = {get}");
+    let _ = writeln!(
+        out,
+        "\nproc unmarshalXCDR{raw_ty}*(buf: seq[byte], endian: Endian): {ty} ="
+    );
+    let _ = writeln!(out, "  var r = initReader(buf, endian)");
+    let _ = writeln!(out, "  read{raw_ty}(r)");
+    Ok(())
+}
+
+/// Emits an IDL `bitmask` as a Nim holder `object` over its `@bit_bound` backing
+/// integer (default 32), an OR-able manifest `const` per bit value, and an
+/// XCDR2 marshal/unmarshal writing the backing integer (XTypes 1.3 §7.4.7).
+fn emit_bitmask(out: &mut String, b: &BitmaskDecl, scope: &[String]) {
+    let (storage, put, get) = bit_storage(bitmask_bit_bound(&b.annotations) as usize);
+    let raw_ty = qualify(scope, &b.name.text);
+    let ty = escape_nim_ident(&raw_ty);
+
+    let _ = writeln!(out, "\ntype {ty}* = object");
+    let _ = writeln!(out, "  storage*: {storage}");
+    emit_verbatim_at(out, "", &b.annotations, PlacementKind::BeginDeclaration);
+    // Manifest constants (`{raw_ty}{VALUE}`), single fused identifiers like the
+    // enum emitter's `{raw_ty}{enumerator}`, so no keyword escaping is needed.
+    for (idx, v) in b.values.iter().enumerate() {
+        let pos = bit_position(&v.annotations).unwrap_or(idx as u32);
+        let _ = writeln!(
+            out,
+            "const {raw_ty}{}*: {storage} = {storage}(1) shl {pos}",
+            v.name.text
+        );
+    }
+    emit_verbatim_at(out, "", &b.annotations, PlacementKind::EndDeclaration);
+    let _ = writeln!(out, "\nproc marshalInto*(self: {ty}, w: var Writer) =");
+    let _ = writeln!(out, "  {put}");
+    let _ = writeln!(
+        out,
+        "\nproc marshalXCDR*(self: {ty}, endian: Endian): seq[byte] ="
+    );
+    let _ = writeln!(out, "  var w = initWriter(endian)");
+    let _ = writeln!(out, "  self.marshalInto(w)");
+    let _ = writeln!(out, "  w.bytes()");
+    let _ = writeln!(out, "\nproc read{raw_ty}(r: var Reader): {ty} =");
+    let _ = writeln!(out, "  result.storage = {get}");
+    let _ = writeln!(
+        out,
+        "\nproc unmarshalXCDR{raw_ty}*(buf: seq[byte], endian: Endian): {ty} ="
+    );
+    let _ = writeln!(out, "  var r = initReader(buf, endian)");
+    let _ = writeln!(out, "  read{raw_ty}(r)");
+}
+
+/// Resolves a `fixed<P,S>`'s digit count `P` and scale `S` to codegen-time
+/// integers.
+///
+/// # Errors
+/// [`IdlNimError::Unsupported`] if either is not a resolvable non-negative
+/// integer literal.
+fn fixed_ps(f: &FixedPtType) -> Result<(i64, i64)> {
+    let p = array_size(&f.digits)
+        .filter(|v| *v > 0)
+        .ok_or_else(|| IdlNimError::Unsupported("non-integer fixed digit count".to_string()))?;
+    let s = array_size(&f.scale)
+        .filter(|v| *v >= 0)
+        .ok_or_else(|| IdlNimError::Unsupported("non-integer fixed scale".to_string()))?;
+    Ok((p, s))
+}
+
 /// Recursively descends into `Definition::Module`, returning every
 /// non-module definition (struct/enum/union/typedef/…) in document order.
 /// The IDL AST builder already merges a reopened `module M {} ... module
 /// M {}` into one AST node (`crates/idl/src/ast/builder.rs`); this promotes
 /// a module's members into the same flat namespace this backend already
-/// uses for type-reference resolution (`sn.parts.last()` below) — module
-/// content is no longer silently dropped (swarm59 #21b), it is simply not
-/// namespaced: two same-named types in different modules collide, exactly
-/// as two same-named top-level types would.
+/// uses for type-reference resolution — a module's members are promoted to the
+/// top level, each paired with its module scope path so the definition and
+/// reference sites can flatten each name to `scope_simple` ([`qualify`] /
+/// [`resolve_scoped_name`]). Two same-simple-name types in different modules
+/// therefore become distinct types rather than colliding (#21).
 ///
 /// zerodds-lint: recursion-depth 16 (module nesting; bounded by the IDL grammar).
-fn flatten_module_defs(defs: &[Definition]) -> Vec<&Definition> {
+fn flatten_module_defs(defs: &[Definition]) -> Vec<(Vec<String>, &Definition)> {
     let mut out = Vec::new();
-    flatten_module_defs_into(defs, &mut out);
+    let mut scope = Vec::new();
+    flatten_module_defs_into(defs, &mut scope, &mut out);
     out
 }
 
 /// zerodds-lint: recursion-depth 16 (module nesting; bounded by the IDL grammar).
-fn flatten_module_defs_into<'a>(defs: &'a [Definition], out: &mut Vec<&'a Definition>) {
+fn flatten_module_defs_into<'a>(
+    defs: &'a [Definition],
+    scope: &mut Vec<String>,
+    out: &mut Vec<(Vec<String>, &'a Definition)>,
+) {
     for d in defs {
         match d {
-            Definition::Module(m) => flatten_module_defs_into(&m.definitions, out),
-            other => out.push(other),
+            Definition::Module(m) => {
+                scope.push(m.name.text.clone());
+                flatten_module_defs_into(&m.definitions, scope, out);
+                scope.pop();
+            }
+            other => out.push((scope.clone(), other)),
         }
     }
 }
 
-/// Collects `typedef` aliases (simple declarators) as name -> aliased type-spec.
-/// A typedef is wire-transparent, so members are resolved to the underlying
-/// type before mapping (`typedef long Score; Score s;` marshals as `long`).
+/// Collects `typedef` aliases (simple declarators) as qualified-name -> aliased
+/// type-spec. A typedef is wire-transparent, so members are resolved to the
+/// underlying type before mapping (`typedef long Score; Score s;` → `long`).
 fn collect_typedefs(spec: &Specification) -> HashMap<String, TypeSpec> {
     let mut m = HashMap::new();
-    for def in flatten_module_defs(&spec.definitions) {
+    for (scope, def) in flatten_module_defs(&spec.definitions) {
         if let Definition::Type(TypeDecl::Typedef(td)) = def {
             for d in &td.declarators {
                 if let Declarator::Simple(name) = d {
-                    m.insert(name.text.clone(), td.type_spec.clone());
+                    m.insert(qualify(&scope, &name.text), td.type_spec.clone());
                 }
             }
         }
@@ -429,7 +1278,7 @@ fn collect_typedefs(spec: &Specification) -> HashMap<String, TypeSpec> {
 fn resolve_typedef(t: &TypeSpec, typedefs: &HashMap<String, TypeSpec>) -> TypeSpec {
     match t {
         TypeSpec::Scoped(sn) => {
-            let name = sn.parts.last().map(|p| p.text.clone()).unwrap_or_default();
+            let name = resolve_scoped_name(sn);
             match typedefs.get(&name) {
                 Some(u) => resolve_typedef(u, typedefs),
                 None => t.clone(),
@@ -454,6 +1303,7 @@ fn bound_value(e: &ConstExpr) -> Option<i64> {
     array_size(e)
 }
 
+/// zerodds-lint: recursion-depth 16 (const-expr operand walk; bounded by IDL nesting).
 fn array_size(e: &ConstExpr) -> Option<i64> {
     match e {
         ConstExpr::Literal(Literal {
@@ -499,10 +1349,11 @@ fn switch_typespec(s: &SwitchTypeSpec) -> TypeSpec {
     }
 }
 
-/// A generated union case: integer labels (empty + is_default = `default`), the
-/// member field name, its language type, and the per-member put statement.
+/// A generated union case: rendered Nim case-branch labels (empty + is_default =
+/// `default`), the member field name, its language type, and the per-member
+/// put/get statements.
 struct UnionCase {
-    labels: Vec<i64>,
+    labels: Vec<String>,
     is_default: bool,
     field: String,
     ty: String,
@@ -513,11 +1364,14 @@ struct UnionCase {
 fn emit_struct(
     out: &mut String,
     s: &StructDef,
+    scope: &[String],
     enum_names: &HashSet<String>,
     struct_names: &HashSet<String>,
     structs: &HashMap<String, &StructDef>,
     typedefs: &HashMap<String, TypeSpec>,
 ) -> Result<()> {
+    // Member references resolve against this struct's module scope.
+    CURRENT_SCOPE.with(|c| *c.borrow_mut() = scope.to_vec());
     let ext = extensibility(s);
 
     struct FieldGen {
@@ -538,16 +1392,39 @@ fn emit_struct(
         // it already emits the correct row-major, no-length-prefix element
         // encoding (mirrors `idl-lua`'s `key_type: Option<..>` guard).
         key_type: Option<(TypeSpec, String)>,
+        // `@optional`: a companion uint8 presence flag precedes the value on
+        // the wire (XTypes 1.3 §7.4.5.1.4).
+        optional: bool,
+        // `@must_understand`: sets EMHEADER bit 31 in the `@mutable` framing
+        // (#A17). Wire-neutral for `@final`/`@appendable`.
+        must_understand: bool,
     }
+    // #A10/P3: base-first effective member list — inherited members precede the
+    // struct's own, so both the Nim `object` and its wire carry them.
+    let mut all_members: Vec<&Member> = Vec::new();
+    collect_base_members(s, structs, &mut all_members);
     let mut fields: Vec<FieldGen> = Vec::new();
+    // #A37: Nim identifiers are style-insensitive; keep member field names
+    // distinct under that equality so `my_field`/`myField` do not redefine.
+    let mut used_names: Vec<String> = Vec::new();
     let mut next_id: u32 = 0;
-    for m in &s.members {
+    for m in &all_members {
         let resolved = resolve_typedef(&m.type_spec, typedefs);
         let lowered = lower_annotations(&m.annotations).ok();
         let explicit_id = lowered.as_ref().and_then(|l| l.explicit_id());
         let key = lowered.as_ref().is_some_and(|l| l.has_key());
+        let optional = lowered.as_ref().is_some_and(|l| {
+            l.builtins
+                .iter()
+                .any(|a| matches!(a, BuiltinAnnotation::Optional))
+        });
+        let must_understand = lowered.as_ref().is_some_and(|l| {
+            l.builtins
+                .iter()
+                .any(|a| matches!(a, BuiltinAnnotation::MustUnderstand))
+        });
         for d in &m.declarators {
-            let nim_name = escape_nim_ident(&d.name().text);
+            let nim_name = escape_nim_ident(&dedup_nim_ident(&mut used_names, &d.name().text));
             let id = explicit_id.unwrap_or(next_id);
             next_id = id + 1;
             let (nim_type, put, get, key_type) = match d {
@@ -600,6 +1477,8 @@ fn emit_struct(
                 id,
                 key,
                 key_type,
+                optional,
+                must_understand,
             });
         }
     }
@@ -608,31 +1487,45 @@ fn emit_struct(
     // concatenation never collides with a standalone keyword token, so those
     // stay raw. `ety` (escaped) is used everywhere `ty` appears as a
     // standalone type annotation.
-    let ty = &s.name.text;
-    let ety = escape_nim_ident(ty);
+    let ty = qualify(scope, &s.name.text);
+    let ety = escape_nim_ident(&ty);
     let _ = writeln!(out, "\ntype {ety}* = object");
     for f in &fields {
+        // An `@optional` member carries a companion presence flag (XTypes 1.3
+        // §7.4.5.1.4: uint8 present-flag then the value if present).
+        if f.optional {
+            let _ = writeln!(out, "  {}_present*: bool", f.nim_name);
+        }
         let _ = writeln!(out, "  {}*: {}", f.nim_name, f.nim_type);
     }
+    // §7.2.2.4.8 — text as the first element inside the declaration (emitted at
+    // top level between the object type and its procs; a nim `object` body
+    // admits only fields, so declaration-scoped verbatim rides here).
+    emit_verbatim_at(out, "", &s.annotations, PlacementKind::BeginDeclaration);
 
     // marshalInto writes into an existing writer (nested composites call this so
     // alignment stays stream-relative). @final: fields inline; @appendable:
     // a DHEADER-framed body.
     let _ = writeln!(out, "\nproc marshalInto*(self: {ety}, w: var Writer) =");
     if ext == ExtensibilityKind::Mutable {
-        // @mutable: DHEADER-framed member list; each member = EMHEADER (LC4 =
-        // member id) + NEXTINT (body length) + body (XTypes §7.4.3.4.2).
+        // @mutable: DHEADER-framed member list; each member = EMHEADER
+        // (must-understand bit 31 when @must_understand — #A17; LC=4 = body
+        // length per the coordinated wire baseline, see the A19 scope note) +
+        // NEXTINT (body length) + body (XTypes §7.4.3.4.2).
         let _ = writeln!(out, "  var body = initWriter(w.endian)");
         for f in &fields {
-            let emh = 0x4000_0000_u32 | f.id;
-            let _ = writeln!(out, "  body.putU32(uint32(0x{emh:08x}))");
-            let _ = writeln!(out, "  block:");
-            let _ = writeln!(out, "    var mem = initWriter(w.endian)");
-            for line in f.put.replace("$w", "mem").lines() {
-                let _ = writeln!(out, "    {line}");
-            }
-            let _ = writeln!(out, "    body.putU32(uint32(mem.bytes().len))");
-            let _ = writeln!(out, "    body.putBytes(mem.bytes())");
+            // An `@optional` member is omitted from the member list when absent
+            // (XTypes 1.3 §7.4.3.4.2): guard its EMHEADER+body on the flag. The
+            // decode side below rides the naive per-member decoder (it does not
+            // reconstruct absence), so mutable-optional decode is not claimed
+            // complete — only encode honors the presence flag here.
+            let base = if f.optional {
+                let _ = writeln!(out, "  if self.{}_present:", f.nim_name);
+                "  "
+            } else {
+                ""
+            };
+            write_mutable_member_encode(out, base, "body", f.id, f.must_understand, &f.put);
         }
         let _ = writeln!(out, "  w.putU32(uint32(body.bytes().len))");
         let _ = writeln!(out, "  w.putBytes(body.bytes())");
@@ -644,8 +1537,21 @@ fn emit_struct(
             "body"
         };
         for f in &fields {
-            for line in f.put.replace("$w", writer_var).lines() {
-                let _ = writeln!(out, "  {line}");
+            if f.optional {
+                // uint8 presence flag then the value if present (§7.4.5.1.4).
+                let _ = writeln!(
+                    out,
+                    "  {writer_var}.putU8(if self.{name}_present: 1 else: 0)",
+                    name = f.nim_name
+                );
+                let _ = writeln!(out, "  if self.{}_present:", f.nim_name);
+                for line in f.put.replace("$w", writer_var).lines() {
+                    let _ = writeln!(out, "    {line}");
+                }
+            } else {
+                for line in f.put.replace("$w", writer_var).lines() {
+                    let _ = writeln!(out, "  {line}");
+                }
             }
         }
         if ext != ExtensibilityKind::Final {
@@ -664,9 +1570,10 @@ fn emit_struct(
     let mut zdkeys: Vec<&FieldGen> = fields.iter().filter(|f| f.key).collect();
     zdkeys.sort_by_key(|f| f.id);
     if !zdkeys.is_empty() {
-        let key_members: Vec<&Member> = s
-            .members
+        // #A10: key detection spans the base-first effective member list.
+        let key_members: Vec<&Member> = all_members
             .iter()
+            .copied()
             .filter(|m| {
                 lower_annotations(&m.annotations)
                     .map(|l| l.has_key())
@@ -717,19 +1624,24 @@ fn emit_struct(
     if ext == ExtensibilityKind::Mutable {
         let _ = writeln!(out, "  discard r.getU32()");
         for f in &fields {
-            let _ = writeln!(out, "  discard r.getU32()");
-            let _ = writeln!(out, "  discard r.getU32()");
-            for line in f.get.replace("$r", "r").lines() {
-                let _ = writeln!(out, "  {line}");
-            }
+            write_mutable_member_decode(out, "  ", &f.get);
         }
     } else {
         if ext == ExtensibilityKind::Appendable {
             let _ = writeln!(out, "  discard r.getU32()");
         }
         for f in &fields {
-            for line in f.get.replace("$r", "r").lines() {
-                let _ = writeln!(out, "  {line}");
+            if f.optional {
+                // uint8 presence flag then the value only if present (§7.4.5.1.4).
+                let _ = writeln!(out, "  result.{}_present = r.getBool()", f.nim_name);
+                let _ = writeln!(out, "  if result.{}_present:", f.nim_name);
+                for line in f.get.replace("$r", "r").lines() {
+                    let _ = writeln!(out, "    {line}");
+                }
+            } else {
+                for line in f.get.replace("$r", "r").lines() {
+                    let _ = writeln!(out, "  {line}");
+                }
             }
         }
     }
@@ -742,6 +1654,9 @@ fn emit_struct(
     );
     let _ = writeln!(out, "  var r = initReader(buf, endian)");
     let _ = writeln!(out, "  read{ty}(r)");
+    // §7.2.2.4.8 — text as the last element inside the declaration (emitted at
+    // top level trailing the type's procs).
+    emit_verbatim_at(out, "", &s.annotations, PlacementKind::EndDeclaration);
     Ok(())
 }
 
@@ -751,35 +1666,71 @@ fn emit_struct(
 fn emit_union(
     out: &mut String,
     u: &UnionDef,
+    scope: &[String],
     enum_names: &HashSet<String>,
     struct_names: &HashSet<String>,
     typedefs: &HashMap<String, TypeSpec>,
+    enum_defs: &HashMap<String, &EnumDef>,
 ) -> Result<()> {
+    // Member references resolve against this union's module scope.
+    CURRENT_SCOPE.with(|c| *c.borrow_mut() = scope.to_vec());
     let ext = lower_annotations(&u.annotations)
         .ok()
         .and_then(|l| l.extensibility())
         .unwrap_or(ExtensibilityKind::Appendable);
-    if ext == ExtensibilityKind::Mutable {
-        return Err(IdlNimError::Unsupported(format!(
-            "@mutable union {} (EMHEADER framing not yet emitted)",
-            u.name.text
-        )));
-    }
-    let (disc_type, disc_put) = map_type(
-        &switch_typespec(&u.switch_type),
-        "self.disc",
-        enum_names,
-        struct_names,
-    )?;
-    let disc_get = map_get(
-        &switch_typespec(&u.switch_type),
-        "result.disc",
-        enum_names,
-        struct_names,
-    )?;
+    let disc_ts = switch_typespec(&u.switch_type);
+    let (disc_type, disc_put) = map_type(&disc_ts, "self.disc", enum_names, struct_names)?;
+    let disc_get = map_get(&disc_ts, "result.disc", enum_names, struct_names)?;
+
+    // #P4 (A11): when the discriminator is an enum, resolve `case ENUMERATOR:`
+    // labels — `enum_vals` maps an enumerator name → its wire value, and
+    // `val_to_ident` maps a wire value → the flattened Nim enumerator identifier
+    // (`{enum}{ENUMERATOR}`, matching `emit_enum`).
+    let (enum_vals, val_to_ident): (HashMap<String, i64>, HashMap<i64, String>) =
+        match &u.switch_type {
+            SwitchTypeSpec::Scoped(sn) => enum_defs
+                .get(&resolve_scoped_name(sn))
+                .map(|e| {
+                    let raw_ty = resolve_scoped_name(sn);
+                    let mut names = HashMap::new();
+                    let mut idents = HashMap::new();
+                    for (en, v) in e.enumerators.iter().zip(enumerator_values(e)) {
+                        names.insert(en.name.text.clone(), i64::from(v));
+                        idents.insert(i64::from(v), format!("{raw_ty}{}", en.name.text));
+                    }
+                    (names, idents)
+                })
+                .unwrap_or_default(),
+            _ => (HashMap::new(), HashMap::new()),
+        };
+
+    // Renders one label's evaluated integer as a Nim case-branch expression,
+    // matching the discriminator's Nim type (#P4: A11 enum / A12 char / A13 bool).
+    let render = |v: i64| -> Option<String> {
+        match &u.switch_type {
+            SwitchTypeSpec::Boolean => Some(if v != 0 {
+                "true".into()
+            } else {
+                "false".into()
+            }),
+            SwitchTypeSpec::Char => Some(format!("'\\x{:02X}'", v as u8)),
+            SwitchTypeSpec::Scoped(_) => val_to_ident.get(&v).cloned(),
+            _ => Some(v.to_string()),
+        }
+    };
+
+    // #A37: union field names are distinct Nim identifiers (the `disc` field is
+    // reserved first, then each case member).
+    let mut used_names: Vec<String> = vec!["disc".to_string()];
     let mut cases: Vec<UnionCase> = Vec::new();
+    // Evaluated discriminant values covered by explicit `case` labels, used to
+    // decide whether a Nim `else` branch is required (see `exhaustive` below).
+    let mut covered: HashSet<i64> = HashSet::new();
     for c in &u.cases {
-        let field = escape_nim_ident(&c.element.declarator.name().text);
+        let field = escape_nim_ident(&dedup_nim_ident(
+            &mut used_names,
+            &c.element.declarator.name().text,
+        ));
         let resolved = resolve_typedef(&c.element.type_spec, typedefs);
         let (ty, put) = map_type(
             &resolved,
@@ -798,12 +1749,21 @@ fn emit_union(
         for l in &c.labels {
             match l {
                 CaseLabel::Default => is_default = true,
-                CaseLabel::Value(e) => labels.push(array_size(e).ok_or_else(|| {
-                    IdlNimError::Unsupported(format!(
-                        "non-integer union label in `{}`",
-                        u.name.text
-                    ))
-                })?),
+                CaseLabel::Value(e) => {
+                    let v = eval_union_label(e, &enum_vals).ok_or_else(|| {
+                        IdlNimError::Unsupported(format!(
+                            "non-evaluable union label in `{}`",
+                            u.name.text
+                        ))
+                    })?;
+                    covered.insert(v);
+                    labels.push(render(v).ok_or_else(|| {
+                        IdlNimError::Unsupported(format!(
+                            "union label {v} has no enumerator in `{}`",
+                            u.name.text
+                        ))
+                    })?);
+                }
             }
         }
         cases.push(UnionCase {
@@ -816,46 +1776,80 @@ fn emit_union(
         });
     }
     let has_default = cases.iter().any(|c| c.is_default);
+    // A Nim `case` over an ordinal type rejects an `else` branch once every
+    // possible value is already covered. Only a fully-enumerated `boolean`
+    // (both `true` and `false`) or enum (all enumerators) switch can reach that
+    // — an integer/char switch never does. Emit the fallback `else: discard`
+    // exactly when the dispatch is neither closed by a `default` case nor
+    // exhaustive, so both a missing-arm and a redundant-else error are avoided.
+    let exhaustive = match &u.switch_type {
+        SwitchTypeSpec::Boolean => covered.contains(&0) && covered.contains(&1),
+        SwitchTypeSpec::Scoped(_) => {
+            !val_to_ident.is_empty() && val_to_ident.keys().all(|v| covered.contains(v))
+        }
+        _ => false,
+    };
+    let need_else = !has_default && !exhaustive;
 
     // See the analogous split in `emit_struct`: `ty` (raw) feeds composite
     // proc names, `ety` (escaped) is used as a standalone type annotation.
-    let ty = &u.name.text;
-    let ety = escape_nim_ident(ty);
+    let ty = qualify(scope, &u.name.text);
+    let ety = escape_nim_ident(&ty);
     let _ = writeln!(out, "\ntype {ety}* = object");
     let _ = writeln!(out, "  disc*: {disc_type}");
     for c in &cases {
         let _ = writeln!(out, "  {}*: {}", c.field, c.ty);
     }
+    // §7.2.2.4.8 — text as the first element inside the declaration.
+    emit_verbatim_at(out, "", &u.annotations, PlacementKind::BeginDeclaration);
 
-    let _ = writeln!(out, "\nproc marshalInto*(self: {ety}, w: var Writer) =");
-    let wv = if ext == ExtensibilityKind::Final {
-        "w"
-    } else {
-        let _ = writeln!(out, "  var body = initWriter(w.endian)");
-        "body"
-    };
-    let _ = writeln!(out, "  {}", disc_put.replace("$w", wv));
-    let _ = writeln!(out, "  case self.disc");
-    for c in &cases {
+    // Renders a case-branch head (`of L1, L2:` or `else:`).
+    let branch_head = |out: &mut String, c: &UnionCase| {
         if c.is_default {
             let _ = writeln!(out, "  else:");
         } else {
-            let labels = c
-                .labels
-                .iter()
-                .map(i64::to_string)
-                .collect::<Vec<_>>()
-                .join(", ");
-            let _ = writeln!(out, "  of {labels}:");
+            let _ = writeln!(out, "  of {}:", c.labels.join(", "));
         }
-        let _ = writeln!(out, "    {}", c.put.replace("$w", wv));
-    }
-    if !has_default {
-        let _ = writeln!(out, "  else: discard");
-    }
-    if ext != ExtensibilityKind::Final {
+    };
+
+    let _ = writeln!(out, "\nproc marshalInto*(self: {ety}, w: var Writer) =");
+    if ext == ExtensibilityKind::Mutable {
+        // #A16: @mutable union — DHEADER-framed member list. The discriminator
+        // is member id 0, each branch its 1-based id, wrapped in the struct's
+        // DHEADER (XTypes §7.4.3.4.2 / §7.4.3.5.4).
+        let _ = writeln!(out, "  var body = initWriter(w.endian)");
+        write_mutable_member_encode(out, "", "body", 0, false, &disc_put);
+        let _ = writeln!(out, "  case self.disc");
+        for (i, c) in cases.iter().enumerate() {
+            branch_head(out, c);
+            let id = u32::try_from(i + 1).unwrap_or(0);
+            write_mutable_member_encode(out, "  ", "body", id, false, &c.put);
+        }
+        if need_else {
+            let _ = writeln!(out, "  else: discard");
+        }
         let _ = writeln!(out, "  w.putU32(uint32(body.bytes().len))");
         let _ = writeln!(out, "  w.putBytes(body.bytes())");
+    } else {
+        let wv = if ext == ExtensibilityKind::Final {
+            "w"
+        } else {
+            let _ = writeln!(out, "  var body = initWriter(w.endian)");
+            "body"
+        };
+        let _ = writeln!(out, "  {}", disc_put.replace("$w", wv));
+        let _ = writeln!(out, "  case self.disc");
+        for c in &cases {
+            branch_head(out, c);
+            let _ = writeln!(out, "    {}", c.put.replace("$w", wv));
+        }
+        if need_else {
+            let _ = writeln!(out, "  else: discard");
+        }
+        if ext != ExtensibilityKind::Final {
+            let _ = writeln!(out, "  w.putU32(uint32(body.bytes().len))");
+            let _ = writeln!(out, "  w.putBytes(body.bytes())");
+        }
     }
 
     let _ = writeln!(
@@ -867,33 +1861,37 @@ fn emit_union(
     let _ = writeln!(out, "  w.bytes()");
 
     // Decode: read the discriminator, then dispatch to read the selected member
-    // (@appendable skips the leading DHEADER). `result` is zero-initialized.
+    // (@appendable skips the leading DHEADER; @mutable skips DHEADER then reads
+    // the discriminator EMHEADER + value, positionally). `result` zero-init.
     let _ = writeln!(out, "\nproc read{ty}(r: var Reader): {ety} =");
-    if ext == ExtensibilityKind::Appendable {
+    if ext == ExtensibilityKind::Mutable {
         let _ = writeln!(out, "  discard r.getU32()");
-    }
-    for line in disc_get.replace("$r", "r").lines() {
-        let _ = writeln!(out, "  {line}");
-    }
-    let _ = writeln!(out, "  case result.disc");
-    for c in &cases {
-        if c.is_default {
-            let _ = writeln!(out, "  else:");
-        } else {
-            let labels = c
-                .labels
-                .iter()
-                .map(i64::to_string)
-                .collect::<Vec<_>>()
-                .join(", ");
-            let _ = writeln!(out, "  of {labels}:");
+        write_mutable_member_decode(out, "  ", &disc_get);
+        let _ = writeln!(out, "  case result.disc");
+        for c in &cases {
+            branch_head(out, c);
+            write_mutable_member_decode(out, "    ", &c.get);
         }
-        for line in c.get.replace("$r", "r").lines() {
-            let _ = writeln!(out, "    {line}");
+        if need_else {
+            let _ = writeln!(out, "  else: discard");
         }
-    }
-    if !has_default {
-        let _ = writeln!(out, "  else: discard");
+    } else {
+        if ext == ExtensibilityKind::Appendable {
+            let _ = writeln!(out, "  discard r.getU32()");
+        }
+        for line in disc_get.replace("$r", "r").lines() {
+            let _ = writeln!(out, "  {line}");
+        }
+        let _ = writeln!(out, "  case result.disc");
+        for c in &cases {
+            branch_head(out, c);
+            for line in c.get.replace("$r", "r").lines() {
+                let _ = writeln!(out, "    {line}");
+            }
+        }
+        if need_else {
+            let _ = writeln!(out, "  else: discard");
+        }
     }
     let _ = writeln!(
         out,
@@ -901,6 +1899,8 @@ fn emit_union(
     );
     let _ = writeln!(out, "  var r = initReader(buf, endian)");
     let _ = writeln!(out, "  read{ty}(r)");
+    // §7.2.2.4.8 — text as the last element inside the declaration.
+    emit_verbatim_at(out, "", &u.annotations, PlacementKind::EndDeclaration);
     Ok(())
 }
 
@@ -912,7 +1912,8 @@ fn is_primitive(t: &TypeSpec, enum_names: &HashSet<String>) -> bool {
     match t {
         TypeSpec::Primitive(_) => true,
         TypeSpec::Scoped(sn) => {
-            enum_names.contains(&sn.parts.last().map(|p| p.text.clone()).unwrap_or_default())
+            let n = resolve_scoped_name(sn);
+            enum_names.contains(&n) || is_bit_name(&n)
         }
         _ => false,
     }
@@ -1003,17 +2004,36 @@ fn map_type(
             };
             Ok(("string".to_string(), put))
         }
-        TypeSpec::Sequence(seq) => map_sequence(&seq.elem, seq.bound.as_ref(), expr, struct_names),
+        TypeSpec::Sequence(seq) => map_sequence(
+            &seq.elem,
+            seq.bound.as_ref(),
+            expr,
+            enum_names,
+            struct_names,
+        ),
+        // A `fixed<P,S>` decimal: packed BCD, `(P+2)/2` raw octets, no length
+        // prefix and no alignment (CORBA/GIOP §9.3.2.7 ≡ XCDR2 §7.4.4.5). The
+        // Nim field holds the BCD bytes directly (`seq[byte]`); the generated
+        // `zdFixedEnc` prelude builds them from a decimal string.
+        TypeSpec::Fixed(f) => {
+            USED_FIXED.with(|u| u.set(true));
+            let _ = fixed_ps(f)?; // validate P/S resolve at codegen time
+            Ok(("seq[byte]".to_string(), format!("$w.putBytes({expr})")))
+        }
         TypeSpec::Scoped(sn) => {
-            let name = sn.parts.last().map(|p| p.text.clone()).unwrap_or_default();
+            let name = resolve_scoped_name(sn);
             if enum_names.contains(&name) {
-                // Enum member: 32-bit signed integer on the wire.
-                Ok((
-                    escape_nim_ident(&name),
-                    format!("$w.putU32(cast[uint32](int32(ord({expr}))))"),
-                ))
-            } else if struct_names.contains(&name) {
-                // Nested struct member: marshal into the same writer.
+                // Enum holder width follows @bit_bound (XTypes 1.3 §7.4.5.1);
+                // putU8/putU16 mask internally, so the ordinal is passed as-is.
+                let put = match enum_wire_width(&name) {
+                    1 => format!("$w.putU8(int(ord({expr})))"),
+                    2 => format!("$w.putU16(int(ord({expr})))"),
+                    _ => format!("$w.putU32(cast[uint32](int32(ord({expr}))))"),
+                };
+                Ok((escape_nim_ident(&name), put))
+            } else if struct_names.contains(&name) || is_bit_name(&name) {
+                // Nested struct / bitset / bitmask member: marshal into the same
+                // writer (a bit holder's wire form is its backing integer).
                 Ok((escape_nim_ident(&name), format!("{expr}.marshalInto($w)")))
             } else {
                 Err(IdlNimError::Unsupported(format!("scoped type {name}")))
@@ -1060,7 +2080,7 @@ fn map_key_type(
     typedefs: &HashMap<String, TypeSpec>,
 ) -> Result<Vec<String>> {
     if let TypeSpec::Scoped(sn) = t {
-        let name = sn.parts.last().map(|p| p.text.clone()).unwrap_or_default();
+        let name = resolve_scoped_name(sn);
         if let Some(sd) = structs.get(&name) {
             let nested_keys: Vec<&Member> = sd
                 .members
@@ -1156,10 +2176,12 @@ fn map_integer(i: IntegerType, expr: &str) -> Result<(String, String)> {
     Ok((ty.to_string(), put))
 }
 
+/// zerodds-lint: recursion-depth 64 (codegen AST walk; bounded by IDL nesting).
 fn map_sequence(
     elem: &TypeSpec,
     bound: Option<&ConstExpr>,
     expr: &str,
+    enum_names: &HashSet<String>,
     struct_names: &HashSet<String>,
 ) -> Result<(String, String)> {
     let n = bound.and_then(bound_value);
@@ -1192,7 +2214,7 @@ fn map_sequence(
     // sequence<struct> → collection DHEADER (u32 body length) + u32 count + each
     // element (XTypes 1.3 §7.4.3.5.3). Multi-line put, unique vars per field.
     if let TypeSpec::Scoped(sn) = elem {
-        let name = sn.parts.last().map(|p| p.text.clone()).unwrap_or_default();
+        let name = resolve_scoped_name(sn);
         if struct_names.contains(&name) {
             let suf = expr.rsplit('.').next().unwrap_or("seq");
             let put = [
@@ -1210,9 +2232,14 @@ fn map_sequence(
             return Ok((format!("seq[{}]", escape_nim_ident(&name)), put));
         }
     }
-    Err(IdlNimError::Unsupported(
-        "sequence of non-struct, non-octet elements".to_string(),
-    ))
+    // sequence<arbitrary> → u32 count + per-element encode (no collection
+    // DHEADER; the element type is fully descriptive on the wire for the
+    // primitive / enum / bitset / bitmask cases reaching here). Mirrors the
+    // `idl-go`/`idl-d` fallback.
+    let (elem_ty, elem_put) = map_type(elem, "zdElem", enum_names, struct_names)?;
+    let body = indent(&elem_put, 2);
+    let put = format!("{bc}$w.putU32(uint32({expr}.len))\nfor zdElem in {expr}:\n{body}");
+    Ok((format!("seq[{elem_ty}]"), put))
 }
 
 // ---- decode (inverse of the put path): a `Reader` wire-core in the prelude,
@@ -1273,17 +2300,34 @@ fn map_get(
             Some(n) => Ok(format!("{target} = $r.getWString({n})")),
             None => Ok(format!("{target} = $r.getWString()")),
         },
-        TypeSpec::Sequence(seq) => {
-            map_get_sequence(&seq.elem, seq.bound.as_ref(), target, struct_names)
+        TypeSpec::Sequence(seq) => map_get_sequence(
+            &seq.elem,
+            seq.bound.as_ref(),
+            target,
+            enum_names,
+            struct_names,
+        ),
+        // `fixed<P,S>`: read the statically-known `(P+2)/2` BCD octets (no
+        // length prefix, no alignment).
+        TypeSpec::Fixed(f) => {
+            USED_FIXED.with(|u| u.set(true));
+            let (p, _) = fixed_ps(f)?;
+            let n = (p + 2) / 2;
+            Ok(format!("{target} = $r.getBytesN({n})"))
         }
         TypeSpec::Scoped(sn) => {
-            let name = sn.parts.last().map(|p| p.text.clone()).unwrap_or_default();
+            let name = resolve_scoped_name(sn);
             if enum_names.contains(&name) {
-                Ok(format!(
-                    "{target} = {}(int($r.getU32()))",
-                    escape_nim_ident(&name)
-                ))
-            } else if struct_names.contains(&name) {
+                let esc = escape_nim_ident(&name);
+                // Read the @bit_bound-wide holder and sign-extend to int via a
+                // signed cast (XTypes 1.3 §7.4.5.1).
+                let get = match enum_wire_width(&name) {
+                    1 => format!("{target} = {esc}(int(cast[int8](uint8($r.getU8()))))"),
+                    2 => format!("{target} = {esc}(int(cast[int16](uint16($r.getU16()))))"),
+                    _ => format!("{target} = {esc}(int($r.getU32()))"),
+                };
+                Ok(get)
+            } else if struct_names.contains(&name) || is_bit_name(&name) {
                 Ok(format!("{target} = read{name}($r)"))
             } else {
                 Err(IdlNimError::Unsupported(format!("scoped type {name}")))
@@ -1352,10 +2396,12 @@ fn map_get_integer(i: IntegerType, target: &str) -> Result<String> {
     Ok(s)
 }
 
+/// zerodds-lint: recursion-depth 64 (codegen AST walk; bounded by IDL nesting).
 fn map_get_sequence(
     elem: &TypeSpec,
     bound: Option<&ConstExpr>,
     target: &str,
+    enum_names: &HashSet<String>,
     struct_names: &HashSet<String>,
 ) -> Result<String> {
     // B1 follow-up (#22 decode-side parity): mirror the encode-side bound
@@ -1376,7 +2422,7 @@ fn map_get_sequence(
         });
     }
     if let TypeSpec::Scoped(sn) = elem {
-        let name = sn.parts.last().map(|p| p.text.clone()).unwrap_or_default();
+        let name = resolve_scoped_name(sn);
         if struct_names.contains(&name) {
             let bound_check = n
                 .map(|n| {
@@ -1391,7 +2437,19 @@ fn map_get_sequence(
             ));
         }
     }
-    Err(IdlNimError::Unsupported(
-        "sequence of non-struct, non-octet elements".to_string(),
+    // sequence<arbitrary> → u32 count + per-element decode (no collection
+    // DHEADER; mirrors the encode-side `map_sequence` fallback).
+    let bound_check = n
+        .map(|n| {
+            format!(
+                "\n  if zdN > {n}: raise newException(ValueError, \"decoded sequence length exceeds its IDL bound ({n})\")"
+            )
+        })
+        .unwrap_or_default();
+    let (elem_ty, _) = map_type(elem, "zdElem", enum_names, struct_names)?;
+    let elem_get = map_get(elem, &format!("{target}[zdI]"), enum_names, struct_names)?;
+    let body = indent(&elem_get, 4);
+    Ok(format!(
+        "block:\n  let zdN = int($r.getU32()){bound_check}\n  {target} = newSeq[{elem_ty}](zdN)\n  for zdI in 0 ..< zdN:\n{body}"
     ))
 }

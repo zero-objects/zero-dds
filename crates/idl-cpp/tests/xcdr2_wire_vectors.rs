@@ -1751,3 +1751,151 @@ fn v_keyhash_array_of_struct_key_byte_exact() {
         ],
     );
 }
+
+// ---------------------------------------------------------------------------
+// P0.3 struct inheritance — base-class fields on the wire.
+// Regression: the codec iterated only `s.members`, never `s.base`, so inherited
+// fields were silently dropped. XTypes 1.3 §7.4.3.4.1: base members precede
+// derived members on the wire.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn v_inheritance_base_field_before_derived_final() {
+    // @final -> plain-CDR2, no DHEADER: exactly [a][b] = 8 bytes.
+    let idl = "@final struct Base { long a; }; @final struct Derived : Base { long b; };";
+    let body = r#"    ::Derived s;
+    s.a(0x11223344);
+    s.b(0x55667788);
+    __buf = ::dds::topic::topic_type_support<::Derived>::encode(s);
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-inheritance-final, no C++ compiler");
+        return;
+    };
+    // Base `a` = 0x11223344 (LE 44 33 22 11) BEFORE derived `b` = 0x55667788
+    // (LE 88 77 66 55). If the base field were dropped the buffer would be 4B.
+    assert_bytes(
+        "V-inheritance-final",
+        &bytes,
+        &[0x44, 0x33, 0x22, 0x11, 0x88, 0x77, 0x66, 0x55],
+    );
+}
+
+#[test]
+fn v_inheritance_multilevel_base_order_final() {
+    // Base A <- B <- C: members must appear A.a, B.b, C.c (oldest ancestor first).
+    let idl = "@final struct A { long a; }; @final struct B : A { long b; }; \
+               @final struct C : B { long c; };";
+    let body = r#"    ::C s;
+    s.a(0x11111111);
+    s.b(0x22222222);
+    s.c(0x33333333);
+    __buf = ::dds::topic::topic_type_support<::C>::encode(s);
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-inheritance-multilevel, no C++ compiler");
+        return;
+    };
+    assert_bytes(
+        "V-inheritance-multilevel",
+        &bytes,
+        &[
+            0x11, 0x11, 0x11, 0x11, // A.a
+            0x22, 0x22, 0x22, 0x22, // B.b
+            0x33, 0x33, 0x33, 0x33, // C.c
+        ],
+    );
+}
+
+#[test]
+fn v_inheritance_roundtrip_recovers_base_and_derived() {
+    let idl = "@final struct Base { long a; }; @final struct Derived : Base { long b; };";
+    let body = r#"    ::Derived s;
+    s.a(0x11223344);
+    s.b(0x55667788);
+    auto __e = ::dds::topic::topic_type_support<::Derived>::encode(s);
+    auto __d = ::dds::topic::topic_type_support<::Derived>::decode(
+        __e.data(), __e.size(), ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
+    __buf.push_back(__d.a() == 0x11223344 ? 1 : 0);
+    __buf.push_back(__d.b() == 0x55667788 ? 1 : 0);
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-inheritance-roundtrip, no C++ compiler");
+        return;
+    };
+    // Both base `a` and derived `b` recovered.
+    assert_bytes("V-inheritance-roundtrip", &bytes, &[1, 1]);
+}
+
+#[test]
+fn v_inheritance_keyhash_includes_base_key() {
+    // A @key base member must contribute to the KeyHash of the derived type,
+    // ordered before the derived @key member.
+    let idl = "@final struct Base { @key long a; }; \
+               @final struct Derived : Base { @key long b; };";
+    let body = r#"    ::Derived s;
+    s.a(0x0000000A);
+    s.b(0x0000000B);
+    auto __h = ::dds::topic::topic_type_support<::Derived>::key_hash(s);
+    __buf.assign(__h.begin(), __h.end());
+"#;
+    let Some(bytes) = run_encode(idl, body) else {
+        eprintln!("WARNING: skipping V-inheritance-keyhash, no C++ compiler");
+        return;
+    };
+    // KeyHash is BE (RTPS §9.6.3.8): a=0x0A then b=0x0B, 8B holder, zero-pad to 16.
+    assert_bytes(
+        "V-inheritance-keyhash",
+        &bytes,
+        &[
+            0x00, 0x00, 0x00, 0x0A, // Base.a (BE)
+            0x00, 0x00, 0x00, 0x0B, // Derived.b (BE)
+            0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        ],
+    );
+}
+
+// ---------------------------------------------------------------------------
+// V-reserved-word-byte-identity (Issue #14)
+//
+// The reserved-word ESCAPING must be name-LOCAL: a type whose module, struct
+// and member names are all C++ keywords must encode BYTE-IDENTICAL to a
+// same-shaped type with ordinary names. XCDR2 carries member IDs / declaration
+// order, never the member *names*, so escaping the C++ identifiers cannot move
+// the wire. This is the mandatory gate that proves the fix did not change the
+// serialization.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn v_reserved_word_encodes_byte_identical() {
+    // Same shape (two @final int32 members, same @final struct), one named with
+    // reserved C++ keywords at EVERY level (module/struct/member), one ordinary.
+    let reserved_idl = "module class { @final struct template { long int; long operator; }; };";
+    let reserved_body = r#"    ::class_::template_ t;
+    t.int_(1); t.operator_(-2);
+    __buf = ::dds::topic::topic_type_support<::class_::template_>::encode(t);
+"#;
+    let normal_idl = "module ns { @final struct Point { long a; long b; }; };";
+    let normal_body = r#"    ::ns::Point p;
+    p.a(1); p.b(-2);
+    __buf = ::dds::topic::topic_type_support<::ns::Point>::encode(p);
+"#;
+
+    let (Some(reserved), Some(normal)) = (
+        run_encode(reserved_idl, reserved_body),
+        run_encode(normal_idl, normal_body),
+    ) else {
+        eprintln!("WARNING: skipping V-reserved-word-byte-identity, no C++ compiler");
+        return;
+    };
+
+    // Ground truth: two LE int32 back-to-back (final -> no DHEADER).
+    let expected: &[u8] = &[0x01, 0x00, 0x00, 0x00, 0xFE, 0xFF, 0xFF, 0xFF];
+    assert_bytes("V-reserved-word (reserved names)", &reserved, expected);
+    assert_bytes("V-reserved-word (ordinary names)", &normal, expected);
+    // The load-bearing assertion: escaping is name-local -> identical wire.
+    assert_eq!(
+        reserved, normal,
+        "reserved-word-named type must encode byte-identical to the same-shaped ordinary type"
+    );
+}

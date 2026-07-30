@@ -24,12 +24,14 @@ fn bounded_string_encode_and_decode_checks() {
     let m = gen_ada("@final struct Named { string<16> name; };");
     assert!(
         m.body.contains("Length (V.name) > 16")
-            && m.body.contains("bounded string length exceeds its IDL bound (16)"),
+            && m.body
+                .contains("bounded string length exceeds its IDL bound (16)"),
         "encode of bounded string<16> must throw on over-bound encode:\n{}",
         m.body
     );
     assert!(
-        m.body.contains("decoded string length exceeds its IDL bound (16)"),
+        m.body
+            .contains("decoded string length exceeds its IDL bound (16)"),
         "decode of bounded string<16> must throw on over-bound decode:\n{}",
         m.body
     );
@@ -39,12 +41,14 @@ fn bounded_string_encode_and_decode_checks() {
 fn bounded_wstring_encode_and_decode_checks() {
     let m = gen_ada("@final struct Named { wstring<16> name; };");
     assert!(
-        m.body.contains("bounded wstring length exceeds its IDL bound (16)"),
+        m.body
+            .contains("bounded wstring length exceeds its IDL bound (16)"),
         "encode of bounded wstring<16> must throw on over-bound encode:\n{}",
         m.body
     );
     assert!(
-        m.body.contains("decoded wstring length exceeds its IDL bound (16)"),
+        m.body
+            .contains("decoded wstring length exceeds its IDL bound (16)"),
         "decode of bounded wstring<16> must throw on over-bound decode:\n{}",
         m.body
     );
@@ -55,12 +59,14 @@ fn bounded_octet_sequence_encode_and_decode_checks() {
     let m = gen_ada("@final struct Cap { sequence<octet, 4> data; };");
     assert!(
         m.body.contains("Length (V.data) > 4")
-            && m.body.contains("bounded sequence length exceeds its IDL bound (4)"),
+            && m.body
+                .contains("bounded sequence length exceeds its IDL bound (4)"),
         "encode of bounded sequence<octet,4> must throw on over-bound encode:\n{}",
         m.body
     );
     assert!(
-        m.body.contains("decoded sequence length exceeds its IDL bound (4)"),
+        m.body
+            .contains("decoded sequence length exceeds its IDL bound (4)"),
         "decode of bounded sequence<octet,4> must throw on over-bound decode:\n{}",
         m.body
     );
@@ -73,13 +79,15 @@ fn bounded_struct_sequence_encode_and_decode_checks() {
     );
     assert!(
         m.body.contains("Natural (V.pts.Length) > 3")
-            && m.body.contains("bounded sequence length exceeds its IDL bound (3)"),
+            && m.body
+                .contains("bounded sequence length exceeds its IDL bound (3)"),
         "encode of bounded sequence<Pt,3> must throw on over-bound encode:\n{}",
         m.body
     );
     assert!(
         m.body.contains("Zn > 3")
-            && m.body.contains("decoded sequence length exceeds its IDL bound (3)"),
+            && m.body
+                .contains("decoded sequence length exceeds its IDL bound (3)"),
         "decode of bounded sequence<Pt,3> must throw on over-bound decode:\n{}",
         m.body
     );
@@ -89,13 +97,15 @@ fn bounded_struct_sequence_encode_and_decode_checks() {
 fn bounded_map_encode_and_decode_checks() {
     let m = gen_ada("@final struct M { map<string, long, 2> vals; };");
     assert!(
-        m.body.contains("bounded map length exceeds its IDL bound (2)"),
+        m.body
+            .contains("bounded map length exceeds its IDL bound (2)"),
         "encode of bounded map<string,long,2> must throw on over-bound encode:\n{}",
         m.body
     );
     assert!(
         m.body.contains("Zn > 2")
-            && m.body.contains("decoded map length exceeds its IDL bound (2)"),
+            && m.body
+                .contains("decoded map length exceeds its IDL bound (2)"),
         "decode of bounded map<string,long,2> must throw on over-bound decode:\n{}",
         m.body
     );
@@ -119,12 +129,14 @@ fn bounded_string_in_mutable_struct_checks_both_sides() {
     // free. Prove it explicitly for the mutable representation.
     let m = gen_ada("@mutable struct Named { string<8> name; };");
     assert!(
-        m.body.contains("bounded string length exceeds its IDL bound (8)"),
+        m.body
+            .contains("bounded string length exceeds its IDL bound (8)"),
         "@mutable encode must carry the bound check:\n{}",
         m.body
     );
     assert!(
-        m.body.contains("decoded string length exceeds its IDL bound (8)"),
+        m.body
+            .contains("decoded string length exceeds its IDL bound (8)"),
         "@mutable decode must carry the bound check:\n{}",
         m.body
     );

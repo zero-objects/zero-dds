@@ -75,6 +75,17 @@ pub struct ComposeOutput {
     /// first touched them. Feed these to `cargo:rerun-if-changed` (a
     /// build.rs) or a Makefile dependency line (`--dump-deps`-equivalent).
     pub dependency_files: Vec<String>,
+    /// Origin source file for each top-level `ast.definitions[i]`, in the same
+    /// order and length as `ast.definitions` — the file the definition was
+    /// textually read from before `#include` expansion flattened it into the
+    /// single compilation unit. Derived from the preprocessor source map by
+    /// looking up the definition's start byte, canonicalised where the file
+    /// exists on disk (the include resolver already reports canonical include
+    /// paths). Used by [`compose_project`] to detect a top-level module that
+    /// several inputs pull in through a *shared* `#include` and emit it only
+    /// once across the project. Falls back to the main file path when a span
+    /// cannot be mapped.
+    pub definition_files: Vec<String>,
     /// Non-fatal warning produced while lowering TypeObjects (e.g. a
     /// recursive type the mapper cannot yet handle). `None` on full
     /// success or when `emit_typeobject` was `false`.
@@ -91,12 +102,25 @@ pub enum ComposeError {
     Preprocess(String),
     /// The expanded source failed to parse as OMG IDL 4.2.
     Parse(String),
+    /// The parsed spec failed semantic validation (resolver, unresolved
+    /// type references, or a spec-constraint validator). The string holds
+    /// one finding per line.
+    Semantic(String),
+    /// Two inputs of a project composition ([`compose_project`]) each pull in
+    /// a top-level definition with the same name but a *different* body — a
+    /// contradictory shared definition that cannot be deduplicated to one
+    /// emission. The string names the definition and the two inputs.
+    Conflict(String),
 }
 
 impl core::fmt::Display for ComposeError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::Io(m) | Self::Preprocess(m) | Self::Parse(m) => f.write_str(m),
+            Self::Io(m)
+            | Self::Preprocess(m)
+            | Self::Parse(m)
+            | Self::Semantic(m)
+            | Self::Conflict(m) => f.write_str(m),
         }
     }
 }
@@ -111,8 +135,13 @@ impl std::error::Error for ComposeError {}
 /// See [`ComposeError`].
 pub fn compose(path: &Path, opts: &ComposeOptions) -> Result<ComposeOutput, ComposeError> {
     let path_str = path.to_string_lossy();
-    let raw = std::fs::read_to_string(path)
+    let mut raw = std::fs::read_to_string(path)
         .map_err(|e| ComposeError::Io(format!("cannot read {path_str}: {e}")))?;
+    // Strip a leading UTF-8 BOM (U+FEFF) — some editors prepend it; it is not
+    // part of the IDL and would otherwise be an illegal leading token.
+    if raw.starts_with('\u{feff}') {
+        raw.remove(0);
+    }
 
     let mut prelude = String::new();
     for def in &opts.defines {
@@ -153,6 +182,18 @@ pub fn compose(path: &Path, opts: &ComposeOptions) -> Result<ComposeOutput, Comp
         default_ext::apply_default_nested(&mut ast, nested);
     }
 
+    // Semantic gate: refuse to compose semantically invalid IDL (duplicate
+    // declarations / members, unresolved type names, spec-constraint
+    // violations) *before* TypeObject lowering, so `emit_typeobject == false`
+    // cannot bypass it.
+    let pragma_prefixes: Vec<(String, usize)> = processed
+        .pragma_prefixes
+        .iter()
+        .map(|p| (p.prefix.clone(), p.line))
+        .collect();
+    zerodds_idl::semantics::resolve_and_validate(&ast, &pragma_prefixes)
+        .map_err(|e| ComposeError::Semantic(e.to_string()))?;
+
     let (type_objects, type_object_warning) = if opts.emit_typeobject {
         match typeobject::type_object_blobs(&ast) {
             Ok(blobs) => (blobs, None),
@@ -165,10 +206,28 @@ pub fn compose(path: &Path, opts: &ComposeOptions) -> Result<ComposeOutput, Comp
         (Vec::new(), None)
     };
 
+    // Per-definition provenance: map each top-level definition's start byte
+    // through the source map back to the file it was read from. Later steps
+    // (key-pragmas, default-extensibility) mutate annotations but neither
+    // reorder nor drop top-level definitions, and span offsets stay fixed, so
+    // this stays index-aligned with `ast.definitions`.
+    let definition_files: Vec<String> = ast
+        .definitions
+        .iter()
+        .map(|def| {
+            processed
+                .source_map
+                .lookup(def.span().start)
+                .and_then(|loc| processed.source_map.file_name(loc.file_id))
+                .map_or_else(|| path_str.to_string(), str::to_string)
+        })
+        .collect();
+
     Ok(ComposeOutput {
         ast,
         type_objects,
         dependency_files,
+        definition_files,
         type_object_warning,
     })
 }

@@ -40,7 +40,8 @@ fn emit(src: &str) -> String {
 #[test]
 fn module_wrapped_struct_is_emitted_not_dropped() {
     let e = emit("module Telemetry { @final struct Reading { long value; }; };");
-    assert!(e.contains("defmodule Zdgen.Reading do"), "{e}");
+    // #21: a module-wrapped type is emitted with its module-qualified module name.
+    assert!(e.contains("defmodule Zdgen.Telemetry_Reading do"), "{e}");
     assert!(e.contains("defstruct [:value]"), "{e}");
 }
 
@@ -52,8 +53,74 @@ fn reopened_module_emits_both_structs() {
         "module M { @final struct A { long x; }; }; \
          module M { @final struct B { long y; }; };",
     );
-    assert!(e.contains("defmodule Zdgen.A do"), "{e}");
-    assert!(e.contains("defmodule Zdgen.B do"), "{e}");
+    // #21: both halves emit under the module-qualified module name `M_*`.
+    assert!(e.contains("defmodule Zdgen.M_A do"), "{e}");
+    assert!(e.contains("defmodule Zdgen.M_B do"), "{e}");
+}
+
+/// #21 cross-module collision: two different modules each declaring `Reading`
+/// must emit distinct, module-qualified Elixir modules, never a duplicate one.
+/// (Elixir aliases must be uppercase-initial, so the flattened name is
+/// capitalized: `a::Reading` → `Zdgen.A_Reading`.)
+#[test]
+fn cross_module_same_name_types_are_qualified() {
+    let e = emit(
+        "module a { @final struct Reading { long v; }; }; \
+         module b { @final struct Reading { double w; }; };",
+    );
+    assert!(e.contains("defmodule Zdgen.A_Reading do"), "{e}");
+    assert!(e.contains("defmodule Zdgen.B_Reading do"), "{e}");
+    assert!(!e.contains("defmodule Zdgen.Reading do"), "{e}");
+    assert!(e.contains("defstruct [:v]"), "{e}");
+    assert!(e.contains("defstruct [:w]"), "{e}");
+}
+
+/// #21 cross-module reference: `module b`'s struct references `a::R`, which
+/// must resolve to the qualified module `Zdgen.A_R`, not `Zdgen.R`.
+#[test]
+fn cross_module_reference_resolves_to_qualified_type() {
+    let e = emit(
+        "module a { @final struct R { long v; }; }; \
+         module b { @final struct S { a::R r; }; };",
+    );
+    assert!(e.contains("defmodule Zdgen.A_R do"), "{e}");
+    assert!(e.contains("defmodule Zdgen.B_S do"), "{e}");
+    // S's member `r` marshals into the qualified module A_R.
+    assert!(e.contains("Zdgen.A_R.marshal_into(v.r)"), "{e}");
+    assert!(!e.contains("Zdgen.R.marshal_into"), "{e}");
+}
+
+/// #21 compile gate: a two-module spec with a cross-module reference must
+/// produce compilable Elixir.
+#[test]
+fn cross_module_reference_compiles_with_elixir() {
+    if Command::new("elixir").arg("--version").output().is_err() {
+        eprintln!("SKIP cross_module_reference_compiles_with_elixir: `elixir` not on PATH");
+        return;
+    }
+    let mut src = emit(
+        "module a { @final struct R { long v; }; }; \
+         module b { @final struct S { a::R r; }; };",
+    );
+    src.push_str(
+        r#"
+s = struct(Zdgen.B_S, r: struct(Zdgen.A_R, v: 7))
+_ = Zdgen.B_S.marshal_xcdr(s, :little)
+IO.puts("ok")
+"#,
+    );
+    let dir = std::env::temp_dir().join(format!("idlelixir_xmod_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    let ef = dir.join("main.exs");
+    std::fs::write(&ef, &src).expect("write");
+    let out = Command::new("elixir").arg(&ef).output().expect("elixir");
+    assert!(
+        out.status.success(),
+        "elixir failed:\n{}\n--- src ---\n{src}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "ok");
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
@@ -683,7 +750,10 @@ fn nested_struct_small_key_takes_zero_pad_branch_not_md5() {
         body.contains("binary_part(b <> <<0::128>>, 0, 16)"),
         "expected zero-pad branch, got:\n{body}"
     );
-    assert!(!body.contains(":erlang.md5"), "expected no MD5 branch:\n{body}");
+    assert!(
+        !body.contains(":erlang.md5"),
+        "expected no MD5 branch:\n{body}"
+    );
 }
 
 const ARRAY_KEY_IDL: &str = "\
@@ -918,4 +988,324 @@ fn keyword_colliding_module_name_compiles_with_elixir() {
         String::from_utf8_lossy(&out.stderr)
     );
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ===========================================================================
+// Section-F Wave-1: bitset/bitmask, @optional, fixed<d,s>, sequence-arbitrary,
+// @verbatim. Always-on source-asserts + elixir-gated compile-and-run tests
+// whose expected wire hex is derived from the spec IN the test (no GOLDEN_DIR
+// oracle).
+// ===========================================================================
+
+/// Writes `emit(idl) + main_body` as an `.exs`, runs it with `elixir`, and
+/// returns the trimmed stdout lines. `None` (skip) if `elixir` is not on PATH.
+fn elixir_lines(idl: &str, main_body: &str, tag: &str) -> Option<Vec<String>> {
+    if Command::new("elixir").arg("--version").output().is_err() {
+        eprintln!("SKIP {tag}: `elixir` not on PATH");
+        return None;
+    }
+    let mut src = emit(idl);
+    src.push_str(main_body);
+    let dir = std::env::temp_dir().join(format!("idlelixir_{tag}_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    let ef = dir.join("main.exs");
+    std::fs::write(&ef, &src).expect("write");
+    let out = Command::new("elixir").arg(&ef).output().expect("elixir");
+    assert!(
+        out.status.success(),
+        "elixir failed:\n{}\n--- src ---\n{src}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let lines: Vec<String> = String::from_utf8(out.stdout)
+        .expect("utf8")
+        .lines()
+        .map(|l| l.trim().to_string())
+        .collect();
+    let _ = std::fs::remove_dir_all(&dir);
+    Some(lines)
+}
+
+// ---- bitset -------------------------------------------------------------
+
+const BITSET_IDL: &str = "bitset Flags { bitfield<4> a; bitfield<8> b; };";
+
+#[test]
+fn bitset_emits_holder_module_and_accessors() {
+    let e = emit(BITSET_IDL);
+    // 4 + 8 = 12 bits → u16 backing (XTypes §7.4.7).
+    assert!(e.contains("defmodule Zdgen.Flags do"), "{e}");
+    assert!(e.contains("defstruct storage: 0"), "{e}");
+    assert!(e.contains("def a(%__MODULE__{} = v)"), "{e}");
+    assert!(e.contains("def b(%__MODULE__{} = v)"), "{e}");
+    assert!(e.contains("Zdgen.Wire.put_u16(w, v.storage)"), "{e}");
+    assert!(e.contains("{s, r} = Zdgen.Wire.get_u16(r)"), "{e}");
+}
+
+#[test]
+fn bitset_wire_is_backing_int_and_accessors_extract_bits() {
+    // storage 0xABCD as a u16 → LE "cdab", BE "abcd"; round-trips.
+    // a = bits[0..3] = 0xD (13); b = bits[4..11] = 0xBC (188).
+    let body = r##"
+f = struct(Zdgen.Flags, storage: 0xABCD)
+IO.puts(Base.encode16(Zdgen.Flags.marshal_xcdr(f, :little), case: :lower))
+IO.puts(Base.encode16(Zdgen.Flags.marshal_xcdr(f, :big), case: :lower))
+IO.puts(Base.encode16(Zdgen.Flags.marshal_xcdr(Zdgen.Flags.unmarshal(Zdgen.Flags.marshal_xcdr(f, :little), :little), :little), case: :lower))
+IO.puts("#{Zdgen.Flags.a(f)},#{Zdgen.Flags.b(f)}")
+"##;
+    let Some(l) = elixir_lines(BITSET_IDL, body, "bitset") else {
+        return;
+    };
+    assert_eq!(l[0], "cdab", "LE");
+    assert_eq!(l[1], "abcd", "BE");
+    assert_eq!(l[2], "cdab", "round-trip");
+    assert_eq!(l[3], "13,188", "bit accessors");
+}
+
+// ---- bitmask ------------------------------------------------------------
+
+const BITMASK_IDL: &str = "bitmask Perms { PERM_READ, PERM_WRITE, PERM_EXEC };";
+
+#[test]
+fn bitmask_emits_holder_and_constants() {
+    let e = emit(BITMASK_IDL);
+    // Default @bit_bound = 32 → u32 backing (XTypes §7.3.1.2.1.1).
+    assert!(e.contains("defmodule Zdgen.Perms do"), "{e}");
+    assert!(e.contains("defstruct storage: 0"), "{e}");
+    assert!(e.contains("def perm_read, do: 1"), "{e}");
+    assert!(e.contains("def perm_exec, do: 4"), "{e}");
+    assert!(e.contains("Zdgen.Wire.put_u32(w, v.storage)"), "{e}");
+}
+
+#[test]
+fn bitmask_wire_is_backing_uint32() {
+    // PERM_READ | PERM_EXEC = 0x05 → LE "05000000", BE "00000005"; round-trips.
+    let body = r#"
+p = struct(Zdgen.Perms, storage: Bitwise.bor(Zdgen.Perms.perm_read(), Zdgen.Perms.perm_exec()))
+IO.puts(Base.encode16(Zdgen.Perms.marshal_xcdr(p, :little), case: :lower))
+IO.puts(Base.encode16(Zdgen.Perms.marshal_xcdr(p, :big), case: :lower))
+IO.puts(Base.encode16(Zdgen.Perms.marshal_xcdr(Zdgen.Perms.unmarshal(Zdgen.Perms.marshal_xcdr(p, :big), :big), :big), case: :lower))
+"#;
+    let Some(l) = elixir_lines(BITMASK_IDL, body, "bitmask") else {
+        return;
+    };
+    assert_eq!(l[0], "05000000", "LE");
+    assert_eq!(l[1], "00000005", "BE");
+    assert_eq!(l[2], "00000005", "round-trip");
+}
+
+#[test]
+fn bitmask_bit_bound_narrows_backing() {
+    let e = emit("@bit_bound(8) bitmask Small { A, B };");
+    assert!(e.contains("defmodule Zdgen.Small do"), "{e}");
+    assert!(e.contains("Zdgen.Wire.put_u8(w, v.storage)"), "{e}");
+    assert!(e.contains("def a, do: 1"), "{e}");
+    assert!(e.contains("def b, do: 2"), "{e}");
+}
+
+// ---- fixed<d,s> ---------------------------------------------------------
+
+const FIXED_IDL: &str = "@final struct HasFixed { fixed<5,2> price; };";
+
+#[test]
+fn fixed_emits_bcd_field_and_prelude_module() {
+    let e = emit(FIXED_IDL);
+    assert!(e.contains("defstruct [:price]"), "{e}");
+    assert!(e.contains("Zdgen.Wire.put_bytes(v.price)"), "{e}");
+    assert!(e.contains("defmodule Zdgen.Fixed do"), "{e}");
+    assert!(e.contains("def enc(s, p, sc) do"), "{e}");
+}
+
+#[test]
+fn fixed_wire_is_packed_bcd() {
+    // fixed<5,2> 123.45 → BCD "12 34 5c" (odd P, no pad, CORBA §9.3.2.7).
+    let body = r#"
+h = struct(Zdgen.HasFixed, price: Zdgen.Fixed.enc("123.45", 5, 2))
+IO.puts(Base.encode16(Zdgen.HasFixed.marshal_xcdr(h, :little), case: :lower))
+IO.puts(Base.encode16(Zdgen.HasFixed.marshal_xcdr(h, :big), case: :lower))
+IO.puts(Base.encode16(Zdgen.HasFixed.marshal_xcdr(Zdgen.HasFixed.unmarshal(Zdgen.HasFixed.marshal_xcdr(h, :little), :little), :little), case: :lower))
+"#;
+    let Some(l) = elixir_lines(FIXED_IDL, body, "fixed") else {
+        return;
+    };
+    // Raw BCD bytes: identical for LE and BE (no byte-swap, no length prefix).
+    assert_eq!(l[0], "12345c", "LE");
+    assert_eq!(l[1], "12345c", "BE");
+    assert_eq!(l[2], "12345c", "round-trip");
+}
+
+#[test]
+fn fixed_even_p_keeps_msd() {
+    // fixed<4,0> 1234 → BCD "01 23 4c" (leading pad nibble; even P keeps MSD).
+    let body = r#"
+h = struct(Zdgen.HasFixed, price: Zdgen.Fixed.enc("1234", 4, 0))
+IO.puts(Base.encode16(Zdgen.HasFixed.marshal_xcdr(h, :little), case: :lower))
+"#;
+    let Some(l) = elixir_lines(
+        "@final struct HasFixed { fixed<4,0> price; };",
+        body,
+        "fixed40",
+    ) else {
+        return;
+    };
+    assert_eq!(l[0], "01234c");
+}
+
+// ---- sequence-arbitrary -------------------------------------------------
+
+const SEQARB_IDL: &str = "@final struct S { sequence<long> xs; };";
+
+#[test]
+fn sequence_arbitrary_emits_count_and_loop() {
+    let e = emit(SEQARB_IDL);
+    assert!(e.contains("Zdgen.Wire.put_u32(zw, length(v.xs))"), "{e}");
+    assert!(e.contains("Enum.reduce(v.xs, zw,"), "{e}");
+    assert!(e.contains("Zdgen.Wire.put_u32(zdElem)"), "{e}");
+}
+
+#[test]
+fn sequence_arbitrary_wire_count_plus_elements() {
+    // [0x01020304, 0x05060708] → u32 count 2 + two i32 elements, no DHEADER.
+    let body = r#"
+s = struct(Zdgen.S, xs: [0x01020304, 0x05060708])
+IO.puts(Base.encode16(Zdgen.S.marshal_xcdr(s, :little), case: :lower))
+IO.puts(Base.encode16(Zdgen.S.marshal_xcdr(s, :big), case: :lower))
+IO.puts(Base.encode16(Zdgen.S.marshal_xcdr(Zdgen.S.unmarshal(Zdgen.S.marshal_xcdr(s, :little), :little), :little), case: :lower))
+"#;
+    let Some(l) = elixir_lines(SEQARB_IDL, body, "seqarb") else {
+        return;
+    };
+    assert_eq!(l[0], "020000000403020108070605", "LE");
+    assert_eq!(l[1], "000000020102030405060708", "BE");
+    assert_eq!(l[2], "020000000403020108070605", "round-trip");
+}
+
+#[test]
+fn sequence_of_enum_is_arbitrary_path() {
+    // A `sequence<enum>` must now emit (was rejected pre-Wave-1).
+    let e = emit("enum E { E0, E1 }; @final struct SE { sequence<E> es; };");
+    assert!(e.contains("Zdgen.Wire.put_u32(zw, length(v.es))"), "{e}");
+    assert!(e.contains("Enum.reduce(v.es, zw,"), "{e}");
+    assert!(e.contains("Zdgen.Wire.put_u32(zdElem)"), "{e}");
+}
+
+// ---- @optional ----------------------------------------------------------
+
+const OPT_IDL: &str = "@final struct Opt { uint32 a; @optional uint32 b; };";
+
+#[test]
+fn optional_emits_presence_flag() {
+    let e = emit(OPT_IDL);
+    assert!(e.contains("defstruct [:a, :b_present, :b]"), "{e}");
+    assert!(
+        e.contains("Zdgen.Wire.put_u8(zw, if(v.b_present, do: 1, else: 0))"),
+        "{e}"
+    );
+    assert!(e.contains("{b_present, r} = Zdgen.Wire.get_bool(r)"), "{e}");
+}
+
+#[test]
+fn optional_final_wire_present_and_absent() {
+    // present: u32 a, u8 flag=1, pad(3), u32 b. absent: u32 a, u8 flag=0.
+    let body = r#"
+p = struct(Zdgen.Opt, a: 0x11223344, b_present: true, b: 0xAABBCCDD)
+q = struct(Zdgen.Opt, a: 0x11223344, b_present: false, b: 0)
+IO.puts(Base.encode16(Zdgen.Opt.marshal_xcdr(p, :little), case: :lower))
+IO.puts(Base.encode16(Zdgen.Opt.marshal_xcdr(p, :big), case: :lower))
+IO.puts(Base.encode16(Zdgen.Opt.marshal_xcdr(q, :little), case: :lower))
+IO.puts(Base.encode16(Zdgen.Opt.marshal_xcdr(Zdgen.Opt.unmarshal(Zdgen.Opt.marshal_xcdr(p, :little), :little), :little), case: :lower))
+IO.puts(Base.encode16(Zdgen.Opt.marshal_xcdr(Zdgen.Opt.unmarshal(Zdgen.Opt.marshal_xcdr(q, :little), :little), :little), case: :lower))
+"#;
+    let Some(l) = elixir_lines(OPT_IDL, body, "opt") else {
+        return;
+    };
+    assert_eq!(l[0], "4433221101000000ddccbbaa", "present LE");
+    assert_eq!(l[1], "1122334401000000aabbccdd", "present BE");
+    assert_eq!(l[2], "4433221100", "absent LE");
+    assert_eq!(l[3], "4433221101000000ddccbbaa", "present round-trip");
+    assert_eq!(l[4], "4433221100", "absent round-trip");
+}
+
+#[test]
+fn optional_appendable_round_trips() {
+    // Appendable body is DHEADER-framed; verify decode∘encode identity for both
+    // present and absent without hand-computing the DHEADER length.
+    let idl = "@appendable struct OptA { uint32 a; @optional uint32 b; };";
+    let body = r#"
+p = struct(Zdgen.OptA, a: 0xCAFEBABE, b_present: true, b: 0x01020304)
+pe = Zdgen.OptA.marshal_xcdr(p, :little)
+IO.puts(Base.encode16(pe, case: :lower))
+IO.puts(Base.encode16(Zdgen.OptA.marshal_xcdr(Zdgen.OptA.unmarshal(pe, :little), :little), case: :lower))
+q = struct(Zdgen.OptA, a: 0xCAFEBABE, b_present: false, b: 0)
+qe = Zdgen.OptA.marshal_xcdr(q, :little)
+IO.puts(Base.encode16(qe, case: :lower))
+IO.puts(Base.encode16(Zdgen.OptA.marshal_xcdr(Zdgen.OptA.unmarshal(qe, :little), :little), case: :lower))
+"#;
+    let Some(l) = elixir_lines(idl, body, "opta") else {
+        return;
+    };
+    assert_eq!(l[0], l[1], "present round-trip");
+    assert_eq!(l[2], l[3], "absent round-trip");
+}
+
+// ---- @verbatim ----------------------------------------------------------
+
+#[test]
+fn verbatim_placements_inject_text() {
+    let e = emit(
+        "@verbatim(language=\"elixir\", placement=BEGIN_FILE, text=\"# zd-begin-file\")\n\
+         @verbatim(language=\"elixir\", placement=BEFORE_DECLARATION, text=\"# zd-before\")\n\
+         @verbatim(language=\"elixir\", placement=BEGIN_DECLARATION, text=\"# zd-begin-decl\")\n\
+         @verbatim(language=\"elixir\", placement=END_DECLARATION, text=\"# zd-end-decl\")\n\
+         @verbatim(language=\"elixir\", placement=AFTER_DECLARATION, text=\"# zd-after\")\n\
+         @verbatim(language=\"elixir\", placement=END_FILE, text=\"# zd-end-file\")\n\
+         @final struct V { uint32 a; };",
+    );
+    for marker in [
+        "# zd-begin-file",
+        "# zd-before",
+        "# zd-begin-decl",
+        "# zd-end-decl",
+        "# zd-after",
+        "# zd-end-file",
+    ] {
+        assert!(e.contains(marker), "missing {marker}:\n{e}");
+    }
+    // Ordering: begin-file before the module; before-decl before `defmodule
+    // Zdgen.V do`; begin-decl after the opening `do`; after-decl/end-file trail.
+    let sidx = e.find("defmodule Zdgen.V do").expect("module");
+    assert!(e.find("# zd-begin-file").unwrap() < sidx, "{e}");
+    assert!(e.find("# zd-before").unwrap() < sidx, "{e}");
+    assert!(e.find("# zd-begin-decl").unwrap() > sidx, "{e}");
+    assert!(e.find("# zd-end-file").unwrap() > sidx, "{e}");
+}
+
+#[test]
+fn verbatim_language_filter_excludes_other_langs() {
+    // A non-Elixir language tag must NOT leak into the Elixir output.
+    let e = emit(
+        "@verbatim(language=\"java\", placement=BEFORE_DECLARATION, text=\"# java-only\")\n\
+         @final struct V { uint32 a; };",
+    );
+    assert!(!e.contains("# java-only"), "{e}");
+    // The wildcard `*` still matches Elixir.
+    let e2 = emit(
+        "@verbatim(placement=BEFORE_DECLARATION, text=\"# wildcard\")\n\
+         @final struct V { uint32 a; };",
+    );
+    assert!(e2.contains("# wildcard"), "{e2}");
+}
+
+#[test]
+fn verbatim_output_still_compiles() {
+    let idl = "@verbatim(language=\"elixir\", placement=BEGIN_FILE, text=\"# zd file header\")\n\
+         @verbatim(language=\"elixir\", placement=BEGIN_DECLARATION, text=\"# zd inside module\")\n\
+         @final struct V { uint32 a; };";
+    let body = r#"
+v = struct(Zdgen.V, a: 0x2A)
+IO.puts(Base.encode16(Zdgen.V.marshal_xcdr(v, :little), case: :lower))
+"#;
+    let Some(l) = elixir_lines(idl, body, "verbatim") else {
+        return;
+    };
+    assert_eq!(l[0], "2a000000");
 }

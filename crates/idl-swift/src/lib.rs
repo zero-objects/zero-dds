@@ -12,7 +12,10 @@
 //!
 //! # Public API
 //!
-//! - [`generate_swift_module`] — AST + options → Swift source.
+//! - [`generate_swift_module`] — AST + options → self-contained Swift source
+//!   (wire prelude + types).
+//! - [`generate_swift_fragment`] — AST + options → Swift types WITHOUT the
+//!   shared wire prelude, for every file but the first in a multi-file compose.
 //! - [`SwiftGenOptions`] — codegen options.
 //! - [`error::IdlSwiftError`] — error family.
 
@@ -23,5 +26,5 @@ pub mod emitter;
 pub mod error;
 mod keywords;
 
-pub use emitter::{SwiftGenOptions, generate_swift_module};
+pub use emitter::{SwiftGenOptions, generate_swift_fragment, generate_swift_module};
 pub use error::{IdlSwiftError, Result};

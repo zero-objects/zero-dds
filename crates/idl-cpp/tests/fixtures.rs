@@ -68,7 +68,12 @@ const FIXTURES: &[(&str, &str, &[&str])] = &[
     (
         "simple_enum",
         include_str!("fixtures/simple_enum.idl"),
-        &["enum class Color : int32_t", "RED,", "GREEN,", "BLUE,"],
+        &[
+            "enum class Color : int32_t",
+            "RED = 0,",
+            "GREEN = 1,",
+            "BLUE = 2,",
+        ],
     ),
     (
         "union_with_default",

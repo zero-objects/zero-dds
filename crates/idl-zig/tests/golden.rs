@@ -40,7 +40,8 @@ fn emit(src: &str) -> String {
 #[test]
 fn module_wrapped_struct_is_emitted_not_dropped() {
     let z = emit("module Telemetry { @final struct Reading { long value; }; };");
-    assert!(z.contains("pub const Reading = struct {"), "{z}");
+    // #21: a module-wrapped type is emitted with its module-qualified name.
+    assert!(z.contains("pub const Telemetry_Reading = struct {"), "{z}");
     assert!(z.contains("value: i32,"), "{z}");
 }
 
@@ -52,8 +53,80 @@ fn reopened_module_emits_both_structs() {
         "module M { @final struct A { long x; }; }; \
          module M { @final struct B { long y; }; };",
     );
-    assert!(z.contains("pub const A = struct {"), "{z}");
-    assert!(z.contains("pub const B = struct {"), "{z}");
+    // #21: both halves emit under the module-qualified name `M_*`.
+    assert!(z.contains("pub const M_A = struct {"), "{z}");
+    assert!(z.contains("pub const M_B = struct {"), "{z}");
+}
+
+/// #21 cross-module collision: two different modules each declaring `Reading`
+/// must emit distinct, module-qualified Zig types, never a duplicate one.
+#[test]
+fn cross_module_same_name_types_are_qualified() {
+    let z = emit(
+        "module a { @final struct Reading { long v; }; }; \
+         module b { @final struct Reading { double w; }; };",
+    );
+    assert!(z.contains("pub const a_Reading = struct {"), "{z}");
+    assert!(z.contains("pub const b_Reading = struct {"), "{z}");
+    assert!(!z.contains("pub const Reading = struct {"), "{z}");
+    assert!(z.contains("v: i32,"), "{z}");
+    assert!(z.contains("w: f64,"), "{z}");
+}
+
+/// #21 cross-module reference: `module b`'s struct references `a::R`, which
+/// must resolve to the qualified type `a_R`, not the bare `R`.
+#[test]
+fn cross_module_reference_resolves_to_qualified_type() {
+    let z = emit(
+        "module a { @final struct R { long v; }; }; \
+         module b { @final struct S { a::R inner; }; };",
+    );
+    assert!(z.contains("pub const a_R = struct {"), "{z}");
+    assert!(z.contains("pub const b_S = struct {"), "{z}");
+    // S's member `inner` has the qualified type a_R.
+    assert!(z.contains("inner: a_R,"), "{z}");
+}
+
+/// #21 compile gate: a two-module spec with a cross-module reference must
+/// produce compilable Zig.
+#[test]
+fn cross_module_reference_compiles_with_zig() {
+    if Command::new("zig").arg("version").output().is_err() {
+        eprintln!("SKIP cross_module_reference_compiles_with_zig: `zig` not on PATH");
+        return;
+    }
+    let mut src = emit(
+        "module a { @final struct R { long v; }; }; \
+         module b { @final struct S { a::R inner; }; };",
+    );
+    src.push_str(
+        r##"
+pub fn main() !void {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const alloc = gpa.allocator();
+    const s = b_S{ .inner = a_R{ .v = 7 } };
+    _ = try s.marshalXCDR(.little, alloc);
+    const out = std.io.getStdOut().writer();
+    try out.print("ok\n", .{});
+}
+"##,
+    );
+    let dir = std::env::temp_dir().join(format!("idlzig_xmod_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    let zf = dir.join("main.zig");
+    std::fs::write(&zf, &src).expect("write");
+    let out = Command::new("zig")
+        .arg("run")
+        .arg(&zf)
+        .output()
+        .expect("zig run");
+    assert!(
+        out.status.success(),
+        "zig run failed:\n{}\n--- src ---\n{src}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "ok");
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
@@ -1060,4 +1133,313 @@ comptime {
         String::from_utf8_lossy(&out.stderr)
     );
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ============================================================================
+// Section-F Wave-1: bitset/bitmask, @optional, fixed<d,s>, sequence-arbitrary,
+// @verbatim. Each feature has an always-on source-assert plus a `zig`-gated
+// compile-and-run wire test. The gated tests use `zig run` (link) — the same
+// gate every wire test above uses — and are Linux/codepit-authoritative:
+// this dev machine's zig 0.14.1 cannot link a host executable (`undefined
+// symbol` for a trivial hello-world), so they SKIP-print on macOS and RUN on
+// codepit. No golden-oracle files: expected wire bytes are pinned inline
+// (BCD vendor vectors, backing-int holders) or proven by decode + roundtrip.
+
+/// Emits `idl`, appends a `pub fn main` (with `out`/`alloc` in scope) built
+/// from `body`, compiles + runs it via `zig run`, and returns the trimmed
+/// stdout lines. Returns `None` (and prints a SKIP note) when `zig` is not on
+/// PATH — the standard gate for the wire tests in this file.
+fn zig_run(idl: &str, body: &str, stem: &str) -> Option<Vec<String>> {
+    // Gate on GOLDEN_DIR — the same signal every wire test in this file uses to
+    // mean "run in the authoritative Linux/codepit environment". On macOS the
+    // var is unset (skip), which also sidesteps this dev machine's zig 0.14.1
+    // host-link gap (`zig run` fails with `undefined symbol`); the codepit
+    // verify command sets it, so these tests run + link + assert there.
+    if std::env::var("GOLDEN_DIR").is_err() {
+        eprintln!("SKIP {stem}: GOLDEN_DIR unset (Linux/codepit-authoritative)");
+        return None;
+    }
+    if Command::new("zig").arg("version").output().is_err() {
+        eprintln!("SKIP {stem}: `zig` not on PATH");
+        return None;
+    }
+    let mut src = emit(idl);
+    src.push_str(
+        "\npub fn main() !void {\n    var gpa = std.heap.GeneralPurposeAllocator(.{}){};\n    const alloc = gpa.allocator();\n    const out = std.io.getStdOut().writer();\n",
+    );
+    src.push_str(body);
+    src.push_str("\n}\n");
+    let dir = std::env::temp_dir().join(format!("idlzig_{stem}_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    let zf = dir.join("main.zig");
+    std::fs::write(&zf, &src).expect("write");
+    let out = Command::new("zig")
+        .arg("run")
+        .arg(&zf)
+        .output()
+        .expect("zig run");
+    assert!(
+        out.status.success(),
+        "zig run failed:\n{}\n--- src ---\n{src}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf8");
+    let lines: Vec<String> = stdout.lines().map(|s| s.trim().to_string()).collect();
+    let _ = std::fs::remove_dir_all(&dir);
+    Some(lines)
+}
+
+// ---- bitset / bitmask (XTypes 1.3 §7.4.7) -------------------------------
+
+const BITSET_IDL: &str = "\
+bitset Flags { bitfield<1> ready; bitfield<3> level; bitfield<4> code; };
+@bit_bound(16) bitmask Perm { READ, WRITE, EXEC };
+@final struct Holder { Flags f; Perm p; };";
+
+#[test]
+fn bitset_and_bitmask_emit_backing_int_and_accessors() {
+    let z = emit(BITSET_IDL);
+    // Bitset: width-derived backing int (1+3+4 = 8 bits -> u8), bit accessors,
+    // wire = the backing integer.
+    assert!(z.contains("pub const Flags = struct {"), "{z}");
+    assert!(z.contains("storage: u8 = 0,"), "{z}");
+    assert!(
+        z.contains("pub fn ready(self: Flags) bool { return ((self.storage >> 0) & 1) != 0; }"),
+        "{z}"
+    );
+    assert!(z.contains("pub fn level(self: Flags) u8"), "{z}");
+    assert!(
+        z.contains(
+            "pub fn marshalInto(self: Flags, w: *Writer) !void { try w.putU8(self.storage); }"
+        ),
+        "{z}"
+    );
+    // Bitmask: @bit_bound(16) -> u16 holder (NOT the 3-bit count), OR-able consts.
+    assert!(z.contains("pub const Perm = struct {"), "{z}");
+    assert!(z.contains("storage: u16 = 0,"), "{z}");
+    assert!(
+        z.contains("pub const WRITE: Perm = .{ .storage = @as(u16, 1) << 1 };"),
+        "{z}"
+    );
+    assert!(z.contains("try w.putU16(self.storage);"), "{z}");
+}
+
+#[test]
+fn bitset_bitmask_wire_is_backing_int() {
+    // Flags{ready=1(bit0), level=5(bits1-3)} -> storage 1|(5<<1)=0x0b (u8).
+    // Perm.WRITE -> storage 1<<1 = 2 (u16, @bit_bound=16). Holder @final:
+    // u8 0x0b, then u16 aligned to offset 2. LE "0b000200" / BE "0b000002".
+    let Some(lines) = zig_run(
+        BITSET_IDL,
+        "    var f = Flags{};\n\
+             f.set_ready(true);\n\
+             f.set_level(5);\n\
+             const h = Holder{ .f = f, .p = Perm.WRITE };\n\
+             const le = try h.marshalXCDR(.little, alloc);\n\
+             const be = try h.marshalXCDR(.big, alloc);\n\
+             for (le) |b| try out.print(\"{x:0>2}\", .{b});\n\
+             try out.print(\"\\n\", .{});\n\
+             for (be) |b| try out.print(\"{x:0>2}\", .{b});\n\
+             try out.print(\"\\n\", .{});\n\
+             const back = try Holder.unmarshalXCDR(le, .little, alloc);\n\
+             try out.print(\"{d} {d} {d} {}\\n\", .{ back.f.storage, back.f.level(), back.p.bits(), back.f.ready() });",
+        "bitset",
+    ) else {
+        return;
+    };
+    assert_eq!(lines[0], "0b000200", "LE backing-int wire");
+    assert_eq!(lines[1], "0b000002", "BE backing-int wire");
+    // Decoded storage 0x0b=11, level()=5, Perm bits=2, ready()=true.
+    assert_eq!(lines[2], "11 5 2 true");
+}
+
+// ---- @optional (XTypes 1.3 §7.4.3.5): u8 presence flag + value ----------
+
+const OPT_IDL: &str = "\
+@final struct Opt { uint32 a; @optional uint32 b; @optional string s; };";
+
+#[test]
+fn optional_emits_nullable_field_and_presence_flag() {
+    let z = emit(OPT_IDL);
+    assert!(z.contains("b: ?u32,"), "{z}");
+    assert!(z.contains("s: ?[]const u8,"), "{z}");
+    // Present -> flag 1 + value; absent -> flag 0.
+    assert!(
+        z.contains("if (self.b) |zdOptV| { try w.putU8(1); try w.putU32(zdOptV); } else { try w.putU8(0); }"),
+        "{z}"
+    );
+    // Decode restores null for an absent member.
+    assert!(z.contains("v.b = null;"), "{z}");
+}
+
+#[test]
+fn optional_wire_presence_flag_and_roundtrip() {
+    // Opt{a=1, b=Some(7), s=None}: u32 1 | u8 1 | pad3 | u32 7 | u8 0.
+    let Some(lines) = zig_run(
+        OPT_IDL,
+        "    const o = Opt{ .a = 1, .b = 7, .s = null };\n\
+             const le = try o.marshalXCDR(.little, alloc);\n\
+             for (le) |b| try out.print(\"{x:0>2}\", .{b});\n\
+             try out.print(\"\\n\", .{});\n\
+             const back = try Opt.unmarshalXCDR(le, .little, alloc);\n\
+             const le2 = try back.marshalXCDR(.little, alloc);\n\
+             try out.print(\"{d} {?d} {} {}\\n\", .{ back.a, back.b, back.s == null, std.mem.eql(u8, le, le2) });\n\
+             const o2 = Opt{ .a = 9, .b = null, .s = \"hi\" };\n\
+             const le3 = try o2.marshalXCDR(.little, alloc);\n\
+             const b2 = try Opt.unmarshalXCDR(le3, .little, alloc);\n\
+             const le4 = try b2.marshalXCDR(.little, alloc);\n\
+             try out.print(\"{d} {} {s} {}\\n\", .{ b2.a, b2.b == null, b2.s.?, std.mem.eql(u8, le3, le4) });",
+        "opt",
+    ) else {
+        return;
+    };
+    assert_eq!(
+        lines[0], "01000000010000000700000000",
+        "present-int + absent wire"
+    );
+    // a=1, b=Some(7), s absent, encode==re-encode.
+    assert_eq!(lines[1], "1 7 true true");
+    // a=9, b absent, s=Some("hi"), roundtrip byte-stable.
+    assert_eq!(lines[2], "9 true hi true");
+}
+
+// ---- fixed<P,S> (XCDR2 §7.4.4.5 / CORBA §9.3.2.7 packed BCD) -------------
+
+const FIXED_IDL: &str = "\
+@final struct Money { fixed<5,2> price; fixed<4,0> qty; };";
+
+#[test]
+fn fixed_emits_bcd_codec_calls() {
+    let z = emit(FIXED_IDL);
+    assert!(z.contains("price: []const u8,"), "{z}");
+    assert!(z.contains("try w.putFixed(self.price, 5, 2);"), "{z}");
+    assert!(z.contains("v.price = try r.getFixed(5, 2);"), "{z}");
+    assert!(z.contains("try w.putFixed(self.qty, 4, 0);"), "{z}");
+}
+
+#[test]
+fn fixed_wire_matches_corba_bcd_vectors() {
+    // Vendor-oracle vectors (JacORB 3.9 ~ omniORB 4.3, crates/cdr/src/fixed.rs):
+    // fixed<5,2> "123.45" -> 12 34 5c ; fixed<4,0> "1234" -> 01 23 4c.
+    // BCD is endian-independent, so LE == BE.
+    let Some(lines) = zig_run(
+        FIXED_IDL,
+        "    const m = Money{ .price = \"123.45\", .qty = \"1234\" };\n\
+             const le = try m.marshalXCDR(.little, alloc);\n\
+             const be = try m.marshalXCDR(.big, alloc);\n\
+             for (le) |b| try out.print(\"{x:0>2}\", .{b});\n\
+             try out.print(\"\\n\", .{});\n\
+             for (be) |b| try out.print(\"{x:0>2}\", .{b});\n\
+             try out.print(\"\\n\", .{});\n\
+             const back = try Money.unmarshalXCDR(le, .little, alloc);\n\
+             try out.print(\"{s}\\n\", .{back.price});\n\
+             try out.print(\"{s}\\n\", .{back.qty});",
+        "fixed",
+    ) else {
+        return;
+    };
+    assert_eq!(lines[0], "12345c01234c", "LE BCD wire");
+    assert_eq!(lines[1], "12345c01234c", "BE BCD wire (endian-independent)");
+    assert_eq!(lines[2], "123.45", "decoded price");
+    assert_eq!(lines[3], "1234", "decoded qty");
+}
+
+// ---- sequence<arbitrary> (thin→thin parity with idl-go): u32 count + elems -
+
+const SEQ_ARB_IDL: &str = "\
+@final struct Seqs { sequence<int32> nums; sequence<string> names; };";
+
+#[test]
+fn sequence_arbitrary_emits_count_and_per_element() {
+    let z = emit(SEQ_ARB_IDL);
+    assert!(z.contains("nums: []const i32,"), "{z}");
+    assert!(z.contains("names: []const []const u8,"), "{z}");
+    // u32 count + inline per-element encode (no per-element DHEADER).
+    assert!(
+        z.contains("try w.putU32(@intCast(self.nums.len)); for (self.nums) |zdSeqE| { try w.putU32(@bitCast(zdSeqE)); }"),
+        "{z}"
+    );
+    assert!(
+        z.contains("for (self.names) |zdSeqE| { try w.putString(zdSeqE); }"),
+        "{z}"
+    );
+    assert!(z.contains("try r.alloc.alloc(i32, zdN)"), "{z}");
+}
+
+#[test]
+fn sequence_arbitrary_decode_roundtrip() {
+    // Proven by decode + re-encode equality (LE and BE) plus field semantics —
+    // no hand-computed wire needed.
+    let Some(lines) = zig_run(
+        SEQ_ARB_IDL,
+        "    const nums = [_]i32{ 1, -2, 3 };\n\
+             const names = [_][]const u8{ \"a\", \"bb\" };\n\
+             const s = Seqs{ .nums = &nums, .names = &names };\n\
+             const le = try s.marshalXCDR(.little, alloc);\n\
+             const be = try s.marshalXCDR(.big, alloc);\n\
+             const bl = try Seqs.unmarshalXCDR(le, .little, alloc);\n\
+             const bb = try Seqs.unmarshalXCDR(be, .big, alloc);\n\
+             const le2 = try bl.marshalXCDR(.little, alloc);\n\
+             try out.print(\"{d} {d} {d} {s} {} {}\\n\", .{ bl.nums.len, bl.nums[1], bl.names.len, bl.names[1], std.mem.eql(u8, le, le2), bb.nums[1] == -2 });",
+        "seqarb",
+    ) else {
+        return;
+    };
+    assert_eq!(lines[0], "3 -2 2 bb true true");
+}
+
+// ---- @verbatim (XTypes 1.3 §7.2.2.4.8 / IDL 4.2 §8.3.5.1) ----------------
+
+#[test]
+fn verbatim_places_text_at_each_placement() {
+    let z = emit(
+        "@verbatim(language=\"zig\", placement=BEFORE_DECLARATION, text=\"// zbefore\")\n\
+         @verbatim(language=\"zig\", placement=AFTER_DECLARATION, text=\"// zafter\")\n\
+         @verbatim(language=\"zig\", placement=BEGIN_DECLARATION, text=\"// zbegin\")\n\
+         @verbatim(language=\"zig\", placement=END_DECLARATION, text=\"// zend\")\n\
+         @final struct V { uint32 x; };",
+    );
+    // BEFORE lands ahead of the type, BEGIN as the first line inside the struct,
+    // END as the last line inside, AFTER right after the closing `};`.
+    let before = z.find("// zbefore").expect("before");
+    let ty = z.find("pub const V = struct {").expect("type");
+    let begin = z.find("// zbegin").expect("begin");
+    let end = z.find("// zend").expect("end");
+    let close = z.rfind("};").expect("close");
+    let after = z.find("// zafter").expect("after");
+    assert!(before < ty, "{z}");
+    assert!(ty < begin && begin < end, "{z}");
+    assert!(end < close && close < after, "{z}");
+}
+
+#[test]
+fn verbatim_language_filter_excludes_other_languages() {
+    // A c++-only verbatim must NOT leak into Zig output; the `*` wildcard must.
+    let z = emit(
+        "@verbatim(language=\"c++\", placement=BEFORE_DECLARATION, text=\"CPPONLY\")\n\
+         @verbatim(language=\"*\", placement=BEFORE_DECLARATION, text=\"// WILDCARD\")\n\
+         @final struct W { uint32 x; };",
+    );
+    assert!(
+        !z.contains("CPPONLY"),
+        "c++ verbatim must not appear in Zig: {z}"
+    );
+    assert!(
+        z.contains("// WILDCARD"),
+        "wildcard verbatim must appear: {z}"
+    );
+}
+
+#[test]
+fn verbatim_file_placements_bracket_all_types() {
+    let z = emit(
+        "@verbatim(language=\"zig\", placement=BEGIN_FILE, text=\"// TOP\")\n\
+         @verbatim(language=\"zig\", placement=END_FILE, text=\"// BOTTOM\")\n\
+         @final struct F { uint32 x; };",
+    );
+    let top = z.find("// TOP").expect("top");
+    let bottom = z.find("// BOTTOM").expect("bottom");
+    let ty = z.find("pub const F = struct {").expect("type");
+    // BEGIN_FILE precedes the type; END_FILE follows it.
+    assert!(top < ty && ty < bottom, "{z}");
 }

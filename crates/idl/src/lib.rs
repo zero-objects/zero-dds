@@ -32,6 +32,7 @@ pub mod features;
 pub mod grammar;
 pub mod keyhash;
 pub mod lexer;
+pub mod naming;
 pub mod parser;
 pub mod preprocessor;
 pub mod semantics;

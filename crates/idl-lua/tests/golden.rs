@@ -40,7 +40,11 @@ fn emit(src: &str) -> String {
 #[test]
 fn module_wrapped_struct_is_emitted_not_dropped() {
     let l = emit("module Telemetry { @final struct Reading { long value; }; };");
-    assert!(l.contains("function marshal_Reading(v, endian)"), "{l}");
+    // #21: a module-wrapped type is emitted with its module-qualified name.
+    assert!(
+        l.contains("function marshal_Telemetry_Reading(v, endian)"),
+        "{l}"
+    );
     assert!(l.contains("w:putU32(v.value"), "{l}");
 }
 
@@ -52,8 +56,70 @@ fn reopened_module_emits_both_structs() {
         "module M { @final struct A { long x; }; }; \
          module M { @final struct B { long y; }; };",
     );
-    assert!(l.contains("function marshal_A(v, endian)"), "{l}");
-    assert!(l.contains("function marshal_B(v, endian)"), "{l}");
+    // #21: both halves emit under the module-qualified name `M_*`.
+    assert!(l.contains("function marshal_M_A(v, endian)"), "{l}");
+    assert!(l.contains("function marshal_M_B(v, endian)"), "{l}");
+}
+
+/// #21 cross-module collision: two different modules each declaring `Reading`
+/// must emit distinct, module-qualified marshallers, never a duplicate one.
+#[test]
+fn cross_module_same_name_types_are_qualified() {
+    let l = emit(
+        "module a { @final struct Reading { long v; }; }; \
+         module b { @final struct Reading { double w; }; };",
+    );
+    assert!(l.contains("function marshal_a_Reading(v, endian)"), "{l}");
+    assert!(l.contains("function marshal_b_Reading(v, endian)"), "{l}");
+    assert!(!l.contains("function marshal_Reading(v, endian)"), "{l}");
+}
+
+/// #21 cross-module reference: `module b`'s struct references `a::R`, which
+/// must resolve to the qualified marshaller `a_R`, not the bare `R`.
+#[test]
+fn cross_module_reference_resolves_to_qualified_type() {
+    let l = emit(
+        "module a { @final struct R { long v; }; }; \
+         module b { @final struct S { a::R r; }; };",
+    );
+    assert!(l.contains("function marshal_a_R(v, endian)"), "{l}");
+    assert!(l.contains("function marshal_b_S(v, endian)"), "{l}");
+    // S's member `r` marshals via the qualified nested marshaller a_R.
+    assert!(l.contains("marshalInto_a_R"), "{l}");
+    assert!(!l.contains("marshalInto_R("), "{l}");
+}
+
+/// #21 compile gate: a two-module spec with a cross-module reference must
+/// produce runnable Lua.
+#[test]
+fn cross_module_reference_compiles_with_lua() {
+    if Command::new("lua5.4").arg("-v").output().is_err() {
+        eprintln!("SKIP cross_module_reference_compiles_with_lua: `lua5.4` not on PATH");
+        return;
+    }
+    let mut src = emit(
+        "module a { @final struct R { long v; }; }; \
+         module b { @final struct S { a::R r; }; };",
+    );
+    src.push_str(
+        "
+local s = { r = { v = 7 } }
+local _ = marshal_b_S(s, LE)
+print(\"ok\")
+",
+    );
+    let dir = std::env::temp_dir().join(format!("idllua_xmod_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    let lf = dir.join("main.lua");
+    std::fs::write(&lf, &src).expect("write");
+    let out = Command::new("lua5.4").arg(&lf).output().expect("lua5.4");
+    assert!(
+        out.status.success(),
+        "lua5.4 failed:\n{}\n--- src ---\n{src}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "ok");
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
@@ -916,4 +982,353 @@ fn keyword_identifiers_parse_with_luac() {
         String::from_utf8_lossy(&out.stderr)
     );
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ---- Section-F Wave-1: bitset / bitmask / fixed / sequence-arbitrary /
+// @optional / @verbatim. Always-on source asserts + a gated compile-and-run
+// harness (`lua5.4`) whose expected wire hex is spec-derived in-test (no
+// GOLDEN_DIR dependency).
+
+/// Emits `idl`, appends `toHex` + `main_body`, runs the generated Lua under
+/// `lua5.4`, and returns its trimmed stdout lines. `None` (SKIP) when `lua5.4`
+/// is not on PATH — the gated tests still count as passing on such a host.
+fn lua_lines(idl: &str, main_body: &str, tag: &str) -> Option<Vec<String>> {
+    if Command::new("lua5.4").arg("-v").output().is_err() {
+        eprintln!("SKIP {tag}: `lua5.4` not on PATH");
+        return None;
+    }
+    let mut src = emit(idl);
+    src.push_str(LUA_HEX);
+    src.push_str(main_body);
+    let dir = std::env::temp_dir().join(format!("idllua_{tag}_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    let lf = dir.join("main.lua");
+    std::fs::write(&lf, &src).expect("write");
+    let out = Command::new("lua5.4").arg(&lf).output().expect("lua5.4");
+    assert!(
+        out.status.success(),
+        "lua5.4 failed:\n{}\n--- src ---\n{src}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf8");
+    let lines: Vec<String> = stdout.lines().map(|l| l.trim().to_string()).collect();
+    let _ = std::fs::remove_dir_all(&dir);
+    Some(lines)
+}
+
+// ---- bitset -------------------------------------------------------------
+
+const BITSET_IDL: &str = "bitset Flags { bitfield<4> a; bitfield<8> b; };";
+
+#[test]
+fn bitset_emits_holder_and_accessors() {
+    // 4 + 8 = 12 bits → uint16 backing (XTypes §7.4.7).
+    let l = emit(BITSET_IDL);
+    assert!(
+        l.contains("function Flags_a(v) return (v.storage >> 0) & 15 end"),
+        "{l}"
+    );
+    assert!(
+        l.contains("function Flags_b(v) return (v.storage >> 4) & 255 end"),
+        "{l}"
+    );
+    assert!(l.contains("function Flags_set_a(v, x)"), "{l}");
+    assert!(
+        l.contains("function marshalInto_Flags(w, v) w:putU16(v.storage & 0xffff) end"),
+        "{l}"
+    );
+    assert!(
+        l.contains("function read_Flags(r) return { storage = r:getU16() }"),
+        "{l}"
+    );
+}
+
+#[test]
+fn bitset_wire_is_backing_int() {
+    // storage 0xABCD as a uint16 → LE "cdab", BE "abcd"; round-trips.
+    // Accessors: a = 0xABCD & 0xF = 13, b = (0xABCD >> 4) & 0xFF = 188.
+    let body = "\nlocal f = { storage = 0xABCD }\n\
+print(toHex(marshal_Flags(f, LE)))\n\
+print(toHex(marshal_Flags(f, BE)))\n\
+print(toHex(marshal_Flags(unmarshal_Flags(marshal_Flags(f, LE), LE), LE)))\n\
+print(Flags_a(f))\n\
+print(Flags_b(f))\n";
+    let Some(l) = lua_lines(BITSET_IDL, body, "bitset") else {
+        return;
+    };
+    assert_eq!(l[0], "cdab", "LE");
+    assert_eq!(l[1], "abcd", "BE");
+    assert_eq!(l[2], "cdab", "round-trip");
+    assert_eq!(l[3], "13", "accessor a");
+    assert_eq!(l[4], "188", "accessor b");
+}
+
+#[test]
+fn bitset_narrow_backing_widths() {
+    // ≤8 bits → u8; 17..=32 → u32 (XTypes §7.4.7).
+    let small = emit("bitset B8 { bitfield<3> x; bitfield<5> y; };");
+    assert!(
+        small.contains("function marshalInto_B8(w, v) w:putU8(v.storage & 0xff) end"),
+        "{small}"
+    );
+    let big = emit("bitset B32 { bitfield<20> x; };");
+    assert!(
+        big.contains("function marshalInto_B32(w, v) w:putU32(v.storage & 0xffffffff) end"),
+        "{big}"
+    );
+}
+
+// ---- bitmask ------------------------------------------------------------
+
+const BITMASK_IDL: &str = "bitmask Perms { PERM_READ, PERM_WRITE, PERM_EXEC };";
+
+#[test]
+fn bitmask_emits_holder_and_constants() {
+    // Default @bit_bound = 32 → uint32 backing (XTypes §7.3.1.2.1.1).
+    let l = emit(BITMASK_IDL);
+    assert!(
+        l.contains("local Perms = { PERM_READ = 1 << 0, PERM_WRITE = 1 << 1, PERM_EXEC = 1 << 2 }"),
+        "{l}"
+    );
+    assert!(
+        l.contains("function marshalInto_Perms(w, v) w:putU32(v.storage & 0xffffffff) end"),
+        "{l}"
+    );
+}
+
+#[test]
+fn bitmask_wire_is_backing_uint32() {
+    // PERM_READ | PERM_EXEC = 0x05 → LE "05000000", BE "00000005"; round-trips.
+    let body = "\nlocal p = { storage = Perms.PERM_READ | Perms.PERM_EXEC }\n\
+print(toHex(marshal_Perms(p, LE)))\n\
+print(toHex(marshal_Perms(p, BE)))\n\
+print(toHex(marshal_Perms(unmarshal_Perms(marshal_Perms(p, BE), BE), BE)))\n";
+    let Some(l) = lua_lines(BITMASK_IDL, body, "bitmask") else {
+        return;
+    };
+    assert_eq!(l[0], "05000000", "LE");
+    assert_eq!(l[1], "00000005", "BE");
+    assert_eq!(l[2], "00000005", "round-trip");
+}
+
+#[test]
+fn bitmask_bit_bound_narrows_backing() {
+    let l = emit("@bit_bound(8) bitmask Small { A, B };");
+    assert!(
+        l.contains("function marshalInto_Small(w, v) w:putU8(v.storage & 0xff) end"),
+        "{l}"
+    );
+    assert!(
+        l.contains("function read_Small(r) return { storage = r:getU8() }"),
+        "{l}"
+    );
+}
+
+// ---- fixed<d,s> ---------------------------------------------------------
+
+const FIXED_IDL: &str = "@final struct HasFixed { fixed<5,2> price; };";
+
+#[test]
+fn fixed_emits_bcd_field_and_prelude() {
+    let l = emit(FIXED_IDL);
+    assert!(
+        l.contains("$w:putBytes(v.price)") || l.contains("w:putBytes(v.price)"),
+        "{l}"
+    );
+    assert!(l.contains("function zdFixedEnc(s, P, S)"), "{l}");
+    // decode reads (5+2)/2 = 3 raw octets, no length prefix.
+    assert!(l.contains("v.price = r:getBytesN(3)"), "{l}");
+}
+
+#[test]
+fn fixed_wire_is_packed_bcd() {
+    // fixed<5,2> 123.45 → BCD "12 34 5c" (odd P, no pad, CORBA §9.3.2.7); the
+    // raw BCD is endian-agnostic (no byte-swap, no length prefix); round-trips.
+    let body = "\nlocal h = { price = zdFixedEnc(\"123.45\", 5, 2) }\n\
+print(toHex(marshal_HasFixed(h, LE)))\n\
+print(toHex(marshal_HasFixed(h, BE)))\n\
+print(toHex(marshal_HasFixed(unmarshal_HasFixed(marshal_HasFixed(h, LE), LE), LE)))\n";
+    let Some(l) = lua_lines(FIXED_IDL, body, "fixed") else {
+        return;
+    };
+    assert_eq!(l[0], "12345c", "LE");
+    assert_eq!(l[1], "12345c", "BE");
+    assert_eq!(l[2], "12345c", "round-trip");
+}
+
+#[test]
+fn fixed_even_p_keeps_msd() {
+    // fixed<4,0> 1234 → BCD "01 23 4c" (leading pad nibble; even P keeps MSD).
+    let body = "\nlocal h = { price = zdFixedEnc(\"1234\", 4, 0) }\n\
+print(toHex(marshal_HasFixed(h, LE)))\n";
+    let Some(l) = lua_lines(
+        "@final struct HasFixed { fixed<4,0> price; };",
+        body,
+        "fixed40",
+    ) else {
+        return;
+    };
+    assert_eq!(l[0], "01234c");
+}
+
+// ---- sequence-arbitrary -------------------------------------------------
+
+const SEQARB_IDL: &str = "@final struct S { sequence<long> xs; };";
+
+#[test]
+fn sequence_arbitrary_emits_count_and_loop() {
+    // Was rejected pre-Wave-1 (idl-lua ~:416). Now: u32 count + per-element,
+    // no collection DHEADER.
+    let l = emit(SEQARB_IDL);
+    assert!(l.contains("w:putU32(#v.xs)"), "{l}");
+    assert!(l.contains("for _, zdElem in ipairs(v.xs) do"), "{l}");
+}
+
+#[test]
+fn sequence_arbitrary_wire_count_plus_elements() {
+    // [0x01020304, 0x05060708] → u32 count 2 + two i32 elements, no DHEADER.
+    let body = "\nlocal s = { xs = { 0x01020304, 0x05060708 } }\n\
+print(toHex(marshal_S(s, LE)))\n\
+print(toHex(marshal_S(s, BE)))\n\
+print(toHex(marshal_S(unmarshal_S(marshal_S(s, LE), LE), LE)))\n";
+    let Some(l) = lua_lines(SEQARB_IDL, body, "seqarb") else {
+        return;
+    };
+    assert_eq!(l[0], "020000000403020108070605", "LE");
+    assert_eq!(l[1], "000000020102030405060708", "BE");
+    assert_eq!(l[2], "020000000403020108070605", "round-trip");
+}
+
+#[test]
+fn sequence_of_enum_is_arbitrary_path() {
+    // A `sequence<enum>` must now emit (was rejected pre-Wave-1).
+    let l = emit("enum E { E0, E1 }; @final struct SE { sequence<E> es; };");
+    assert!(l.contains("w:putU32(#v.es)"), "{l}");
+    assert!(l.contains("for _, zdElem in ipairs(v.es) do"), "{l}");
+}
+
+// ---- @optional ----------------------------------------------------------
+
+const OPT_IDL: &str = "@final struct Opt { uint32 a; @optional uint32 b; };";
+
+#[test]
+fn optional_emits_presence_flag() {
+    let l = emit(OPT_IDL);
+    assert!(l.contains("w:putU8(v.b_present and 1 or 0)"), "{l}");
+    assert!(l.contains("if v.b_present then"), "{l}");
+    assert!(l.contains("v.b_present = r:getBool()"), "{l}");
+}
+
+#[test]
+fn optional_final_wire_present_and_absent() {
+    // present: u32 a, u8 flag=1, pad(3), u32 b. absent: u32 a, u8 flag=0.
+    let body = "\nlocal p = { a = 0x11223344, b_present = true, b = 0xAABBCCDD }\n\
+print(toHex(marshal_Opt(p, LE)))\n\
+print(toHex(marshal_Opt(p, BE)))\n\
+local q = { a = 0x11223344, b_present = false }\n\
+print(toHex(marshal_Opt(q, LE)))\n\
+print(toHex(marshal_Opt(unmarshal_Opt(marshal_Opt(p, LE), LE), LE)))\n\
+print(toHex(marshal_Opt(unmarshal_Opt(marshal_Opt(q, LE), LE), LE)))\n";
+    let Some(l) = lua_lines(OPT_IDL, body, "opt") else {
+        return;
+    };
+    assert_eq!(l[0], "4433221101000000ddccbbaa", "present LE");
+    assert_eq!(l[1], "1122334401000000aabbccdd", "present BE");
+    assert_eq!(l[2], "4433221100", "absent LE");
+    assert_eq!(l[3], "4433221101000000ddccbbaa", "present round-trip");
+    assert_eq!(l[4], "4433221100", "absent round-trip");
+}
+
+#[test]
+fn optional_appendable_round_trips() {
+    // Appendable body is DHEADER-framed; verify decode∘encode identity for both
+    // present and absent, without hand-computing the DHEADER length.
+    let idl = "@appendable struct OptA { uint32 a; @optional uint32 b; };";
+    let body = "\nlocal p = { a = 0xCAFEBABE, b_present = true, b = 0x01020304 }\n\
+local pe = marshal_OptA(p, LE)\n\
+print(toHex(pe))\n\
+print(toHex(marshal_OptA(unmarshal_OptA(pe, LE), LE)))\n\
+local q = { a = 0xCAFEBABE, b_present = false }\n\
+local qe = marshal_OptA(q, LE)\n\
+print(toHex(qe))\n\
+print(toHex(marshal_OptA(unmarshal_OptA(qe, LE), LE)))\n";
+    let Some(l) = lua_lines(idl, body, "opta") else {
+        return;
+    };
+    assert_eq!(l[0], l[1], "present round-trip");
+    assert_eq!(l[2], l[3], "absent round-trip");
+}
+
+// ---- @verbatim ----------------------------------------------------------
+
+#[test]
+fn verbatim_placements_inject_text() {
+    let l = emit(
+        "@verbatim(language=\"lua\", placement=BEGIN_FILE, text=\"-- zd-begin-file\")\n\
+         @verbatim(language=\"lua\", placement=BEFORE_DECLARATION, text=\"-- zd-before\")\n\
+         @verbatim(language=\"lua\", placement=BEGIN_DECLARATION, text=\"-- zd-begin-decl\")\n\
+         @verbatim(language=\"lua\", placement=END_DECLARATION, text=\"-- zd-end-decl\")\n\
+         @verbatim(language=\"lua\", placement=AFTER_DECLARATION, text=\"-- zd-after\")\n\
+         @verbatim(language=\"lua\", placement=END_FILE, text=\"-- zd-end-file\")\n\
+         @final struct V { uint32 a; };",
+    );
+    for marker in [
+        "-- zd-begin-file",
+        "-- zd-before",
+        "-- zd-begin-decl",
+        "-- zd-end-decl",
+        "-- zd-after",
+        "-- zd-end-file",
+    ] {
+        assert!(l.contains(marker), "missing {marker}:\n{l}");
+    }
+    let m = l.find("function marshalInto_V").expect("marshaller");
+    // begin-file / before-decl / begin-decl precede the marshaller (in order).
+    assert!(
+        l.find("-- zd-begin-file").unwrap() < l.find("-- zd-before").unwrap(),
+        "{l}"
+    );
+    assert!(
+        l.find("-- zd-before").unwrap() < l.find("-- zd-begin-decl").unwrap(),
+        "{l}"
+    );
+    assert!(l.find("-- zd-begin-decl").unwrap() < m, "{l}");
+    // end-decl / after-decl / end-file trail the marshaller (in order).
+    assert!(m < l.find("-- zd-end-decl").unwrap(), "{l}");
+    assert!(
+        l.find("-- zd-end-decl").unwrap() < l.find("-- zd-after").unwrap(),
+        "{l}"
+    );
+    assert!(
+        l.find("-- zd-after").unwrap() < l.find("-- zd-end-file").unwrap(),
+        "{l}"
+    );
+}
+
+#[test]
+fn verbatim_language_filter_excludes_other_langs() {
+    // A non-Lua language tag must NOT leak into the Lua output.
+    let l = emit(
+        "@verbatim(language=\"java\", placement=BEFORE_DECLARATION, text=\"-- java-only\")\n\
+         @final struct V { uint32 a; };",
+    );
+    assert!(!l.contains("-- java-only"), "{l}");
+    // The wildcard `*` still matches Lua.
+    let l2 = emit(
+        "@verbatim(placement=BEFORE_DECLARATION, text=\"-- wildcard\")\n\
+         @final struct V { uint32 a; };",
+    );
+    assert!(l2.contains("-- wildcard"), "{l2}");
+}
+
+#[test]
+fn verbatim_output_still_runs() {
+    let idl = "@verbatim(language=\"lua\", placement=BEGIN_FILE, text=\"-- zd file header\")\n\
+         @verbatim(language=\"lua\", placement=BEGIN_DECLARATION, text=\"-- zd inside struct\")\n\
+         @final struct V { uint32 a; };";
+    let body = "\nlocal v = { a = 0x2A }\nprint(toHex(marshal_V(v, LE)))\n";
+    let Some(l) = lua_lines(idl, body, "verbatim") else {
+        return;
+    };
+    assert_eq!(l[0], "2a000000");
 }

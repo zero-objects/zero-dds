@@ -112,10 +112,26 @@ fn integer_types_map_to_stdint() {
 
 #[test]
 fn float_types_map_to_cxx_floats() {
-    // Spec §7.4.2.6: float/double/long double.
-    let cpp = gen_cpp(r#"struct F { float a; double b; long double c; };"#);
+    // Spec §7.4.2.6: float/double map to the native C++ types.
+    let cpp = gen_cpp(r#"struct F { float a; double b; };"#);
     assert!(cpp.contains("float"));
     assert!(cpp.contains("double"));
+}
+
+#[test]
+fn long_double_member_rejected_at_codegen() {
+    // `long double` has a platform-dependent width/bit-layout while the XCDR
+    // wire form is a fixed 16-byte value; emitting native `long double` storage
+    // truncates (MSVC) or ships a non-portable pattern. Until a canonical
+    // binary128 codec exists (blocked on Rust `f128`) it is rejected — like the
+    // C backend — instead of silently diverging on the wire.
+    let ast = zerodds_idl::parse(r#"struct F { long double c; };"#, &ParserConfig::default())
+        .expect("parse");
+    let res = generate_cpp_header(&ast, &CppGenOptions::default());
+    assert!(
+        res.is_err(),
+        "long double member must be rejected at codegen, got:\n{res:?}"
+    );
 }
 
 #[test]

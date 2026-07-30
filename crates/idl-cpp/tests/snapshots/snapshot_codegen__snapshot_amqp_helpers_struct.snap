@@ -43,6 +43,8 @@ struct topic_type_support<::Sensor> {
     static const char* type_name() { return "Sensor"; }
     static constexpr bool is_keyed() { return false; }
     static constexpr ::dds::topic::core::policy::DataRepresentationKind extensibility() { return ::dds::topic::core::policy::DataRepresentationKind::APPENDABLE; }
+    static const uint8_t* type_object();
+    static uintptr_t type_object_len();
     static std::vector<uint8_t> encode(const ::Sensor& zd_v);
     static std::vector<uint8_t> encode(const ::Sensor& zd_v, ::dds::topic::xcdr2::XcdrVersion zd_repr);
     static std::vector<uint8_t> encode_be(const ::Sensor& zd_v);
@@ -51,6 +53,19 @@ struct topic_type_support<::Sensor> {
     static std::array<uint8_t, 16> key_hash(const ::Sensor& zd_v);
 };
 
+inline const uint8_t* topic_type_support<::Sensor>::type_object() {
+    static const uint8_t ZD_TYPE_OBJECT[] = {
+        0xf2, 0x51, 0x02, 0x00, 0x0f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+        0x07, 0x00, 0x00, 0x00, 0x53, 0x65, 0x6e, 0x73, 0x6f, 0x72, 0x00, 0x00, 
+        0x33, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x11, 0x00, 0x00, 0x00, 
+        0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x04, 0x00, 0x03, 0x00, 0x00, 0x00, 
+        0x69, 0x64, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x13, 0x00, 0x00, 0x00, 
+        0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x0a, 0x00, 0x05, 0x00, 0x00, 0x00, 
+        0x74, 0x65, 0x6d, 0x70, 0x00, 0x00, 0x00, 
+    };
+    return ZD_TYPE_OBJECT;
+}
+inline uintptr_t topic_type_support<::Sensor>::type_object_len() { return 79; }
 inline std::vector<uint8_t> topic_type_support<::Sensor>::encode(const ::Sensor& zd_v) {
         return encode(zd_v, ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
     }

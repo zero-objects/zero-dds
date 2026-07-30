@@ -53,7 +53,7 @@ let opts = ComposeOptions {
 };
 let out = compose(Path::new("idl/Robot.idl"), &opts).expect("compose");
 // out.ast            -> hand to a zerodds-idl-* emitter (e.g. zerodds_idl_rust)
-// out.type_objects    -> zerodds_idl_compose::typeobject::render_rust(&out.type_objects)
+// out.type_objects    -> zerodds_idl_compose::typeobject::render_rust(&out.type_objects, &out.ast, "Robot")
 // out.dependency_files -> cargo:rerun-if-changed / Makefile deps
 ```
 

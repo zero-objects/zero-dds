@@ -12,7 +12,10 @@
 //!
 //! # Public API
 //!
-//! - [`generate_julia_module`] — AST + options → Julia source.
+//! - [`generate_julia_module`] — AST + options → Julia source (wire prelude +
+//!   types).
+//! - [`generate_julia_fragment`] — AST + options → Julia types WITHOUT the
+//!   shared wire prelude, for every file but the first in a multi-file compose.
 //! - [`JuliaGenOptions`] — codegen options.
 //! - [`error::IdlJuliaError`] — error family.
 
@@ -23,5 +26,5 @@ pub mod emitter;
 pub mod error;
 pub mod keywords;
 
-pub use emitter::{JuliaGenOptions, generate_julia_module};
+pub use emitter::{JuliaGenOptions, generate_julia_fragment, generate_julia_module};
 pub use error::{IdlJuliaError, Result};

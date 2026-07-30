@@ -220,12 +220,72 @@ pub(crate) fn emit_typesupport_files(
     let mut files = Vec::new();
     let pkg = sanitize_package(&opts.root_package);
     let table = build_type_table(spec);
-    walk_defs(&spec.definitions, &pkg, &[], opts, &table, &mut files)?;
+    // #24 / F-TYPES-3: full-spec resolved NameMap for the emitted COMPLETE
+    // TypeObject byte constants (`complete_struct_type_object_bytes`). Degrades
+    // to an empty map on a build failure — affected structs then emit an empty
+    // `typeObject()` (no cross-binding identifier for that type).
+    let names = zerodds_idl::semantics::build_type_registry(spec)
+        .map(|lowered| lowered.names)
+        .unwrap_or_default();
+    walk_defs(
+        &spec.definitions,
+        &pkg,
+        &[],
+        opts,
+        &table,
+        &names,
+        &mut files,
+    )?;
     Ok(files)
 }
 
 fn sanitize_package(p: &str) -> String {
     p.trim_matches('.').to_string()
+}
+
+/// Shared error for `long double` (IEEE-754 binary128, 16 bytes on the
+/// XCDR wire). Java lacks a binary128 primitive and the CDR runtime has
+/// no 16-byte float accessor, so any codegen would be wire-incorrect;
+/// generation is refused rather than emitting a silently-wrong 8-byte
+/// member (see P12).
+pub(crate) fn long_double_unsupported() -> JavaGenError {
+    JavaGenError::UnsupportedConstruct {
+        construct: "long double (IEEE-754 binary128 / 16-byte float)".into(),
+        context: Some("no binary128 primitive in Java; awaiting f128-backed wire".into()),
+    }
+}
+
+/// Emits a Java array allocation `TYPE[] var = new TYPE[dims];`.
+///
+/// When the element type is generic (e.g. `java.util.List<Integer>` for an
+/// `array<sequence<long>>` member), `new java.util.List<Integer>[N]` is a
+/// compile error (JLS §15.10.1: generic array creation). We allocate the
+/// erased raw type instead and cast back, silencing the unavoidable
+/// unchecked-cast warning on the local declaration.
+fn emit_array_alloc(
+    out: &mut String,
+    ind: &str,
+    elem_jt: &str,
+    empty_brackets: &str,
+    brackets: &str,
+    var: &str,
+) -> Result<(), JavaGenError> {
+    if let Some(lt) = elem_jt.find('<') {
+        let raw = &elem_jt[..lt];
+        writeln!(out, "{ind}@SuppressWarnings(\"unchecked\")").map_err(fmt_err)?;
+        writeln!(
+            out,
+            "{ind}{elem_jt}{empty_brackets} {var} = ({elem_jt}{empty_brackets}) new {raw}{brackets};"
+        )
+        .map_err(fmt_err)?;
+    } else {
+        writeln!(
+            out,
+            "{ind}{elem_jt}{empty_brackets} {var} = new {elem_jt}{brackets};"
+        )
+        .map_err(fmt_err)?;
+    }
+    Ok(())
 }
 
 /// zerodds-lint: recursion-depth 64 (IDL module depth-bounded)
@@ -235,6 +295,7 @@ fn walk_defs(
     module_chain: &[String],
     opts: &JavaGenOptions,
     table: &TypeTable,
+    names: &zerodds_idl::semantics::NameMap,
     files: &mut Vec<JavaFile>,
 ) -> Result<(), JavaGenError> {
     for d in defs {
@@ -249,7 +310,7 @@ fn walk_defs(
                 };
                 let mut chain = module_chain.to_vec();
                 chain.push(m.name.text.clone());
-                walk_defs(&m.definitions, &sub_pkg, &chain, opts, table, files)?;
+                walk_defs(&m.definitions, &sub_pkg, &chain, opts, table, names, files)?;
             }
             Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Struct(StructDcl::Def(s)))) => {
                 let _lowered = lower_or_empty(&s.annotations);
@@ -266,7 +327,7 @@ fn walk_defs(
                     // (`any`, `fixed`) — the codegen silently skips the file.
                     continue;
                 }
-                let file = emit_typesupport_for_struct(s, pkg, module_chain, opts, table)?;
+                let file = emit_typesupport_for_struct(s, pkg, module_chain, opts, table, names)?;
                 files.push(file);
             }
             // Bug J #65(5): standalone unions need their own TypeSupport too,
@@ -331,12 +392,59 @@ fn typespec_supported(ts: &TypeSpec, table: &TypeTable) -> bool {
     }
 }
 
+/// F-TYPES-3 / #24: emits the `typeObject()` override carrying the COMPLETE
+/// `TypeObject` serialized (XCDR-LE) by the SHARED
+/// `zerodds_idl::semantics::complete_struct_type_object_bytes` — the SAME source
+/// `idl-rust`, `idl-cpp` and `idl-csharp` use, so all bindings emit
+/// byte-identical bytes (and thus the identical `TypeIdentifier`, derived by the
+/// interface's default `typeIdentifier()` as MD5-14 of these bytes).
+///
+/// A struct whose members cannot all be resolved emits no override (the
+/// interface default returns an empty `typeObject()`) — never a codegen error.
+fn emit_type_object_method(
+    body: &mut String,
+    s: &StructDef,
+    module_chain: &[String],
+    ind: &str,
+    names: &zerodds_idl::semantics::NameMap,
+) -> Result<(), JavaGenError> {
+    let bytes = zerodds_idl::semantics::complete_struct_type_object_bytes(s, module_chain, names)
+        .ok()
+        .filter(|b| !b.is_empty());
+    if let Some(bytes) = bytes {
+        // `signed byte` in Java: values > 0x7f wrap negative, so cast each to
+        // `(byte)`. Byte-identity is preserved (the JVM stores the same bit
+        // pattern); the parity test reads the `0xNN` hex tokens directly.
+        writeln!(body, "{ind}@Override").map_err(fmt_err)?;
+        writeln!(
+            body,
+            "{ind}public byte[] typeObject() {{ return TYPE_OBJECT.clone(); }}"
+        )
+        .map_err(fmt_err)?;
+        write!(
+            body,
+            "{ind}private static final byte[] TYPE_OBJECT = new byte[] {{"
+        )
+        .map_err(fmt_err)?;
+        for (i, b) in bytes.iter().enumerate() {
+            if i % 12 == 0 {
+                write!(body, "\n{ind}{ind}").map_err(fmt_err)?;
+            }
+            write!(body, "(byte) 0x{b:02x}, ").map_err(fmt_err)?;
+        }
+        writeln!(body, "\n{ind}}};").map_err(fmt_err)?;
+        writeln!(body).map_err(fmt_err)?;
+    }
+    Ok(())
+}
+
 fn emit_typesupport_for_struct(
     s: &StructDef,
     pkg: &str,
     module_chain: &[String],
     opts: &JavaGenOptions,
     table: &TypeTable,
+    names: &zerodds_idl::semantics::NameMap,
 ) -> Result<JavaFile, JavaGenError> {
     let class = sanitize_identifier(&s.name.text)?;
     let support_class = format!("{class}TypeSupport");
@@ -352,7 +460,7 @@ fn emit_typesupport_for_struct(
         .unwrap_or(IdlExtensibility::Appendable); // SX2 §7.3.3.1
 
     let type_name = build_type_name(module_chain, &class);
-    let is_keyed = struct_has_key(s);
+    let is_keyed = resolved_wire_members(s, table).iter().any(member_has_key);
 
     let mut body = String::new();
     writeln!(
@@ -408,6 +516,10 @@ fn emit_typesupport_for_struct(
     )
     .map_err(fmt_err)?;
     writeln!(body).map_err(fmt_err)?;
+
+    // F-TYPES-3 / #24: serialized COMPLETE TypeObject + the derived cross-binding
+    // TypeIdentifier (via the interface's default typeIdentifier()).
+    emit_type_object_method(&mut body, s, module_chain, &ind, names)?;
 
     // encode(T)
     writeln!(body, "{ind}@Override").map_err(fmt_err)?;
@@ -1034,10 +1146,6 @@ fn int_read_expr(i: IntegerType) -> &'static str {
     }
 }
 
-fn struct_has_key(s: &StructDef) -> bool {
-    s.members.iter().any(member_has_key)
-}
-
 fn member_has_key(m: &Member) -> bool {
     let lowered = lower_or_empty(&m.annotations);
     lowered
@@ -1054,12 +1162,50 @@ fn member_is_optional(m: &Member) -> bool {
         .any(|b| matches!(b, BuiltinAnnotation::Optional))
 }
 
-fn member_explicit_id(m: &Member) -> Option<u32> {
-    let lowered = lower_or_empty(&m.annotations);
-    lowered.builtins.iter().find_map(|b| match b {
-        BuiltinAnnotation::Id(n) => Some(*n),
-        _ => None,
-    })
+/// P0-3: the annotation-fixed wire id of a member — explicit `@id(N)`,
+/// `@hashid`, or a struct-level `@autoid(HASH)` name-hash — via the ONE central
+/// resolver. `None` = SEQUENTIAL default (the caller's running counter). Before
+/// this the Java backend read only `@id` and gave `@autoid(HASH)` / `@hashid`
+/// members a positional id.
+fn member_fixed_id(s: &StructDef, m: &Member) -> Option<u32> {
+    let autoid_hash = zerodds_idl::semantics::member_id::container_autoid_hash(&s.annotations);
+    let name = m.declarators.first().map_or("", |d| d.name().text.as_str());
+    zerodds_idl::semantics::member_id::fixed_member_id(autoid_hash, &m.annotations, name)
+}
+
+/// Fully-resolved wire member list for a struct: base-class members FIRST
+/// (recursive, multi-level A<-B<-C => A.a, B.b, C.c), then the struct's own
+/// members. XTypes 1.3 §7.4.3.4.1 places base members before derived members
+/// on the wire; the codec (encode/decode/keyHash/isKeyed) must serialize them
+/// in that order. The generated Java class inherits base getters/setters
+/// (`class Derived extends Base`), so a base member's `sample.get<Name>()` /
+/// `v.set<Name>(...)` resolves through inheritance. Base `StructDef`s come from
+/// the resolution `table`; a cycle guard bounds pathological inheritance loops.
+fn resolved_wire_members(s: &StructDef, table: &TypeTable) -> Vec<Member> {
+    let mut chain: Vec<StructDef> = Vec::new();
+    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut cur = s.base.clone();
+    while let Some(bn) = cur {
+        let name = scoped_to_short(&bn);
+        if !seen.insert(name.clone()) {
+            break;
+        }
+        match resolve_scoped(table, &name) {
+            Some(ResolvedKind::Struct { def, .. }) => {
+                cur = def.base.clone();
+                chain.push(def.clone());
+            }
+            _ => break,
+        }
+    }
+    // `chain` is [parent, grandparent, …]; reverse so the oldest ancestor's
+    // members lead, then each descendant's, then the struct's own members.
+    let mut out: Vec<Member> = Vec::new();
+    for def in chain.into_iter().rev() {
+        out.extend(def.members.iter().cloned());
+    }
+    out.extend(s.members.iter().cloned());
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -1076,13 +1222,13 @@ fn emit_encode_body(
     let inner = format!("{ind}{ind}");
     match ext {
         IdlExtensibility::Final => {
-            for m in &s.members {
+            for m in &resolved_wire_members(s, table) {
                 emit_member_encode_inline(out, m, &inner, table)?;
             }
         }
         IdlExtensibility::Appendable => {
             writeln!(out, "{inner}int __dh = w.beginAppendable();").map_err(fmt_err)?;
-            for m in &s.members {
+            for m in &resolved_wire_members(s, table) {
                 emit_member_encode_inline(out, m, &inner, table)?;
             }
             writeln!(out, "{inner}w.endDelimited(__dh);").map_err(fmt_err)?;
@@ -1093,8 +1239,8 @@ fn emit_encode_body(
             // writer's representation — symmetric with the decode side.
             writeln!(out, "{inner}if (w.isXcdr1()) {{").map_err(fmt_err)?;
             let mut auto_id: u32 = 0;
-            for m in &s.members {
-                let mid = member_explicit_id(m).unwrap_or(auto_id);
+            for m in &resolved_wire_members(s, table) {
+                let mid = member_fixed_id(s, m).unwrap_or(auto_id);
                 auto_id = mid + 1;
                 emit_member_encode_pl_cdr1(out, m, &format!("{inner}    "), mid, table)?;
             }
@@ -1105,8 +1251,8 @@ fn emit_encode_body(
             // default = 0-based declaration order; vendor-confirmed against Cyclone).
             // Honor explicit @id(N).
             let mut auto_id: u32 = 0;
-            for m in &s.members {
-                let mid = member_explicit_id(m).unwrap_or(auto_id);
+            for m in &resolved_wire_members(s, table) {
+                let mid = member_fixed_id(s, m).unwrap_or(auto_id);
                 auto_id = mid + 1;
                 emit_member_encode_mutable(out, m, &format!("{inner}    "), mid, table)?;
             }
@@ -1610,9 +1756,16 @@ fn emit_typespec_encode(
                 FloatingType::Float => {
                     writeln!(out, "{ind}w.writeFloat32({expr});").map_err(fmt_err)?;
                 }
-                FloatingType::Double | FloatingType::LongDouble => {
+                FloatingType::Double => {
                     writeln!(out, "{ind}w.writeFloat64({expr});").map_err(fmt_err)?;
                 }
+                // `long double` is IEEE-754 binary128 on the wire (16 bytes).
+                // Java has no binary128 primitive and the CDR runtime exposes
+                // no 16-byte float writer; emitting `writeFloat64` produced an
+                // 8-byte member under a 16-byte length code, desynchronising
+                // the whole stream. Refuse loudly until an f128-backed path
+                // exists (see P12 / long-double bucket).
+                FloatingType::LongDouble => return Err(long_double_unsupported()),
             },
         },
         TypeSpec::String(s) => {
@@ -1909,14 +2062,14 @@ fn emit_decode_body(
     let inner = format!("{ind}{ind}");
     match ext {
         IdlExtensibility::Final => {
-            for m in &s.members {
+            for m in &resolved_wire_members(s, table) {
                 emit_member_decode_inline(out, m, &inner, table)?;
             }
         }
         IdlExtensibility::Appendable => {
             writeln!(out, "{inner}int __dhSize = r.readDHeader();").map_err(fmt_err)?;
             writeln!(out, "{inner}int __endPos = r.position() + __dhSize;").map_err(fmt_err)?;
-            for m in &s.members {
+            for m in &resolved_wire_members(s, table) {
                 emit_member_decode_inline(out, m, &inner, table)?;
             }
             writeln!(
@@ -1942,8 +2095,8 @@ fn emit_decode_body(
             {
                 let mut auto_id1: u32 = 0;
                 let mut first1 = true;
-                for m in &s.members {
-                    let mid = member_explicit_id(m).unwrap_or(auto_id1);
+                for m in &resolved_wire_members(s, table) {
+                    let mid = member_fixed_id(s, m).unwrap_or(auto_id1);
                     auto_id1 = mid + 1;
                     emit_member_decode_mutable_branch(out, m, &inner, mid, first1, table, "__plm")?;
                     first1 = false;
@@ -1979,8 +2132,8 @@ fn emit_decode_body(
             // default = 0-based declaration order; vendor-confirmed against Cyclone).
             let mut auto_id: u32 = 0;
             let mut first = true;
-            for m in &s.members {
-                let mid = member_explicit_id(m).unwrap_or(auto_id);
+            for m in &resolved_wire_members(s, table) {
+                let mid = member_fixed_id(s, m).unwrap_or(auto_id);
                 auto_id = mid + 1;
                 emit_member_decode_mutable_branch(out, m, &inner, mid, first, table, "__em")?;
                 first = false;
@@ -2055,11 +2208,7 @@ fn emit_optional_value_decode(
         let elem_jt = java_value_type(ts, table);
         let brackets: String = dims.iter().map(|d| format!("[{d}]")).collect();
         let empty_brackets: String = dims.iter().map(|_| "[]").collect();
-        writeln!(
-            out,
-            "{inner}{elem_jt}{empty_brackets} __oarr = new {elem_jt}{brackets};"
-        )
-        .map_err(fmt_err)?;
+        emit_array_alloc(out, &inner, &elem_jt, &empty_brackets, &brackets, "__oarr")?;
         emit_array_fill(out, ts, dims, "__oarr", &inner, table, 0)?;
         writeln!(out, "{inner}{setter}(java.util.Optional.of(__oarr));").map_err(fmt_err)?;
     }
@@ -2131,11 +2280,14 @@ fn emit_declarator_decode(
     let brackets: String = dims.iter().map(|d| format!("[{d}]")).collect();
     let empty_brackets: String = dims.iter().map(|_| "[]").collect();
     writeln!(out, "{ind}{{").map_err(fmt_err)?;
-    writeln!(
+    emit_array_alloc(
         out,
-        "{ind}    {elem_jt}{empty_brackets} __arr = new {elem_jt}{brackets};"
-    )
-    .map_err(fmt_err)?;
+        &format!("{ind}    "),
+        &elem_jt,
+        &empty_brackets,
+        &brackets,
+        "__arr",
+    )?;
     emit_array_fill(out, ts, dims, "__arr", &format!("{ind}    "), table, 0)?;
     writeln!(out, "{ind}    {setter}(__arr);").map_err(fmt_err)?;
     writeln!(out, "{ind}}}").map_err(fmt_err)?;
@@ -2421,11 +2573,14 @@ fn emit_read_into(
                         let brackets: String =
                             array_dims.iter().map(|d| format!("[{d}]")).collect();
                         let empty: String = array_dims.iter().map(|_| "[]").collect();
-                        writeln!(
+                        emit_array_alloc(
                             out,
-                            "{ind}{elem_jt}{empty} __ta{depth} = new {elem_jt}{brackets};"
-                        )
-                        .map_err(fmt_err)?;
+                            ind,
+                            &elem_jt,
+                            &empty,
+                            &brackets,
+                            &format!("__ta{depth}"),
+                        )?;
                         emit_array_fill(
                             out,
                             underlying,
@@ -2501,7 +2656,9 @@ fn read_expr_for_typespec(ts: &TypeSpec) -> Result<String, JavaGenError> {
             },
             PrimitiveType::Floating(f) => match f {
                 FloatingType::Float => "r.readFloat32()".into(),
-                FloatingType::Double | FloatingType::LongDouble => "r.readFloat64()".into(),
+                FloatingType::Double => "r.readFloat64()".into(),
+                // See `emit_typespec_encode`: no 16-byte float in Java/runtime.
+                FloatingType::LongDouble => return Err(long_double_unsupported()),
             },
         },
         // Wide strings are decoded inline by `emit_read_into` (byte-length
@@ -2578,12 +2735,21 @@ fn emit_key_extraction(
     // XTypes 1.3 §7.6.8.3.1.b: KeyHolder members in ascending member-id
     // order (explicit `@id(N)`, else positional index among the `@key`
     // members) — NOT declaration order.
-    let key_members: Vec<&Member> = s.members.iter().filter(|m| member_has_key(m)).collect();
+    let all_members = resolved_wire_members(s, table);
+    let key_members: Vec<&Member> = all_members.iter().filter(|m| member_has_key(m)).collect();
     for m in sort_members_by_id(&key_members) {
         for decl in &m.declarators {
             let name = sanitize_identifier(&decl.name().text)?;
             let getter = format!("sample.get{}()", capitalize(&name));
-            emit_key_declarator_encode(out, &m.type_spec, &array_dims(decl), &getter, &inner, table, 0)?;
+            emit_key_declarator_encode(
+                out,
+                &m.type_spec,
+                &array_dims(decl),
+                &getter,
+                &inner,
+                table,
+                0,
+            )?;
         }
     }
     Ok(())
@@ -2599,7 +2765,19 @@ fn sort_members_by_id<'a>(members: &[&'a Member]) -> Vec<&'a Member> {
     let mut ordered: Vec<(u32, &Member)> = members
         .iter()
         .enumerate()
-        .map(|(idx, m)| (member_explicit_id(m).unwrap_or(idx as u32), *m))
+        .map(|(idx, m)| {
+            // KeyHash ordering: explicit `@id(N)` else positional index (this
+            // path has no struct-level `@autoid` context — see P0-3 limits).
+            let id = lower_or_empty(&m.annotations)
+                .builtins
+                .iter()
+                .find_map(|b| match b {
+                    BuiltinAnnotation::Id(n) => Some(*n),
+                    _ => None,
+                })
+                .unwrap_or(idx as u32);
+            (id, *m)
+        })
         .collect();
     ordered.sort_by_key(|(id, _)| *id);
     ordered.into_iter().map(|(_, m)| m).collect()
@@ -2611,6 +2789,7 @@ fn sort_members_by_id<'a>(members: &[&'a Member]) -> Vec<&'a Member> {
 /// the scalar leaf delegates to `emit_key_typespec_encode` instead of
 /// `emit_typespec_encode`, so a nested `@key` struct expands to its own
 /// `@key` subset instead of being fully encoded.
+/// zerodds-lint: recursion-depth 64 (codegen AST walk; bounded by IDL nesting).
 fn emit_key_declarator_encode(
     out: &mut String,
     ts: &TypeSpec,

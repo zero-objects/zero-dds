@@ -28,6 +28,9 @@ use crate::keywords::escape_identifier;
 /// IDL struct name (without modules).
 pub(crate) struct TsEmitContext<'a> {
     pub module_path: &'a [String],
+    /// #24 / F-TYPES-3: full-spec resolved member-type index for the emitted
+    /// COMPLETE `TypeObject` byte constant (see `emit_type_object_property`).
+    pub names: &'a zerodds_idl::semantics::NameMap,
     pub indent: &'a str,
     pub inner_indent: &'a str,
     pub deeper_indent: &'a str,
@@ -54,7 +57,9 @@ struct MemberInfo {
     is_optional: bool,
     /// True if `@must_understand`.
     must_understand: bool,
-    /// `@id(N)` if explicitly set; otherwise None (auto-index in mutable).
+    /// Annotation-fixed wire id (P0-3): explicit `@id(N)`, `@hashid`, or a
+    /// struct-level `@autoid(HASH)` name-hash — via the central resolver. `None`
+    /// means SEQUENTIAL (the auto-index fallback at the use sites).
     explicit_id: Option<u32>,
     /// Fixed-array dimensions from the declarator (`long v[3][4]` → `["3","4"]`).
     /// Empty for a plain (`Declarator::Simple`) member. Each entry is a C#
@@ -63,54 +68,76 @@ struct MemberInfo {
     array_dims: Vec<String>,
 }
 
-fn pascal_case(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut upper_next = true;
-    for c in s.chars() {
-        if c == '_' {
-            upper_next = true;
-            continue;
+/// Fully-resolved wire member list: base-class members FIRST (recursive,
+/// multi-level — `A <- B <- C` yields `A.a, B.b, C.c`), then the struct's own
+/// members. XTypes 1.3 §7.4.3.4.1 places base members before derived members on
+/// the wire; the codec must serialize them in that order. Base resolution uses
+/// the [`STRUCT_REG`] registry (keyed by simple name); a cycle guard bounds
+/// pathological inheritance loops. The generated C# class inherits base
+/// properties (`class Derived : Base`), so a base member's property is present
+/// on the derived instance.
+fn resolved_wire_members(s: &StructDef) -> Vec<zerodds_idl::ast::Member> {
+    let mut chain: Vec<StructDef> = Vec::new();
+    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut cur = s.base.clone();
+    while let Some(bn) = cur {
+        let Some(name) = bn.parts.last().map(|p| p.text.clone()) else {
+            break;
+        };
+        if !seen.insert(name.clone()) {
+            break;
         }
-        if upper_next {
-            for u in c.to_uppercase() {
-                out.push(u);
-            }
-            upper_next = false;
-        } else {
-            out.push(c);
-        }
+        let Some(def) = STRUCT_REG.with(|r| r.borrow().get(&name).cloned()) else {
+            break;
+        };
+        cur = def.base.clone();
+        chain.push(def);
     }
-    if out.is_empty() {
-        return s.to_string();
+    let mut out: Vec<zerodds_idl::ast::Member> = Vec::new();
+    for def in chain.into_iter().rev() {
+        out.extend(def.members.iter().cloned());
     }
+    out.extend(s.members.iter().cloned());
     out
 }
 
 fn collect_member_info(s: &StructDef) -> Vec<MemberInfo> {
     let mut out = Vec::new();
-    for m in &s.members {
+    let members = resolved_wire_members(s);
+    // F36/A36: dedup PascalCase property collisions the SAME way the data-record
+    // emitter does, so encode/decode reference the identical property names.
+    let raws: Vec<&str> = members
+        .iter()
+        .flat_map(|m| m.declarators.iter().map(|d| d.name().text.as_str()))
+        .collect();
+    let prop_names = crate::emitter::dedup_cs_property_names(&raws);
+    // P0-3: struct-level `@autoid(HASH)` feeds the central member-id resolver.
+    let autoid_hash = zerodds_idl::semantics::member_id::container_autoid_hash(&s.annotations);
+    let mut prop_idx = 0usize;
+    for m in &members {
         let mut is_key = false;
         let mut is_optional = false;
         let mut must_understand = false;
-        let mut explicit_id: Option<u32> = None;
         if let Ok(lowered) = lower_annotations(&m.annotations) {
             for b in &lowered.builtins {
                 match b {
                     BuiltinAnnotation::Key => is_key = true,
                     BuiltinAnnotation::Optional => is_optional = true,
                     BuiltinAnnotation::MustUnderstand => must_understand = true,
-                    BuiltinAnnotation::Id(n) => explicit_id = Some(*n),
                     _ => {}
                 }
             }
         }
+        // The annotation-fixed wire id (@id / @hashid / @autoid(HASH)); `None`
+        // = sequential (the `.unwrap_or(idx)` fallback at the use sites).
+        let explicit_id = zerodds_idl::semantics::member_id::fixed_member_id(
+            autoid_hash,
+            &m.annotations,
+            m.declarators.first().map_or("", |d| d.name().text.as_str()),
+        );
         for decl in &m.declarators {
-            let raw = &decl.name().text;
-            let cs_prop = {
-                let pas = pascal_case(raw);
-                let escaped = escape_identifier(raw).unwrap_or_else(|_| raw.clone());
-                if escaped == pas { escaped } else { pas }
-            };
+            let cs_prop = prop_names[prop_idx].clone();
+            prop_idx += 1;
             let array_dims = match decl {
                 Declarator::Simple(_) => Vec::new(),
                 Declarator::Array(ad) => ad
@@ -184,8 +211,17 @@ fn fmt_err(_: core::fmt::Error) -> CsGenError {
 /// of a codec that throws `XcdrException` at runtime.
 /// zerodds-lint: recursion-depth 64 (bounded by IDL nesting)
 fn typespec_xcdr2_codecable(t: &zerodds_idl::ast::TypeSpec) -> bool {
-    use zerodds_idl::ast::TypeSpec;
+    use zerodds_idl::ast::{FloatingType, PrimitiveType, TypeSpec};
     match t {
+        // `long double` is IEEE-754 binary128 (16 bytes) on the XCDR wire. C#
+        // has no binary128 primitive (the data type maps to `decimal`, a base-10
+        // 128-bit type — not the wire representation), and the runtime CDR
+        // reader/writer expose no binary128 path. A struct carrying a long double
+        // member therefore gets its data record but NO TypeSupport — the same
+        // gate used for `any` — instead of a codec that would encode-throw and
+        // silently decode `default(decimal)` (F3/A3). Awaiting an f128-backed
+        // wire path.
+        TypeSpec::Primitive(PrimitiveType::Floating(FloatingType::LongDouble)) => false,
         // `map<K,V>` now has an XCDR2 codec (CS-cluster #2): codecable iff both
         // key and value are. `fixed`/`any` still have no wire codec.
         TypeSpec::Map(m) => typespec_xcdr2_codecable(&m.key) && typespec_xcdr2_codecable(&m.value),
@@ -301,8 +337,7 @@ pub(crate) fn build_type_registry(spec: &Specification) {
                     ConstrTypeDecl::Struct(StructDcl::Def(s)) => {
                         let ext = type_extensibility(&s.annotations);
                         reg.insert(s.name.text.clone(), ScopedKind::Struct { ext });
-                        STRUCT_REG
-                            .with(|r| r.borrow_mut().insert(s.name.text.clone(), s.clone()));
+                        STRUCT_REG.with(|r| r.borrow_mut().insert(s.name.text.clone(), s.clone()));
                     }
                     ConstrTypeDecl::Union(UnionDcl::Def(u)) => {
                         reg.insert(u.name.text.clone(), ScopedKind::Union);
@@ -713,6 +748,59 @@ fn emit_union_decode_cases(
     Ok(())
 }
 
+/// F-TYPES-3 / #24: emits the `TypeObject` property carrying the COMPLETE
+/// `TypeObject` serialized (XCDR-LE) by the SHARED
+/// `zerodds_idl::semantics::complete_struct_type_object_bytes` — the SAME source
+/// `idl-rust`'s `TYPE_IDENTIFIER` codegen and `idl-cpp`'s `type_object()` use,
+/// so all bindings emit byte-identical bytes (and thus the identical
+/// `TypeIdentifier`). `DdsTopicTypeTraits` forwards this to the DataWriter/
+/// DataReader, which pass it to `zerodds_pub_create_datawriter_typed`.
+///
+/// A struct whose members cannot all be resolved (a `fixed`/`any` member, or a
+/// scoped reference absent from the registry) emits `Array.Empty<byte>()`; the
+/// runtime then falls back to the byte-oriented create — never a codegen error.
+fn emit_type_object_property(
+    out: &mut String,
+    ctx: &TsEmitContext<'_>,
+    s: &StructDef,
+) -> Result<(), CsGenError> {
+    let inner = ctx.inner_indent;
+    let deeper = ctx.deeper_indent;
+    let bytes =
+        zerodds_idl::semantics::complete_struct_type_object_bytes(s, ctx.module_path, ctx.names)
+            .ok()
+            .filter(|b| !b.is_empty());
+    match bytes {
+        Some(bytes) => {
+            writeln!(
+                out,
+                "{inner}public byte[] TypeObject => __ZeroDdsTypeObject;"
+            )
+            .map_err(fmt_err)?;
+            write!(
+                out,
+                "{inner}private static readonly byte[] __ZeroDdsTypeObject = new byte[] {{"
+            )
+            .map_err(fmt_err)?;
+            for (i, b) in bytes.iter().enumerate() {
+                if i % 12 == 0 {
+                    write!(out, "\n{deeper}").map_err(fmt_err)?;
+                }
+                write!(out, "0x{b:02x}, ").map_err(fmt_err)?;
+            }
+            writeln!(out, "\n{inner}}};").map_err(fmt_err)?;
+        }
+        None => {
+            writeln!(
+                out,
+                "{inner}public byte[] TypeObject => System.Array.Empty<byte>();"
+            )
+            .map_err(fmt_err)?;
+        }
+    }
+    Ok(())
+}
+
 pub(crate) fn emit_typesupport_class(
     out: &mut String,
     ctx: &TsEmitContext<'_>,
@@ -754,6 +842,11 @@ pub(crate) fn emit_typesupport_class(
         ext_to_cs(ext)
     )
     .map_err(fmt_err)?;
+
+    // F-TYPES-3 / #24: serialized COMPLETE TypeObject — the bytes the typed
+    // pub/sub create path (`zerodds_pub_create_datawriter_typed`) registers to
+    // derive + advertise the cross-binding `TypeIdentifier`.
+    emit_type_object_property(out, ctx, s)?;
     writeln!(out).map_err(fmt_err)?;
 
     // Encode(sample) - LE Default.
@@ -2554,6 +2647,7 @@ fn csharp_key_holder_max_size(key_members: &[&MemberInfo]) -> Option<usize> {
 /// Evaluates a bounded-string `@key`'s bound (decimal or `0x` literal, with
 /// an optional leading unary `+`) to a `usize`. `None` if non-constant.
 /// Mirrors `crates/idl/src/keyhash.rs::const_usize`.
+/// zerodds-lint: recursion-depth 64 (Const-Expr-Tree; bounded by IDL nesting)
 fn const_expr_to_usize(e: &ConstExpr) -> Option<usize> {
     use zerodds_idl::ast::{Literal, LiteralKind, UnaryOp};
     match e {
@@ -2586,6 +2680,7 @@ fn const_expr_to_usize(e: &ConstExpr) -> Option<usize> {
 /// dynamically sized type (unbounded string, sequence, map, enum/union/
 /// bitmask/bitset/unresolved scoped — matching the `idl-rust` reference's
 /// conservative treatment of non-struct scoped types).
+/// zerodds-lint: recursion-depth 16 (key atom size walk; bounded by IDL nesting).
 fn csharp_key_atom_size(ts: &TypeSpec, offset: usize) -> Option<usize> {
     let pad_to = |off: usize, align: usize| -> usize { off + (align - (off % align)) % align };
     match ts {
@@ -2630,6 +2725,7 @@ fn csharp_key_atom_size(ts: &TypeSpec, offset: usize) -> Option<usize> {
     }
 }
 
+/// zerodds-lint: recursion-depth 64 (codegen AST walk; bounded by IDL nesting).
 fn emit_key_encode_value(
     out: &mut String,
     indent: &str,
@@ -2664,6 +2760,7 @@ fn emit_key_encode_value(
 /// the previous silent no-op that emitted zero key bytes for a
 /// typedef-aliased or nested-struct `@key` member (a wrong KeyHash on the
 /// wire, cross-vendor-interop-breaking).
+/// zerodds-lint: recursion-depth 64 (codegen AST walk; bounded by IDL nesting).
 fn emit_key_encode_scoped(
     out: &mut String,
     indent: &str,

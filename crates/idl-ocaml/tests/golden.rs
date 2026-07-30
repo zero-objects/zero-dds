@@ -40,7 +40,8 @@ fn emit(src: &str) -> String {
 #[test]
 fn module_wrapped_struct_is_emitted_not_dropped() {
     let o = emit("module Telemetry { @final struct Reading { long value; }; };");
-    assert!(o.contains("module Reading = struct"), "{o}");
+    // #21: a module-wrapped type is emitted as its module-qualified OCaml module.
+    assert!(o.contains("module Telemetry_sReading = struct"), "{o}");
     assert!(o.contains("value : int;"), "{o}");
 }
 
@@ -52,8 +53,80 @@ fn reopened_module_emits_both_structs() {
         "module M { @final struct A { long x; }; }; \
          module M { @final struct B { long y; }; };",
     );
-    assert!(o.contains("module A = struct"), "{o}");
-    assert!(o.contains("module B = struct"), "{o}");
+    // #21: both halves emit under the module-qualified OCaml module `M_*`.
+    assert!(o.contains("module M_sA = struct"), "{o}");
+    assert!(o.contains("module M_sB = struct"), "{o}");
+}
+
+/// #21 cross-module collision: two different modules each declaring `Reading`
+/// must emit distinct, module-qualified OCaml modules, never a duplicate one.
+#[test]
+fn cross_module_same_name_types_are_qualified() {
+    let o = emit(
+        "module a { @final struct Reading { long v; }; }; \
+         module b { @final struct Reading { double w; }; };",
+    );
+    assert!(o.contains("module A_sReading = struct"), "{o}");
+    assert!(o.contains("module B_sReading = struct"), "{o}");
+    assert!(!o.contains("module Reading = struct"), "{o}");
+    assert!(o.contains("v : int;"), "{o}");
+    assert!(o.contains("w : float;"), "{o}");
+}
+
+/// #21 cross-module reference: `module b`'s struct references `a::R`, which
+/// must resolve to the qualified OCaml module `A_R`, not the bare `R`.
+#[test]
+fn cross_module_reference_resolves_to_qualified_type() {
+    let o = emit(
+        "module a { @final struct R { long v; }; }; \
+         module b { @final struct S { a::R r; }; };",
+    );
+    assert!(o.contains("module A_sR = struct"), "{o}");
+    assert!(o.contains("module B_sS = struct"), "{o}");
+    // S's member `r` has the qualified type A_sR.t and marshals via it.
+    assert!(o.contains("r : A_sR.t;"), "{o}");
+    assert!(o.contains("A_sR.marshal_into"), "{o}");
+}
+
+/// #21 compile gate: a two-module spec with a cross-module reference must
+/// produce compilable OCaml.
+#[test]
+fn cross_module_reference_compiles_with_ocaml() {
+    if Command::new("ocamlfind").arg("printconf").output().is_err() {
+        eprintln!("SKIP cross_module_reference_compiles_with_ocaml: `ocamlfind` not on PATH");
+        return;
+    }
+    let mut src = emit(
+        "module a { @final struct R { long v; }; }; \
+         module b { @final struct S { a::R r; }; };",
+    );
+    src.push_str(
+        "
+let () =
+  let s : B_sS.t = { r = ({ v = 7 } : A_sR.t) } in
+  let _ = B_sS.marshal s Wire.LE in
+  print_endline \"ok\"
+",
+    );
+    let dir = std::env::temp_dir().join(format!("idlocaml_xmod_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    std::fs::write(dir.join("main.ml"), &src).expect("write");
+    let build = Command::new("ocamlfind")
+        .args(["ocamlopt", "main.ml", "-o", "main_bin"])
+        .current_dir(&dir)
+        .output()
+        .expect("ocamlfind");
+    assert!(
+        build.status.success(),
+        "ocamlfind ocamlopt failed:\n{}\n--- src ---\n{src}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let run = Command::new("./main_bin")
+        .current_dir(&dir)
+        .output()
+        .expect("run");
+    assert_eq!(String::from_utf8_lossy(&run.stdout).trim(), "ok");
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
@@ -1067,4 +1140,330 @@ fn keyword_identifiers_compile_with_ocamlfind() {
         String::from_utf8_lossy(&build.stderr)
     );
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ===========================================================================
+// Section-F Wave-1: bitset/bitmask, @optional, fixed<d,s>, sequence-arbitrary,
+// @verbatim. Always-on source-asserts + `ocamlfind`-gated compile-and-run
+// tests whose expected wire hex is derived from the spec IN the test (no
+// GOLDEN_DIR oracle — mirrors the idl-d reference).
+// ===========================================================================
+
+/// A top-level `zdhex : bytes -> string` helper, appended before a test's
+/// `let () = ...` so main bodies can hex-dump wire output.
+const OC_HEX_TOP: &str = "\nlet zdhex (b : bytes) : string =\n  String.concat \"\" (List.init (Bytes.length b) (fun i -> Printf.sprintf \"%02x\" (Char.code (Bytes.get b i))))\n";
+
+/// Compiles `emit(idl) + OC_HEX_TOP + main_body` with `ocamlfind ocamlopt`,
+/// runs it, and returns the trimmed stdout lines. `None` (skip) if `ocamlfind`
+/// is not on PATH.
+fn ocaml_lines(idl: &str, main_body: &str, tag: &str) -> Option<Vec<String>> {
+    if Command::new("ocamlfind").arg("printconf").output().is_err() {
+        eprintln!("SKIP {tag}: `ocamlfind` not on PATH");
+        return None;
+    }
+    let mut src = emit(idl);
+    src.push_str(OC_HEX_TOP);
+    src.push_str(main_body);
+    let dir = std::env::temp_dir().join(format!("idlocaml_{tag}_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    std::fs::write(dir.join("main.ml"), &src).expect("write");
+    let build = Command::new("ocamlfind")
+        .args(["ocamlopt", "main.ml", "-o", "main_bin"])
+        .current_dir(&dir)
+        .output()
+        .expect("ocamlfind");
+    assert!(
+        build.status.success(),
+        "ocamlfind ocamlopt failed:\n{}\n--- src ---\n{src}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let run = Command::new("./main_bin")
+        .current_dir(&dir)
+        .output()
+        .expect("run");
+    assert!(
+        run.status.success(),
+        "run failed:\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let out = String::from_utf8(run.stdout).expect("utf8");
+    let lines: Vec<String> = out.lines().map(|l| l.trim().to_string()).collect();
+    let _ = std::fs::remove_dir_all(&dir);
+    Some(lines)
+}
+
+// ---- bitset -------------------------------------------------------------
+
+const BITSET_IDL: &str = "bitset Flags { bitfield<4> a; bitfield<8> b; };";
+
+#[test]
+fn bitset_emits_holder_module_and_accessors() {
+    let o = emit(BITSET_IDL);
+    // 4 + 8 = 12 bits → int backing via put_u16 (XTypes §7.4.7).
+    assert!(o.contains("module Flags = struct"), "{o}");
+    assert!(o.contains("mutable storage : int"), "{o}");
+    assert!(
+        o.contains("let a (v : t) : int = (v.storage lsr 0) land 15"),
+        "{o}"
+    );
+    assert!(
+        o.contains("let b (v : t) : int = (v.storage lsr 4) land 255"),
+        "{o}"
+    );
+    assert!(o.contains("Wire.put_u16 w v.storage"), "{o}");
+    assert!(o.contains("{ storage = Wire.get_u16 r }"), "{o}");
+}
+
+#[test]
+fn bitset_wire_is_backing_int_and_accessors_read() {
+    // storage 0xABCD → LE "cdab", BE "abcd"; a = 0xD (13), b = 0xBC (188).
+    let body = "\nlet () =\n  let f = { Flags.storage = 0xABCD } in\n  print_endline (zdhex (Flags.marshal f Wire.LE));\n  print_endline (zdhex (Flags.marshal f Wire.BE));\n  print_endline (zdhex (Flags.marshal (Flags.unmarshal (Flags.marshal f Wire.LE) Wire.LE) Wire.LE));\n  print_endline (string_of_int (Flags.a f));\n  print_endline (string_of_int (Flags.b f))\n";
+    let Some(l) = ocaml_lines(BITSET_IDL, body, "bitset") else {
+        return;
+    };
+    assert_eq!(l[0], "cdab", "LE");
+    assert_eq!(l[1], "abcd", "BE");
+    assert_eq!(l[2], "cdab", "round-trip");
+    assert_eq!(l[3], "13", "accessor a");
+    assert_eq!(l[4], "188", "accessor b");
+}
+
+const BITSET_WIDE_IDL: &str = "bitset Big { bitfield<40> x; };";
+
+#[test]
+fn bitset_over_32_bits_uses_int64_backing() {
+    let o = emit(BITSET_WIDE_IDL);
+    // 40 bits → int64 backing via put_u64 (XTypes §7.4.7).
+    assert!(o.contains("mutable storage : int64"), "{o}");
+    assert!(o.contains("Wire.put_u64 w v.storage"), "{o}");
+    assert!(o.contains("let x (v : t) : int64 = Int64.logand"), "{o}");
+}
+
+#[test]
+fn bitset_int64_backing_wire_and_accessor() {
+    // storage 0x0102030405 (40-bit) → put_u64 = 8 LE bytes; accessor returns it.
+    let body = "\nlet () =\n  let f = { Big.storage = 0x0102030405L } in\n  print_endline (zdhex (Big.marshal f Wire.LE));\n  print_endline (zdhex (Big.marshal (Big.unmarshal (Big.marshal f Wire.LE) Wire.LE) Wire.LE));\n  print_endline (Int64.to_string (Big.x f))\n";
+    let Some(l) = ocaml_lines(BITSET_WIDE_IDL, body, "bitset64") else {
+        return;
+    };
+    assert_eq!(l[0], "0504030201000000", "LE u64");
+    assert_eq!(l[1], "0504030201000000", "round-trip");
+    assert_eq!(l[2], "4328719365", "accessor x = 0x0102030405");
+}
+
+// ---- bitmask ------------------------------------------------------------
+
+const BITMASK_IDL: &str = "bitmask Perms { PERM_READ, PERM_WRITE, PERM_EXEC };";
+
+#[test]
+fn bitmask_emits_holder_and_constants() {
+    let o = emit(BITMASK_IDL);
+    // Default @bit_bound = 32 → int backing via put_u32 (XTypes §7.3.1.2.1.1).
+    assert!(o.contains("module Perms = struct"), "{o}");
+    assert!(o.contains("mutable storage : int"), "{o}");
+    // Manifest constants lower-cased (OCaml `let` names are lowercase-initial).
+    assert!(o.contains("let perm_read : int = 1 lsl 0"), "{o}");
+    assert!(o.contains("let perm_exec : int = 1 lsl 2"), "{o}");
+    assert!(o.contains("Wire.put_u32 w v.storage"), "{o}");
+}
+
+#[test]
+fn bitmask_wire_is_backing_uint32() {
+    // perm_read | perm_exec = 0x05 → LE "05000000", BE "00000005"; round-trips.
+    let body = "\nlet () =\n  let p = { Perms.storage = Perms.perm_read lor Perms.perm_exec } in\n  print_endline (zdhex (Perms.marshal p Wire.LE));\n  print_endline (zdhex (Perms.marshal p Wire.BE));\n  print_endline (zdhex (Perms.marshal (Perms.unmarshal (Perms.marshal p Wire.BE) Wire.BE) Wire.BE))\n";
+    let Some(l) = ocaml_lines(BITMASK_IDL, body, "bitmask") else {
+        return;
+    };
+    assert_eq!(l[0], "05000000", "LE");
+    assert_eq!(l[1], "00000005", "BE");
+    assert_eq!(l[2], "00000005", "round-trip");
+}
+
+#[test]
+fn bitmask_bit_bound_narrows_backing() {
+    let o = emit("@bit_bound(8) bitmask Small { A, B };");
+    assert!(o.contains("Wire.put_u8 w v.storage"), "{o}");
+    assert!(o.contains("{ storage = Wire.get_u8 r }"), "{o}");
+}
+
+// ---- fixed<d,s> ---------------------------------------------------------
+
+const FIXED_IDL: &str = "@final struct HasFixed { fixed<5,2> price; };";
+
+#[test]
+fn fixed_emits_bcd_field_and_prelude() {
+    let o = emit(FIXED_IDL);
+    assert!(o.contains("price : bytes;"), "{o}");
+    assert!(o.contains("Wire.put_bytes w v.price"), "{o}");
+    assert!(o.contains("Wire.get_bytes_n r 3"), "{o}"); // (5+2)/2 = 3 octets
+    assert!(o.contains("let zd_fixed_enc (s : string)"), "{o}");
+}
+
+#[test]
+fn fixed_wire_is_packed_bcd() {
+    // fixed<5,2> 123.45 → BCD "12 34 5c" (odd P, no pad, CORBA §9.3.2.7).
+    // Raw BCD bytes: identical for LE and BE (no byte-swap, no length prefix).
+    let body = "\nlet () =\n  let h = { HasFixed.price = zd_fixed_enc \"123.45\" 5 2 } in\n  print_endline (zdhex (HasFixed.marshal h Wire.LE));\n  print_endline (zdhex (HasFixed.marshal h Wire.BE));\n  print_endline (zdhex (HasFixed.marshal (HasFixed.unmarshal (HasFixed.marshal h Wire.LE) Wire.LE) Wire.LE))\n";
+    let Some(l) = ocaml_lines(FIXED_IDL, body, "fixed") else {
+        return;
+    };
+    assert_eq!(l[0], "12345c", "LE");
+    assert_eq!(l[1], "12345c", "BE");
+    assert_eq!(l[2], "12345c", "round-trip");
+}
+
+#[test]
+fn fixed_even_p_keeps_msd() {
+    // fixed<4,0> 1234 → BCD "01 23 4c" (leading pad nibble; even P keeps MSD).
+    let idl = "@final struct HasFixed { fixed<4,0> price; };";
+    let body = "\nlet () =\n  let h = { HasFixed.price = zd_fixed_enc \"1234\" 4 0 } in\n  print_endline (zdhex (HasFixed.marshal h Wire.LE))\n";
+    let Some(l) = ocaml_lines(idl, body, "fixed40") else {
+        return;
+    };
+    assert_eq!(l[0], "01234c");
+}
+
+// ---- sequence-arbitrary -------------------------------------------------
+
+const SEQARB_IDL: &str = "@final struct S { sequence<long> xs; };";
+
+#[test]
+fn sequence_arbitrary_emits_count_and_loop() {
+    let o = emit(SEQARB_IDL);
+    assert!(o.contains("xs : int list;"), "{o}");
+    assert!(o.contains("Wire.put_u32 w (List.length v.xs)"), "{o}");
+    assert!(
+        o.contains("List.iter (fun zdElem -> Wire.put_u32 w zdElem) v.xs"),
+        "{o}"
+    );
+}
+
+#[test]
+fn sequence_arbitrary_wire_count_plus_elements() {
+    // [0x01020304, 0x05060708] → u32 count 2 + two i32 elements, no DHEADER.
+    let body = "\nlet () =\n  let s = { S.xs = [0x01020304; 0x05060708] } in\n  print_endline (zdhex (S.marshal s Wire.LE));\n  print_endline (zdhex (S.marshal s Wire.BE));\n  print_endline (zdhex (S.marshal (S.unmarshal (S.marshal s Wire.LE) Wire.LE) Wire.LE))\n";
+    let Some(l) = ocaml_lines(SEQARB_IDL, body, "seqarb") else {
+        return;
+    };
+    assert_eq!(l[0], "020000000403020108070605", "LE");
+    assert_eq!(l[1], "000000020102030405060708", "BE");
+    assert_eq!(l[2], "020000000403020108070605", "round-trip");
+}
+
+#[test]
+fn sequence_of_enum_is_arbitrary_path() {
+    // A `sequence<enum>` must now emit (was rejected pre-Wave-1), no DHEADER.
+    let o = emit("enum E { E0, E1 }; @final struct SE { sequence<E> es; };");
+    assert!(o.contains("es : e list;"), "{o}");
+    assert!(o.contains("Wire.put_u32 w (List.length v.es)"), "{o}");
+    assert!(
+        o.contains("List.iter (fun zdElem -> Wire.put_u32 w (e_to_int zdElem)) v.es"),
+        "{o}"
+    );
+}
+
+// ---- @optional ----------------------------------------------------------
+
+const OPT_IDL: &str = "@final struct Opt { uint32 a; @optional uint32 b; };";
+
+#[test]
+fn optional_emits_option_field_and_presence_flag() {
+    let o = emit(OPT_IDL);
+    assert!(o.contains("b : int option;"), "{o}");
+    assert!(
+        o.contains("(match v.b with Some zdOpt -> Wire.put_u8 w 1; Wire.put_u32 w zdOpt | None -> Wire.put_u8 w 0)"),
+        "{o}"
+    );
+    assert!(
+        o.contains("let b = (if Wire.get_bool r then Some ((Wire.get_u32 r)) else None) in"),
+        "{o}"
+    );
+}
+
+#[test]
+fn optional_final_wire_present_and_absent() {
+    // present: u32 a, u8 flag=1, pad(3), u32 b. absent: u32 a, u8 flag=0.
+    let body = "\nlet () =\n  let p = { Opt.a = 0x11223344; b = Some 0xAABBCCDD } in\n  print_endline (zdhex (Opt.marshal p Wire.LE));\n  print_endline (zdhex (Opt.marshal p Wire.BE));\n  let q = { Opt.a = 0x11223344; b = None } in\n  print_endline (zdhex (Opt.marshal q Wire.LE));\n  print_endline (zdhex (Opt.marshal (Opt.unmarshal (Opt.marshal p Wire.LE) Wire.LE) Wire.LE));\n  print_endline (zdhex (Opt.marshal (Opt.unmarshal (Opt.marshal q Wire.LE) Wire.LE) Wire.LE))\n";
+    let Some(l) = ocaml_lines(OPT_IDL, body, "opt") else {
+        return;
+    };
+    assert_eq!(l[0], "4433221101000000ddccbbaa", "present LE");
+    assert_eq!(l[1], "1122334401000000aabbccdd", "present BE");
+    assert_eq!(l[2], "4433221100", "absent LE");
+    assert_eq!(l[3], "4433221101000000ddccbbaa", "present round-trip");
+    assert_eq!(l[4], "4433221100", "absent round-trip");
+}
+
+#[test]
+fn optional_appendable_round_trips() {
+    // Appendable body is DHEADER-framed; verify decode∘encode identity for
+    // both present and absent without hand-computing the DHEADER length.
+    let idl = "@appendable struct OptA { uint32 a; @optional uint32 b; };";
+    let body = "\nlet () =\n  let p = { OptA.a = 0xCAFEBABE; b = Some 0x01020304 } in\n  let pe = OptA.marshal p Wire.LE in\n  print_endline (zdhex pe);\n  print_endline (zdhex (OptA.marshal (OptA.unmarshal pe Wire.LE) Wire.LE));\n  let q = { OptA.a = 0xCAFEBABE; b = None } in\n  let qe = OptA.marshal q Wire.LE in\n  print_endline (zdhex qe);\n  print_endline (zdhex (OptA.marshal (OptA.unmarshal qe Wire.LE) Wire.LE))\n";
+    let Some(l) = ocaml_lines(idl, body, "opta") else {
+        return;
+    };
+    assert_eq!(l[0], l[1], "present round-trip");
+    assert_eq!(l[2], l[3], "absent round-trip");
+}
+
+// ---- @verbatim ----------------------------------------------------------
+
+#[test]
+fn verbatim_placements_inject_text() {
+    let o = emit(
+        "@verbatim(language=\"ocaml\", placement=BEGIN_FILE, text=\"(* zd-begin-file *)\")\n\
+         @verbatim(language=\"ocaml\", placement=BEFORE_DECLARATION, text=\"(* zd-before *)\")\n\
+         @verbatim(language=\"ocaml\", placement=BEGIN_DECLARATION, text=\"(* zd-begin-decl *)\")\n\
+         @verbatim(language=\"ocaml\", placement=END_DECLARATION, text=\"(* zd-end-decl *)\")\n\
+         @verbatim(language=\"ocaml\", placement=AFTER_DECLARATION, text=\"(* zd-after *)\")\n\
+         @verbatim(language=\"ocaml\", placement=END_FILE, text=\"(* zd-end-file *)\")\n\
+         @final struct V { uint32 a; };",
+    );
+    for marker in [
+        "(* zd-begin-file *)",
+        "(* zd-before *)",
+        "(* zd-begin-decl *)",
+        "(* zd-end-decl *)",
+        "(* zd-after *)",
+        "(* zd-end-file *)",
+    ] {
+        assert!(o.contains(marker), "missing {marker}:\n{o}");
+    }
+    // Ordering: begin-file before the module; before-decl before `module V`;
+    // begin-decl after the module open; end-file trails the type.
+    let midx = o.find("module V = struct").expect("module");
+    assert!(o.find("(* zd-begin-file *)").unwrap() < midx, "{o}");
+    assert!(o.find("(* zd-before *)").unwrap() < midx, "{o}");
+    assert!(o.find("(* zd-begin-decl *)").unwrap() > midx, "{o}");
+    assert!(o.find("(* zd-end-file *)").unwrap() > midx, "{o}");
+}
+
+#[test]
+fn verbatim_language_filter_excludes_other_langs() {
+    // A non-OCaml language tag must NOT leak into the OCaml output.
+    let o = emit(
+        "@verbatim(language=\"java\", placement=BEFORE_DECLARATION, text=\"(* java-only *)\")\n\
+         @final struct V { uint32 a; };",
+    );
+    assert!(!o.contains("(* java-only *)"), "{o}");
+    // The wildcard `*` still matches OCaml.
+    let o2 = emit(
+        "@verbatim(placement=BEFORE_DECLARATION, text=\"(* wildcard *)\")\n\
+         @final struct V { uint32 a; };",
+    );
+    assert!(o2.contains("(* wildcard *)"), "{o2}");
+}
+
+#[test]
+fn verbatim_output_still_compiles() {
+    let idl = "@verbatim(language=\"ocaml\", placement=BEGIN_FILE, text=\"(* zd file header *)\")\n\
+         @verbatim(language=\"ocaml\", placement=BEGIN_DECLARATION, text=\"(* zd inside module *)\")\n\
+         @final struct V { uint32 a; };";
+    let body =
+        "\nlet () =\n  let v = { V.a = 0x2A } in\n  print_endline (zdhex (V.marshal v Wire.LE))\n";
+    let Some(l) = ocaml_lines(idl, body, "verbatim") else {
+        return;
+    };
+    assert_eq!(l[0], "2a000000");
 }

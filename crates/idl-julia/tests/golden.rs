@@ -40,7 +40,8 @@ fn emit(src: &str) -> String {
 #[test]
 fn module_wrapped_struct_is_emitted_not_dropped() {
     let j = emit("module Telemetry { @final struct Reading { long value; }; };");
-    assert!(j.contains("struct Reading"), "{j}");
+    // #21: a module-wrapped type is emitted with its module-qualified name.
+    assert!(j.contains("struct Telemetry_Reading"), "{j}");
     assert!(j.contains("    value::Int32"), "{j}");
 }
 
@@ -52,8 +53,74 @@ fn reopened_module_emits_both_structs() {
         "module M { @final struct A { long x; }; }; \
          module M { @final struct B { long y; }; };",
     );
-    assert!(j.contains("struct A"), "{j}");
-    assert!(j.contains("struct B"), "{j}");
+    // #21: both halves emit under the module-qualified name `M_*`.
+    assert!(j.contains("struct M_A"), "{j}");
+    assert!(j.contains("struct M_B"), "{j}");
+}
+
+/// #21 cross-module collision: two different modules each declaring `Reading`
+/// must emit distinct, module-qualified Julia types, never a duplicate one.
+#[test]
+fn cross_module_same_name_types_are_qualified() {
+    let j = emit(
+        "module a { @final struct Reading { long v; }; }; \
+         module b { @final struct Reading { double w; }; };",
+    );
+    assert!(j.contains("struct a_Reading"), "{j}");
+    assert!(j.contains("struct b_Reading"), "{j}");
+    assert!(!j.contains("struct Reading"), "{j}");
+    assert!(j.contains("    v::Int32"), "{j}");
+    assert!(j.contains("    w::Float64"), "{j}");
+}
+
+/// #21 cross-module reference: `module b`'s struct references `a::R`, which
+/// must resolve to the qualified type `a_R`, not the bare `R`.
+#[test]
+fn cross_module_reference_resolves_to_qualified_type() {
+    let j = emit(
+        "module a { @final struct R { long v; }; }; \
+         module b { @final struct S { a::R r; }; };",
+    );
+    assert!(j.contains("struct a_R"), "{j}");
+    assert!(j.contains("struct b_S"), "{j}");
+    // S's member `r` has the qualified type a_R.
+    assert!(j.contains("    r::a_R"), "{j}");
+}
+
+/// #21 compile gate: a two-module spec with a cross-module reference must
+/// produce runnable Julia.
+#[test]
+fn cross_module_reference_compiles_with_julia() {
+    if Command::new("julia").arg("--version").output().is_err() {
+        eprintln!("SKIP cross_module_reference_compiles_with_julia: `julia` not on PATH");
+        return;
+    }
+    let mut src = emit(
+        "module a { @final struct R { long v; }; }; \
+         module b { @final struct S { a::R r; }; };",
+    );
+    src.push_str(
+        r#"
+function main()
+    s = b_S(a_R(7))
+    _ = marshal_xcdr(s, LE)
+    println("ok")
+end
+main()
+"#,
+    );
+    let dir = std::env::temp_dir().join(format!("idljulia_xmod_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    let jf = dir.join("main.jl");
+    std::fs::write(&jf, &src).expect("write");
+    let out = Command::new("julia").arg(&jf).output().expect("julia");
+    assert!(
+        out.status.success(),
+        "julia failed:\n{}\n--- src ---\n{src}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "ok");
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
@@ -924,4 +991,373 @@ fn keyword_colliding_names_compile_and_run_with_julia() {
         String::from_utf8_lossy(&out.stderr)
     );
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ===========================================================================
+// Section-F Wave-1: bitset/bitmask, @optional, fixed<d,s>, sequence-arbitrary,
+// @verbatim. Always-on source-asserts + julia-gated compile-and-run tests whose
+// expected wire hex is derived from the spec IN the test (no GOLDEN_DIR oracle).
+// The wire is XCDR2, identical to the idl-d reference for the same fixtures.
+// ===========================================================================
+
+/// Emits `idl`, appends `main_body`, runs it with `julia`, and returns the
+/// trimmed stdout lines. `None` (skip) if `julia` is not on PATH.
+fn julia_lines(idl: &str, main_body: &str, tag: &str) -> Option<Vec<String>> {
+    if Command::new("julia").arg("--version").output().is_err() {
+        eprintln!("SKIP {tag}: `julia` not on PATH");
+        return None;
+    }
+    let mut src = emit(idl);
+    src.push_str(main_body);
+    let dir = std::env::temp_dir().join(format!("idljulia_{tag}_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    let jf = dir.join("main.jl");
+    std::fs::write(&jf, &src).expect("write");
+    let out = Command::new("julia").arg(&jf).output().expect("julia");
+    assert!(
+        out.status.success(),
+        "julia failed:\n{}\n--- src ---\n{src}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf8");
+    let lines: Vec<String> = stdout.lines().map(|l| l.trim().to_string()).collect();
+    let _ = std::fs::remove_dir_all(&dir);
+    Some(lines)
+}
+
+// ---- bitset -------------------------------------------------------------
+
+const BITSET_IDL: &str = "bitset Flags { bitfield<4> a; bitfield<8> b; };";
+
+#[test]
+fn bitset_emits_holder_struct_and_accessors() {
+    let j = emit(BITSET_IDL);
+    // 4 + 8 = 12 bits -> UInt16 backing (XTypes §7.4.7).
+    assert!(j.contains("mutable struct Flags"), "{j}");
+    assert!(j.contains("    storage::UInt16"), "{j}");
+    assert!(j.contains("a(v::Flags)::UInt16"), "{j}");
+    assert!(j.contains("b(v::Flags)::UInt16"), "{j}");
+    assert!(j.contains("set_a!(v::Flags, x::UInt16)"), "{j}");
+    assert!(j.contains("put_u16!(w, v.storage)"), "{j}");
+    assert!(j.contains("function read_Flags(r::Reader)::Flags"), "{j}");
+}
+
+#[test]
+fn bitset_wire_is_backing_int() {
+    // storage 0xABCD as a UInt16 -> LE "cdab", BE "abcd"; round-trips.
+    let body = r#"
+function main()
+    f = Flags(0xABCD)
+    println(bytes2hex(marshal_xcdr(f, LE)))
+    println(bytes2hex(marshal_xcdr(f, BE)))
+    println(bytes2hex(marshal_xcdr(unmarshal_xcdr_Flags(marshal_xcdr(f, LE), LE), LE)))
+end
+main()
+"#;
+    let Some(l) = julia_lines(BITSET_IDL, body, "bitset") else {
+        return;
+    };
+    assert_eq!(l[0], "cdab", "LE");
+    assert_eq!(l[1], "abcd", "BE");
+    assert_eq!(l[2], "cdab", "round-trip");
+}
+
+#[test]
+fn bitset_accessors_get_and_set_bits() {
+    // set a=13 (4 bits), b=188 (8 bits) -> storage 0x0BCD; getters read back.
+    let body = r#"
+function main()
+    f = Flags(UInt16(0))
+    set_a!(f, UInt16(13))
+    set_b!(f, UInt16(188))
+    println(bytes2hex(marshal_xcdr(f, LE)))
+    println(string(Int(a(f))))
+    println(string(Int(b(f))))
+end
+main()
+"#;
+    let Some(l) = julia_lines(BITSET_IDL, body, "bitsetacc") else {
+        return;
+    };
+    assert_eq!(l[0], "cd0b", "storage 0x0BCD LE");
+    assert_eq!(l[1], "13", "a()");
+    assert_eq!(l[2], "188", "b()");
+}
+
+// ---- bitmask ------------------------------------------------------------
+
+const BITMASK_IDL: &str = "bitmask Perms { PERM_READ, PERM_WRITE, PERM_EXEC };";
+
+#[test]
+fn bitmask_emits_holder_and_constants() {
+    let j = emit(BITMASK_IDL);
+    // Default @bit_bound = 32 -> UInt32 backing (XTypes §7.3.1.2.1.1).
+    assert!(j.contains("mutable struct Perms"), "{j}");
+    assert!(j.contains("    storage::UInt32"), "{j}");
+    assert!(j.contains("const Perms_PERM_READ = UInt32(1) << 0"), "{j}");
+    assert!(j.contains("const Perms_PERM_EXEC = UInt32(1) << 2"), "{j}");
+    assert!(j.contains("put_u32!(w, v.storage)"), "{j}");
+}
+
+#[test]
+fn bitmask_wire_is_backing_uint32() {
+    // PERM_READ | PERM_EXEC = 0x05 -> LE "05000000", BE "00000005"; round-trips.
+    let body = r#"
+function main()
+    p = Perms(Perms_PERM_READ | Perms_PERM_EXEC)
+    println(bytes2hex(marshal_xcdr(p, LE)))
+    println(bytes2hex(marshal_xcdr(p, BE)))
+    println(bytes2hex(marshal_xcdr(unmarshal_xcdr_Perms(marshal_xcdr(p, BE), BE), BE)))
+end
+main()
+"#;
+    let Some(l) = julia_lines(BITMASK_IDL, body, "bitmask") else {
+        return;
+    };
+    assert_eq!(l[0], "05000000", "LE");
+    assert_eq!(l[1], "00000005", "BE");
+    assert_eq!(l[2], "00000005", "round-trip");
+}
+
+#[test]
+fn bitmask_bit_bound_narrows_backing() {
+    let j = emit("@bit_bound(8) bitmask Small { A, B };");
+    assert!(j.contains("    storage::UInt8"), "{j}");
+    assert!(j.contains("put_u8!(w, v.storage)"), "{j}");
+    assert!(j.contains("const Small_A = UInt8(1) << 0"), "{j}");
+}
+
+// ---- fixed<d,s> ---------------------------------------------------------
+
+const FIXED_IDL: &str = "@final struct HasFixed { fixed<5,2> price; };";
+
+#[test]
+fn fixed_emits_bcd_field_and_prelude() {
+    let j = emit(FIXED_IDL);
+    assert!(j.contains("    price::Vector{UInt8}"), "{j}");
+    assert!(j.contains("put_bytes!(w, v.price)"), "{j}");
+    assert!(
+        j.contains("function zd_fixed_enc(s::AbstractString, P::Int, S::Int)"),
+        "{j}"
+    );
+    // fixed<5,2> reads (5+2)/2 = 3 BCD octets on decode (into a local).
+    assert!(j.contains("price = get_bytes_n!(r, 3)"), "{j}");
+}
+
+#[test]
+fn fixed_wire_is_packed_bcd() {
+    // fixed<5,2> 123.45 -> BCD "12 34 5c" (odd P, no pad, CORBA §9.3.2.7).
+    let body = r#"
+function main()
+    h = HasFixed(zd_fixed_enc("123.45", 5, 2))
+    println(bytes2hex(marshal_xcdr(h, LE)))
+    println(bytes2hex(marshal_xcdr(h, BE)))
+    println(bytes2hex(marshal_xcdr(unmarshal_xcdr_HasFixed(marshal_xcdr(h, LE), LE), LE)))
+end
+main()
+"#;
+    let Some(l) = julia_lines(FIXED_IDL, body, "fixed") else {
+        return;
+    };
+    // Raw BCD bytes: identical for LE and BE (no byte-swap, no length prefix).
+    assert_eq!(l[0], "12345c", "LE");
+    assert_eq!(l[1], "12345c", "BE");
+    assert_eq!(l[2], "12345c", "round-trip");
+}
+
+#[test]
+fn fixed_even_p_keeps_msd() {
+    // fixed<4,0> 1234 -> BCD "01 23 4c" (leading pad nibble; even P keeps MSD).
+    let body = r#"
+function main()
+    h = HasFixed(zd_fixed_enc("1234", 4, 0))
+    println(bytes2hex(marshal_xcdr(h, LE)))
+end
+main()
+"#;
+    let Some(l) = julia_lines(
+        "@final struct HasFixed { fixed<4,0> price; };",
+        body,
+        "fixed40",
+    ) else {
+        return;
+    };
+    assert_eq!(l[0], "01234c");
+}
+
+// ---- sequence-arbitrary -------------------------------------------------
+
+const SEQARB_IDL: &str = "@final struct S { sequence<long> xs; };";
+
+#[test]
+fn sequence_arbitrary_emits_count_and_loop() {
+    let j = emit(SEQARB_IDL);
+    assert!(j.contains("    xs::Vector{Int32}"), "{j}");
+    assert!(j.contains("put_u32!(w, length(v.xs))"), "{j}");
+    assert!(j.contains("for zdElem in v.xs"), "{j}");
+}
+
+#[test]
+fn sequence_arbitrary_wire_count_plus_elements() {
+    // [0x01020304, 0x05060708] -> u32 count 2 + two i32 elements, no DHEADER.
+    let body = r#"
+function main()
+    s = S(Int32[0x01020304, 0x05060708])
+    println(bytes2hex(marshal_xcdr(s, LE)))
+    println(bytes2hex(marshal_xcdr(s, BE)))
+    println(bytes2hex(marshal_xcdr(unmarshal_xcdr_S(marshal_xcdr(s, LE), LE), LE)))
+end
+main()
+"#;
+    let Some(l) = julia_lines(SEQARB_IDL, body, "seqarb") else {
+        return;
+    };
+    assert_eq!(l[0], "020000000403020108070605", "LE");
+    assert_eq!(l[1], "000000020102030405060708", "BE");
+    assert_eq!(l[2], "020000000403020108070605", "round-trip");
+}
+
+#[test]
+fn sequence_of_enum_is_arbitrary_path() {
+    // A `sequence<enum>` must now emit (was rejected pre-Wave-1).
+    let j = emit("enum E { E0, E1 }; @final struct SE { sequence<E> es; };");
+    assert!(j.contains("    es::Vector{E}"), "{j}");
+    assert!(j.contains("for zdElem in v.es"), "{j}");
+    assert!(j.contains("put_u32!(w, length(v.es))"), "{j}");
+}
+
+// ---- @optional ----------------------------------------------------------
+
+const OPT_IDL: &str = "@final struct Opt { uint32 a; @optional uint32 b; };";
+
+#[test]
+fn optional_emits_presence_flag() {
+    let j = emit(OPT_IDL);
+    assert!(j.contains("    b_present::Bool"), "{j}");
+    assert!(j.contains("put_u8!(w, v.b_present ? 1 : 0)"), "{j}");
+    assert!(j.contains("    if v.b_present"), "{j}");
+    assert!(j.contains("    b_present = get_bool!(r)"), "{j}");
+}
+
+#[test]
+fn optional_final_wire_present_and_absent() {
+    // present: u32 a, u8 flag=1, pad(3), u32 b. absent: u32 a, u8 flag=0.
+    // Struct field order: a, b_present, b -> constructor Opt(a, b_present, b).
+    let body = r#"
+function main()
+    p = Opt(0x11223344, true, 0xAABBCCDD)
+    println(bytes2hex(marshal_xcdr(p, LE)))
+    println(bytes2hex(marshal_xcdr(p, BE)))
+    q = Opt(0x11223344, false, 0x00000000)
+    println(bytes2hex(marshal_xcdr(q, LE)))
+    println(bytes2hex(marshal_xcdr(unmarshal_xcdr_Opt(marshal_xcdr(p, LE), LE), LE)))
+    println(bytes2hex(marshal_xcdr(unmarshal_xcdr_Opt(marshal_xcdr(q, LE), LE), LE)))
+end
+main()
+"#;
+    let Some(l) = julia_lines(OPT_IDL, body, "opt") else {
+        return;
+    };
+    assert_eq!(l[0], "4433221101000000ddccbbaa", "present LE");
+    assert_eq!(l[1], "1122334401000000aabbccdd", "present BE");
+    assert_eq!(l[2], "4433221100", "absent LE");
+    assert_eq!(l[3], "4433221101000000ddccbbaa", "present round-trip");
+    assert_eq!(l[4], "4433221100", "absent round-trip");
+}
+
+#[test]
+fn optional_appendable_round_trips() {
+    // Appendable body is DHEADER-framed; verify decode∘encode identity for
+    // both present and absent, without hand-computing the DHEADER length.
+    let idl = "@appendable struct OptA { uint32 a; @optional uint32 b; };";
+    let body = r#"
+function main()
+    p = OptA(0xCAFEBABE, true, 0x01020304)
+    pe = marshal_xcdr(p, LE)
+    println(bytes2hex(pe))
+    println(bytes2hex(marshal_xcdr(unmarshal_xcdr_OptA(pe, LE), LE)))
+    q = OptA(0xCAFEBABE, false, 0x00000000)
+    qe = marshal_xcdr(q, LE)
+    println(bytes2hex(qe))
+    println(bytes2hex(marshal_xcdr(unmarshal_xcdr_OptA(qe, LE), LE)))
+end
+main()
+"#;
+    let Some(l) = julia_lines(idl, body, "opta") else {
+        return;
+    };
+    assert_eq!(l[0], l[1], "present round-trip");
+    assert_eq!(l[2], l[3], "absent round-trip");
+}
+
+// ---- @verbatim ----------------------------------------------------------
+
+#[test]
+fn verbatim_placements_inject_text() {
+    let j = emit(
+        "@verbatim(language=\"julia\", placement=BEGIN_FILE, text=\"# zd-begin-file\")\n\
+         @verbatim(language=\"julia\", placement=BEFORE_DECLARATION, text=\"# zd-before\")\n\
+         @verbatim(language=\"julia\", placement=BEGIN_DECLARATION, text=\"# zd-begin-decl\")\n\
+         @verbatim(language=\"julia\", placement=END_DECLARATION, text=\"# zd-end-decl\")\n\
+         @verbatim(language=\"julia\", placement=AFTER_DECLARATION, text=\"# zd-after\")\n\
+         @verbatim(language=\"julia\", placement=END_FILE, text=\"# zd-end-file\")\n\
+         @final struct V { uint32 a; };",
+    );
+    for marker in [
+        "# zd-begin-file",
+        "# zd-before",
+        "# zd-begin-decl",
+        "# zd-end-decl",
+        "# zd-after",
+        "# zd-end-file",
+    ] {
+        assert!(j.contains(marker), "missing {marker}:\n{j}");
+    }
+    // Ordering: begin-file before the struct; before-decl before `struct V`;
+    // begin-decl after the opening line; end-file trails the type.
+    let sidx = j.find("struct V").expect("struct");
+    assert!(j.find("# zd-begin-file").unwrap() < sidx, "{j}");
+    assert!(j.find("# zd-before").unwrap() < sidx, "{j}");
+    assert!(j.find("# zd-begin-decl").unwrap() > sidx, "{j}");
+    assert!(j.find("# zd-end-file").unwrap() > sidx, "{j}");
+}
+
+#[test]
+fn verbatim_language_filter_excludes_other_langs() {
+    // A non-Julia language tag must NOT leak into the Julia output.
+    let j = emit(
+        "@verbatim(language=\"java\", placement=BEFORE_DECLARATION, text=\"# java-only\")\n\
+         @final struct V { uint32 a; };",
+    );
+    assert!(!j.contains("# java-only"), "{j}");
+    // The wildcard `*` still matches Julia.
+    let j2 = emit(
+        "@verbatim(placement=BEFORE_DECLARATION, text=\"# wildcard\")\n\
+         @final struct V { uint32 a; };",
+    );
+    assert!(j2.contains("# wildcard"), "{j2}");
+    // The `jl` alias also matches.
+    let j3 = emit(
+        "@verbatim(language=\"jl\", placement=BEFORE_DECLARATION, text=\"# jl-alias\")\n\
+         @final struct V { uint32 a; };",
+    );
+    assert!(j3.contains("# jl-alias"), "{j3}");
+}
+
+#[test]
+fn verbatim_output_still_runs() {
+    let idl = "@verbatim(language=\"julia\", placement=BEGIN_FILE, text=\"# zd file header\")\n\
+         @verbatim(language=\"julia\", placement=BEGIN_DECLARATION, text=\"# zd inside struct\")\n\
+         @final struct V { uint32 a; };";
+    let body = r#"
+function main()
+    v = V(0x2A)
+    println(bytes2hex(marshal_xcdr(v, LE)))
+end
+main()
+"#;
+    let Some(l) = julia_lines(idl, body, "verbatim") else {
+        return;
+    };
+    assert_eq!(l[0], "2a000000");
 }

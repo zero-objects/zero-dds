@@ -999,3 +999,120 @@ public class Main {
 "#,
     );
 }
+
+// ---------------------------------------------------------------------------
+// P0.3 struct inheritance — base-class fields on the wire.
+// Regression: the codec iterated only `s.members`, never `s.base`, so inherited
+// fields were silently dropped. XTypes 1.3 §7.4.3.4.1: base members precede
+// derived members on the wire. Same canonical byte vectors as idl-cpp/idl-csharp
+// (cross-binding byte-identity).
+// ---------------------------------------------------------------------------
+
+const INHERIT_IDL: &str = r#"
+module conf {
+  @final struct Base { long a; };
+  @final struct Derived : Base { long b; };
+};
+"#;
+
+#[test]
+fn roundtrip_inheritance_wire_and_recovery() {
+    run_roundtrip(
+        INHERIT_IDL,
+        r#"package conf;
+public class Main {
+  public static void main(String[] args) {
+    Derived d = new Derived();
+    d.setA(0x11223344);
+    d.setB(0x55667788);
+    byte[] b = DerivedTypeSupport.INSTANCE.encode(d);
+    // @final -> plain-CDR2, no DHEADER: base `a` (LE 44 33 22 11) BEFORE
+    // derived `b` (LE 88 77 66 55). 8 bytes; if `a` were dropped it'd be 4.
+    byte[] want = new byte[]{ 0x44, 0x33, 0x22, 0x11, (byte)0x88, 0x77, 0x66, 0x55 };
+    if (!java.util.Arrays.equals(b, want)) {
+      System.err.println("wire mismatch: got " + java.util.Arrays.toString(b));
+      System.exit(1);
+    }
+    Derived r = DerivedTypeSupport.INSTANCE.decode(b);
+    if (r.getA() != 0x11223344) { System.err.println("a=" + r.getA()); System.exit(1); }
+    if (r.getB() != 0x55667788) { System.err.println("b=" + r.getB()); System.exit(1); }
+  }
+}
+"#,
+    );
+}
+
+const INHERIT_MULTILEVEL_IDL: &str = r#"
+module conf {
+  @final struct A { long a; };
+  @final struct B : A { long b; };
+  @final struct C : B { long c; };
+};
+"#;
+
+#[test]
+fn roundtrip_inheritance_multilevel_order() {
+    run_roundtrip(
+        INHERIT_MULTILEVEL_IDL,
+        r#"package conf;
+public class Main {
+  public static void main(String[] args) {
+    C c = new C();
+    c.setA(0x11111111);
+    c.setB(0x22222222);
+    c.setC(0x33333333);
+    byte[] b = CTypeSupport.INSTANCE.encode(c);
+    byte[] want = new byte[]{
+      0x11, 0x11, 0x11, 0x11,
+      0x22, 0x22, 0x22, 0x22,
+      0x33, 0x33, 0x33, 0x33
+    };
+    if (!java.util.Arrays.equals(b, want)) {
+      System.err.println("wire mismatch: got " + java.util.Arrays.toString(b));
+      System.exit(1);
+    }
+    C r = CTypeSupport.INSTANCE.decode(b);
+    if (r.getA() != 0x11111111 || r.getB() != 0x22222222 || r.getC() != 0x33333333) {
+      System.err.println("recovery mismatch"); System.exit(1);
+    }
+  }
+}
+"#,
+    );
+}
+
+const INHERIT_KEY_IDL: &str = r#"
+module conf {
+  @final struct Base { @key long a; };
+  @final struct Derived : Base { @key long b; };
+};
+"#;
+
+#[test]
+fn roundtrip_inheritance_keyhash_includes_base_key() {
+    run_roundtrip(
+        INHERIT_KEY_IDL,
+        r#"package conf;
+public class Main {
+  public static void main(String[] args) {
+    Derived d = new Derived();
+    d.setA(0x0000000A);
+    d.setB(0x0000000B);
+    if (!DerivedTypeSupport.INSTANCE.isKeyed()) { System.err.println("not keyed"); System.exit(1); }
+    byte[] h = DerivedTypeSupport.INSTANCE.keyHash(d);
+    // KeyHash is BE (RTPS §9.6.3.8): Base.a=0x0A then Derived.b=0x0B, 8-byte
+    // holder zero-padded to 16.
+    byte[] want = new byte[]{
+      0x00, 0x00, 0x00, 0x0A,
+      0x00, 0x00, 0x00, 0x0B,
+      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+    };
+    if (!java.util.Arrays.equals(h, want)) {
+      System.err.println("keyhash mismatch: got " + java.util.Arrays.toString(h));
+      System.exit(1);
+    }
+  }
+}
+"#,
+    );
+}

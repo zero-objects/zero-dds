@@ -17,7 +17,10 @@
 //!
 //! # Public API
 //!
-//! - [`generate_go_module`] — AST + options → Go source.
+//! - [`generate_go_module`] — AST + options → self-contained Go source
+//!   (wire prelude + types).
+//! - [`generate_go_fragment`] — AST + options → Go types WITHOUT the shared
+//!   wire prelude, for every file but the first in a multi-file compose.
 //! - [`GoGenOptions`] — codegen options.
 //! - [`error::IdlGoError`] — error family.
 //!
@@ -35,8 +38,10 @@
 //! | `sequence<octet>` | `[]byte` |
 //! | `sequence<primitive>` | `[]T` (u32 count + per-element) |
 //!
-//! `@mutable`, unions, nested-struct members, maps, `long double`, `wchar`,
-//! and `wstring` currently raise [`error::IdlGoError::Unsupported`].
+//! `union` (incl. `@mutable`) and `map<K,V>`, nested-struct members, struct
+//! inheritance, `@mutable` structs, `const`, `long double`, `wchar`, and
+//! `wstring` are emitted; only non-literal collection bounds currently raise
+//! [`error::IdlGoError::Unsupported`].
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs)]
@@ -45,5 +50,5 @@ pub mod emitter;
 pub mod error;
 mod keywords;
 
-pub use emitter::{GoGenOptions, generate_go_module};
+pub use emitter::{GoGenOptions, generate_go_fragment, generate_go_module};
 pub use error::{IdlGoError, Result};

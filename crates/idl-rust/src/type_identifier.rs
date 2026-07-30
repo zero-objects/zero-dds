@@ -40,7 +40,7 @@
 
 use core::cell::RefCell;
 
-use zerodds_idl::ast::types::{Declarator, Specification, StructDef, TypeSpec};
+use zerodds_idl::ast::types::{Specification, StructDef};
 use zerodds_idl::semantics::NameMap;
 
 thread_local! {
@@ -154,98 +154,18 @@ fn md5_truncated(bytes: &[u8]) -> [u8; 14] {
 /// member-id branch — emitting a wrong non-`None` hash for any annotated
 /// struct instead of the spec-correct one).
 fn build_complete_struct_type_bytes(s: &StructDef) -> Option<Vec<u8>> {
-    use crate::annotations::StructExtensibility;
-    use zerodds_types::builder::{Extensibility, TypeObjectBuilder};
-
     let scope = CURRENT_SCOPE.with(|c| c.borrow().clone());
-
-    let extensibility = match crate::annotations::struct_extensibility(&s.annotations) {
-        StructExtensibility::Final => Extensibility::Final,
-        StructExtensibility::Appendable => Extensibility::Appendable,
-        StructExtensibility::Mutable => Extensibility::Mutable,
-    };
-    let mut builder =
-        TypeObjectBuilder::struct_type(s.name.text.clone()).extensibility(extensibility);
-    if crate::annotations::struct_is_nested(&s.annotations) {
-        builder = builder.nested();
-    }
-    if crate::annotations::struct_autoid_hash(&s.annotations) {
-        builder = builder.autoid_hash();
-    }
-
-    for member in &s.members {
-        let is_key = crate::annotations::member_is_key(&member.annotations);
-        let is_optional = crate::annotations::member_is_optional(&member.annotations);
-        let is_must_understand = crate::annotations::member_must_understand(&member.annotations);
-        let is_external = crate::annotations::member_is_external(&member.annotations);
-        let explicit_id = crate::annotations::member_id(&member.annotations);
-        let unit = crate::annotations::member_unit(&member.annotations);
-        let base_type_id = type_spec_to_type_identifier(&member.type_spec, &scope)?;
-
-        for decl in &member.declarators {
-            let name = match decl {
-                Declarator::Simple(n) => n.text.clone(),
-                Declarator::Array(a) => a.name.text.clone(),
-            };
-            // Array declarator (`T name[N][M]`) → wrap the resolved
-            // element TypeIdentifier in PlainArraySmall/Large with the
-            // declared dimensions (previously discarded — #24 array-bounds
-            // bug: a `long grid[4][4]` member emitted a bare `Primitive`
-            // TypeIdentifier, spec-wrong for a TK_ARRAY member).
-            let member_type_id = match decl {
-                Declarator::Simple(_) => base_type_id.clone(),
-                Declarator::Array(a) => {
-                    zerodds_idl::semantics::make_array_ti(base_type_id.clone(), &a.sizes).ok()?
-                }
-            };
-            let unit = unit.clone();
-            builder = builder.member(name, member_type_id, move |mut mb| {
-                if is_key {
-                    mb = mb.key();
-                }
-                if is_optional {
-                    mb = mb.optional();
-                }
-                if is_must_understand {
-                    mb = mb.must_understand();
-                }
-                if is_external {
-                    mb = mb.external();
-                }
-                if let Some(id) = explicit_id {
-                    mb = mb.id(id);
-                }
-                if let Some(u) = unit {
-                    mb = mb.unit(u);
-                }
-                mb
-            });
-        }
-    }
-
-    let cs = builder.build_complete();
-
-    // Wrap in TypeObject::Complete for the public encode API.
-    let to = zerodds_types::type_object::TypeObject::Complete(
-        zerodds_types::type_object::CompleteTypeObject::Struct(cs),
-    );
-    to.to_bytes_le().ok()
-}
-
-/// Map an IDL `TypeSpec` (in the module `scope` of the struct being
-/// emitted) → `zerodds_types::TypeIdentifier`, resolving typedef/enum/
-/// sequence/map/nested-struct/union members via the full-spec [`NAME_MAP`]
-/// registered by [`register_spec`] — the same resolution
-/// `zerodds_idl::semantics::build_type_registry` ("Path A") already
-/// performs. `None` only for a still-genuinely-unmappable `TypeSpec`
-/// (`fixed<>`/`any`) or an unresolved scoped reference (registry not
-/// populated, or the referenced type itself failed to lower).
-fn type_spec_to_type_identifier(
-    ts: &TypeSpec,
-    scope: &[String],
-) -> Option<zerodds_types::TypeIdentifier> {
+    // #24: the `CompleteStructType` is assembled by the SHARED single-source
+    // builder in `zerodds_idl::semantics::build_complete_struct_type` — the SAME
+    // function `idl-cpp` calls for its emitted `type_object()` bytes, so the two
+    // bindings hash byte-identically. Member types are resolved via the
+    // full-spec NAME_MAP that `register_spec` populated (Path A's
+    // `build_type_registry`), so typedef/enum/sequence/map/nested-struct/union
+    // and array declarators map exactly as Path A maps them. `None` on any
+    // unresolved member (`fixed`/`any`, or a scoped ref absent from the
+    // registry) keeps the pre-#24 `TypeIdentifier::None` fallback.
     NAME_MAP.with(|names| {
-        zerodds_idl::semantics::map_type_spec_resolved(ts, scope, &names.borrow()).ok()
+        zerodds_idl::semantics::complete_struct_type_object_bytes(s, &scope, &names.borrow()).ok()
     })
 }
 

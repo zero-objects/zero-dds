@@ -11,6 +11,7 @@
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
+use zerodds_idl::ast::Annotation;
 use zerodds_idl::ast::types::{
     BinaryOp, BitmaskDecl, BitsetDecl, CaseLabel, ConstDecl, ConstExpr, ConstType, ConstrTypeDecl,
     Declarator, Definition, EnumDef, ExceptDecl, FloatingType, Identifier, IntegerType, Literal,
@@ -19,10 +20,63 @@ use zerodds_idl::ast::types::{
     UnionDcl, UnionDef,
 };
 use zerodds_idl::semantics::annotations::{
-    BuiltinAnnotation, ExtensibilityKind, lower_annotations,
+    BuiltinAnnotation, ExtensibilityKind, PlacementKind, lower_annotations,
 };
 
 use crate::error::{IdlPythonError, Result};
+
+/// Python codegen language aliases for `@verbatim(language="...")`.
+const PYTHON_LANG_ALIASES: &[&str] = &["python", "py"];
+
+/// Emits all `@verbatim` blocks (language `python`/`py`/`*`) from `anns` at the
+/// given [`PlacementKind`], each line prefixed with `indent`. The verbatim text
+/// is spliced in unmodified (the user's responsibility). Mirrors idl-cpp /
+/// idl-rust verbatim consumption (XTypes 1.3 §7.2.2.4.8 + IDL 4.2 §8.3.5.1).
+fn emit_verbatim_at(out: &mut String, indent: &str, anns: &[Annotation], placement: PlacementKind) {
+    let Ok(lowered) = lower_annotations(anns) else {
+        return;
+    };
+    for v in lowered.verbatims_for_language(PYTHON_LANG_ALIASES) {
+        if v.placement != placement {
+            continue;
+        }
+        for line in v.text.lines() {
+            out.push_str(indent);
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+}
+
+/// `true` if any `@verbatim` for the Python codegen targets `placement`.
+fn has_verbatim_at(anns: &[Annotation], placement: PlacementKind) -> bool {
+    lower_annotations(anns).is_ok_and(|lowered| {
+        lowered
+            .verbatims_for_language(PYTHON_LANG_ALIASES)
+            .iter()
+            .any(|v| v.placement == placement)
+    })
+}
+
+/// Annotation list carried by a top-level `Definition`, for file-level
+/// `@verbatim` (BEGIN_FILE / END_FILE).
+fn def_annotations(d: &Definition) -> Option<&[Annotation]> {
+    match d {
+        Definition::Module(m) => Some(&m.annotations),
+        Definition::Type(TypeDecl::Constr(c)) => match c {
+            ConstrTypeDecl::Struct(StructDcl::Def(s)) => Some(&s.annotations),
+            ConstrTypeDecl::Union(UnionDcl::Def(u)) => Some(&u.annotations),
+            ConstrTypeDecl::Enum(e) => Some(&e.annotations),
+            ConstrTypeDecl::Bitset(b) => Some(&b.annotations),
+            ConstrTypeDecl::Bitmask(b) => Some(&b.annotations),
+            _ => None,
+        },
+        Definition::Type(TypeDecl::Typedef(t)) => Some(&t.annotations),
+        Definition::Const(c) => Some(&c.annotations),
+        Definition::Except(e) => Some(&e.annotations),
+        _ => None,
+    }
+}
 
 /// Codegen options for Python modules.
 #[derive(Debug, Clone, Default)]
@@ -54,6 +108,14 @@ thread_local! {
     /// but the class is defined flattened as `combo_Reading` (Bug Q-cluster).
     static TYPE_PATHS: std::cell::RefCell<Vec<Vec<String>>> =
         const { std::cell::RefCell::new(Vec::new()) };
+
+    /// #24 / F-TYPES-3: full-spec resolved member-type index (the SAME "Path A"
+    /// map `zerodds_idl::semantics::build_type_registry` builds) so each
+    /// emitted `TYPE_OBJECT` byte constant resolves member types exactly as
+    /// `idl-rust` does. Set once per run by [`generate_python_module`]; an empty
+    /// map (build failure) makes affected structs emit no `TYPE_OBJECT`.
+    static NAME_MAP: std::cell::RefCell<zerodds_idl::semantics::NameMap> =
+        std::cell::RefCell::new(zerodds_idl::semantics::NameMap::default());
 }
 
 /// Records the fully-qualified path of every named type declaration before
@@ -114,12 +176,12 @@ fn resolve_scoped_name(name: &ScopedName, scope: &[String]) -> String {
         let mut candidate = scope[..cut].to_vec();
         candidate.extend(parts.iter().cloned());
         if known.contains(&candidate) {
-            return candidate.join("_");
+            return escape_python_keyword(&flatten_scoped(&candidate));
         }
     }
     // No registered match (e.g. a built-in/forward-only name): fall back to the
     // literal flattening of whatever parts were written.
-    parts.join("_")
+    escape_python_keyword(&flatten_scoped(&parts))
 }
 
 /// `true` if the member carries an `@optional` annotation (Bug R5 / #64).
@@ -138,14 +200,6 @@ fn member_is_optional(m: &Member) -> bool {
 /// Python runtime needs the exact ids so its EMHEADERs match the cross-vendor
 /// reference. Absent ids fall back to the SEQUENTIAL default (1-based) computed
 /// by the caller.
-fn member_explicit_id(m: &Member) -> Option<u32> {
-    let lowered = lower_annotations(&m.annotations).ok()?;
-    lowered.builtins.iter().find_map(|b| match b {
-        BuiltinAnnotation::Id(n) => Some(*n),
-        _ => None,
-    })
-}
-
 /// The effective `@bit_bound` of a bitmask — the wire holder width in bits.
 /// XTypes 1.3 §7.3.1.2.1.1: the DEFAULT bit_bound for a bitmask is **32** (→ a
 /// uint32 holder), so a 3-flag bitmask without an explicit `@bit_bound` is still
@@ -187,17 +241,56 @@ fn enum_bit_bound(e: &EnumDef) -> u32 {
 /// IDL `long a, b;` declares two members). Mirrors the Rust backend's
 /// `vec![10, 20, 30]` id list.
 fn mutable_member_ids(s: &StructDef) -> Vec<u32> {
+    // P0-3: the fixed (annotation-determined) id — explicit `@id(N)`, `@hashid`,
+    // or a struct-level `@autoid(HASH)` name-hash — comes from the ONE central
+    // resolver in the semantic layer; only a genuinely un-annotated member falls
+    // through to the SEQUENTIAL counter here. Previously this ignored
+    // `@autoid(HASH)` / `@hashid`, so those members got a positional id.
+    let autoid_hash = zerodds_idl::semantics::member_id::container_autoid_hash(&s.annotations);
     let mut ids = Vec::new();
     let mut next: u32 = 0;
     for m in &s.members {
-        let explicit = member_explicit_id(m);
+        let raw_name = m.declarators.first().map_or("", |d| d.name().text.as_str());
+        let fixed = zerodds_idl::semantics::member_id::fixed_member_id(
+            autoid_hash,
+            &m.annotations,
+            raw_name,
+        );
         for _ in &m.declarators {
-            let id = explicit.unwrap_or(next);
+            let id = fixed.unwrap_or(next);
             ids.push(id);
             next = id.saturating_add(1);
         }
     }
     ids
+}
+
+/// The explicit `@value(N)` of an enumerator (XTypes 1.3 §7.3.1.2.1.6), if any.
+/// The frontend lowers `@value(...)` to a `BuiltinAnnotation::Value` carrying the
+/// literal's raw text; we re-parse it as an integer (hex/octal/decimal).
+fn enumerator_value_annotation(anns: &[Annotation]) -> Option<i64> {
+    let lowered = lower_annotations(anns).ok()?;
+    lowered.builtins.iter().find_map(|b| match b {
+        BuiltinAnnotation::Value(s) => parse_integer_literal(s),
+        _ => None,
+    })
+}
+
+/// Resolves each enumerator's discriminant value, honoring an explicit
+/// `@value(N)` (XTypes 1.3 §7.3.1.2.1.6 / F4): an un-annotated enumerator takes
+/// the previous enumerator's value + 1, the first defaulting to 0. The generated
+/// `IntEnum` member values and the `ENUM_VALUES` registry that resolves
+/// `union switch(EnumT)` case labels MUST agree, so both derive from this one
+/// function (mirrors the `idl-rust` `enumerator_values`).
+fn enumerator_values(e: &EnumDef) -> Vec<i64> {
+    let mut values = Vec::with_capacity(e.enumerators.len());
+    let mut next: i64 = 0;
+    for en in &e.enumerators {
+        let v = enumerator_value_annotation(&en.annotations).unwrap_or(next);
+        values.push(v);
+        next = v.saturating_add(1);
+    }
+    values
 }
 
 /// Records every enum literal's value before emission, so a union case label
@@ -208,9 +301,10 @@ fn register_enum_values(defs: &[Definition]) {
         match def {
             Definition::Module(m) => register_enum_values(&m.definitions),
             Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Enum(e))) => {
-                for (idx, en) in e.enumerators.iter().enumerate() {
+                let values = enumerator_values(e);
+                for (en, value) in e.enumerators.iter().zip(&values) {
                     ENUM_VALUES.with(|m| {
-                        m.borrow_mut().insert(en.name.text.clone(), idx as i64);
+                        m.borrow_mut().insert(en.name.text.clone(), *value);
                     });
                 }
             }
@@ -235,7 +329,7 @@ fn register_enum_values(defs: &[Definition]) {
 ///
 /// `IdlPythonError::Unsupported` for IDL constructs that the Python
 /// mapping does not (yet) support: `valuetype`, `interface`,
-/// `fixed`, `map`, `any`.
+/// `fixed`, `any`.
 pub fn generate_python_module(spec: &Specification, opts: &PythonGenOptions) -> Result<String> {
     ENUM_VALUES.with(|m| m.borrow_mut().clear());
     CONST_VALUES.with(|m| m.borrow_mut().clear());
@@ -244,6 +338,15 @@ pub fn generate_python_module(spec: &Specification, opts: &PythonGenOptions) -> 
     {
         let mut path_scope: Vec<String> = Vec::new();
         register_type_paths(&spec.definitions, &mut path_scope);
+    }
+    // #24 / F-TYPES-3: full-spec resolved NameMap for the emitted COMPLETE
+    // TypeObject byte constants (`complete_struct_type_object_bytes`). Degrades
+    // to an empty map on a build failure — affected structs emit no TYPE_OBJECT.
+    {
+        let names = zerodds_idl::semantics::build_type_registry(spec)
+            .map(|lowered| lowered.names)
+            .unwrap_or_default();
+        NAME_MAP.with(|n| *n.borrow_mut() = names);
     }
     let mut imports = ImportSet::default();
     collect_imports(&spec.definitions, &mut imports)?;
@@ -262,8 +365,22 @@ pub fn generate_python_module(spec: &Specification, opts: &PythonGenOptions) -> 
 
     imports.emit(&mut out);
 
+    // §7.2.2.4.8 — `@verbatim(placement=BEGIN_FILE)` from all top-level defs.
+    for d in &spec.definitions {
+        if let Some(anns) = def_annotations(d) {
+            emit_verbatim_at(&mut out, "", anns, PlacementKind::BeginFile);
+        }
+    }
+
     let mut scope: Vec<String> = Vec::new();
     emit_definitions(&mut out, &spec.definitions, &mut scope)?;
+
+    // §7.2.2.4.8 — `@verbatim(placement=END_FILE)` from all top-level defs.
+    for d in &spec.definitions {
+        if let Some(anns) = def_annotations(d) {
+            emit_verbatim_at(&mut out, "", anns, PlacementKind::EndFile);
+        }
+    }
     Ok(out)
 }
 
@@ -499,6 +616,14 @@ fn collect_switch_type_imports(switch: &SwitchTypeSpec, imports: &mut ImportSet)
 /// zerodds-lint: recursion-depth 32
 fn emit_definitions(out: &mut String, defs: &[Definition], scope: &mut Vec<String>) -> Result<()> {
     for d in defs {
+        // §7.2.2.4.8 — `@verbatim(placement=BEFORE_DECLARATION)` before the
+        // declaration. Modules carry no emitted wrapper of their own, so their
+        // per-declaration verbatim is handled by the nested definitions.
+        if !matches!(d, Definition::Module(_)) {
+            if let Some(anns) = def_annotations(d) {
+                emit_verbatim_at(out, "", anns, PlacementKind::BeforeDeclaration);
+            }
+        }
         match d {
             Definition::Module(m) => emit_module(out, m, scope)?,
             Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Struct(StructDcl::Def(s)))) => {
@@ -535,6 +660,12 @@ fn emit_definitions(out: &mut String, defs: &[Definition], scope: &mut Vec<Strin
                 return Err(IdlPythonError::Unsupported(format!(
                     "definition variant not yet supported: {d:?}"
                 )));
+            }
+        }
+        // §7.2.2.4.8 — `@verbatim(placement=AFTER_DECLARATION)` (spec default).
+        if !matches!(d, Definition::Module(_)) {
+            if let Some(anns) = def_annotations(d) {
+                emit_verbatim_at(out, "", anns, PlacementKind::AfterDeclaration);
             }
         }
     }
@@ -616,19 +747,54 @@ fn emit_struct(out: &mut String, s: &StructDef, scope: &[String]) -> Result<()> 
         writeln!(out, "class {class_name}:").ok();
     }
 
-    if s.members.is_empty() && s.base.is_none() {
-        writeln!(out, "    pass").ok();
-    } else if s.members.is_empty() {
-        // With a base but no new fields: `pass` so the dataclass body
-        // is syntactically valid.
-        writeln!(out, "    pass").ok();
+    // §7.2.2.4.8 — `@verbatim(placement=BEGIN_DECLARATION)` as the first
+    // element inside the class body.
+    emit_verbatim_at(out, "    ", &s.annotations, PlacementKind::BeginDeclaration);
+    let has_body_verbatim = has_verbatim_at(&s.annotations, PlacementKind::BeginDeclaration)
+        || has_verbatim_at(&s.annotations, PlacementKind::EndDeclaration);
+    if s.members.is_empty() {
+        // No fields (with or without a base): keep the class body syntactically
+        // valid with `pass` — unless a verbatim block already filled it.
+        if !has_body_verbatim {
+            writeln!(out, "    pass").ok();
+        }
     } else {
         for m in &s.members {
             emit_members_of(out, m, scope)?;
         }
     }
+    // §7.2.2.4.8 — `@verbatim(placement=END_DECLARATION)` as the last element.
+    emit_verbatim_at(out, "    ", &s.annotations, PlacementKind::EndDeclaration);
     out.push('\n');
+    emit_type_object_constant(out, s, &class_name, scope);
     Ok(())
+}
+
+/// F-TYPES-3 / #24: emits `<Class>.TYPE_OBJECT = bytes([...])` carrying the
+/// COMPLETE `TypeObject` serialized (XCDR-LE) by the SHARED
+/// `zerodds_idl::semantics::complete_struct_type_object_bytes` — the SAME source
+/// `idl-rust`, `idl-cpp`, `idl-csharp` and `idl-java` use, so every binding
+/// emits byte-identical bytes (and thus the identical `TypeIdentifier`).
+///
+/// The Python runtime reads it reflectively via `zerodds.idl.type_object_of`
+/// and hands it to `zerodds_writer_create_typed` (loader path). A struct whose
+/// members cannot all be resolved emits no constant (the reflective accessor
+/// then returns empty) — never a codegen error.
+fn emit_type_object_constant(out: &mut String, s: &StructDef, class_name: &str, scope: &[String]) {
+    let bytes = NAME_MAP.with(|n| {
+        zerodds_idl::semantics::complete_struct_type_object_bytes(s, scope, &n.borrow()).ok()
+    });
+    let Some(bytes) = bytes.filter(|b| !b.is_empty()) else {
+        return;
+    };
+    write!(out, "{class_name}.TYPE_OBJECT = bytes([").ok();
+    for (i, b) in bytes.iter().enumerate() {
+        if i % 12 == 0 {
+            write!(out, "\n    ").ok();
+        }
+        write!(out, "0x{b:02x}, ").ok();
+    }
+    out.push_str("\n])\n\n");
 }
 
 fn emit_exception(out: &mut String, e: &ExceptDecl, scope: &[String]) -> Result<()> {
@@ -684,13 +850,30 @@ fn emit_members_of(out: &mut String, m: &Member, scope: &[String]) -> Result<()>
 fn emit_enum(out: &mut String, e: &EnumDef, scope: &[String]) -> Result<()> {
     let class_name = python_class_name(&e.name, scope);
     writeln!(out, "class {class_name}(IntEnum):").ok();
+    // §7.2.2.4.8 — `@verbatim(placement=BEGIN_DECLARATION)`.
+    emit_verbatim_at(out, "    ", &e.annotations, PlacementKind::BeginDeclaration);
+    let has_body_verbatim = has_verbatim_at(&e.annotations, PlacementKind::BeginDeclaration)
+        || has_verbatim_at(&e.annotations, PlacementKind::EndDeclaration);
     if e.enumerators.is_empty() {
-        writeln!(out, "    pass").ok();
+        if !has_body_verbatim {
+            writeln!(out, "    pass").ok();
+        }
     } else {
-        for (idx, en) in e.enumerators.iter().enumerate() {
-            writeln!(out, "    {} = {idx}", en.name.text).ok();
+        // F4: honor `@value(N)` — the IntEnum member value is the resolved
+        // discriminant (spec default 0..N-1 only when no `@value` is present),
+        // so a `@value`-gapped enum encodes the spec-correct wire integer.
+        let values = enumerator_values(e);
+        for (en, value) in e.enumerators.iter().zip(&values) {
+            writeln!(
+                out,
+                "    {} = {value}",
+                escape_python_keyword(&en.name.text)
+            )
+            .ok();
         }
     }
+    // §7.2.2.4.8 — `@verbatim(placement=END_DECLARATION)`.
+    emit_verbatim_at(out, "    ", &e.annotations, PlacementKind::EndDeclaration);
     // T2: a non-default `@bit_bound` narrows the enum's signed wire holder; the
     // runtime's `_IdlEnum` reads `_idl_bit_bound`. Emitted only when narrow so
     // default (int32) enums keep byte-identical output (assigned after the class
@@ -712,7 +895,12 @@ fn emit_bitmask(out: &mut String, b: &BitmaskDecl, scope: &[String]) -> Result<(
         writeln!(out, "    pass").ok();
     } else {
         for (idx, v) in b.values.iter().enumerate() {
-            writeln!(out, "    {} = 1 << {idx}", v.name.text).ok();
+            writeln!(
+                out,
+                "    {} = 1 << {idx}",
+                escape_python_keyword(&v.name.text)
+            )
+            .ok();
         }
     }
     // Record the effective @bit_bound (default 32 → uint32 holder) so the
@@ -807,10 +995,9 @@ fn emit_union(out: &mut String, u: &UnionDef, scope: &[String]) -> Result<()> {
         for label in &case.labels {
             match label {
                 CaseLabel::Value(expr) => {
-                    let v = eval_const_int(expr).ok_or_else(|| {
+                    let v = eval_case_label(expr).ok_or_else(|| {
                         IdlPythonError::Unsupported(format!(
-                            "union case label is not a literal integer (scoped/enum-ref \
-                             references will be supported in a follow-up): {expr:?}"
+                            "union case label not resolvable to a discriminant value: {expr:?}"
                         ))
                     })?;
                     case_entries.push((v, field_name.clone(), py_type.clone()));
@@ -905,11 +1092,18 @@ fn render_const_value(expr: &ConstExpr, ty: &ConstType, scope: &[String]) -> Res
                     .trim_end_matches(['f', 'F', 'd', 'D'])
                     .to_string());
             }
-            LiteralKind::String | LiteralKind::WideString => {
+            LiteralKind::String => {
                 // raw already contains the surrounding quotes; emit verbatim.
                 return Ok(lit.raw.clone());
             }
-            LiteralKind::Char | LiteralKind::WideChar => {
+            LiteralKind::WideString | LiteralKind::WideChar => {
+                // F7/A7: an IDL wide literal carries an `L` prefix (`L"…"` /
+                // `L'…'`). Python has no wide-literal prefix — `L"…"` is a
+                // syntax error — so the correct Python literal is the raw text
+                // with the leading `L` stripped.
+                return Ok(strip_wide_prefix(&lit.raw));
+            }
+            LiteralKind::Char => {
                 return Ok(lit.raw.clone());
             }
             LiteralKind::Integer => {}
@@ -927,6 +1121,15 @@ fn render_const_value(expr: &ConstExpr, ty: &ConstType, scope: &[String]) -> Res
     Err(IdlPythonError::Unsupported(format!(
         "const value not representable in python codegen (type {ty:?}): {expr:?}"
     )))
+}
+
+/// Removes the IDL wide-literal `L` prefix from a `wstring`/`wchar` literal's
+/// raw text (`L"…"` → `"…"`, `L'…'` → `'…'`). Python has no wide-literal
+/// prefix, so the de-prefixed text is the correct Python literal (F7/A7). A raw
+/// text without the prefix is returned unchanged.
+fn strip_wide_prefix(raw: &str) -> String {
+    let t = raw.trim_start();
+    t.strip_prefix('L').unwrap_or(t).to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -1048,13 +1251,34 @@ fn qualified_typename(name: &Identifier, scope: &[String]) -> String {
 }
 
 fn python_class_name(name: &Identifier, scope: &[String]) -> String {
-    if scope.is_empty() {
-        name.text.clone()
-    } else {
-        let mut parts = scope.to_vec();
-        parts.push(name.text.clone());
-        parts.join("_")
+    let mut parts = scope.to_vec();
+    parts.push(name.text.clone());
+    // A flattened multi-part name always contains `_` and so is never a bare
+    // Python keyword; a top-level single-part name can be (`struct None;`), so
+    // guard it with the same keyword escaper used for members/union branches.
+    escape_python_keyword(&flatten_scoped(&parts))
+}
+
+/// Flattens an IDL scope path to a single Python identifier. F35/A35: a plain
+/// `join("_")` is NOT injective — `module A { struct B_C; }` and
+/// `module A { module B { struct C; }; }` both collapse to `A_B_C`, so the
+/// second class silently rebinds (shadows) the first and one type is lost. To
+/// make the map injective every underscore *inside* a scope segment is doubled
+/// before joining with a single `_`: an interior underscore run is then always
+/// even-length and a segment boundary always contributes exactly one (making
+/// boundary runs odd), so distinct paths of length ≥ 2 never collide. A bare
+/// top-level name (length 1) is emitted verbatim — matching the const/type name
+/// the user wrote (`const long MAX_ITEMS` → `MAX_ITEMS`), which reference sites
+/// resolve to the same way.
+fn flatten_scoped(parts: &[String]) -> String {
+    if parts.len() <= 1 {
+        return parts.join("_");
     }
+    parts
+        .iter()
+        .map(|p| p.replace('_', "__"))
+        .collect::<Vec<_>>()
+        .join("_")
 }
 
 fn escape_python_keyword(name: &str) -> String {
@@ -1074,6 +1298,69 @@ fn escape_python_keyword(name: &str) -> String {
 // ---------------------------------------------------------------------------
 // Const-expression evaluation (limited: integer literals + unary +/- only)
 // ---------------------------------------------------------------------------
+
+/// Evaluates a union `case` label to the integer key the Python `idl_union`
+/// runtime matches against. Integer, enum-literal, named-const and arithmetic
+/// labels fold via [`eval_const_int`]; additionally a `char`/`wchar`
+/// discriminator label (`case 'A':`) folds to the character's code point
+/// (F12/A12) and a `boolean` discriminator label (`case TRUE:`) to `1`/`0`
+/// (F13/A13). Both char and bool labels were previously rejected outright.
+fn eval_case_label(expr: &ConstExpr) -> Option<i64> {
+    if let ConstExpr::Literal(lit) = expr {
+        match lit.kind {
+            LiteralKind::Char | LiteralKind::WideChar => {
+                return char_literal_codepoint(&lit.raw);
+            }
+            LiteralKind::Boolean => {
+                return Some(i64::from(lit.raw.trim().eq_ignore_ascii_case("true")));
+            }
+            _ => {}
+        }
+    }
+    eval_const_int(expr)
+}
+
+/// Decodes an IDL character literal (`'A'`, `'\n'`, `'\x41'`, `'\101'`,
+/// `L'ä'`, …) to its Unicode code point. Handles the IDL/C escape sequences.
+/// Returns `None` for a literal it cannot parse.
+fn char_literal_codepoint(raw: &str) -> Option<i64> {
+    let s = raw.trim();
+    let s = s.strip_prefix('L').unwrap_or(s);
+    // Strip the surrounding single quotes.
+    let inner = s.strip_prefix('\'').and_then(|x| x.strip_suffix('\''))?;
+    let mut chars = inner.chars();
+    let first = chars.next()?;
+    if first != '\\' {
+        // A single unescaped character; reject multi-char content.
+        return chars.next().is_none().then(|| i64::from(u32::from(first)));
+    }
+    let esc = chars.next()?;
+    let cp: u32 = match esc {
+        'n' => 0x0A,
+        't' => 0x09,
+        'r' => 0x0D,
+        'a' => 0x07,
+        'b' => 0x08,
+        'f' => 0x0C,
+        'v' => 0x0B,
+        '\\' => u32::from('\\'),
+        '\'' => u32::from('\''),
+        '"' => u32::from('"'),
+        '?' => u32::from('?'),
+        'x' | 'u' | 'U' => {
+            let hex: String = chars.by_ref().collect();
+            u32::from_str_radix(hex.trim(), 16).ok()?
+        }
+        d @ '0'..='7' => {
+            // Octal escape (up to three octal digits, including `\0`).
+            let mut oct = String::from(d);
+            oct.extend(chars.by_ref().take_while(|c| ('0'..='7').contains(c)));
+            u32::from_str_radix(&oct, 8).ok()?
+        }
+        _ => return None,
+    };
+    Some(i64::from(cp))
+}
 
 /// zerodds-lint: recursion-depth 32
 fn eval_const_int(expr: &ConstExpr) -> Option<i64> {

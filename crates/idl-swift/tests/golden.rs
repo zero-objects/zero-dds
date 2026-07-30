@@ -40,7 +40,8 @@ fn emit(src: &str) -> String {
 #[test]
 fn module_wrapped_struct_is_emitted_not_dropped() {
     let s = emit("module Telemetry { @final struct Reading { long value; }; };");
-    assert!(s.contains("public struct Reading {"), "{s}");
+    // #21: a module-wrapped type is emitted with its module-qualified name.
+    assert!(s.contains("public struct Telemetry_sReading {"), "{s}");
     assert!(s.contains("public var value: Int32"), "{s}");
 }
 
@@ -52,8 +53,81 @@ fn reopened_module_emits_both_structs() {
         "module M { @final struct A { long x; }; }; \
          module M { @final struct B { long y; }; };",
     );
-    assert!(s.contains("public struct A {"), "{s}");
-    assert!(s.contains("public struct B {"), "{s}");
+    // #21: both halves emit under the module-qualified name `M_*`.
+    assert!(s.contains("public struct M_sA {"), "{s}");
+    assert!(s.contains("public struct M_sB {"), "{s}");
+}
+
+/// #21 cross-module collision: two different modules each declaring `Reading`
+/// must emit distinct, module-qualified Swift structs, never a duplicate one.
+#[test]
+fn cross_module_same_name_types_are_qualified() {
+    let s = emit(
+        "module a { @final struct Reading { long v; }; }; \
+         module b { @final struct Reading { double w; }; };",
+    );
+    assert!(s.contains("public struct a_sReading {"), "{s}");
+    assert!(s.contains("public struct b_sReading {"), "{s}");
+    assert!(!s.contains("public struct Reading {"), "{s}");
+    assert!(s.contains("public var v: Int32"), "{s}");
+    assert!(s.contains("public var w: Double"), "{s}");
+}
+
+/// #21 cross-module reference: `module b`'s struct references `a::R`, which
+/// must resolve to the qualified type `a_R`, not the bare `R`.
+#[test]
+fn cross_module_reference_resolves_to_qualified_type() {
+    // Field named `inner` (not `r`): a field literally named `r` would shadow
+    // the generated decode's `Reader` variable `r` — a pre-existing Swift
+    // codegen concern unrelated to the #21 type-qualification fix under test.
+    let s = emit(
+        "module a { @final struct R { long v; }; }; \
+         module b { @final struct S { a::R inner; }; };",
+    );
+    assert!(s.contains("public struct a_sR {"), "{s}");
+    assert!(s.contains("public struct b_sS {"), "{s}");
+    // S's member `inner` has the qualified type a_R.
+    assert!(s.contains("public var inner: a_sR"), "{s}");
+}
+
+/// #21 compile gate: a two-module spec with a cross-module reference must
+/// produce compilable Swift.
+#[test]
+fn cross_module_reference_compiles_with_swiftc() {
+    if Command::new("swiftc").arg("--version").output().is_err() {
+        eprintln!("SKIP cross_module_reference_compiles_with_swiftc: `swiftc` not on PATH");
+        return;
+    }
+    let mut src = emit(
+        "module a { @final struct R { long v; }; }; \
+         module b { @final struct S { a::R inner; }; };",
+    );
+    src.push_str(
+        r##"
+let s = b_sS(inner: a_sR(v: 7))
+let _ = try s.marshalXCDR(.little)
+print("ok")
+"##,
+    );
+    let src = format!("import Foundation\n{src}");
+    let dir = std::env::temp_dir().join(format!("idlswift_xmod_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    let sf = dir.join("main.swift");
+    std::fs::write(&sf, &src).expect("write");
+    let build = Command::new("swiftc")
+        .arg(&sf)
+        .arg("-o")
+        .arg(dir.join("main_bin"))
+        .output()
+        .expect("swiftc");
+    assert!(
+        build.status.success(),
+        "swiftc failed:\n{}\n--- src ---\n{src}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let run = Command::new(dir.join("main_bin")).output().expect("run");
+    assert_eq!(String::from_utf8_lossy(&run.stdout).trim(), "ok");
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
@@ -158,7 +232,7 @@ fn nested_struct_emits_marshal_into() {
     assert!(z.contains("public var one: Inner"), "{z}");
     assert!(z.contains("public var many: [Inner]"), "{z}");
     assert!(z.contains("try one.marshalInto(&body)"), "{z}");
-    assert!(z.contains("try e.marshalInto(&sub)"), "{z}");
+    assert!(z.contains("try zdElem0.marshalInto(&zdSub0)"), "{z}");
 }
 
 #[test]
@@ -987,4 +1061,358 @@ fn keyword_colliding_identifiers_compile_with_swiftc() {
     let run = Command::new(dir.join("main_bin")).output().expect("run");
     assert!(run.status.success(), "runtime precondition failed");
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ===========================================================================
+// Section-F Wave-1: bitset/bitmask, @optional, fixed<d,s>, sequence-arbitrary,
+// @verbatim. Always-on source-asserts + swiftc-gated compile-and-run tests
+// whose expected wire hex is derived from the spec IN the test (no oracle).
+// swift = macOS-only (swiftc); no Linux CI toolchain. Run locally on the Mac.
+// ===========================================================================
+
+/// Compiles `import Foundation` + `emit(idl)` + a `toHex` helper + `body` with
+/// `swiftc`, runs it, and returns the trimmed stdout lines. `None` (skip) if
+/// `swiftc` is not on PATH.
+fn swiftc_lines(idl: &str, body: &str, tag: &str) -> Option<Vec<String>> {
+    if Command::new("swiftc").arg("--version").output().is_err() {
+        eprintln!("SKIP {tag}: `swiftc` not on PATH");
+        return None;
+    }
+    let mut src = emit(idl);
+    src.push_str(
+        "\nfunc toHex(_ b: [UInt8]) -> String { b.map { String(format: \"%02x\", $0) }.joined() }\n",
+    );
+    src.push_str(body);
+    let src = format!("import Foundation\n{src}");
+    let dir = std::env::temp_dir().join(format!("idlswift_{tag}_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    let sf = dir.join("main.swift");
+    std::fs::write(&sf, &src).expect("write");
+    let build = Command::new("swiftc")
+        .arg(&sf)
+        .arg("-o")
+        .arg(dir.join("main_bin"))
+        .output()
+        .expect("swiftc");
+    assert!(
+        build.status.success(),
+        "swiftc failed:\n{}\n--- src ---\n{src}",
+        String::from_utf8_lossy(&build.stderr)
+    );
+    let run = Command::new(dir.join("main_bin")).output().expect("run");
+    assert!(
+        run.status.success(),
+        "run failed:\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let out = String::from_utf8(run.stdout).expect("utf8");
+    let lines: Vec<String> = out.lines().map(|l| l.trim().to_string()).collect();
+    let _ = std::fs::remove_dir_all(&dir);
+    Some(lines)
+}
+
+// ---- bitset -------------------------------------------------------------
+
+const BITSET_IDL: &str = "bitset Flags { bitfield<4> a; bitfield<8> b; };";
+
+#[test]
+fn bitset_emits_holder_struct_and_accessors() {
+    let s = emit(BITSET_IDL);
+    // 4 + 8 = 12 bits → UInt16 backing (XTypes §7.4.7).
+    assert!(s.contains("public struct Flags {"), "{s}");
+    assert!(s.contains("public var storage: UInt16 = 0"), "{s}");
+    assert!(s.contains("public func a() -> UInt16"), "{s}");
+    assert!(s.contains("public func b() -> UInt16"), "{s}");
+    assert!(
+        s.contains("public func marshalInto(_ w: inout Writer) throws { w.putU16(storage) }"),
+        "{s}"
+    );
+    assert!(
+        s.contains("public static func unmarshalFrom(_ r: inout Reader) throws -> Flags"),
+        "{s}"
+    );
+}
+
+#[test]
+fn bitset_wire_is_backing_int() {
+    // storage 0xABCD as a UInt16 → LE "cdab", BE "abcd"; round-trips.
+    let body = r#"
+var f = Flags(storage: 0xABCD)
+print(toHex(try f.marshalXCDR(.little)))
+print(toHex(try f.marshalXCDR(.big)))
+print(toHex(try Flags.unmarshalXCDR(f.marshalXCDR(.little), .little).marshalXCDR(.little)))
+"#;
+    let Some(l) = swiftc_lines(BITSET_IDL, body, "bitset") else {
+        return;
+    };
+    assert_eq!(l[0], "cdab", "LE");
+    assert_eq!(l[1], "abcd", "BE");
+    assert_eq!(l[2], "cdab", "round-trip");
+}
+
+// ---- bitmask ------------------------------------------------------------
+
+const BITMASK_IDL: &str = "bitmask Perms { PERM_READ, PERM_WRITE, PERM_EXEC };";
+
+#[test]
+fn bitmask_emits_holder_and_constants() {
+    let s = emit(BITMASK_IDL);
+    // Default @bit_bound = 32 → UInt32 backing (XTypes §7.3.1.2.1.1).
+    assert!(s.contains("public struct Perms {"), "{s}");
+    assert!(s.contains("public var storage: UInt32 = 0"), "{s}");
+    assert!(
+        s.contains("public static let PERM_READ: UInt32 = UInt32(1) << 0"),
+        "{s}"
+    );
+    assert!(
+        s.contains("public static let PERM_EXEC: UInt32 = UInt32(1) << 2"),
+        "{s}"
+    );
+    assert!(
+        s.contains("public func marshalInto(_ w: inout Writer) throws { w.putU32(storage) }"),
+        "{s}"
+    );
+}
+
+#[test]
+fn bitmask_wire_is_backing_uint32() {
+    // PERM_READ | PERM_EXEC = 0x05 → LE "05000000", BE "00000005"; round-trips.
+    let body = r#"
+var p = Perms(storage: Perms.PERM_READ | Perms.PERM_EXEC)
+print(toHex(try p.marshalXCDR(.little)))
+print(toHex(try p.marshalXCDR(.big)))
+print(toHex(try Perms.unmarshalXCDR(p.marshalXCDR(.big), .big).marshalXCDR(.big)))
+"#;
+    let Some(l) = swiftc_lines(BITMASK_IDL, body, "bitmask") else {
+        return;
+    };
+    assert_eq!(l[0], "05000000", "LE");
+    assert_eq!(l[1], "00000005", "BE");
+    assert_eq!(l[2], "00000005", "round-trip");
+}
+
+#[test]
+fn bitmask_bit_bound_narrows_backing() {
+    let s = emit("@bit_bound(8) bitmask Small { A, B };");
+    assert!(s.contains("public var storage: UInt8 = 0"), "{s}");
+    assert!(
+        s.contains("public func marshalInto(_ w: inout Writer) throws { w.putU8(storage) }"),
+        "{s}"
+    );
+}
+
+// ---- fixed<d,s> ---------------------------------------------------------
+
+const FIXED_IDL: &str = "@final struct HasFixed { fixed<5,2> price; };";
+
+#[test]
+fn fixed_emits_bcd_field_and_prelude() {
+    let s = emit(FIXED_IDL);
+    assert!(s.contains("public var price: [UInt8]"), "{s}");
+    assert!(s.contains("w.putBytes(price)"), "{s}");
+    assert!(
+        s.contains("func zdFixedEnc(_ s: String, _ P: Int, _ S: Int) -> [UInt8]"),
+        "{s}"
+    );
+}
+
+#[test]
+fn fixed_wire_is_packed_bcd() {
+    // fixed<5,2> 123.45 → BCD "12 34 5c" (odd P, no pad, CORBA §9.3.2.7).
+    // Raw BCD bytes: identical for LE and BE (no byte-swap, no length prefix).
+    let body = r#"
+var h = HasFixed(price: zdFixedEnc("123.45", 5, 2))
+print(toHex(try h.marshalXCDR(.little)))
+print(toHex(try h.marshalXCDR(.big)))
+print(toHex(try HasFixed.unmarshalXCDR(h.marshalXCDR(.little), .little).marshalXCDR(.little)))
+"#;
+    let Some(l) = swiftc_lines(FIXED_IDL, body, "fixed") else {
+        return;
+    };
+    assert_eq!(l[0], "12345c", "LE");
+    assert_eq!(l[1], "12345c", "BE");
+    assert_eq!(l[2], "12345c", "round-trip");
+}
+
+#[test]
+fn fixed_even_p_keeps_msd() {
+    // fixed<4,0> 1234 → BCD "01 23 4c" (leading pad nibble; even P keeps MSD).
+    let body = r#"
+var h = HasFixed(price: zdFixedEnc("1234", 4, 0))
+print(toHex(try h.marshalXCDR(.little)))
+"#;
+    let Some(l) = swiftc_lines(
+        "@final struct HasFixed { fixed<4,0> price; };",
+        body,
+        "fixed40",
+    ) else {
+        return;
+    };
+    assert_eq!(l[0], "01234c");
+}
+
+// ---- sequence-arbitrary -------------------------------------------------
+
+const SEQARB_IDL: &str = "@final struct S { sequence<long> xs; };";
+
+#[test]
+fn sequence_arbitrary_emits_count_and_loop() {
+    let s = emit(SEQARB_IDL);
+    assert!(s.contains("public var xs: [Int32]"), "{s}");
+    assert!(s.contains("w.putU32(UInt32(xs.count))"), "{s}");
+    assert!(s.contains("for zdElem0 in xs"), "{s}");
+}
+
+#[test]
+fn sequence_arbitrary_wire_count_plus_elements() {
+    // [0x01020304, 0x05060708] → u32 count 2 + two i32 elements, no DHEADER.
+    let body = r#"
+var s = S(xs: [0x01020304, 0x05060708])
+print(toHex(try s.marshalXCDR(.little)))
+print(toHex(try s.marshalXCDR(.big)))
+print(toHex(try S.unmarshalXCDR(s.marshalXCDR(.little), .little).marshalXCDR(.little)))
+"#;
+    let Some(l) = swiftc_lines(SEQARB_IDL, body, "seqarb") else {
+        return;
+    };
+    assert_eq!(l[0], "020000000403020108070605", "LE");
+    assert_eq!(l[1], "000000020102030405060708", "BE");
+    assert_eq!(l[2], "020000000403020108070605", "round-trip");
+}
+
+#[test]
+fn sequence_of_enum_is_arbitrary_path() {
+    // A `sequence<enum>` must now emit (was rejected pre-Wave-1).
+    let s = emit("enum E { E0, E1 }; @final struct SE { sequence<E> es; };");
+    assert!(s.contains("public var es: [E]"), "{s}");
+    assert!(s.contains("for zdElem0 in es"), "{s}");
+    assert!(s.contains("w.putU32(UInt32(es.count))"), "{s}");
+}
+
+// ---- @optional ----------------------------------------------------------
+
+const OPT_IDL: &str = "@final struct Opt { uint32 a; @optional uint32 b; };";
+
+#[test]
+fn optional_emits_presence_flag() {
+    let s = emit(OPT_IDL);
+    assert!(s.contains("public var b_present: Bool = false"), "{s}");
+    assert!(
+        s.contains("w.putU8(b_present ? 1 : 0)\n        if b_present {"),
+        "{s}"
+    );
+    assert!(s.contains("let b_present: Bool = r.getBool()"), "{s}");
+}
+
+#[test]
+fn optional_final_wire_present_and_absent() {
+    // present: u32 a, u8 flag=1, pad(3), u32 b. absent: u32 a, u8 flag=0.
+    let body = r#"
+var p = Opt(a: 0x11223344)
+p.b_present = true
+p.b = 0xAABBCCDD
+print(toHex(try p.marshalXCDR(.little)))
+print(toHex(try p.marshalXCDR(.big)))
+var q = Opt(a: 0x11223344)
+q.b_present = false
+print(toHex(try q.marshalXCDR(.little)))
+print(toHex(try Opt.unmarshalXCDR(p.marshalXCDR(.little), .little).marshalXCDR(.little)))
+print(toHex(try Opt.unmarshalXCDR(q.marshalXCDR(.little), .little).marshalXCDR(.little)))
+"#;
+    let Some(l) = swiftc_lines(OPT_IDL, body, "opt") else {
+        return;
+    };
+    assert_eq!(l[0], "4433221101000000ddccbbaa", "present LE");
+    assert_eq!(l[1], "1122334401000000aabbccdd", "present BE");
+    assert_eq!(l[2], "4433221100", "absent LE");
+    assert_eq!(l[3], "4433221101000000ddccbbaa", "present round-trip");
+    assert_eq!(l[4], "4433221100", "absent round-trip");
+}
+
+#[test]
+fn optional_appendable_round_trips() {
+    // Appendable body is DHEADER-framed; verify decode∘encode identity for
+    // both present and absent, without hand-computing the DHEADER length.
+    let idl = "@appendable struct OptA { uint32 a; @optional uint32 b; };";
+    let body = r#"
+var p = OptA(a: 0xCAFEBABE)
+p.b_present = true
+p.b = 0x01020304
+let pe = try p.marshalXCDR(.little)
+print(toHex(pe))
+print(toHex(try OptA.unmarshalXCDR(pe, .little).marshalXCDR(.little)))
+var q = OptA(a: 0xCAFEBABE)
+q.b_present = false
+let qe = try q.marshalXCDR(.little)
+print(toHex(qe))
+print(toHex(try OptA.unmarshalXCDR(qe, .little).marshalXCDR(.little)))
+"#;
+    let Some(l) = swiftc_lines(idl, body, "opta") else {
+        return;
+    };
+    assert_eq!(l[0], l[1], "present round-trip");
+    assert_eq!(l[2], l[3], "absent round-trip");
+}
+
+// ---- @verbatim ----------------------------------------------------------
+
+#[test]
+fn verbatim_placements_inject_text() {
+    let s = emit(
+        "@verbatim(language=\"swift\", placement=BEGIN_FILE, text=\"// zd-begin-file\")\n\
+         @verbatim(language=\"swift\", placement=BEFORE_DECLARATION, text=\"// zd-before\")\n\
+         @verbatim(language=\"swift\", placement=BEGIN_DECLARATION, text=\"// zd-begin-decl\")\n\
+         @verbatim(language=\"swift\", placement=END_DECLARATION, text=\"// zd-end-decl\")\n\
+         @verbatim(language=\"swift\", placement=AFTER_DECLARATION, text=\"// zd-after\")\n\
+         @verbatim(language=\"swift\", placement=END_FILE, text=\"// zd-end-file\")\n\
+         @final struct V { uint32 a; };",
+    );
+    for marker in [
+        "// zd-begin-file",
+        "// zd-before",
+        "// zd-begin-decl",
+        "// zd-end-decl",
+        "// zd-after",
+        "// zd-end-file",
+    ] {
+        assert!(s.contains(marker), "missing {marker}:\n{s}");
+    }
+    // Ordering: begin-file/before-decl before the struct; begin-decl after the
+    // opening brace; after-decl/end-file trail the type.
+    let sidx = s.find("public struct V {").expect("struct");
+    assert!(s.find("// zd-begin-file").unwrap() < sidx, "{s}");
+    assert!(s.find("// zd-before").unwrap() < sidx, "{s}");
+    assert!(s.find("// zd-begin-decl").unwrap() > sidx, "{s}");
+    assert!(s.find("// zd-end-file").unwrap() > sidx, "{s}");
+}
+
+#[test]
+fn verbatim_language_filter_excludes_other_langs() {
+    // A non-Swift language tag must NOT leak into the Swift output.
+    let s = emit(
+        "@verbatim(language=\"java\", placement=BEFORE_DECLARATION, text=\"// java-only\")\n\
+         @final struct V { uint32 a; };",
+    );
+    assert!(!s.contains("// java-only"), "{s}");
+    // The wildcard `*` still matches Swift.
+    let s2 = emit(
+        "@verbatim(placement=BEFORE_DECLARATION, text=\"// wildcard\")\n\
+         @final struct V { uint32 a; };",
+    );
+    assert!(s2.contains("// wildcard"), "{s2}");
+}
+
+#[test]
+fn verbatim_output_still_compiles() {
+    let idl = "@verbatim(language=\"swift\", placement=BEGIN_FILE, text=\"// zd file header\")\n\
+         @verbatim(language=\"swift\", placement=BEGIN_DECLARATION, text=\"// zd inside struct\")\n\
+         @final struct V { uint32 a; };";
+    let body = r#"
+var v = V(a: 0x2A)
+print(toHex(try v.marshalXCDR(.little)))
+"#;
+    let Some(l) = swiftc_lines(idl, body, "verbatim") else {
+        return;
+    };
+    assert_eq!(l[0], "2a000000");
 }

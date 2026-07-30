@@ -29,7 +29,10 @@
 //! - LongDouble Arithmetic — blockiert auf Rust-Stable f128
 //!   (Tracking: rust-lang/rust#116909).
 
-use crate::ast::{BinaryOp, ConstExpr, Literal, LiteralKind, ScopedName, UnaryOp};
+use crate::ast::{
+    BinaryOp, ConstExpr, ConstrTypeDecl, Definition, Literal, LiteralKind, ScopedName,
+    Specification, TypeDecl, UnaryOp,
+};
 use crate::errors::Span;
 use num_bigint::BigInt;
 use num_traits::Zero;
@@ -299,6 +302,100 @@ pub fn evaluate(expr: &ConstExpr, syms: &SymbolTable) -> Result<ConstValue, Eval
             apply_binary(*op, &l, &r, *span)
         }
     }
+}
+
+/// Builds the const/enum [`SymbolTable`] for a whole [`Specification`], so
+/// that every backend evaluates array dimensions and collection bounds through
+/// the ONE central [`evaluate`] instead of each re-parsing the `ConstExpr`.
+///
+/// This is the single source of truth Sandra's audit (P1 "Const-Eval driftet")
+/// requires: a bound written as `const long BASE = 4; const long CAP = BASE*2;
+/// long data[CAP];` resolves to `8` here, once, and the C++/Go/… emitters read
+/// that resolved value — they no longer interpret `BASE*2` (or a bare `CAP`
+/// reference) themselves and so cannot drift to `0` or abort.
+///
+/// Registered symbols (each under BOTH its simple name and its `::`-joined
+/// fully-qualified name, plus the leading-`::` absolute spelling):
+/// - every `const NAME = expr;` as [`Symbol::Const`] of its evaluated value,
+/// - every enumerator as [`Symbol::EnumValue`] with its 0-based ordinal.
+///
+/// Consts are evaluated in source order against the table filled so far
+/// (best-effort forward-reference: a const that references a *later* const is
+/// left unresolved, matching the pre-existing per-backend registries). When two
+/// distinct scopes declare the same simple name the simple-name key collides —
+/// disambiguation there is the separate FQN-resolution item (audit P0 §2); a
+/// qualified reference still resolves through the FQN key.
+///
+/// zerodds-lint: recursion-depth 64 (module/type tree; bounded by IDL nesting)
+#[must_use]
+pub fn build_symbol_table(spec: &Specification) -> SymbolTable {
+    let mut syms = SymbolTable::new();
+    collect_symbols(&spec.definitions, &[], &mut syms);
+    syms
+}
+
+/// zerodds-lint: recursion-depth 64 (module/type tree; bounded by IDL nesting)
+fn collect_symbols(defs: &[Definition], scope: &[&str], syms: &mut SymbolTable) {
+    for d in defs {
+        match d {
+            Definition::Module(m) => {
+                let mut inner: Vec<&str> = scope.to_vec();
+                inner.push(m.name.text.as_str());
+                collect_symbols(&m.definitions, &inner, syms);
+            }
+            Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Enum(e))) => {
+                let type_name = fqn_join(scope, &e.name.text);
+                for (i, en) in e.enumerators.iter().enumerate() {
+                    let sym = Symbol::EnumValue {
+                        type_name: type_name.clone(),
+                        value: i32::try_from(i).unwrap_or(0),
+                    };
+                    insert_all_spellings(syms, scope, &en.name.text, sym);
+                }
+            }
+            Definition::Const(c) => {
+                // Resolve against everything collected so far (source-order,
+                // best-effort forward references).
+                if let Ok(v) = evaluate(&c.value, syms) {
+                    insert_all_spellings(syms, scope, &c.name.text, Symbol::Const(v));
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Inserts `sym` under the simple name, the non-absolute FQN (`A::B::NAME`) and
+/// the absolute FQN (`::A::B::NAME`), covering every spelling a
+/// [`ScopedName`] reference can take in a bound expression.
+fn insert_all_spellings(syms: &mut SymbolTable, scope: &[&str], name: &str, sym: Symbol) {
+    let fqn = fqn_join(scope, name);
+    syms.insert(name.to_string(), sym.clone());
+    syms.insert(format!("::{fqn}"), sym.clone());
+    syms.insert(fqn, sym);
+}
+
+fn fqn_join(scope: &[&str], name: &str) -> String {
+    if scope.is_empty() {
+        name.to_string()
+    } else {
+        format!("{}::{name}", scope.join("::"))
+    }
+}
+
+/// Evaluates a collection-bound / array-dimension [`ConstExpr`] to a
+/// non-negative `u64` through the central [`evaluate`], using `syms` from
+/// [`build_symbol_table`]. Returns `None` when the expression does not resolve
+/// to an integer or is negative.
+///
+/// This is the single entry point every backend uses for a bounded
+/// `sequence`/`string`/`map` bound and for a fixed-array dimension, so the
+/// resolved size agrees across all emitters (P1 "Const-Eval driftet").
+#[must_use]
+pub fn eval_bound(expr: &ConstExpr, syms: &SymbolTable) -> Option<u64> {
+    let v = evaluate(expr, syms).ok()?;
+    let n = v.as_i64()?;
+    u64::try_from(n).ok()
 }
 
 fn eval_literal(l: &Literal) -> Result<ConstValue, EvalError> {
@@ -2727,5 +2824,80 @@ mod tests {
         assert!(check_const_decl_type_match(&ConstType::String { wide: false }, &v, sp()).is_ok());
         let w = ConstValue::WString(vec![0x58]);
         assert!(check_const_decl_type_match(&ConstType::String { wide: true }, &w, sp()).is_ok());
+    }
+
+    fn spec_of(src: &str) -> Specification {
+        crate::parser::parse(src, &crate::config::ParserConfig::default()).expect("parse")
+    }
+
+    fn bound_expr(src: &str) -> ConstExpr {
+        // Pull the array-declarator dimension out of the single struct member.
+        let spec = spec_of(src);
+        for d in &spec.definitions {
+            if let Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Struct(
+                crate::ast::StructDcl::Def(s),
+            ))) = d
+            {
+                if let crate::ast::Declarator::Array(a) = &s.members[0].declarators[0] {
+                    return a.sizes[0].clone();
+                }
+            }
+        }
+        panic!("no array member in: {src}");
+    }
+
+    #[test]
+    fn symbol_table_resolves_const_ref_bound() {
+        // P1 repro: `CAP = BASE * 2` must evaluate to 8 through the central table.
+        let src = "const long BASE = 4; const long CAP = BASE * 2; \
+                   struct S { long data[CAP]; };";
+        let syms = build_symbol_table(&spec_of(src));
+        assert_eq!(eval_bound(&bound_expr(src), &syms), Some(8));
+    }
+
+    #[test]
+    fn symbol_table_resolves_bare_const_ref() {
+        let src = "const long CAP = 5; struct S { long data[CAP]; };";
+        let syms = build_symbol_table(&spec_of(src));
+        assert_eq!(eval_bound(&bound_expr(src), &syms), Some(5));
+    }
+
+    #[test]
+    fn symbol_table_resolves_scoped_const_ref() {
+        // Qualified reference (`M::CAP`) resolves via the FQN key.
+        let src = "module M { const long CAP = 3; struct S { long data[M::CAP]; }; };";
+        let spec = spec_of(src);
+        let syms = build_symbol_table(&spec);
+        // Dig the module member out.
+        let Definition::Module(m) = &spec.definitions[0] else {
+            panic!("no module");
+        };
+        let Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Struct(crate::ast::StructDcl::Def(
+            s,
+        )))) = &m.definitions[1]
+        else {
+            panic!("no struct");
+        };
+        let crate::ast::Declarator::Array(a) = &s.members[0].declarators[0] else {
+            panic!("not an array");
+        };
+        assert_eq!(eval_bound(&a.sizes[0], &syms), Some(3));
+    }
+
+    #[test]
+    fn literal_bound_still_resolves() {
+        let src = "struct S { long data[8]; };";
+        let syms = build_symbol_table(&spec_of(src));
+        assert_eq!(eval_bound(&bound_expr(src), &syms), Some(8));
+    }
+
+    #[test]
+    fn negative_bound_rejected() {
+        let neg = ConstExpr::Unary {
+            op: UnaryOp::Minus,
+            operand: Box::new(int_lit("1")),
+            span: sp(),
+        };
+        assert_eq!(eval_bound(&neg, &SymbolTable::new()), None);
     }
 }

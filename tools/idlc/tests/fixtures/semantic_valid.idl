@@ -1,0 +1,13 @@
+// Valid counterpart to semantic_gaps.idl: distinct member names, every
+// referenced type resolvable. The semantic gate must let this through with
+// exit 0 (no false positive).
+struct Inner {
+    long a;
+    string b;
+};
+
+struct Outer {
+    long first;
+    Inner nested;
+    sequence<Inner> many;
+};

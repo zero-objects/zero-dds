@@ -124,6 +124,55 @@ thread_local! {
     /// Populated by [`register_types_for_field_value`].
     static STRUCT_DEFS: RefCell<std::collections::BTreeMap<String, zerodds_idl::ast::types::StructDef>> =
         const { RefCell::new(std::collections::BTreeMap::new()) };
+    /// Fully-qualified names (`"outer::inner::Type"`) of every declared
+    /// struct/enum/union/typedef in the run. Consulted by [`rust_scoped`] to
+    /// resolve a member's scoped name to its absolute module path so the emitted
+    /// Rust path climbs out of the current module with the right number of
+    /// `super::` steps (finding A29 — a member type qualified with a top-level
+    /// module name, e.g. `geom::Point` referenced from inside `pub mod app`,
+    /// previously emitted `geom::Point`, which does not resolve from a sibling
+    /// module and fails to compile, E0433). Populated by
+    /// [`register_types_for_field_value`].
+    static TYPE_FQNS: RefCell<std::collections::BTreeSet<String>> =
+        const { RefCell::new(std::collections::BTreeSet::new()) };
+    /// Simple names of struct types used as a `map<K,V>` KEY anywhere in the
+    /// run (directly, or nested through sequences/maps/typedefs). Such a struct
+    /// must additionally derive `Eq, PartialOrd, Ord` so it can key the
+    /// generated `BTreeMap` (finding A23 — a `map<Struct,_>` previously produced
+    /// `BTreeMap<Struct, _>` over a struct with no `Ord`, which does not
+    /// compile). Populated by [`register_types_for_field_value`].
+    static MAP_KEY_STRUCTS: RefCell<std::collections::BTreeSet<String>> =
+        const { RefCell::new(std::collections::BTreeSet::new()) };
+    /// Module path (raw IDL module names, outermost first) of the definition
+    /// currently being emitted. Pushed/popped by `emitter::emit_module` so
+    /// [`rust_scoped`] knows the emit position for its `super::` computation.
+    static CURRENT_MODULE_PATH: RefCell<Vec<String>> = const { RefCell::new(Vec::new()) };
+}
+
+/// `true` if the named struct is used as a `map<K,V>` key somewhere in the run
+/// and therefore needs the `Ord`/`Eq` derives (finding A23).
+#[must_use]
+pub fn struct_is_map_key(name: &str) -> bool {
+    MAP_KEY_STRUCTS.with(|s| s.borrow().contains(name))
+}
+
+/// Pushes an enclosing module name onto the emit-scope stack (see
+/// [`CURRENT_MODULE_PATH`]). Called by `emitter::emit_module`.
+pub fn scope_push(name: &str) {
+    CURRENT_MODULE_PATH.with(|s| s.borrow_mut().push(name.to_string()));
+}
+
+/// Pops the innermost module name off the emit-scope stack.
+pub fn scope_pop() {
+    CURRENT_MODULE_PATH.with(|s| {
+        s.borrow_mut().pop();
+    });
+}
+
+/// Clears the emit-scope stack (called at codegen entry so no stale depth
+/// leaks from a previous run on the same thread).
+pub fn scope_reset() {
+    CURRENT_MODULE_PATH.with(|s| s.borrow_mut().clear());
 }
 
 /// Kind of a scoped field type, for `field_value` SQL-filter codegen.
@@ -150,11 +199,28 @@ pub fn register_types_for_field_value(spec: &Specification) {
     ENUM_LITERAL_VALUES.with(|s| s.borrow_mut().clear());
     UNION_NAMES.with(|s| s.borrow_mut().clear());
     STRUCT_DEFS.with(|s| s.borrow_mut().clear());
+    TYPE_FQNS.with(|s| s.borrow_mut().clear());
+    MAP_KEY_STRUCTS.with(|s| s.borrow_mut().clear());
+    // Map key type specs seen during the walk, resolved to struct simple names
+    // once TYPEDEF_MAP/STRUCT_DEFS are fully populated (finding A23).
+    let mut map_key_specs: Vec<TypeSpec> = Vec::new();
+    /// Records the fully-qualified name (`path::name`) of a declared type.
+    fn record_fqn(path: &[String], name: &str) {
+        let mut fqn = path.to_vec();
+        fqn.push(name.to_string());
+        TYPE_FQNS.with(|s| {
+            s.borrow_mut().insert(fqn.join("::"));
+        });
+    }
     /// zerodds-lint: recursion-depth 64 (codegen AST walk; bounded by IDL nesting).
-    fn walk(defs: &[Definition]) {
+    fn walk(defs: &[Definition], path: &mut Vec<String>, map_keys: &mut Vec<TypeSpec>) {
         for def in defs {
             match def {
-                Definition::Module(m) => walk(&m.definitions),
+                Definition::Module(m) => {
+                    path.push(m.name.text.clone());
+                    walk(&m.definitions, path, map_keys);
+                    path.pop();
+                }
                 Definition::Const(c) => {
                     CONST_VALUES.with(|m| {
                         m.borrow_mut().insert(c.name.text.clone(), c.value.clone());
@@ -167,11 +233,16 @@ pub fn register_types_for_field_value(spec: &Specification) {
                     STRUCT_DEFS.with(|m| {
                         m.borrow_mut().insert(s.name.text.clone(), s.clone());
                     });
+                    record_fqn(path, &s.name.text);
+                    for member in &s.members {
+                        scan_type_for_map_keys(&member.type_spec, map_keys);
+                    }
                 }
                 Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Enum(e))) => {
                     ENUM_NAMES.with(|set| {
                         set.borrow_mut().insert(e.name.text.clone());
                     });
+                    record_fqn(path, &e.name.text);
                     // Record each literal's value honoring explicit
                     // `@value(N)` (XTypes 1.3 §7.3.1.2.1.6), matching
                     // enum_emit exactly, so union case labels referencing
@@ -193,6 +264,10 @@ pub fn register_types_for_field_value(spec: &Specification) {
                     UNION_NAMES.with(|set| {
                         set.borrow_mut().insert(u.name.text.clone());
                     });
+                    record_fqn(path, &u.name.text);
+                    for case in &u.cases {
+                        scan_type_for_map_keys(&case.element.type_spec, map_keys);
+                    }
                 }
                 Definition::Type(TypeDecl::Typedef(td)) => {
                     for d in &td.declarators {
@@ -200,14 +275,46 @@ pub fn register_types_for_field_value(spec: &Specification) {
                             TYPEDEF_MAP.with(|m| {
                                 m.borrow_mut().insert(n.text.clone(), td.type_spec.clone());
                             });
+                            record_fqn(path, &n.text);
                         }
                     }
+                    scan_type_for_map_keys(&td.type_spec, map_keys);
                 }
                 _ => {}
             }
         }
     }
-    walk(&spec.definitions);
+    let mut path: Vec<String> = Vec::new();
+    walk(&spec.definitions, &mut path, &mut map_key_specs);
+    // Resolve every collected map-key type spec to the simple name of the
+    // struct it ultimately refers to (chasing typedef aliases) and record it
+    // (finding A23). Non-struct keys (primitive/enum/string) resolve to `None`
+    // and are ignored — they already satisfy `Ord`.
+    for key in &map_key_specs {
+        if let TypeSpec::Scoped(s) = key {
+            if let Some(name) = resolve_scoped_to_struct_name(s) {
+                MAP_KEY_STRUCTS.with(|set| {
+                    set.borrow_mut().insert(name);
+                });
+            }
+        }
+    }
+}
+
+/// Collects the KEY type spec of every `map<K,V>` reachable from `spec`
+/// (directly, or nested through sequences / map values / further maps) into
+/// `out`. Feeds the map-key-struct `Ord`-derive decision (finding A23).
+/// zerodds-lint: recursion-depth 64 (codegen AST walk; bounded by IDL nesting).
+fn scan_type_for_map_keys(spec: &TypeSpec, out: &mut Vec<TypeSpec>) {
+    match spec {
+        TypeSpec::Map(m) => {
+            out.push((*m.key).clone());
+            scan_type_for_map_keys(&m.key, out);
+            scan_type_for_map_keys(&m.value, out);
+        }
+        TypeSpec::Sequence(seq) => scan_type_for_map_keys(&seq.elem, out),
+        _ => {}
+    }
 }
 
 /// Resolves a scoped field name (chasing typedef chains) to its
@@ -420,6 +527,17 @@ pub fn array_elem_needs_manual_decode(spec: &TypeSpec) -> bool {
 /// (sequence<sequence<sequence<...>>>).
 pub fn rust_type_for(spec: &TypeSpec) -> Result<String> {
     match spec {
+        // `long double` is IEEE-754 binary128 (16 bytes) on the wire (XTypes
+        // 1.3 §7.4.1.2.4 / classic CDR §15.3.1.6). Rust has no stable 128-bit
+        // float, so mapping it to `f64` would silently emit an 8-byte wire
+        // value — a cross-vendor wire break. Loud-reject instead of the old
+        // silent narrowing (finding A2); revisit once `f128` stabilises.
+        TypeSpec::Primitive(PrimitiveType::Floating(FloatingType::LongDouble)) => {
+            Err(RustGenError::Unsupported {
+                what: "long double (IEEE binary128; no stable Rust f128)",
+                at: 0,
+            })
+        }
         TypeSpec::Primitive(p) => Ok(rust_primitive(*p).to_string()),
         TypeSpec::Scoped(s) => Ok(rust_scoped(s)),
         TypeSpec::Sequence(seq) => rust_sequence(seq),
@@ -493,6 +611,13 @@ pub fn primitive_wire_size(p: PrimitiveType) -> usize {
     }
 }
 
+/// Public accessor for the Rust integer type of an IDL integer kind — used by
+/// the `const` emitter (finding A5) to type a `pub const` declaration.
+#[must_use]
+pub fn rust_integer_type(i: IntegerType) -> &'static str {
+    rust_integer(i)
+}
+
 fn rust_integer(i: IntegerType) -> &'static str {
     match i {
         IntegerType::Short | IntegerType::Int16 => "i16",
@@ -541,6 +666,19 @@ fn rust_scoped(s: &ScopedName) -> String {
             return "zerodds_corba_rust::ObjectReference".to_string();
         }
     }
+    // A29: on the DDS path, resolve the scoped name to its absolute module path
+    // and emit a position-relative Rust path (`super::…`) so a cross-module
+    // reference compiles from inside the current `pub mod`. The naive
+    // `parts.join("::")` only resolves when the first segment is reachable
+    // without climbing out of the current module (a same-module type or a
+    // child module); a top-level-module-qualified name like `geom::Point`
+    // referenced from inside `pub mod app` fails to compile (E0433). The CORBA
+    // path keeps the naive join (its type registry is not populated here).
+    if !any_target_corba() {
+        if let Some(path) = scoped_rust_path(s) {
+            return path;
+        }
+    }
     s.parts
         .iter()
         .map(|p| escape_keyword(&p.text))
@@ -548,11 +686,72 @@ fn rust_scoped(s: &ScopedName) -> String {
         .join("::")
 }
 
+/// Resolves a member's scoped name `s` (as written in IDL, relative to the
+/// module currently being emitted) to a position-relative Rust path.
+///
+/// Uses IDL innermost-scope-first name lookup against the full-spec FQN
+/// registry ([`TYPE_FQNS`]): the longest prefix of the current emit scope for
+/// which `prefix ++ s` names a declared type is the absolute path of the
+/// referent. From the current module depth `k`, the emitted path climbs
+/// `k - c` levels with `super::` (where `c` is the common-prefix length of the
+/// current scope and the referent's module path) and then descends the
+/// remaining absolute segments — the minimal correct path, which for a
+/// same-module sibling collapses to the bare type name (unchanged output).
+///
+/// Returns `None` when the name is not in the registry (an external/unknown
+/// type), so the caller falls back to the naive join without regressing.
+/// zerodds-lint: recursion-depth 16
+fn scoped_rust_path(s: &ScopedName) -> Option<String> {
+    let written: Vec<String> = s.parts.iter().map(|p| p.text.clone()).collect();
+    if written.is_empty() {
+        return None;
+    }
+    let scope = CURRENT_MODULE_PATH.with(|c| c.borrow().clone());
+    // Innermost-scope-first: try the longest enclosing-scope prefix first.
+    let mut absolute: Option<Vec<String>> = None;
+    for take in (0..=scope.len()).rev() {
+        let mut candidate: Vec<String> = scope[..take].to_vec();
+        candidate.extend(written.iter().cloned());
+        if TYPE_FQNS.with(|set| set.borrow().contains(&candidate.join("::"))) {
+            absolute = Some(candidate);
+            break;
+        }
+    }
+    let absolute = absolute?;
+    // Split the referent into its module path (all but the last segment) and
+    // the type name.
+    let (type_name, target_mods) = absolute.split_last()?;
+    // Common prefix length of the current scope and the referent's module path.
+    let common = scope
+        .iter()
+        .zip(target_mods.iter())
+        .take_while(|(a, b)| a == b)
+        .count();
+    let supers = scope.len() - common;
+    let mut segments: Vec<String> = Vec::new();
+    for _ in 0..supers {
+        segments.push("super".to_string());
+    }
+    for m in &target_mods[common..] {
+        segments.push(escape_keyword(m));
+    }
+    segments.push(escape_keyword(type_name));
+    Some(segments.join("::"))
+}
+
 /// Wraps an IDL identifier in Rust raw-identifier form `r#…` if it is a
 /// Rust reserved keyword. Spec-ref: zerodds-idl-rust-1.0 §6.2.
 #[must_use]
 pub fn escape_keyword(ident: &str) -> String {
-    if is_rust_keyword(ident) {
+    // `crate`, `self`, `super`, `Self` and `_` are the Rust keywords that CANNOT
+    // be written as raw identifiers (`r#self` is rejected by the compiler). An
+    // IDL identifier that spells one of them must be mangled with a trailing
+    // underscore instead of the `r#` prefix, otherwise the generated code does
+    // not compile. Every other reserved word takes the raw-identifier form so
+    // its source spelling is preserved (spec zerodds-idl-rust-1.0 §6.2).
+    if matches!(ident, "crate" | "self" | "super" | "Self" | "_") {
+        format!("{ident}_")
+    } else if is_rust_keyword(ident) {
         format!("r#{ident}")
     } else {
         ident.to_string()
@@ -665,6 +864,14 @@ fn eval_const_i128(expr: &ConstExpr, depth: u32) -> Option<i128> {
         CE::Literal(lit) if lit.kind == LiteralKind::Boolean => {
             Some(i128::from(lit.raw == "TRUE" || lit.raw == "true"))
         }
+        // A `char`/`wchar` discriminator label (`case 'A':`) folds to the
+        // character's code point (finding A12): the switch type is an integer
+        // holder (`u8`/`u16`), so the label is the codepoint. Previously these
+        // labels were rejected outright, making any char-switched union
+        // non-generatable.
+        CE::Literal(lit) if lit.kind == LiteralKind::Char || lit.kind == LiteralKind::WideChar => {
+            char_literal_codepoint(&lit.raw)
+        }
         CE::Literal(_) => None,
         // A named constant or enum literal: resolve to its value and evaluate.
         CE::Scoped(s) => {
@@ -700,6 +907,48 @@ fn eval_const_i128(expr: &ConstExpr, depth: u32) -> Option<i128> {
             }
         }
     }
+}
+
+/// Decodes an IDL character literal (`'A'`, `'\n'`, `'\x41'`, `'\101'`,
+/// `L'ä'`, …) to its Unicode code point as `i128`. Handles the IDL/C escape
+/// sequences (§7.2.6.3). Returns `None` for a literal it cannot parse. Kept in
+/// sync with the equivalent decoder in the other language backends so a
+/// char-switched union folds to the same discriminator everywhere.
+fn char_literal_codepoint(raw: &str) -> Option<i128> {
+    let s = raw.trim();
+    let s = s.strip_prefix('L').unwrap_or(s);
+    let inner = s.strip_prefix('\'').and_then(|x| x.strip_suffix('\''))?;
+    let mut chars = inner.chars();
+    let first = chars.next()?;
+    if first != '\\' {
+        // A single unescaped character; reject multi-char content.
+        return chars.next().is_none().then(|| i128::from(u32::from(first)));
+    }
+    let esc = chars.next()?;
+    let cp: u32 = match esc {
+        'n' => 0x0A,
+        't' => 0x09,
+        'r' => 0x0D,
+        'a' => 0x07,
+        'b' => 0x08,
+        'f' => 0x0C,
+        'v' => 0x0B,
+        '\\' => u32::from('\\'),
+        '\'' => u32::from('\''),
+        '"' => u32::from('"'),
+        '?' => u32::from('?'),
+        'x' | 'u' | 'U' => {
+            let hex: String = chars.by_ref().collect();
+            u32::from_str_radix(hex.trim(), 16).ok()?
+        }
+        d @ '0'..='7' => {
+            let mut oct = String::from(d);
+            oct.extend(chars.by_ref().take_while(|c| ('0'..='7').contains(c)));
+            u32::from_str_radix(&oct, 8).ok()?
+        }
+        _ => return None,
+    };
+    Some(i128::from(cp))
 }
 
 fn parse_integer_literal(raw: &str) -> Option<usize> {

@@ -8,10 +8,11 @@ use zerodds_idl::ast::types::{Annotation, AnnotationParams, ConstExpr, LiteralKi
 /// Extensibility mode of a struct (XTypes 1.3 §7.4.3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StructExtensibility {
-    /// Default in XTypes 1.3 is `appendable`. ZeroDDS codegen uses
-    /// `final` as default — more compact wire format, no header. To get
-    /// the XTypes-1.3-spec-conformant default, annotate `@appendable`
-    /// or set `@extensibility(APPENDABLE)`.
+    /// Final: wire without DHEADER, members in declaration order — the most
+    /// compact form. NOTE: this is NOT the ZeroDDS default; per XTypes 1.3
+    /// §7.3.3.1 an unannotated aggregate defaults to APPENDABLE (see
+    /// `struct_extensibility` below, since the SX2 flip 2a571721). Use
+    /// `@final` explicitly for the header-less form / Cyclone byte-parity.
     Final,
     /// Appendable: wire with DHEADER + members in declaration order.
     Appendable,
@@ -59,6 +60,60 @@ pub fn member_id(annotations: &[Annotation]) -> Option<u32> {
         .find(|a| annotation_name(a) == "id")
         .and_then(annotation_first_param_integer)
         .and_then(|v| u32::try_from(v).ok())
+}
+
+/// Effective `@hashid` hint for a member (XTypes 1.3 §7.3.1.2.1.4): `Some(hint)`
+/// for `@hashid("hint")`, `Some(member_name)` for a bare `@hashid`, `None` when
+/// the member carries no `@hashid`. The returned string is what
+/// `NameHash::member_id_from_name` hashes to derive the member id.
+#[must_use]
+pub fn member_hashid_hint(annotations: &[Annotation], member_name: &str) -> Option<String> {
+    annotations
+        .iter()
+        .find(|a| annotation_name(a) == "hashid")
+        .map(|a| annotation_first_param_text(a).unwrap_or_else(|| member_name.to_string()))
+}
+
+/// Resolves the wire member-ID of a member honoring, highest precedence first
+/// (XTypes 1.3 §7.3.1.2.1): explicit `@id(n)`, then `@hashid` (per-member hash),
+/// then struct-level `@autoid(HASH)` (hash of the member name), else the caller's
+/// sequential positional fallback.
+///
+/// Broad-audit P0-3: this delegates to the ONE central resolver in the semantic
+/// layer (`zerodds_idl::semantics::member_id::resolved_member_id`) so Rust, C++
+/// and the TypeObject builder share a single derivation and cannot drift — the
+/// EMHEADER/PID ids the data wire emits stay byte-identical to the member ids
+/// the TypeObject carries (findings A31 `@hashid` + A32 `@autoid(HASH)`).
+/// zerodds-lint: recursion-depth 1 (delegates to the semantic-layer resolver of
+/// the same name; not self-recursive).
+#[must_use]
+pub fn resolved_member_id(
+    struct_autoid_hash: bool,
+    member_annotations: &[Annotation],
+    member_name: &str,
+    fallback_seq: u32,
+) -> u32 {
+    zerodds_idl::semantics::member_id::resolved_member_id(
+        struct_autoid_hash,
+        member_annotations,
+        member_name,
+        fallback_seq,
+    )
+}
+
+/// Reads `@default(value)` from a member annotation list (XTypes 1.3
+/// §7.3.1.2.1.5). Returns the raw default-value expression, which the caller
+/// renders as a Rust literal of the member type. Used on the decode side: a
+/// non-optional member that a peer omitted (a shorter `@appendable` frame or a
+/// missing `@mutable` EMHEADER) takes this value instead of failing the decode
+/// (finding A33).
+#[must_use]
+pub fn member_default(annotations: &[Annotation]) -> Option<ConstExpr> {
+    annotations
+        .iter()
+        .find(|a| annotation_name(a) == "default")
+        .and_then(|a| single_param(&a.params))
+        .cloned()
 }
 
 /// Reads `@must_understand` (default false).
@@ -124,33 +179,6 @@ pub fn bitmask_bit_bound(annotations: &[Annotation]) -> u32 {
         .and_then(annotation_first_param_integer)
         .and_then(|v| u32::try_from(v).ok())
         .unwrap_or(32)
-}
-
-/// Effective `@bit_bound` of an enum — selects the signed-integer wire width
-/// (XTypes 1.3 §7.3.1.2.1.2 + §7.4.5.1): the DEFAULT enum bit_bound is **32**.
-/// `@bit_bound(N)` (1..=32) narrows the holder: N≤8 → 1 octet, N≤16 → 2 octets,
-/// else 4 octets. Cyclone honours this; matching it is spec-faithful.
-#[must_use]
-pub fn enum_bit_bound(annotations: &[Annotation]) -> u32 {
-    annotations
-        .iter()
-        .find(|a| annotation_name(a) == "bit_bound")
-        .and_then(annotation_first_param_integer)
-        .and_then(|v| u32::try_from(v).ok())
-        .filter(|&v| (1..=32).contains(&v))
-        .unwrap_or(32)
-}
-
-/// Wire width in octets (1/2/4) for an enum `@bit_bound`.
-#[must_use]
-pub fn enum_wire_octets(bit_bound: u32) -> u8 {
-    if bit_bound <= 8 {
-        1
-    } else if bit_bound <= 16 {
-        2
-    } else {
-        4
-    }
 }
 
 /// Reads `@nested` (default false). A nested-annotated struct is not

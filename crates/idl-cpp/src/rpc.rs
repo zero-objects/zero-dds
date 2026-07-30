@@ -312,9 +312,8 @@ pub fn emit_service_traits(svc: &ServiceDef) -> String {
 /// * [`CppGenError::UnsupportedConstruct`], if a member uses an
 ///   unsupported type (e.g. `any`/`fixed`).
 pub fn emit_remote_exception_class(except: &ExceptDecl) -> Result<String, CppGenError> {
-    crate::type_map::check_identifier(&except.name.text)?;
     let mut out = String::new();
-    let name = &except.name.text;
+    let name = crate::type_map::escape_cpp_ident(&except.name.text);
     let _ = writeln!(
         out,
         "// zerodds-rpc-1.0 — RemoteException subclass '{name}' (Spec §10.6)."
@@ -337,9 +336,8 @@ pub fn emit_remote_exception_class(except: &ExceptDecl) -> Result<String, CppGen
         for m in &except.members {
             for decl in &m.declarators {
                 let cpp_ty = idl_typespec_to_cpp(&m.type_spec)?;
-                let mname = decl.name();
-                crate::type_map::check_identifier(&mname.text)?;
-                let _ = writeln!(out, "    {cpp_ty} {}_{{}};", mname.text);
+                let field = crate::emitter::member_storage_ident(&decl.name().text);
+                let _ = writeln!(out, "    {cpp_ty} {field}{{}};");
             }
         }
         let _ = writeln!(out);
@@ -347,12 +345,13 @@ pub fn emit_remote_exception_class(except: &ExceptDecl) -> Result<String, CppGen
         for m in &except.members {
             for decl in &m.declarators {
                 let cpp_ty = idl_typespec_to_cpp(&m.type_spec)?;
-                let mn = &decl.name().text;
+                let mn = crate::type_map::escape_cpp_ident(&decl.name().text);
+                let field = crate::emitter::member_storage_ident(&decl.name().text);
                 let _ = writeln!(
                     out,
-                    "    const {cpp_ty}& {mn}() const noexcept {{ return {mn}_; }}"
+                    "    const {cpp_ty}& {mn}() const noexcept {{ return {field}; }}"
                 );
-                let _ = writeln!(out, "    void {mn}(const {cpp_ty}& v) {{ {mn}_ = v; }}");
+                let _ = writeln!(out, "    void {mn}(const {cpp_ty}& v) {{ {field} = v; }}");
             }
         }
     }

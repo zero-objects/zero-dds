@@ -88,6 +88,111 @@ zerodds-types = {{ path = "{}/crates/types" }}
     }
 }
 
+/// Like [`compile_generated`], but proves the idiomatic multi-file
+/// pattern: each `(module, idl)` pair is generated into its OWN file under
+/// `src/generated/<module>.rs`, then all of them are pulled into a SINGLE
+/// parent module via `include!` — exactly what a hand-written `build.rs`/
+/// `lib.rs` does when several `.idl` files are compiled separately and
+/// composed. Compiled with `-D warnings` so a reintroduced dead top-level
+/// `use` (unused-import warning) also fails, not just hard errors.
+///
+/// Reproduces the two `include!`-composability failures reported against
+/// idl-rust. First, inner attributes (`#![allow(..)]`) at file scope are
+/// rejected inside a parent module ("an inner attribute is not permitted in
+/// this context", #26). Second, a duplicated top-level `use zerodds_cdr::{..}`
+/// raises E0252 ("defined multiple times", #25) when two generated files land
+/// in the same module. Both are fixed by emitting no file-level inner
+/// attributes and no top-level `use`: lint allows became per-item outer
+/// attributes, and every external path is fully qualified.
+fn compile_generated_multifile(test_name: &str, modules: &[(&str, &str)]) {
+    let tmp = std::env::temp_dir().join(format!("dds_idl_rust_mf_{test_name}"));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(tmp.join("src/generated")).expect("mkdir");
+
+    let workspace_root = workspace_root();
+    let cargo_toml = format!(
+        r#"[package]
+name = "compile_test_mf_{test_name}"
+version = "0.0.0"
+edition = "2024"
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+zerodds-cdr = {{ path = "{r}/crates/cdr" }}
+zerodds-dcps = {{ path = "{r}/crates/dcps" }}
+zerodds-sql-filter = {{ path = "{r}/crates/sql-filter" }}
+zerodds-types = {{ path = "{r}/crates/types" }}
+"#,
+        r = workspace_root.display()
+    );
+    std::fs::File::create(tmp.join("Cargo.toml"))
+        .expect("create Cargo.toml")
+        .write_all(cargo_toml.as_bytes())
+        .expect("write Cargo.toml");
+
+    // Generate each IDL into its own file (separate `generate_rust_module`
+    // calls, as a real multi-file build would do).
+    let mut includes = String::new();
+    for (module, idl) in modules {
+        let ast = zerodds_idl::parse(idl, &ParserConfig::default()).expect("parse");
+        let rust_src = generate_rust_module(&ast, &RustGenOptions::default()).expect("gen");
+        std::fs::File::create(tmp.join(format!("src/generated/{module}.rs")))
+            .expect("create module file")
+            .write_all(rust_src.as_bytes())
+            .expect("write module file");
+        includes.push_str(&format!("    include!(\"generated/{module}.rs\");\n"));
+    }
+
+    // The composition site: one parent module, many `include!`d files.
+    let lib_rs = format!("mod generated {{\n{includes}}}\n");
+    std::fs::File::create(tmp.join("src/lib.rs"))
+        .expect("create lib.rs")
+        .write_all(lib_rs.as_bytes())
+        .expect("write lib.rs");
+
+    let status = Command::new("cargo")
+        .arg("check")
+        .arg("--manifest-path")
+        .arg(tmp.join("Cargo.toml"))
+        .arg("--offline")
+        .env("RUSTFLAGS", "-D warnings")
+        .status();
+
+    match status {
+        Ok(s) if s.success() => { /* good */ }
+        Ok(s) => panic!(
+            "multi-file include! did not compile (exit {:?}). lib.rs:\n{lib_rs}",
+            s.code(),
+        ),
+        Err(e) => panic!("cargo invocation failed: {e}"),
+    }
+}
+
+/// Regression for the two reported idl-rust `include!` bugs (#25/#26): two
+/// module-wrapped IDLs, generated separately, composed into one parent
+/// module via `include!`. Must compile without the inner-attribute error
+/// and without the E0252 "defined multiple times" collision.
+#[test]
+#[ignore = "requires cargo offline + path-deps; run with --include-ignored"]
+fn compile_check_multifile_include_composition() {
+    compile_generated_multifile(
+        "two_modules",
+        &[
+            (
+                "common",
+                "module common { struct KeyLabel { @key uint32 id; string label; }; };",
+            ),
+            (
+                "metrics",
+                "module metrics { struct SystemCpuInfo { @key string id; string brand; \
+                 string name; float usage; }; };",
+            ),
+        ],
+    );
+}
+
 fn workspace_root() -> PathBuf {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     manifest

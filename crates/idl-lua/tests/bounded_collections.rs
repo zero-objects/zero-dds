@@ -148,10 +148,22 @@ fn unbounded_members_get_no_bound_argument() {
         "@final struct S { string name; wstring wname; sequence<octet> data; \
          map<string, long> vals; };",
     );
-    assert!(l.contains("w:putString(v.name)") && !l.contains("w:putString(v.name,"), "{l}");
-    assert!(l.contains("w:putWString(v.wname)") && !l.contains("w:putWString(v.wname,"), "{l}");
-    assert!(l.contains("w:putSeqU8(v.data)") && !l.contains("w:putSeqU8(v.data,"), "{l}");
-    assert!(l.contains("r:getString()") && !l.contains("r:getString(4"), "{l}");
+    assert!(
+        l.contains("w:putString(v.name)") && !l.contains("w:putString(v.name,"),
+        "{l}"
+    );
+    assert!(
+        l.contains("w:putWString(v.wname)") && !l.contains("w:putWString(v.wname,"),
+        "{l}"
+    );
+    assert!(
+        l.contains("w:putSeqU8(v.data)") && !l.contains("w:putSeqU8(v.data,"),
+        "{l}"
+    );
+    assert!(
+        l.contains("r:getString()") && !l.contains("r:getString(4"),
+        "{l}"
+    );
     // Note: the shared WIRE_PRELUDE's Writer/Reader methods always contain
     // the "exceeds its IDL bound" error-format strings (gated at runtime
     // behind `if maxBytes and ...`) — that text is present in every

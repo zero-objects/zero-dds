@@ -6,7 +6,8 @@
 //! (String, Vec, Array, Option) folgen in Phase B; Extensibility-Modi
 //! (appendable, mutable) in Phase C; Keys + KeyHash in Phase D.
 
-use zerodds_idl::ast::types::{Declarator, Member, StructDef, TypeSpec};
+use zerodds_idl::ast::types::{ConstExpr, Declarator, LiteralKind, Member, StructDef, TypeSpec};
+use zerodds_idl::semantics::annotations::PlacementKind;
 
 use crate::annotations::{StructExtensibility, struct_extensibility};
 use crate::error::{Result, RustGenError};
@@ -21,6 +22,71 @@ pub(crate) fn declarator_ident(decl: &Declarator) -> String {
         Declarator::Array(a) => &a.name.text,
     };
     escape_keyword(raw)
+}
+
+/// Raw (un-escaped) IDL name of a member's first declarator — the string the
+/// `@autoid(HASH)` / `@hashid` member-id derivation hashes (findings A31/A32).
+/// The name-hash MUST use the source spelling, never the Rust-escaped form.
+fn member_raw_name(member: &Member) -> &str {
+    member
+        .declarators
+        .first()
+        .map_or("", |d| d.name().text.as_str())
+}
+
+/// Wire member-id of `member` at positional index `idx`, honoring
+/// `@id`/`@hashid`/`@autoid(HASH)` (findings A31/A32) via the shared resolver
+/// so the EMHEADER/PID/key-order ids match the TypeObject. `autoid_hash` is the
+/// enclosing struct's `@autoid(HASH)` flag.
+fn member_wire_id(autoid_hash: bool, member: &Member, idx: usize) -> u32 {
+    crate::annotations::resolved_member_id(
+        autoid_hash,
+        &member.annotations,
+        member_raw_name(member),
+        idx as u32,
+    )
+}
+
+/// Flattens a struct's base-type inheritance chain into a single member list
+/// (finding A10): the oldest ancestor's members first, then each descendant's,
+/// then the struct's own members — the XTypes 1.3 §7.2.2.4.4 derived-type wire
+/// order (base members precede derived members). Base structs are resolved via
+/// the `STRUCT_DEFS` registry; a cycle guard bounds pathological loops. Mirrors
+/// idl-cpp's `resolved_wire_members` so the two bindings agree on the wire.
+/// zerodds-lint: recursion-depth 32
+fn resolved_wire_members(s: &StructDef) -> Vec<Member> {
+    let mut chain: Vec<StructDef> = Vec::new();
+    let mut seen: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+    let mut cur = s.base.clone();
+    while let Some(bn) = cur {
+        let Some(def) = crate::type_map::struct_def_by_scoped(&bn) else {
+            break;
+        };
+        if !seen.insert(def.name.text.clone()) {
+            break;
+        }
+        cur = def.base.clone();
+        chain.push(def);
+    }
+    let mut out: Vec<Member> = Vec::new();
+    for def in chain.into_iter().rev() {
+        out.extend(def.members.iter().cloned());
+    }
+    out.extend(s.members.iter().cloned());
+    out
+}
+
+/// Returns a copy of `s` whose `members` are the inheritance-flattened wire
+/// members ([`resolved_wire_members`]) and whose `base` is cleared. Used for
+/// every data-wire emission (fields, encode, decode, `field_value`, key) so a
+/// derived struct carries its inherited members; the `base` is cleared so no
+/// second pass re-expands it. The TYPE_IDENTIFIER is computed from the ORIGINAL
+/// struct (via the shared frontend), matching idl-cpp.
+fn flattened_struct(s: &StructDef) -> StructDef {
+    let mut flat = s.clone();
+    flat.members = resolved_wire_members(s);
+    flat.base = None;
+    flat
 }
 
 /// Computes the concrete Rust type of a member field given both its
@@ -73,10 +139,15 @@ pub fn emit_struct_with_mode(
 ) -> Result<()> {
     let extensibility = struct_extensibility(&s.annotations);
 
-    emit_struct_decl(out, s)?;
+    // A10: emit against the inheritance-flattened member list (base members
+    // first). The TYPE_IDENTIFIER stays computed from the ORIGINAL `s` (shared
+    // frontend), so keep both around.
+    let flat = flattened_struct(s);
+
+    emit_struct_decl(out, &flat)?;
     out.push('\n');
     if !cdr_only {
-        emit_dds_type_impl(out, s, extensibility, module_path)?;
+        emit_dds_type_impl(out, &flat, extensibility, module_path, s)?;
     }
     // Writer-agnostic CDR impls (`CdrEncode`/`CdrDecode`). These serve TWO
     // call sites with different wire rules, distinguished at RUNTIME by the
@@ -90,8 +161,8 @@ pub fn emit_struct_with_mode(
     //     `sequence<>`/array/map element struct emits on the wire — the
     //     top-level `DdsType::encode` only frames the OUTERMOST type, so the
     //     per-element frame must live here, in `CdrEncode`.
-    emit_cdr_encode_impl(out, s, extensibility)?;
-    emit_cdr_decode_impl(out, s, extensibility)?;
+    emit_cdr_encode_impl(out, &flat, extensibility)?;
+    emit_cdr_decode_impl(out, &flat, extensibility)?;
     Ok(())
 }
 
@@ -124,10 +195,13 @@ fn emit_cdr_encode_impl(
     extensibility: StructExtensibility,
 ) -> Result<()> {
     let name = escape_keyword(&s.name.text);
-    out.push_str(&format!("\nimpl zerodds_cdr::CdrEncode for {name} {{\n"));
+    out.push('\n');
+    out.push_str(crate::emitter::IMPL_LINT_ALLOW);
+    out.push_str(&format!("impl zerodds_cdr::CdrEncode for {name} {{\n"));
     out.push_str(
         "    fn encode(&self, writer: &mut zerodds_cdr::BufferWriter) -> ::core::result::Result<(), zerodds_cdr::EncodeError> {\n",
     );
+    let autoid = crate::annotations::struct_autoid_hash(&s.annotations);
     match extensibility {
         StructExtensibility::Final => {
             emit_plain_field_encodes(out, s, "        ", "writer")?;
@@ -160,7 +234,7 @@ fn emit_cdr_encode_impl(
                 "                let mut enc = zerodds_cdr::struct_enc::MutableStructEncoder::new(w, ::std::vec![{required_list}]);\n"
             ));
             for (idx, member) in s.members.iter().enumerate() {
-                emit_mutable_member_encode(out, member, idx, "                ")?;
+                emit_mutable_member_encode(out, member, idx, autoid, "                ")?;
             }
             out.push_str("                enc.finish()?;\n");
             out.push_str("                Ok(())\n");
@@ -174,7 +248,7 @@ fn emit_cdr_encode_impl(
             // framing, no sentinel) — FastDDS emits proper PL_CDR (36B vs our
             // 23B). Each member's body is its plain field encoding.
             for (idx, member) in s.members.iter().enumerate() {
-                emit_pl_cdr1_member_encode(out, member, idx, "            ")?;
+                emit_pl_cdr1_member_encode(out, member, idx, autoid, "            ")?;
             }
             out.push_str("            zerodds_cdr::xcdr1::write_pl_cdr1_sentinel(writer)?;\n");
             out.push_str("        }\n");
@@ -194,9 +268,10 @@ fn emit_pl_cdr1_member_encode(
     out: &mut String,
     member: &Member,
     fallback_id: usize,
+    autoid_hash: bool,
     indent: &str,
 ) -> Result<()> {
-    let id = crate::annotations::member_id(&member.annotations).unwrap_or(fallback_id as u32);
+    let id = member_wire_id(autoid_hash, member, fallback_id);
     let optional = crate::annotations::member_is_optional(&member.annotations);
     for declarator in &member.declarators {
         let name = declarator_ident(declarator);
@@ -219,11 +294,12 @@ fn emit_pl_cdr1_member_encode(
 
 /// Collects the member IDs of all non-optional members (mutable framing).
 fn required_member_ids(s: &StructDef) -> Vec<u32> {
+    let autoid = crate::annotations::struct_autoid_hash(&s.annotations);
     s.members
         .iter()
         .enumerate()
         .filter(|(_, m)| !crate::annotations::member_is_optional(&m.annotations))
-        .map(|(idx, m)| crate::annotations::member_id(&m.annotations).unwrap_or(idx as u32))
+        .map(|(idx, m)| member_wire_id(autoid, m, idx))
         .collect()
 }
 
@@ -236,7 +312,9 @@ fn emit_cdr_decode_impl(
     extensibility: StructExtensibility,
 ) -> Result<()> {
     let name = escape_keyword(&s.name.text);
-    out.push_str(&format!("\nimpl zerodds_cdr::CdrDecode for {name} {{\n"));
+    out.push('\n');
+    out.push_str(crate::emitter::IMPL_LINT_ALLOW);
+    out.push_str(&format!("impl zerodds_cdr::CdrDecode for {name} {{\n"));
     out.push_str(
         "    fn decode(reader: &mut zerodds_cdr::BufferReader<'_>) -> ::core::result::Result<Self, zerodds_cdr::DecodeError> {\n",
     );
@@ -377,17 +455,29 @@ fn array_default_expr(sizes: &[zerodds_idl::ast::types::ConstExpr]) -> String {
 fn emit_struct_decl(out: &mut String, s: &StructDef) -> Result<()> {
     let manual_default = struct_needs_manual_default(s);
     out.push_str("/// Generated by `zerodds-idl-rust` from IDL.\n");
-    if manual_default {
-        out.push_str("#[derive(Debug, Clone, PartialEq)]\n");
-    } else {
-        out.push_str("#[derive(Debug, Clone, PartialEq, Default)]\n");
+    out.push_str(crate::emitter::TYPE_LINT_ALLOW);
+    let mut derives = vec!["Debug", "Clone", "PartialEq"];
+    if !manual_default {
+        derives.push("Default");
     }
+    // A23: a struct used as a `map<K,V>` key must be `Ord` to key the generated
+    // `BTreeMap` (`Ord: Eq + PartialOrd`, `Eq: PartialEq`). Without these
+    // derives `BTreeMap<ThisStruct, _>` does not compile.
+    if crate::type_map::struct_is_map_key(&s.name.text) {
+        derives.extend(["Eq", "PartialOrd", "Ord"]);
+    }
+    out.push_str(&format!("#[derive({})]\n", derives.join(", ")));
     out.push_str("pub struct ");
     out.push_str(&escape_keyword(&s.name.text));
     out.push_str(" {\n");
+    // §7.2.2.4.8 — `@verbatim(placement=BEGIN_DECLARATION)` as the first
+    // element inside the declaration body.
+    crate::verbatim::emit_verbatim_at(out, "    ", &s.annotations, PlacementKind::BeginDeclaration);
     for member in &s.members {
         emit_member_field(out, member)?;
     }
+    // §7.2.2.4.8 — `@verbatim(placement=END_DECLARATION)` as the last element.
+    crate::verbatim::emit_verbatim_at(out, "    ", &s.annotations, PlacementKind::EndDeclaration);
     out.push_str("}\n");
     if manual_default {
         out.push('\n');
@@ -434,15 +524,18 @@ fn emit_dds_type_impl(
     s: &StructDef,
     extensibility: StructExtensibility,
     module_path: &[String],
+    orig: &StructDef,
 ) -> Result<()> {
+    let autoid_hash = crate::annotations::struct_autoid_hash(&s.annotations);
     let key_members: Vec<&Member> = s
         .members
         .iter()
         .filter(|m| crate::annotations::member_is_key(&m.annotations))
         .collect();
     let has_key = !key_members.is_empty();
-    let key_holder_max_size = compute_key_holder_max_size(&key_members);
+    let key_holder_max_size = compute_key_holder_max_size(&key_members, autoid_hash);
 
+    out.push_str(crate::emitter::IMPL_LINT_ALLOW);
     out.push_str("impl zerodds_dcps::DdsType for ");
     out.push_str(&escape_keyword(&s.name.text));
     out.push_str(" {\n");
@@ -479,8 +572,10 @@ fn emit_dds_type_impl(
     }
     // F-TYPES-3: TYPE_IDENTIFIER (XTypes 1.3 §7.3.4.2) as a const.
     // Codegen-time-computed EquivalenceHash of the `CompleteStructType`,
-    // if all member types are leaf-resolvable; otherwise `None`.
-    let type_id_expr = crate::type_identifier::struct_type_identifier_expr(s);
+    // if all member types are leaf-resolvable; otherwise `None`. Computed from
+    // the ORIGINAL struct (with its `base`), not the flattened member list, so
+    // the hash matches the shared frontend / idl-cpp (A10).
+    let type_id_expr = crate::type_identifier::struct_type_identifier_expr(orig);
     out.push_str(&format!(
         "    const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = {type_id_expr};\n"
     ));
@@ -556,7 +651,7 @@ fn emit_dds_type_impl(
 
     if has_key {
         out.push('\n');
-        emit_key_holder_be(out, &key_members)?;
+        emit_key_holder_be(out, &key_members, autoid_hash)?;
     }
 
     out.push('\n');
@@ -729,17 +824,12 @@ fn emit_field_value_arm(
 /// Nested-struct `@key` members are expanded recursively into their own
 /// `@key` members (FINDING F2). Returns `None` (→ MD5) if any `@key` member is
 /// dynamically sized (unbounded string, sequence, map, …).
-fn compute_key_holder_max_size(key_members: &[&Member]) -> Option<usize> {
+fn compute_key_holder_max_size(key_members: &[&Member], autoid_hash: bool) -> Option<usize> {
     // member-id order, matching `encode_key_holder_be`.
     let mut ordered: Vec<(u32, &Member)> = key_members
         .iter()
         .enumerate()
-        .map(|(idx, m)| {
-            (
-                crate::annotations::member_id(&m.annotations).unwrap_or(idx as u32),
-                *m,
-            )
-        })
+        .map(|(idx, m)| (member_wire_id(autoid_hash, m, idx), *m))
         .collect();
     ordered.sort_by_key(|(id, _)| *id);
 
@@ -815,15 +905,11 @@ fn key_holder_atom_size(spec: &TypeSpec, offset: usize) -> Option<usize> {
             } else {
                 nested_keys
             };
+            let nested_autoid = crate::annotations::struct_autoid_hash(&sd.annotations);
             let mut ordered: Vec<(u32, &Member)> = effective
                 .iter()
                 .enumerate()
-                .map(|(idx, m)| {
-                    (
-                        crate::annotations::member_id(&m.annotations).unwrap_or(idx as u32),
-                        *m,
-                    )
-                })
+                .map(|(idx, m)| (member_wire_id(nested_autoid, m, idx), *m))
                 .collect();
             ordered.sort_by_key(|(id, _)| *id);
             let mut off = offset;
@@ -851,22 +937,16 @@ fn key_holder_atom_size(spec: &TypeSpec, offset: usize) -> Option<usize> {
     }
 }
 
-fn emit_key_holder_be(out: &mut String, key_members: &[&Member]) -> Result<()> {
+fn emit_key_holder_be(out: &mut String, key_members: &[&Member], autoid_hash: bool) -> Result<()> {
     out.push_str(
         "    fn encode_key_holder_be(&self, holder: &mut zerodds_cdr::PlainCdr2BeKeyHolder) {\n",
     );
     // Spec: XTypes 1.3 §7.6.8.3.1.b — members sorted in member-id order.
-    // We use the positional IDs of the decl order as the default. With
-    // `@id(N)`, N is used instead.
+    // Positional IDs are the default; `@id(N)`/`@hashid`/`@autoid(HASH)` override.
     let mut ordered: Vec<(u32, &Member)> = key_members
         .iter()
         .enumerate()
-        .map(|(idx, m)| {
-            (
-                crate::annotations::member_id(&m.annotations).unwrap_or(idx as u32),
-                *m,
-            )
-        })
+        .map(|(idx, m)| (member_wire_id(autoid_hash, m, idx), *m))
         .collect();
     ordered.sort_by_key(|(id, _)| *id);
     for (_, member) in &ordered {
@@ -944,15 +1024,11 @@ fn emit_key_field_write(out: &mut String, spec: &TypeSpec, value_expr: &str) -> 
                 } else {
                     nested_keys
                 };
+                let nested_autoid = crate::annotations::struct_autoid_hash(&sd.annotations);
                 let mut ordered: Vec<(u32, &Member)> = effective
                     .iter()
                     .enumerate()
-                    .map(|(idx, m)| {
-                        (
-                            crate::annotations::member_id(&m.annotations).unwrap_or(idx as u32),
-                            *m,
-                        )
-                    })
+                    .map(|(idx, m)| (member_wire_id(nested_autoid, m, idx), *m))
                     .collect();
                 ordered.sort_by_key(|(id, _)| *id);
                 for (_, m) in &ordered {
@@ -1035,12 +1111,13 @@ fn emit_encode_body(
             // the DHEADER, so the encode side must symmetric-wrap.
             // Spec anchor: zerodds-xcdr2-bindings-conformance §6 V-10
             // (`14 00 00 00` DHEADER + member list).
+            let autoid = crate::annotations::struct_autoid_hash(&s.annotations);
             let required_ids: Vec<u32> = s
                 .members
                 .iter()
                 .enumerate()
                 .filter(|(_, m)| !crate::annotations::member_is_optional(&m.annotations))
-                .map(|(idx, m)| crate::annotations::member_id(&m.annotations).unwrap_or(idx as u32))
+                .map(|(idx, m)| member_wire_id(autoid, m, idx))
                 .collect();
             let required_list = required_ids
                 .iter()
@@ -1052,7 +1129,7 @@ fn emit_encode_body(
                 "            let mut enc = zerodds_cdr::struct_enc::MutableStructEncoder::new(w, ::std::vec![{required_list}]);\n"
             ));
             for (idx, member) in s.members.iter().enumerate() {
-                emit_mutable_member_encode(out, member, idx, "            ")?;
+                emit_mutable_member_encode(out, member, idx, autoid, "            ")?;
             }
             out.push_str("            enc.finish()?;\n");
             out.push_str("            Ok(())\n");
@@ -1472,14 +1549,28 @@ fn emit_member_bound_checks(out: &mut String, member: &Member, declarator: &Decl
 /// `long double`) — a compact code there is unsafe without resolving the
 /// member's own framing, and LC4 is always valid (just less compact).
 fn mutable_member_length_code(member: &Member, declarator: &Declarator) -> Option<&'static str> {
+    mutable_length_code_for(
+        &member.type_spec,
+        declarator,
+        crate::annotations::member_is_optional(&member.annotations),
+    )
+}
+
+/// Length-code decision for an arbitrary `(type_spec, declarator, optional)` —
+/// the `Member`-free core of [`mutable_member_length_code`], reused by the
+/// `@mutable` union encoder so a union member frames with the SAME compact
+/// EMHEADER length code as the identically-typed `@mutable` struct member.
+pub(crate) fn mutable_length_code_for(
+    type_spec: &TypeSpec,
+    declarator: &Declarator,
+    optional: bool,
+) -> Option<&'static str> {
     use zerodds_idl::ast::types::TypeSpec;
     // Only scalar (non-array), non-optional members are eligible.
-    if matches!(declarator, Declarator::Array(_))
-        || crate::annotations::member_is_optional(&member.annotations)
-    {
+    if matches!(declarator, Declarator::Array(_)) || optional {
         return None;
     }
-    match &member.type_spec {
+    match type_spec {
         TypeSpec::Primitive(p) => match crate::type_map::primitive_wire_size(*p) {
             1 => Some("Lc0"),
             2 => Some("Lc1"),
@@ -1503,9 +1594,10 @@ fn emit_mutable_member_encode(
     out: &mut String,
     member: &Member,
     fallback_id: usize,
+    autoid_hash: bool,
     indent: &str,
 ) -> Result<()> {
-    let id = crate::annotations::member_id(&member.annotations).unwrap_or(fallback_id as u32);
+    let id = member_wire_id(autoid_hash, member, fallback_id);
     let must_understand = crate::annotations::member_must_understand(&member.annotations);
     let optional = crate::annotations::member_is_optional(&member.annotations);
     for declarator in &member.declarators {
@@ -1601,12 +1693,13 @@ fn emit_decode_body(
 /// for `DdsType`, nothing for `CdrDecode`) since the two paths return
 /// different error types.
 fn emit_mutable_decode_body(out: &mut String, s: &StructDef, reader_expr: &str) -> Result<()> {
+    let autoid = crate::annotations::struct_autoid_hash(&s.annotations);
     out.push_str(&format!(
         "        zerodds_cdr::struct_enc::decode_appendable({reader_expr}, |r| {{\n"
     ));
     // Pre-init all member slots as Option<T>::None.
     for (idx, member) in s.members.iter().enumerate() {
-        let id = crate::annotations::member_id(&member.annotations).unwrap_or(idx as u32);
+        let id = member_wire_id(autoid, member, idx);
         let optional = crate::annotations::member_is_optional(&member.annotations);
         for declarator in &member.declarators {
             let name = declarator_ident(declarator);
@@ -1634,7 +1727,7 @@ fn emit_mutable_decode_body(out: &mut String, s: &StructDef, reader_expr: &str) 
     out.push_str("                        let mut body_reader = zerodds_cdr::BufferReader::new(member.body, zerodds_cdr::BufferReader::endianness(r)).xcdr2();\n");
     out.push_str("                        match member.member_id {\n");
     for (idx, member) in s.members.iter().enumerate() {
-        let id = crate::annotations::member_id(&member.annotations).unwrap_or(idx as u32);
+        let id = member_wire_id(autoid, member, idx);
         let optional = crate::annotations::member_is_optional(&member.annotations);
         for declarator in &member.declarators {
             let name = declarator_ident(declarator);
@@ -1666,27 +1759,120 @@ fn emit_mutable_decode_body(out: &mut String, s: &StructDef, reader_expr: &str) 
     out.push_str("                    ::core::option::Option::None => break,\n");
     out.push_str("                }\n");
     out.push_str("            }\n");
-    // Self-init with ok_or for mandatory members, or unwrap_or_default for optionals.
+    // Self-init: an optional member absent on the wire is `None`; a mandatory
+    // member absent on the wire takes its `@default(v)` value if it has one
+    // (A33), else fails the decode with `MissingNonOptionalMember`.
     out.push_str("            ::core::result::Result::Ok(Self {\n");
     for (idx, member) in s.members.iter().enumerate() {
-        let id = crate::annotations::member_id(&member.annotations).unwrap_or(idx as u32);
+        let id = member_wire_id(autoid, member, idx);
         let optional = crate::annotations::member_is_optional(&member.annotations);
         for declarator in &member.declarators {
             let name = declarator_ident(declarator);
-            if optional {
-                out.push_str(&format!(
-                    "                {name}: {name}.unwrap_or(::core::option::Option::None),\n"
-                ));
-            } else {
-                out.push_str(&format!(
-                    "                {name}: {name}.ok_or(zerodds_cdr::DecodeError::MissingNonOptionalMember {{ member_id: {id} }})?,\n"
-                ));
-            }
+            emit_member_slot_finalize(
+                out,
+                member,
+                declarator,
+                &name,
+                id,
+                optional,
+                "                ",
+            );
         }
     }
     out.push_str("            })\n");
     out.push_str("        })");
     Ok(())
+}
+
+/// Emits the `Ok(Self { .. })` field initializer for one decoded member slot
+/// (`Option<T>`), shared by the `@mutable` (EMHEADER) and PL_CDR1 decode paths:
+/// an optional member collapses an absent slot to `None`; a mandatory member
+/// takes its `@default(v)` when absent (finding A33), else errors
+/// `MissingNonOptionalMember`.
+fn emit_member_slot_finalize(
+    out: &mut String,
+    member: &Member,
+    declarator: &Declarator,
+    name: &str,
+    id: u32,
+    optional: bool,
+    indent: &str,
+) {
+    if optional {
+        out.push_str(&format!(
+            "{indent}{name}: {name}.unwrap_or(::core::option::Option::None),\n"
+        ));
+    } else if let Some(default) = member_default_expr(member, declarator) {
+        out.push_str(&format!(
+            "{indent}{name}: {name}.unwrap_or_else(|| {default}),\n"
+        ));
+    } else {
+        out.push_str(&format!(
+            "{indent}{name}: {name}.ok_or(zerodds_cdr::DecodeError::MissingNonOptionalMember {{ member_id: {id} }})?,\n"
+        ));
+    }
+}
+
+/// Renders a member's `@default(value)` as a Rust expression of the member's
+/// type, for the decode-side absent-member fallback (finding A33). Returns
+/// `None` when the member has no `@default`, the declarator is an array, or the
+/// default cannot be rendered for the member type — the caller then keeps the
+/// `MissingNonOptionalMember` error, so nothing ill-formed is emitted.
+fn member_default_expr(member: &Member, declarator: &Declarator) -> Option<String> {
+    use zerodds_idl::ast::types::PrimitiveType;
+    if matches!(declarator, Declarator::Array(_)) {
+        return None;
+    }
+    let expr = crate::annotations::member_default(&member.annotations)?;
+    match &member.type_spec {
+        TypeSpec::Primitive(PrimitiveType::Boolean) => {
+            crate::type_map::const_expr_as_i128(&expr).map(|v| (v != 0).to_string())
+        }
+        // A float default may be an integer literal (`@default(5)`) or a real
+        // float literal (`@default(3.14)`); render both as an `f64`-form literal
+        // (`5.0`, `3.14`) that infers to the member's `f32`/`f64` slot.
+        TypeSpec::Primitive(PrimitiveType::Floating(_)) => render_float_default(&expr),
+        TypeSpec::Primitive(_) => crate::type_map::const_expr_as_i128(&expr).map(|v| v.to_string()),
+        TypeSpec::String(st) => {
+            let raw = string_literal_rust(&expr)?;
+            if st.wide {
+                Some(format!(
+                    "zerodds_cdr::WString(::std::string::String::from({raw}))"
+                ))
+            } else {
+                Some(format!("::std::string::String::from({raw})"))
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Renders a floating `@default` (integer or float literal, or a folded integer
+/// const) as an always-decimal-pointed Rust float literal.
+fn render_float_default(expr: &ConstExpr) -> Option<String> {
+    if let ConstExpr::Literal(lit) = expr {
+        if matches!(lit.kind, LiteralKind::Floating | LiteralKind::Integer) {
+            let trimmed = lit.raw.trim_end_matches(['f', 'F', 'd', 'D', 'l', 'L']);
+            let f: f64 = trimmed.parse().ok()?;
+            return f.is_finite().then(|| format!("{f:?}"));
+        }
+    }
+    crate::type_map::const_expr_as_i128(expr).map(|v| format!("{:?}", v as f64))
+}
+
+/// Extracts the Rust `&str` literal (including quotes) from a `@default`
+/// string-literal const expression, stripping any wide `L"…"` prefix.
+fn string_literal_rust(expr: &ConstExpr) -> Option<String> {
+    if let ConstExpr::Literal(lit) = expr {
+        if matches!(lit.kind, LiteralKind::String | LiteralKind::WideString) {
+            let s = lit.raw.trim();
+            let s = s.strip_prefix('L').unwrap_or(s);
+            if s.starts_with('"') && s.ends_with('"') && s.len() >= 2 {
+                return Some(s.to_string());
+            }
+        }
+    }
+    None
 }
 
 /// Emits the PL_CDR1 (`@mutable` XCDR1 / classic CDR) decode body — a
@@ -1696,9 +1882,10 @@ fn emit_mutable_decode_body(out: &mut String, s: &StructDef, reader_expr: &str) 
 /// (max_align 8, i.e. NOT `.xcdr2()`). Unknown member IDs are skipped
 /// (PL_CDR1 forward-compat). `reader` (the fn param) is the source.
 fn emit_pl_cdr1_decode_body(out: &mut String, s: &StructDef, indent: &str) -> Result<()> {
+    let autoid = crate::annotations::struct_autoid_hash(&s.annotations);
     // Pre-init member slots.
     for (idx, member) in s.members.iter().enumerate() {
-        let id = crate::annotations::member_id(&member.annotations).unwrap_or(idx as u32);
+        let id = member_wire_id(autoid, member, idx);
         let optional = crate::annotations::member_is_optional(&member.annotations);
         for declarator in &member.declarators {
             let name = declarator_ident(declarator);
@@ -1728,7 +1915,7 @@ fn emit_pl_cdr1_decode_body(out: &mut String, s: &StructDef, indent: &str) -> Re
     ));
     out.push_str(&format!("{indent}            match member.member_id {{\n"));
     for (idx, member) in s.members.iter().enumerate() {
-        let id = crate::annotations::member_id(&member.annotations).unwrap_or(idx as u32);
+        let id = member_wire_id(autoid, member, idx);
         let optional = crate::annotations::member_is_optional(&member.annotations);
         for declarator in &member.declarators {
             let name = declarator_ident(declarator);
@@ -1758,20 +1945,13 @@ fn emit_pl_cdr1_decode_body(out: &mut String, s: &StructDef, indent: &str) -> Re
     out.push_str(&format!("{indent}    }}\n"));
     out.push_str(&format!("{indent}}}\n"));
     out.push_str(&format!("{indent}::core::result::Result::Ok(Self {{\n"));
+    let field_indent = format!("{indent}    ");
     for (idx, member) in s.members.iter().enumerate() {
-        let id = crate::annotations::member_id(&member.annotations).unwrap_or(idx as u32);
+        let id = member_wire_id(autoid, member, idx);
         let optional = crate::annotations::member_is_optional(&member.annotations);
         for declarator in &member.declarators {
             let name = declarator_ident(declarator);
-            if optional {
-                out.push_str(&format!(
-                    "{indent}    {name}: {name}.unwrap_or(::core::option::Option::None),\n"
-                ));
-            } else {
-                out.push_str(&format!(
-                    "{indent}    {name}: {name}.ok_or(zerodds_cdr::DecodeError::MissingNonOptionalMember {{ member_id: {id} }})?,\n"
-                ));
-            }
+            emit_member_slot_finalize(out, member, declarator, &name, id, optional, &field_indent);
         }
     }
     out.push_str(&format!("{indent}}})\n"));

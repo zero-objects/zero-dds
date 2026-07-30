@@ -7,7 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
-use zerodds_idl::preprocessor::{Include, ResolveError, Resolver};
+use zerodds_idl::preprocessor::{Include, ResolveError, Resolved, Resolver};
 
 /// Resolves `#include` directives against the filesystem: quoted includes
 /// (`#include "x.idl"`) are tried relative to the requesting file first,
@@ -28,7 +28,7 @@ impl FsResolver {
 }
 
 impl Resolver for FsResolver {
-    fn resolve(&self, requesting_file: &str, include: &Include) -> Result<String, ResolveError> {
+    fn resolve(&self, requesting_file: &str, include: &Include) -> Result<Resolved, ResolveError> {
         let name = include.path();
         let mut candidates: Vec<PathBuf> = Vec::new();
         // Quoted includes: relative to the including file first.
@@ -41,8 +41,23 @@ impl Resolver for FsResolver {
             candidates.push(dir.join(name));
         }
         for cand in &candidates {
-            if let Ok(text) = std::fs::read_to_string(cand) {
-                return Ok(text);
+            if let Ok(mut text) = std::fs::read_to_string(cand) {
+                // Strip a leading UTF-8 BOM (U+FEFF) from `#include`d files too.
+                if text.starts_with('\u{feff}') {
+                    text.remove(0);
+                }
+                // Report the actual on-disk location, canonicalized where
+                // possible, so nested relative includes resolve against the
+                // real directory and the dependency list points at the file
+                // that was read — not the raw `#include` spelling.
+                let path = std::fs::canonicalize(cand)
+                    .unwrap_or_else(|_| cand.clone())
+                    .to_string_lossy()
+                    .into_owned();
+                return Ok(Resolved {
+                    path,
+                    content: text,
+                });
             }
         }
         Err(ResolveError {

@@ -130,10 +130,12 @@ fn wire_simple_struct_primitives_roundtrip() {
             assert_eq!(decoded.x, original.x);
             assert_eq!(decoded.y, original.y);
 
-            // Wire-Form: 2 × i32 LE = 8 byte
-            assert_eq!(buf.len(), 8);
-            assert_eq!(&buf[..4], &42i32.to_le_bytes());
-            assert_eq!(&buf[4..], &(-7i32).to_le_bytes());
+            // Wire-Form: unannotiertes struct = APPENDABLE (XTypes 1.3 §7.3.3.1 default,
+            // seit SX2-Flip 2a571721) → XCDR2 DHEADER(4) + Body(8) = 12 byte.
+            assert_eq!(buf.len(), 12);
+            assert_eq!(&buf[0..4], &8u32.to_le_bytes()); // DHEADER = Body-Länge
+            assert_eq!(&buf[4..8], &42i32.to_le_bytes());
+            assert_eq!(&buf[8..12], &(-7i32).to_le_bytes());
         "#,
     );
 }
@@ -256,6 +258,64 @@ fn wire_appendable_dheader_present() {
             let back = Telemetry::decode(&buf).expect("decode");
             assert_eq!(back.ts, 100);
             assert_eq!(back.v, 1.5);
+        "#,
+    );
+}
+
+/// P0.4: a `@mutable` union MUST serialize as PL_CDR2 (outer DHEADER + a
+/// per-member EMHEADER for the discriminator AND the selected branch), exactly
+/// like a `@mutable` struct — NOT as an inline FINAL union (disc + member, no
+/// framing), which is what the emitter previously produced (silent wire break).
+#[test]
+#[ignore = "requires cargo offline + path-deps"]
+fn wire_mutable_union_pl_cdr2_framing_and_roundtrip() {
+    run_wire_test(
+        "mutable_union",
+        r#"@mutable union Msg switch (long) {
+            case 1: long counter;
+            case 2: string text;
+        };"#,
+        r#"
+            use zerodds_cdr::{BufferReader, BufferWriter, CdrDecode, CdrEncode, Endianness};
+
+            // XCDR2 (DDS) writer: max_alignment == 4 -> PL_CDR2 path.
+            let mut w = BufferWriter::new(Endianness::Little).xcdr2();
+            Msg::Counter(0x11223344).encode(&mut w).expect("encode");
+            let buf = w.into_bytes();
+
+            // Must NOT be the inline FINAL form (disc 4B + value 4B = 8 bytes).
+            assert_ne!(buf.len(), 8, "regression: @mutable union encoded as inline Final");
+            // PL_CDR2 layout: DHEADER(4) + [EMHEADER(4)+disc(4)] + [EMHEADER(4)+value(4)] = 20.
+            assert_eq!(buf.len(), 20, "expected DHEADER + 2 EMHEADER-framed members, got {}", buf.len());
+
+            let rd = |o: usize| u32::from_le_bytes([buf[o], buf[o + 1], buf[o + 2], buf[o + 3]]);
+            // Outer DHEADER = length of the framed member list (16 bytes).
+            assert_eq!(rd(0), 16, "outer DHEADER = body length");
+            // First member: EMHEADER with member id 0 == the discriminator.
+            assert_eq!(rd(4) & 0x0FFF_FFFF, 0, "member id 0 = discriminator EMHEADER");
+            assert_eq!(rd(8) as i32, 1, "discriminator value = case label 1");
+            // Second member: EMHEADER with member id 1 == the selected branch.
+            assert_eq!(rd(12) & 0x0FFF_FFFF, 1, "member id 1 = branch EMHEADER");
+            assert_eq!(rd(16), 0x11223344, "branch value");
+
+            // Roundtrip on the XCDR2 wire recovers the active branch.
+            let mut r = BufferReader::new(&buf, Endianness::Little).xcdr2();
+            assert_eq!(Msg::decode(&mut r).expect("decode"), Msg::Counter(0x11223344));
+
+            // Variable-length branch (string) roundtrips through the same framing.
+            let mut w2 = BufferWriter::new(Endianness::Little).xcdr2();
+            Msg::Text("hello".to_string()).encode(&mut w2).expect("encode2");
+            let buf2 = w2.into_bytes();
+            let mut r2 = BufferReader::new(&buf2, Endianness::Little).xcdr2();
+            assert_eq!(Msg::decode(&mut r2).expect("decode2"), Msg::Text("hello".to_string()));
+
+            // Classic CDR (max_alignment 8, no .xcdr2()): PL_CDR1 PID list + sentinel,
+            // symmetric to a @mutable struct — must also roundtrip.
+            let mut wc = BufferWriter::new(Endianness::Big);
+            Msg::Counter(7).encode(&mut wc).expect("encode-classic");
+            let bc = wc.into_bytes();
+            let mut rc = BufferReader::new(&bc, Endianness::Big);
+            assert_eq!(Msg::decode(&mut rc).expect("decode-classic"), Msg::Counter(7));
         "#,
     );
 }

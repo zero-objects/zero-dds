@@ -13,16 +13,287 @@ use std::fmt::Write as _;
 use std::collections::{HashMap, HashSet};
 
 use zerodds_idl::ast::types::{
-    CaseLabel, ConstExpr, ConstrTypeDecl, Declarator, Definition, EnumDef, FloatingType,
-    IntegerType, Literal, LiteralKind, Member, PrimitiveType, SequenceType, Specification,
+    Annotation, BinaryOp, BitmaskDecl, BitsetDecl, CaseLabel, ConstDecl, ConstExpr, ConstrTypeDecl,
+    Declarator, Definition, EnumDef, Export, FixedPtType, FloatingType, IntegerType, InterfaceDcl,
+    Literal, LiteralKind, Member, PrimitiveType, ScopedName, SequenceType, Specification,
     StructDcl, StructDef, SwitchTypeSpec, TypeDecl, TypeSpec, UnaryOp, UnionDcl, UnionDef,
 };
 use zerodds_idl::semantics::annotations::{
-    BuiltinAnnotation, ExtensibilityKind, lower_annotations, lower_single,
+    BuiltinAnnotation, ExtensibilityKind, PlacementKind, enum_bit_bound, enum_wire_octets,
+    lower_annotations, lower_single,
 };
 
 use crate::error::{IdlElixirError, Result};
 use crate::keywords::escape_elixir_ident;
+
+thread_local! {
+    /// Fully-qualified IDL scope path of every named type declaration
+    /// (e.g. `["a", "Reading"]`), populated by [`register_type_paths`] at the
+    /// start of each run. A reference site resolves a (possibly partially
+    /// qualified) `ScopedName` against the enclosing module scope by walking
+    /// outward and matching one of these paths (§7.5.2), then flattens the
+    /// match the SAME way [`qualify`] flattens the definition (#21).
+    static TYPE_PATHS: std::cell::RefCell<Vec<Vec<String>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+
+    /// Module scope of the aggregate currently being emitted. Set at the top of
+    /// [`emit_struct`]/[`emit_union`]; empty at global scope.
+    static CURRENT_SCOPE: std::cell::RefCell<Vec<String>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+
+    /// Flattened logical names of every `bitset`/`bitmask` declaration. A
+    /// reference to one of these maps to an Elixir holder module whose wire form
+    /// is a single backing integer (`marshal_into`/`read`) — no collection
+    /// DHEADER, so it is treated as fully-descriptive (primitive) by the
+    /// sequence/map framing rules (XTypes 1.3 §7.4.7).
+    static BIT_NAMES: std::cell::RefCell<HashSet<String>> =
+        std::cell::RefCell::new(HashSet::new());
+
+    /// Set whenever a `fixed<P,S>` member is emitted, so the BCD prelude module
+    /// is appended exactly once (and only when needed).
+    static USED_FIXED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+
+    /// Flattened qualified enum name → signed wire holder width in OCTETS
+    /// (1/2/4), from `@bit_bound` (XTypes 1.3 §7.3.1.2.1.9 + §7.4.5.1) via the
+    /// shared [`enum_wire_octets`]. Populated once per run; read at the single
+    /// enum encode/decode site so a `@bit_bound(8)`/`@bit_bound(16)` enum
+    /// narrows to 1/2 bytes instead of the former fixed 4.
+    static ENUM_WIDTHS: std::cell::RefCell<HashMap<String, u32>> =
+        std::cell::RefCell::new(HashMap::new());
+}
+
+/// Signed wire holder width in octets (1/2/4) an enum named `name` serializes
+/// at, per its `@bit_bound`. Defaults to 4 for an unregistered name / no
+/// `@bit_bound` (XTypes 1.3 §7.4.5.1 default bound 32).
+fn enum_wire_width(name: &str) -> u32 {
+    ENUM_WIDTHS
+        .with(|m| m.borrow().get(name).copied())
+        .unwrap_or(4)
+}
+
+/// Elixir codegen language aliases matched by `@verbatim(language="...")`
+/// (case-insensitive; the spec wildcard `"*"` always matches — see
+/// [`verbatims_for_language`](zerodds_idl::semantics::annotations::Lowered::verbatims_for_language)).
+const ELIXIR_LANG_ALIASES: &[&str] = &["elixir", "ex", "exs"];
+
+/// BCD codec module for `fixed<P,S>`, appended once when any `fixed` member is
+/// emitted. `enc/3` builds the packed-BCD octet sequence (CORBA/GIOP §9.3.2.7 ≡
+/// XCDR2 §7.4.4.5) from a decimal string: an optional leading pad nibble (so the
+/// nibble count is even), `P` digit nibbles most-significant first, then the
+/// sign nibble (`0xC` positive, `0xD` negative). Byte count `(P+2)/2`, no length
+/// prefix. `__PKG__` is replaced with the package module name.
+const FIXED_MODULE: &str = r#"
+defmodule __PKG__.Fixed do
+  @moduledoc false
+  # Packed-BCD encoder for `fixed<P,S>`: returns the raw `(P+2)/2` octets that
+  # the generated struct stores and writes verbatim (no length prefix).
+  def enc(s, p, sc) do
+    {sign, rest} =
+      case s do
+        <<"-", r::binary>> -> {false, r}
+        <<"+", r::binary>> -> {true, r}
+        _ -> {true, s}
+      end
+
+    {ip, fp} =
+      case :binary.split(rest, ".") do
+        [i, f] -> {i, f}
+        [i] -> {i, ""}
+      end
+
+    ip = String.pad_leading(ip, p - sc, "0")
+    fp = String.pad_trailing(fp, sc, "0")
+    digits = ip <> fp
+
+    pad = if rem(p + 1, 2) == 1, do: [0], else: []
+    nibs = pad ++ (for <<c <- digits>>, do: c - ?0) ++ [if(sign, do: 0x0C, else: 0x0D)]
+
+    nibs
+    |> Enum.chunk_every(2)
+    |> Enum.map(fn [hi, lo] -> <<hi::4, lo::4>> end)
+    |> IO.iodata_to_binary()
+  end
+end
+"#;
+
+/// Emits every `@verbatim` block from `anns` whose language matches the Elixir
+/// codegen and whose `placement` equals `placement`, each line prefixed with
+/// `indent`. Source order preserved; text spliced unmodified (no wire impact —
+/// XTypes 1.3 §7.2.2.4.8 / IDL 4.2 §8.3.5.1). Mirrors `idl-d`'s
+/// `emit_verbatim_at`.
+fn emit_verbatim_at(out: &mut String, indent: &str, anns: &[Annotation], placement: PlacementKind) {
+    let Ok(lowered) = lower_annotations(anns) else {
+        return;
+    };
+    for v in lowered.verbatims_for_language(ELIXIR_LANG_ALIASES) {
+        if v.placement != placement {
+            continue;
+        }
+        for line in v.text.lines() {
+            out.push_str(indent);
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+}
+
+/// Top-level annotations of a definition, for file-scope (`BEGIN_FILE` /
+/// `END_FILE`) and per-declaration `@verbatim` placement. Mirrors `idl-d`'s
+/// `def_annotations`.
+fn def_annotations(d: &Definition) -> &[Annotation] {
+    match d {
+        Definition::Module(m) => &m.annotations,
+        Definition::Type(TypeDecl::Constr(c)) => match c {
+            ConstrTypeDecl::Struct(StructDcl::Def(s)) => &s.annotations,
+            ConstrTypeDecl::Union(UnionDcl::Def(u)) => &u.annotations,
+            ConstrTypeDecl::Enum(e) => &e.annotations,
+            ConstrTypeDecl::Bitset(b) => &b.annotations,
+            ConstrTypeDecl::Bitmask(b) => &b.annotations,
+            _ => &[],
+        },
+        Definition::Type(TypeDecl::Typedef(t)) => &t.annotations,
+        Definition::Const(c) => &c.annotations,
+        Definition::Except(e) => &e.annotations,
+        _ => &[],
+    }
+}
+
+/// Upper-cases the first character (Elixir module alias segments must start with
+/// an uppercase letter — an IDL `module a` scope part is lowercase).
+fn capitalize_first(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(f) => f.to_uppercase().collect::<String>() + chars.as_str(),
+        None => String::new(),
+    }
+}
+
+/// Collision-free flattened alias segment for a declaration `simple` in module
+/// `scope`. Elixir module segments must be uppercase-initial, so the flattened
+/// `scope_simple` name is capitalized (a plain lowercase `a_Reading` would be an
+/// invalid alias). The bare `simple` is kept at global scope (already
+/// CamelCase by IDL convention), preserving every existing top-level golden.
+/// Two same-simple-name types in different modules become distinct modules
+/// `<Pkg>.A_Reading`/`<Pkg>.B_Reading` (#21).
+fn qualify(scope: &[String], simple: &str) -> String {
+    if scope.is_empty() {
+        // Capitalize even a global-scope name: an Elixir module alias segment
+        // must start uppercase, so a lowercase or reserved-word-derived IDL type
+        // name (`struct end`, `const max`) would otherwise flatten to an invalid
+        // `Zdgen.end`/`Zdgen.max`. Idempotent on the CamelCase names IDL uses by
+        // convention, so every existing top-level golden is unchanged.
+        capitalize_first(simple)
+    } else {
+        let mut parts = scope.to_vec();
+        parts.push(simple.to_string());
+        capitalize_first(&flatten_path(&parts))
+    }
+}
+
+/// Injectively flattens a module-qualified path (`["a", "b", "C"]`) into a
+/// single flattened alias segment. Each segment's own underscores are doubled
+/// and the segments joined by a single underscore, so `module A_B { struct C }`
+/// (`["A_B","C"]` → `A__B_C`) never collides with `module A { module B {
+/// struct C }}` (`["A","B","C"]` → `A_B_C`) — the previous `join("_")` mapped
+/// both to `A_B_C` (#A35, non-injective flatten). A single (global-scope)
+/// segment is returned verbatim so every existing top-level golden is
+/// unchanged, and any segment without underscores (the common case) passes
+/// through untouched. Mirrors `idl-go`'s `flatten_path`.
+fn flatten_path(parts: &[String]) -> String {
+    if parts.len() <= 1 {
+        return parts.first().cloned().unwrap_or_default();
+    }
+    parts
+        .iter()
+        .map(|p| p.replace('_', "__"))
+        .collect::<Vec<_>>()
+        .join("_")
+}
+
+/// Records the fully-qualified path of every named type declaration before
+/// emission, so reference resolution can flatten a name the same way the
+/// definition site does.
+/// zerodds-lint: recursion-depth 16 (module nesting; bounded by the IDL grammar).
+fn register_type_paths(defs: &[Definition], scope: &mut Vec<String>) {
+    for def in defs {
+        match def {
+            Definition::Module(m) => {
+                scope.push(m.name.text.clone());
+                register_type_paths(&m.definitions, scope);
+                scope.pop();
+            }
+            Definition::Type(td) => register_type_decl_path(td, scope),
+            // Interface-nested types are promoted to the top level under the
+            // interface's own scope segment (#A39), so their reference paths
+            // must be registered the same way.
+            Definition::Interface(InterfaceDcl::Def(iface)) => {
+                scope.push(iface.name.text.clone());
+                for ex in &iface.exports {
+                    if let Export::Type(td) = ex {
+                        register_type_decl_path(td, scope);
+                    }
+                }
+                scope.pop();
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Registers the fully-qualified path of a single `TypeDecl` (module-level or
+/// interface-nested).
+fn register_type_decl_path(td: &TypeDecl, scope: &[String]) {
+    match td {
+        TypeDecl::Constr(ConstrTypeDecl::Struct(StructDcl::Def(s))) => {
+            push_type_path(scope, &s.name.text);
+        }
+        TypeDecl::Constr(ConstrTypeDecl::Enum(e)) => {
+            push_type_path(scope, &e.name.text);
+        }
+        TypeDecl::Constr(ConstrTypeDecl::Union(UnionDcl::Def(u))) => {
+            push_type_path(scope, &u.name.text);
+        }
+        TypeDecl::Constr(ConstrTypeDecl::Bitset(b)) => {
+            push_type_path(scope, &b.name.text);
+        }
+        TypeDecl::Constr(ConstrTypeDecl::Bitmask(b)) => {
+            push_type_path(scope, &b.name.text);
+        }
+        TypeDecl::Typedef(td) => {
+            for d in &td.declarators {
+                push_type_path(scope, &d.name().text);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn push_type_path(scope: &[String], simple: &str) {
+    let mut path = scope.to_vec();
+    path.push(simple.to_string());
+    TYPE_PATHS.with(|t| t.borrow_mut().push(path));
+}
+
+/// Resolves a referenced `ScopedName` against [`CURRENT_SCOPE`], returning the
+/// flattened alias segment (same shape as [`qualify`]) of the matching
+/// declaration. Mirrors IDL name lookup (§7.5.2): for each prefix of the
+/// enclosing scope (longest first), then the global scope, check whether
+/// `prefix + parts` is a known type path. Falls back to the literal flattening.
+fn resolve_scoped_name(sn: &ScopedName) -> String {
+    let parts: Vec<String> = sn.parts.iter().map(|p| p.text.clone()).collect();
+    let scope = CURRENT_SCOPE.with(|s| s.borrow().clone());
+    let known: Vec<Vec<String>> = TYPE_PATHS.with(|t| t.borrow().clone());
+    for cut in (0..=scope.len()).rev() {
+        let mut cand = scope[..cut].to_vec();
+        cand.extend(parts.iter().cloned());
+        if known.contains(&cand) {
+            // Match the definition-site flattening (`qualify`), which
+            // capitalizes at every scope depth (including global).
+            return capitalize_first(&flatten_path(&cand));
+        }
+    }
+    capitalize_first(&flatten_path(&parts))
+}
 
 /// Options for the Elixir backend.
 #[derive(Debug, Clone)]
@@ -180,8 +451,8 @@ end
 ///
 /// # Errors
 /// Returns [`IdlElixirError::Unsupported`] for constructs the Elixir backend
-/// does not yet emit (unions, nested-struct members, maps, `long double`,
-/// `@mutable`, …).
+/// does not yet emit (e.g. `@mutable` unions and non-literal array/sequence
+/// bounds).
 pub fn generate_elixir_module(spec: &Specification, opts: &ElixirGenOptions) -> Result<String> {
     let pkg = &opts.module_name;
     let mut out = String::new();
@@ -192,43 +463,89 @@ pub fn generate_elixir_module(spec: &Specification, opts: &ElixirGenOptions) -> 
     let _ = writeln!(out, "# SPDX-License-Identifier: Apache-2.0\n");
     out.push_str(&WIRE_MODULE.replace("__PKG__", pkg));
 
-    // `module X { ... }` content is promoted into the same flat, top-level
-    // definition list (see `flatten_module_defs`) so it is no longer
-    // silently dropped (swarm59 #21b).
+    // Register every named type's fully-qualified path so reference sites can
+    // resolve a `ScopedName` against its enclosing scope (#21 cross-module).
+    TYPE_PATHS.with(|t| t.borrow_mut().clear());
+    register_type_paths(&spec.definitions, &mut Vec::new());
+    USED_FIXED.with(|f| f.set(false));
+
+    // §7.2.2.4.8 — `@verbatim(placement=BEGIN_FILE)` from all top-level defs
+    // (source order), emitted after the wire module, before any type.
+    for def in &spec.definitions {
+        emit_verbatim_at(&mut out, "", def_annotations(def), PlacementKind::BeginFile);
+    }
+
+    // `module X { ... }` content is promoted to the top level, each definition
+    // paired with its module scope path (see `flatten_module_defs`).
     let flat = flatten_module_defs(&spec.definitions);
+    // Every `TypeDecl` to emit — module-level AND interface-nested (#A39). The
+    // name/def registries below are built from this combined list so a reference
+    // to an interface-nested type resolves like any other.
+    let type_decls = all_type_decls(spec);
 
-    // Named enums: an enum member is a 32-bit signed integer on the wire
-    // (XTypes 1.3 §7.4.5.1), byte-identical to the int32/uint32 path.
-    let enum_names: HashSet<String> = flat
+    // `bitset`/`bitmask` logical (flattened) names, published to `BIT_NAMES` so a
+    // reference site resolves them to the integer-backed holder (no collection
+    // DHEADER).
+    let bit_names: HashSet<String> = type_decls
         .iter()
-        .filter_map(|d| match d {
-            Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Enum(e))) => {
-                Some(e.name.text.clone())
+        .filter_map(|(scope, td)| match td {
+            TypeDecl::Constr(ConstrTypeDecl::Bitset(b)) => Some(qualify(scope, &b.name.text)),
+            TypeDecl::Constr(ConstrTypeDecl::Bitmask(b)) => Some(qualify(scope, &b.name.text)),
+            _ => None,
+        })
+        .collect();
+    BIT_NAMES.with(|b| *b.borrow_mut() = bit_names);
+
+    // Named enums/structs keyed by their flattened module-qualified alias. An
+    // enum member is a 32-bit signed integer on the wire (XTypes 1.3 §7.4.5.1).
+    let enum_names: HashSet<String> = type_decls
+        .iter()
+        .filter_map(|(scope, td)| match td {
+            TypeDecl::Constr(ConstrTypeDecl::Enum(e)) => Some(qualify(scope, &e.name.text)),
+            _ => None,
+        })
+        .collect();
+
+    // Qualified-name -> EnumDef, so a union switching on an enum can resolve a
+    // `case ENUMERATOR:` label to its integer discriminant (#A11/P4).
+    let enum_defs: HashMap<String, &EnumDef> = type_decls
+        .iter()
+        .filter_map(|(scope, td)| match td {
+            TypeDecl::Constr(ConstrTypeDecl::Enum(e)) => Some((qualify(scope, &e.name.text), e)),
+            _ => None,
+        })
+        .collect();
+    // Register each enum's @bit_bound-derived wire width (1/2/4 octets), P1.
+    ENUM_WIDTHS.with(|m| {
+        let mut m = m.borrow_mut();
+        m.clear();
+        for (name, e) in &enum_defs {
+            m.insert(
+                name.clone(),
+                u32::from(enum_wire_octets(enum_bit_bound(&e.annotations))),
+            );
+        }
+    });
+
+    let struct_names: HashSet<String> = type_decls
+        .iter()
+        .filter_map(|(scope, td)| match td {
+            TypeDecl::Constr(ConstrTypeDecl::Struct(StructDcl::Def(s))) => {
+                Some(qualify(scope, &s.name.text))
             }
             _ => None,
         })
         .collect();
 
-    let struct_names: HashSet<String> = flat
+    // Qualified-name -> StructDef, so a nested-struct `@key` member's own
+    // `@key` subset (and `keyhash::uses_md5`'s static max-size analysis) can be
+    // resolved — mirrors `struct_names` above, keeping the full def. Also used
+    // to splice a base struct's members into a derived one (#A10).
+    let structs: HashMap<String, &StructDef> = type_decls
         .iter()
-        .filter_map(|d| match d {
-            Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Struct(StructDcl::Def(s)))) => {
-                Some(s.name.text.clone())
-            }
-            _ => None,
-        })
-        .collect();
-
-    // Name -> StructDef, so a nested-struct `@key` member's own `@key` subset
-    // (and `keyhash::uses_md5`'s static max-size analysis) can be resolved —
-    // mirrors `struct_names` above, just keeping the full def instead of only
-    // the name.
-    let structs: HashMap<String, &StructDef> = spec
-        .definitions
-        .iter()
-        .filter_map(|d| match d {
-            Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Struct(StructDcl::Def(s)))) => {
-                Some((s.name.text.clone(), s))
+        .filter_map(|(scope, td)| match td {
+            TypeDecl::Constr(ConstrTypeDecl::Struct(StructDcl::Def(s))) => {
+                Some((qualify(scope, &s.name.text), s))
             }
             _ => None,
         })
@@ -236,29 +553,239 @@ pub fn generate_elixir_module(spec: &Specification, opts: &ElixirGenOptions) -> 
 
     let typedefs = collect_typedefs(spec);
 
-    for def in &flat {
+    for (scope, def) in &flat {
+        let anns = def_annotations(def);
+        // §7.2.2.4.8 — text directly before the annotated declaration.
+        emit_verbatim_at(&mut out, "", anns, PlacementKind::BeforeDeclaration);
         match def {
-            Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Enum(e))) => {
-                emit_enum(&mut out, e, pkg);
-            }
-            Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Struct(StructDcl::Def(s)))) => {
-                emit_struct(
+            Definition::Type(td) => {
+                emit_type_decl(
                     &mut out,
-                    s,
+                    td,
                     pkg,
+                    scope,
                     &enum_names,
                     &struct_names,
                     &structs,
                     &typedefs,
+                    &enum_defs,
                 )?;
             }
-            Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Union(UnionDcl::Def(u)))) => {
-                emit_union(&mut out, u, pkg, &enum_names, &struct_names, &typedefs)?;
-            }
+            // #A5/P1: an IDL `const` used to vanish through the catch-all arm.
+            Definition::Const(c) => emit_const(&mut out, c, pkg, scope),
             _ => {}
         }
+        // §7.2.2.4.8 — text directly after the annotated declaration.
+        emit_verbatim_at(&mut out, "", anns, PlacementKind::AfterDeclaration);
+    }
+
+    // Interface-nested types (#A39/P8), emitted after the module-level defs
+    // under the interface's own scope segment.
+    for (scope, td) in &flatten_iface_types(&spec.definitions) {
+        emit_type_decl(
+            &mut out,
+            td,
+            pkg,
+            scope,
+            &enum_names,
+            &struct_names,
+            &structs,
+            &typedefs,
+            &enum_defs,
+        )?;
+    }
+
+    // §7.2.2.4.8 — `@verbatim(placement=END_FILE)` from all top-level defs.
+    for def in &spec.definitions {
+        emit_verbatim_at(&mut out, "", def_annotations(def), PlacementKind::EndFile);
+    }
+
+    // The BCD codec module is appended once if any `fixed<P,S>` was emitted.
+    if USED_FIXED.with(std::cell::Cell::get) {
+        out.push_str(&FIXED_MODULE.replace("__PKG__", pkg));
     }
     Ok(out)
+}
+
+/// Emits a single `TypeDecl` (module-level or interface-nested). Shared by the
+/// module-def loop and the interface-nested-types loop (#A39) so both paths
+/// produce identical output for the same declaration.
+#[allow(clippy::too_many_arguments)]
+fn emit_type_decl(
+    out: &mut String,
+    td: &TypeDecl,
+    pkg: &str,
+    scope: &[String],
+    enum_names: &HashSet<String>,
+    struct_names: &HashSet<String>,
+    structs: &HashMap<String, &StructDef>,
+    typedefs: &HashMap<String, TypeSpec>,
+    enum_defs: &HashMap<String, &EnumDef>,
+) -> Result<()> {
+    match td {
+        TypeDecl::Constr(ConstrTypeDecl::Enum(e)) => emit_enum(out, e, pkg, scope),
+        TypeDecl::Constr(ConstrTypeDecl::Struct(StructDcl::Def(s))) => {
+            emit_struct(
+                out,
+                s,
+                pkg,
+                scope,
+                enum_names,
+                struct_names,
+                structs,
+                typedefs,
+            )?;
+        }
+        TypeDecl::Constr(ConstrTypeDecl::Union(UnionDcl::Def(u))) => {
+            emit_union(
+                out,
+                u,
+                pkg,
+                scope,
+                enum_names,
+                struct_names,
+                typedefs,
+                enum_defs,
+            )?;
+        }
+        TypeDecl::Constr(ConstrTypeDecl::Bitset(b)) => emit_bitset(out, b, pkg, scope)?,
+        TypeDecl::Constr(ConstrTypeDecl::Bitmask(b)) => emit_bitmask(out, b, pkg, scope),
+        _ => {}
+    }
+    Ok(())
+}
+
+/// Emits an IDL `const` as a zero-arg accessor in its own Elixir module (#A5/P1)
+/// — `const long MAX = 10;` → `defmodule <Pkg>.MAX do def value, do: 10 end`.
+/// A `const` used to vanish through the top-level catch-all arm. The module name
+/// is the flattened, module-qualified alias (so two consts of the same simple
+/// name in different modules do not collide, and a top-level const keeps its
+/// bare name). Values Elixir cannot render as a literal (an enum-typed or
+/// const-alias scoped reference) are skipped rather than emitting ill-formed
+/// source.
+fn emit_const(out: &mut String, c: &ConstDecl, pkg: &str, scope: &[String]) {
+    let Some(val) = const_expr_to_elixir(&c.value) else {
+        return;
+    };
+    let ty = escape_elixir_ident(&qualify(scope, &c.name.text));
+    let _ = writeln!(out, "\ndefmodule {pkg}.{ty} do");
+    let _ = writeln!(out, "  @moduledoc false");
+    let _ = writeln!(out, "  def value, do: {val}");
+    let _ = writeln!(out, "end");
+}
+
+/// Renders a `ConstExpr` as an Elixir literal expression, or `None` for a form
+/// Elixir cannot express as a constant (an enum-valued / const-alias scoped
+/// reference — a bare last segment would be an undefined variable).
+/// zerodds-lint: recursion-depth 32 (const expression tree; bounded by the IDL
+/// grammar's expression nesting).
+fn const_expr_to_elixir(e: &ConstExpr) -> Option<String> {
+    match e {
+        ConstExpr::Literal(l) => const_literal_to_elixir(l),
+        ConstExpr::Scoped(_) => None,
+        ConstExpr::Unary { op, operand, .. } => {
+            let v = const_expr_to_elixir(operand)?;
+            let o = match op {
+                UnaryOp::Plus => "+",
+                UnaryOp::Minus => "-",
+                // Elixir bitwise-NOT is the `Bitwise.bnot/1` function.
+                UnaryOp::BitNot => return Some(format!("Bitwise.bnot({v})")),
+            };
+            Some(format!("{o}{v}"))
+        }
+        ConstExpr::Binary { op, lhs, rhs, .. } => {
+            let l = const_expr_to_elixir(lhs)?;
+            let r = const_expr_to_elixir(rhs)?;
+            // Elixir spells the bitwise operators as `Bitwise` functions.
+            let fun = match op {
+                BinaryOp::Or => Some("bor"),
+                BinaryOp::Xor => Some("bxor"),
+                BinaryOp::And => Some("band"),
+                BinaryOp::Shl => Some("bsl"),
+                BinaryOp::Shr => Some("bsr"),
+                _ => None,
+            };
+            if let Some(f) = fun {
+                return Some(format!("Bitwise.{f}({l}, {r})"));
+            }
+            let o = match op {
+                BinaryOp::Add => "+",
+                BinaryOp::Sub => "-",
+                BinaryOp::Mul => "*",
+                // Integer division in IDL const context; Elixir `div/2` keeps it
+                // integer, `/` would float. Use `div` for the common integer
+                // case — a float const uses `+`/`-`/`*` only in practice.
+                BinaryOp::Div => return Some(format!("div({l}, {r})")),
+                BinaryOp::Mod => return Some(format!("rem({l}, {r})")),
+                _ => "+",
+            };
+            Some(format!("({l} {o} {r})"))
+        }
+    }
+}
+
+/// Renders a single literal as valid Elixir source.
+fn const_literal_to_elixir(l: &Literal) -> Option<String> {
+    let raw = l.raw.trim();
+    Some(match l.kind {
+        // Elixir accepts decimal / `0x` integer literals; `0o`/`0b` too.
+        LiteralKind::Integer => raw.to_string(),
+        // Strip a trailing IDL float suffix (`d`/`f`/`l`) Elixir rejects, and
+        // normalize a bare `.5`/`5.` to a form Elixir's float parser accepts.
+        LiteralKind::Floating => normalize_elixir_float(raw),
+        // A `fixed` decimal has no native Elixir constant type — render as a
+        // string (drops the trailing `d`/`D`).
+        LiteralKind::Fixed => format!(
+            "\"{}\"",
+            raw.trim_end_matches(['d', 'D']).replace('"', "\\\"")
+        ),
+        // Never emit a bare `TRUE`/`FALSE` token (not an Elixir literal — #A13).
+        LiteralKind::Boolean => {
+            if raw.eq_ignore_ascii_case("true") {
+                "true".to_string()
+            } else {
+                "false".to_string()
+            }
+        }
+        // Narrow string/char pass through; wide literals drop the `L` prefix
+        // (`L"x"`/`L'x'` is not valid Elixir — #A7-pattern). A `char` literal
+        // like `'A'` is rendered as its Elixir codepoint integer (`?A`).
+        LiteralKind::Char => {
+            let inner = raw.strip_prefix('L').unwrap_or(raw);
+            format!(
+                "?{}",
+                inner.trim_matches('\'').chars().next().unwrap_or(' ')
+            )
+        }
+        LiteralKind::WideChar => {
+            let inner = raw.strip_prefix('L').unwrap_or(raw);
+            format!(
+                "?{}",
+                inner.trim_matches('\'').chars().next().unwrap_or(' ')
+            )
+        }
+        LiteralKind::String => raw.to_string(),
+        LiteralKind::WideString => raw.strip_prefix('L').unwrap_or(raw).to_string(),
+    })
+}
+
+/// Normalizes an IDL floating literal to valid Elixir float syntax: strips the
+/// trailing type suffix and ensures both an integer and a fractional digit
+/// surround the decimal point (Elixir rejects `.5` and `5.`).
+fn normalize_elixir_float(raw: &str) -> String {
+    let s = raw.trim_end_matches(['d', 'D', 'f', 'F', 'l', 'L']);
+    // Leave exponent forms (`1e9`) as-is if they carry no bare dot.
+    if let Some((int, frac)) = s.split_once('.') {
+        let int = if int.is_empty() { "0" } else { int };
+        // A fractional part may itself hold an exponent (`.5e3`).
+        if frac.is_empty() {
+            format!("{int}.0")
+        } else {
+            format!("{int}.{frac}")
+        }
+    } else {
+        s.to_string()
+    }
 }
 
 /// Evaluates a fixed-array bound to its integer size (literal + unary sign).
@@ -322,21 +849,20 @@ fn switch_typespec(s: &SwitchTypeSpec) -> TypeSpec {
 /// Emits an IDL `union` as an Elixir struct (discriminator + one field per case
 /// member) with a pipe-compatible `marshal_into` that puts the discriminator
 /// then a `case` dispatches to the selected member (XCDR2 §7.4.3.5.4).
+#[allow(clippy::too_many_arguments)]
 fn emit_union(
     out: &mut String,
     u: &UnionDef,
     pkg: &str,
+    scope: &[String],
     enum_names: &HashSet<String>,
     struct_names: &HashSet<String>,
     typedefs: &HashMap<String, TypeSpec>,
+    enum_defs: &HashMap<String, &EnumDef>,
 ) -> Result<()> {
+    // Member references resolve against this union's module scope.
+    CURRENT_SCOPE.with(|c| *c.borrow_mut() = scope.to_vec());
     let ext = extensibility_union(u);
-    if ext == ExtensibilityKind::Mutable {
-        return Err(IdlElixirError::Unsupported(format!(
-            "@mutable union {} (EMHEADER framing not yet emitted)",
-            u.name.text
-        )));
-    }
     let disc_seg = map_type(
         &switch_typespec(&u.switch_type),
         "v.disc",
@@ -350,6 +876,25 @@ fn emit_union(
         enum_names,
         struct_names,
     )?;
+
+    // #A11/P4: when the discriminator is an enum, map enumerator name → value so
+    // a `case ENUMERATOR:` label resolves to its integer discriminant.
+    let enum_vals: HashMap<String, i64> = match &u.switch_type {
+        SwitchTypeSpec::Scoped(sn) => enum_defs
+            .get(&resolve_scoped_name(sn))
+            .map(|e| {
+                e.enumerators
+                    .iter()
+                    .zip(enumerator_values(e))
+                    .map(|(en, v)| (en.name.text.clone(), i64::from(v)))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        _ => HashMap::new(),
+    };
+    // A boolean discriminator switches on Elixir `true`/`false`, not integers.
+    let disc_is_bool = matches!(u.switch_type, SwitchTypeSpec::Boolean);
+
     struct ElixirCase {
         labels: Vec<i64>,
         is_default: bool,
@@ -374,12 +919,17 @@ fn emit_union(
         for l in &c.labels {
             match l {
                 CaseLabel::Default => is_default = true,
-                CaseLabel::Value(e) => labels.push(array_size(e).ok_or_else(|| {
-                    IdlElixirError::Unsupported(format!(
-                        "non-integer union label in `{}`",
-                        u.name.text
-                    ))
-                })?),
+                // #A11/A12/A13/P4: resolve enum / char / boolean labels, not only
+                // plain integer literals (the former `array_size` aborted on
+                // those, dropping every non-integer-discriminated union).
+                CaseLabel::Value(e) => {
+                    labels.push(eval_union_label(e, &enum_vals).ok_or_else(|| {
+                        IdlElixirError::Unsupported(format!(
+                            "non-integer union label in `{}`",
+                            u.name.text
+                        ))
+                    })?)
+                }
             }
         }
         cases.push(ElixirCase {
@@ -392,31 +942,82 @@ fn emit_union(
     }
     let has_default = cases.iter().any(|c| c.is_default);
 
-    let ty = escape_elixir_ident(&u.name.text);
+    let ty = escape_elixir_ident(&qualify(scope, &u.name.text));
     let wire = format!("{pkg}.Wire");
     let mut names = vec![":disc".to_string()];
     names.extend(cases.iter().map(|c| format!(":{}", c.field)));
     let _ = writeln!(out, "\ndefmodule {pkg}.{ty} do");
     let _ = writeln!(out, "  defstruct [{}]", names.join(", "));
+    // §7.2.2.4.8 — text as the first element inside the declaration.
+    emit_verbatim_at(out, "  ", &u.annotations, PlacementKind::BeginDeclaration);
 
-    let _ = writeln!(out, "\n  def marshal_into(w, %__MODULE__{{}} = v) do");
+    // Render one label value (a boolean discriminator uses `true`/`false`).
+    let render_label = |v: i64| -> String {
+        if disc_is_bool {
+            (v != 0).to_string()
+        } else {
+            v.to_string()
+        }
+    };
     // A pattern for a case's labels: `1` for one, `d when d in [1, 3]` for many.
     let pat = |c: &ElixirCase| -> String {
         if c.is_default {
             "_".to_string()
         } else if c.labels.len() == 1 {
-            c.labels[0].to_string()
+            render_label(c.labels[0])
         } else {
             let list = c
                 .labels
                 .iter()
-                .map(i64::to_string)
+                .map(|&v| render_label(v))
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("d when d in [{list}]")
         }
     };
-    if ext == ExtensibilityKind::Final {
+
+    let _ = writeln!(out, "\n  def marshal_into(w, %__MODULE__{{}} = v) do");
+    if ext == ExtensibilityKind::Mutable {
+        // #A16: EMHEADER-framed member list — discriminator is member id 0, each
+        // branch its 1-based id, the whole wrapped in the union's DHEADER (LC4;
+        // #A19 compact codes are a separate coordinated change).
+        let _ = writeln!(out, "    body = {wire}.writer(w.endian)");
+        let emh0 = 0x4000_0000_u32;
+        let _ = writeln!(out, "    body = body |> {wire}.put_u32(0x{emh0:08x})");
+        let _ = writeln!(
+            out,
+            "    memd = {wire}.writer(w.endian) |> {disc_seg} |> {wire}.bytes()"
+        );
+        let _ = writeln!(
+            out,
+            "    body = body |> {wire}.put_u32(byte_size(memd)) |> {wire}.put_bytes(memd)"
+        );
+        let _ = writeln!(out, "    body =");
+        let _ = writeln!(out, "      case v.disc do");
+        for (i, c) in cases.iter().enumerate() {
+            let emh = 0x4000_0000_u32 | (u32::try_from(i + 1).unwrap_or(0) & 0x0FFF_FFFF);
+            let _ = writeln!(out, "        {} ->", pat(c));
+            let _ = writeln!(out, "          bh = body |> {wire}.put_u32(0x{emh:08x})");
+            let _ = writeln!(
+                out,
+                "          memb = {wire}.writer(w.endian) |> {} |> {wire}.bytes()",
+                c.seg
+            );
+            let _ = writeln!(
+                out,
+                "          bh |> {wire}.put_u32(byte_size(memb)) |> {wire}.put_bytes(memb)"
+            );
+        }
+        if !has_default {
+            let _ = writeln!(out, "        _ -> body");
+        }
+        let _ = writeln!(out, "      end");
+        let _ = writeln!(out, "    body_bytes = {wire}.bytes(body)");
+        let _ = writeln!(
+            out,
+            "    w |> {wire}.put_u32(byte_size(body_bytes)) |> {wire}.put_bytes(body_bytes)"
+        );
+    } else if ext == ExtensibilityKind::Final {
         let _ = writeln!(out, "    w = w |> {disc_seg}");
         let _ = writeln!(out, "    case v.disc do");
         for c in &cases {
@@ -453,9 +1054,16 @@ fn emit_union(
     let _ = writeln!(out, "  end");
 
     // Decode: read the discriminator, then a `case` reads only the selected
-    // member and builds the struct (@appendable skips the leading DHEADER).
+    // member and builds the struct (@appendable skips the leading DHEADER;
+    // @mutable skips the DHEADER then reads each member's EMHEADER + NEXTINT —
+    // positional, so a fully-present union round-trips).
     let _ = writeln!(out, "\n  def read(r) do");
     if ext == ExtensibilityKind::Appendable {
+        let _ = writeln!(out, "    {{_, r}} = {wire}.get_u32(r)");
+    }
+    if ext == ExtensibilityKind::Mutable {
+        let _ = writeln!(out, "    {{_, r}} = {wire}.get_u32(r)");
+        let _ = writeln!(out, "    {{_, r}} = {wire}.get_u32(r)");
         let _ = writeln!(out, "    {{_, r}} = {wire}.get_u32(r)");
     }
     let _ = writeln!(out, "    {{disc, r}} = {}", disc_get.replace("$r", "r"));
@@ -464,6 +1072,10 @@ fn emit_union(
     for c in &cases {
         let g = c.get.replace("$r", "r");
         let _ = writeln!(out, "        {} ->", pat(c));
+        if ext == ExtensibilityKind::Mutable {
+            let _ = writeln!(out, "          {{_, r}} = {wire}.get_u32(r)");
+            let _ = writeln!(out, "          {{_, r}} = {wire}.get_u32(r)");
+        }
         let _ = writeln!(out, "          {{{}, r}} = {g}", c.field);
         let _ = writeln!(
             out,
@@ -481,8 +1093,72 @@ fn emit_union(
     let _ = writeln!(out, "    {{v, _r}} = read({wire}.reader(bin, endian))");
     let _ = writeln!(out, "    v");
     let _ = writeln!(out, "  end");
+    // §7.2.2.4.8 — text as the last element inside the declaration.
+    emit_verbatim_at(out, "  ", &u.annotations, PlacementKind::EndDeclaration);
     let _ = writeln!(out, "end");
     Ok(())
+}
+
+/// Evaluates a union case label (`case RED:`, `case 'A':`, `case TRUE:`,
+/// `case 3:`) to its integer discriminant (#A11/A12/A13/P4). Beyond the plain
+/// integer literals the former `array_size` accepted, this resolves enum
+/// enumerators (via `enum_vals`, name → value of the switch enum), `char` code
+/// points, and the `boolean` keywords `TRUE`/`FALSE`.
+/// zerodds-lint: recursion-depth 32 (label expression; bounded by the grammar).
+fn eval_union_label(e: &ConstExpr, enum_vals: &HashMap<String, i64>) -> Option<i64> {
+    match e {
+        ConstExpr::Literal(Literal { kind, raw, .. }) => match kind {
+            LiteralKind::Integer => parse_int(raw),
+            LiteralKind::Char | LiteralKind::WideChar => char_literal_value(raw),
+            LiteralKind::Boolean => Some(i64::from(raw.trim().eq_ignore_ascii_case("true"))),
+            _ => None,
+        },
+        // `case ENUMERATOR:` — the label names an enumerator of the switch enum
+        // (resolved by its simple, i.e. last, segment).
+        ConstExpr::Scoped(sn) => {
+            let last = sn.parts.last()?.text.clone();
+            enum_vals.get(&last).copied()
+        }
+        ConstExpr::Unary { op, operand, .. } => {
+            let v = eval_union_label(operand, enum_vals)?;
+            match op {
+                UnaryOp::Plus => Some(v),
+                UnaryOp::Minus => Some(-v),
+                UnaryOp::BitNot => Some(!v),
+            }
+        }
+        ConstExpr::Binary { .. } => None,
+    }
+}
+
+/// Evaluates a `char`/`wchar` literal (`'A'`, `L'x'`, `'\n'`) to its code point,
+/// so a `case 'A':` union label resolves to the discriminant 65 (#A12).
+fn char_literal_value(raw: &str) -> Option<i64> {
+    let s = raw.trim().strip_prefix('L').unwrap_or(raw.trim());
+    let inner = s.strip_prefix('\'')?.strip_suffix('\'')?;
+    let mut it = inner.chars();
+    let c = it.next()?;
+    if c == '\\' {
+        let e = it.next()?;
+        let v = match e {
+            'n' => 0x0A,
+            't' => 0x09,
+            'r' => 0x0D,
+            '0' => 0x00,
+            '\\' => 0x5C,
+            '\'' => 0x27,
+            '"' => 0x22,
+            'a' => 0x07,
+            'b' => 0x08,
+            'f' => 0x0C,
+            'v' => 0x0B,
+            'x' => return i64::from_str_radix(it.as_str(), 16).ok(),
+            _ => return None,
+        };
+        Some(v)
+    } else {
+        Some(i64::from(u32::from(c)))
+    }
 }
 
 /// Union extensibility (defaults to `@appendable`, matching structs).
@@ -522,15 +1198,186 @@ fn parse_int(s: &str) -> Option<i64> {
 
 /// Emits an IDL `enum` as an Elixir module of enumerator-value functions. The
 /// enum member itself is a plain integer field marshaled as an `i32`.
-fn emit_enum(out: &mut String, e: &EnumDef, pkg: &str) {
+fn emit_enum(out: &mut String, e: &EnumDef, pkg: &str, scope: &[String]) {
     let values = enumerator_values(e);
-    let ty = escape_elixir_ident(&e.name.text);
+    let ty = escape_elixir_ident(&qualify(scope, &e.name.text));
     let _ = writeln!(out, "\ndefmodule {pkg}.{ty} do");
+    // §7.2.2.4.8 — text as the first element inside the declaration.
+    emit_verbatim_at(out, "  ", &e.annotations, PlacementKind::BeginDeclaration);
     for (en, value) in e.enumerators.iter().zip(&values) {
         let name = escape_elixir_ident(&en.name.text.to_lowercase());
         let _ = writeln!(out, "  def {name}, do: {value}");
     }
+    // §7.2.2.4.8 — text as the last element inside the declaration.
+    emit_verbatim_at(out, "  ", &e.annotations, PlacementKind::EndDeclaration);
     let _ = writeln!(out, "end");
+}
+
+/// Backing-integer storage for a bit container of `total_bits` bits: XTypes 1.3
+/// §7.4.7 — the smallest holder that fits (`≤8`→u8, `≤16`→u16, `≤32`→u32, else
+/// u64). Returns `(put-method, get-method, bit-width)`.
+fn bit_storage(total_bits: usize) -> (&'static str, &'static str, u32) {
+    match total_bits {
+        0..=8 => ("put_u8", "get_u8", 8),
+        9..=16 => ("put_u16", "get_u16", 16),
+        17..=32 => ("put_u32", "get_u32", 32),
+        _ => ("put_u64", "get_u64", 64),
+    }
+}
+
+/// Effective `@bit_bound` of a bitmask (default 32 — XTypes 1.3 §7.3.1.2.1.1:
+/// an unannotated bitmask is a UInt32 on the wire, NOT the count of bits).
+fn bitmask_bit_bound(anns: &[Annotation]) -> u32 {
+    lower_annotations(anns)
+        .ok()
+        .and_then(|l| {
+            l.builtins.iter().find_map(|a| match a {
+                BuiltinAnnotation::BitBound(n) => Some(u32::from(*n)),
+                _ => None,
+            })
+        })
+        .unwrap_or(32)
+}
+
+/// `@position(n)` of a bitmask value, if present.
+fn bit_position(anns: &[Annotation]) -> Option<u32> {
+    lower_annotations(anns).ok().and_then(|l| {
+        l.builtins.iter().find_map(|a| match a {
+            BuiltinAnnotation::Position(n) => Some(*n),
+            _ => None,
+        })
+    })
+}
+
+/// Emits the shared holder tail (`marshal_into`/`marshal_xcdr`/`read`/
+/// `unmarshal`) of a `bitset`/`bitmask` module over its backing integer
+/// (XTypes 1.3 §7.4.7 — wire = backing int). `put`/`get` are the `Wire`
+/// method names for the backing width.
+fn emit_bit_holder_tail(out: &mut String, pkg: &str, put: &str, get: &str) {
+    let wire = format!("{pkg}.Wire");
+    let _ = writeln!(out, "\n  def marshal_into(w, %__MODULE__{{}} = v) do");
+    let _ = writeln!(out, "    {wire}.{put}(w, v.storage)");
+    let _ = writeln!(out, "  end");
+    let _ = writeln!(out, "\n  def marshal_xcdr(%__MODULE__{{}} = v, endian) do");
+    let _ = writeln!(
+        out,
+        "    {wire}.writer(endian) |> marshal_into(v) |> {wire}.bytes()"
+    );
+    let _ = writeln!(out, "  end");
+    let _ = writeln!(out, "\n  def read(r) do");
+    let _ = writeln!(out, "    {{s, r}} = {wire}.{get}(r)");
+    let _ = writeln!(out, "    {{%__MODULE__{{storage: s}}, r}}");
+    let _ = writeln!(out, "  end");
+    let _ = writeln!(out, "\n  def unmarshal(bin, endian) do");
+    let _ = writeln!(out, "    {{v, _r}} = read({wire}.reader(bin, endian))");
+    let _ = writeln!(out, "    v");
+    let _ = writeln!(out, "  end");
+    let _ = writeln!(out, "end");
+}
+
+/// Emits an IDL `bitset` as an Elixir holder module over its backing integer,
+/// with a bit-accessor pair (`field`/`set_field`) per named bitfield and an
+/// XCDR2 marshal/unmarshal writing the backing integer (XTypes 1.3 §7.4.7 —
+/// wire = backing int).
+///
+/// # Errors
+/// [`IdlElixirError::Unsupported`] if a bitfield width is not a codegen-time
+/// integer.
+fn emit_bitset(out: &mut String, b: &BitsetDecl, pkg: &str, scope: &[String]) -> Result<()> {
+    let mut widths: Vec<usize> = Vec::with_capacity(b.bitfields.len());
+    for bf in &b.bitfields {
+        let w = array_size(&bf.spec.width)
+            .filter(|w| *w >= 0)
+            .ok_or_else(|| {
+                IdlElixirError::Unsupported(format!(
+                    "non-integer bitfield width in bitset {}",
+                    b.name.text
+                ))
+            })? as usize;
+        widths.push(w);
+    }
+    let total: usize = widths.iter().sum();
+    let (put, get, _) = bit_storage(total);
+    let ty = escape_elixir_ident(&qualify(scope, &b.name.text));
+
+    let _ = writeln!(out, "\ndefmodule {pkg}.{ty} do");
+    let _ = writeln!(out, "  defstruct storage: 0");
+    // §7.2.2.4.8 — text as the first element inside the declaration.
+    emit_verbatim_at(out, "  ", &b.annotations, PlacementKind::BeginDeclaration);
+    let mut offset: usize = 0;
+    for (bf, width) in b.bitfields.iter().zip(&widths) {
+        if let Some(name) = &bf.name {
+            let field = escape_elixir_ident(&name.text);
+            if *width == 1 {
+                // A 1-bit field reads/writes a boolean.
+                let _ = writeln!(
+                    out,
+                    "  def {field}(%__MODULE__{{}} = v), do: Bitwise.band(Bitwise.bsr(v.storage, {offset}), 1) != 0"
+                );
+                let _ = writeln!(
+                    out,
+                    "  def set_{field}(%__MODULE__{{}} = v, b) do\n    bit = if b, do: Bitwise.bsl(1, {offset}), else: 0\n    %{{v | storage: Bitwise.bor(Bitwise.band(v.storage, Bitwise.bnot(Bitwise.bsl(1, {offset}))), bit)}}\n  end"
+                );
+            } else {
+                let mask: u128 = if *width >= 128 {
+                    u128::MAX
+                } else {
+                    (1u128 << *width) - 1
+                };
+                let _ = writeln!(
+                    out,
+                    "  def {field}(%__MODULE__{{}} = v), do: Bitwise.band(Bitwise.bsr(v.storage, {offset}), {mask})"
+                );
+                let _ = writeln!(
+                    out,
+                    "  def set_{field}(%__MODULE__{{}} = v, x) do\n    m = Bitwise.bsl({mask}, {offset})\n    %{{v | storage: Bitwise.bor(Bitwise.band(v.storage, Bitwise.bnot(m)), Bitwise.bsl(Bitwise.band(x, {mask}), {offset}))}}\n  end"
+                );
+            }
+        }
+        offset += width;
+    }
+    // §7.2.2.4.8 — text as the last element inside the declaration.
+    emit_verbatim_at(out, "  ", &b.annotations, PlacementKind::EndDeclaration);
+    emit_bit_holder_tail(out, pkg, put, get);
+    Ok(())
+}
+
+/// Emits an IDL `bitmask` as an Elixir holder module over its `@bit_bound`
+/// backing integer (default 32), with an OR-able manifest constant per bit
+/// value and an XCDR2 marshal/unmarshal writing the backing integer (XTypes 1.3
+/// §7.4.7). Each constant's value is folded to a literal at codegen time
+/// (`1 << position`).
+fn emit_bitmask(out: &mut String, b: &BitmaskDecl, pkg: &str, scope: &[String]) {
+    let (put, get, _) = bit_storage(bitmask_bit_bound(&b.annotations) as usize);
+    let ty = escape_elixir_ident(&qualify(scope, &b.name.text));
+
+    let _ = writeln!(out, "\ndefmodule {pkg}.{ty} do");
+    let _ = writeln!(out, "  defstruct storage: 0");
+    emit_verbatim_at(out, "  ", &b.annotations, PlacementKind::BeginDeclaration);
+    for (idx, v) in b.values.iter().enumerate() {
+        let pos = bit_position(&v.annotations).unwrap_or(idx as u32);
+        let cname = escape_elixir_ident(&v.name.text.to_lowercase());
+        let value: u64 = 1u64 << pos;
+        let _ = writeln!(out, "  def {cname}, do: {value}");
+    }
+    emit_verbatim_at(out, "  ", &b.annotations, PlacementKind::EndDeclaration);
+    emit_bit_holder_tail(out, pkg, put, get);
+}
+
+/// Resolves a `fixed<P,S>`'s digit count `P` and scale `S` to codegen-time
+/// integers.
+///
+/// # Errors
+/// [`IdlElixirError::Unsupported`] if either is not a resolvable non-negative
+/// integer literal.
+fn fixed_ps(f: &FixedPtType) -> Result<(i64, i64)> {
+    let p = array_size(&f.digits)
+        .filter(|v| *v > 0)
+        .ok_or_else(|| IdlElixirError::Unsupported("non-integer fixed digit count".to_string()))?;
+    let s = array_size(&f.scale)
+        .filter(|v| *v >= 0)
+        .ok_or_else(|| IdlElixirError::Unsupported("non-integer fixed scale".to_string()))?;
+    Ok((p, s))
 }
 
 fn extensibility(s: &StructDef) -> ExtensibilityKind {
@@ -545,43 +1392,137 @@ fn extensibility(s: &StructDef) -> ExtensibilityKind {
 /// The IDL AST builder already merges a reopened `module M {} ... module
 /// M {}` into one AST node (`crates/idl/src/ast/builder.rs`); this promotes
 /// a module's members into the same flat namespace this backend already
-/// uses for type-reference resolution (`sn.parts.last()` below) — module
-/// content is no longer silently dropped (swarm59 #21b), it is simply not
-/// namespaced: two same-named types in different modules collide, exactly
-/// as two same-named top-level types would.
+/// uses for type-reference resolution — a module's members are promoted to the
+/// top level, each paired with its module scope path so the definition and
+/// reference sites can flatten each name to a qualified alias ([`qualify`] /
+/// [`resolve_scoped_name`]). Two same-simple-name types in different modules
+/// therefore become distinct modules rather than colliding (#21).
 ///
 /// zerodds-lint: recursion-depth 16 (module nesting; bounded by the IDL grammar).
-fn flatten_module_defs(defs: &[Definition]) -> Vec<&Definition> {
+fn flatten_module_defs(defs: &[Definition]) -> Vec<(Vec<String>, &Definition)> {
     let mut out = Vec::new();
-    flatten_module_defs_into(defs, &mut out);
+    let mut scope = Vec::new();
+    flatten_module_defs_into(defs, &mut scope, &mut out);
     out
 }
 
 /// zerodds-lint: recursion-depth 16 (module nesting; bounded by the IDL grammar).
-fn flatten_module_defs_into<'a>(defs: &'a [Definition], out: &mut Vec<&'a Definition>) {
+fn flatten_module_defs_into<'a>(
+    defs: &'a [Definition],
+    scope: &mut Vec<String>,
+    out: &mut Vec<(Vec<String>, &'a Definition)>,
+) {
     for d in defs {
         match d {
-            Definition::Module(m) => flatten_module_defs_into(&m.definitions, out),
-            other => out.push(other),
+            Definition::Module(m) => {
+                scope.push(m.name.text.clone());
+                flatten_module_defs_into(&m.definitions, scope, out);
+                scope.pop();
+            }
+            other => out.push((scope.clone(), other)),
         }
     }
 }
 
-/// Collects `typedef` aliases (simple declarators) as name -> aliased type-spec.
-/// A typedef is wire-transparent, so members are resolved to the underlying
-/// type before mapping (`typedef long Score; Score s;` marshals as `long`).
+/// Recursively descends into `Definition::Interface` bodies, returning every
+/// interface-nested `Export::Type` declaration paired with the scope path
+/// `enclosing_module… + interface_name` (#A39/P8). Elixir has no nested-type
+/// construct, so these are promoted to the top level under the interface's own
+/// name segment (so two interfaces in one module do not collide). Without this
+/// every type declared inside an `interface { ... }` body was silently dropped.
+fn flatten_iface_types(defs: &[Definition]) -> Vec<(Vec<String>, &TypeDecl)> {
+    let mut out = Vec::new();
+    let mut scope = Vec::new();
+    flatten_iface_types_into(defs, &mut scope, &mut out);
+    out
+}
+
+/// zerodds-lint: recursion-depth 16 (module nesting; bounded by the IDL grammar).
+fn flatten_iface_types_into<'a>(
+    defs: &'a [Definition],
+    scope: &mut Vec<String>,
+    out: &mut Vec<(Vec<String>, &'a TypeDecl)>,
+) {
+    for d in defs {
+        match d {
+            Definition::Module(m) => {
+                scope.push(m.name.text.clone());
+                flatten_iface_types_into(&m.definitions, scope, out);
+                scope.pop();
+            }
+            Definition::Interface(InterfaceDcl::Def(iface)) => {
+                scope.push(iface.name.text.clone());
+                for ex in &iface.exports {
+                    if let Export::Type(td) = ex {
+                        out.push((scope.clone(), td));
+                    }
+                }
+                scope.pop();
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Every `TypeDecl` to emit, module-level and interface-nested (#A39), each
+/// paired with its flattening scope. Name/def registries (enum/struct/bitset/
+/// bitmask/typedef) are built from this combined list so a reference to an
+/// interface-nested type resolves the same as a module-level one.
+fn all_type_decls(spec: &Specification) -> Vec<(Vec<String>, &TypeDecl)> {
+    let mut out: Vec<(Vec<String>, &TypeDecl)> = flatten_module_defs(&spec.definitions)
+        .into_iter()
+        .filter_map(|(scope, d)| match d {
+            Definition::Type(td) => Some((scope, td)),
+            _ => None,
+        })
+        .collect();
+    out.extend(flatten_iface_types(&spec.definitions));
+    out
+}
+
+/// Collects `typedef` aliases (simple declarators) as qualified-name -> aliased
+/// type-spec. A typedef is wire-transparent, so members are resolved to the
+/// underlying type before mapping (`typedef long Score; Score s;` → `long`).
 fn collect_typedefs(spec: &Specification) -> HashMap<String, TypeSpec> {
     let mut m = HashMap::new();
-    for def in flatten_module_defs(&spec.definitions) {
-        if let Definition::Type(TypeDecl::Typedef(td)) = def {
+    // Module-level AND interface-nested typedefs (#A39) share the flat namespace.
+    for (scope, td) in all_type_decls(spec) {
+        if let TypeDecl::Typedef(td) = td {
             for d in &td.declarators {
                 if let Declarator::Simple(name) = d {
-                    m.insert(name.text.clone(), td.type_spec.clone());
+                    m.insert(qualify(&scope, &name.text), td.type_spec.clone());
                 }
             }
         }
     }
     m
+}
+
+/// Collects a struct's effective members base-first (#A10/P3): the base struct's
+/// members (recursively) precede the derived struct's own, so the generated
+/// module and its wire form carry the inherited fields — matching cpp/csharp/
+/// java (`resolve_wire_members`). Without this a `struct D : Base` dropped every
+/// inherited field from both the type and the wire. A cycle guard bounds
+/// pathological inheritance loops.
+/// zerodds-lint: recursion-depth 16 (struct inheritance chain; bounded by the
+/// IDL aggregate nesting depth).
+fn collect_base_members<'a>(
+    s: &'a StructDef,
+    structs: &HashMap<String, &'a StructDef>,
+    seen: &mut HashSet<String>,
+    out: &mut Vec<&'a Member>,
+) {
+    if let Some(base) = &s.base {
+        let name = resolve_scoped_name(base);
+        if seen.insert(name.clone()) {
+            if let Some(bs) = structs.get(&name) {
+                collect_base_members(bs, structs, seen, out);
+            }
+        }
+    }
+    for m in &s.members {
+        out.push(m);
+    }
 }
 
 /// Resolves a typedef chain to its underlying type-spec (recursing into
@@ -592,7 +1533,7 @@ fn collect_typedefs(spec: &Specification) -> HashMap<String, TypeSpec> {
 fn resolve_typedef(t: &TypeSpec, typedefs: &HashMap<String, TypeSpec>) -> TypeSpec {
     match t {
         TypeSpec::Scoped(sn) => {
-            let name = sn.parts.last().map(|p| p.text.clone()).unwrap_or_default();
+            let name = resolve_scoped_name(sn);
             match typedefs.get(&name) {
                 Some(u) => resolve_typedef(u, typedefs),
                 None => t.clone(),
@@ -607,15 +1548,22 @@ fn resolve_typedef(t: &TypeSpec, typedefs: &HashMap<String, TypeSpec>) -> TypeSp
     }
 }
 
+// `pkg` (the file-level module namespace) and `scope` (the IDL module scope for
+// #21 name qualification) are both threaded through alongside the four
+// name/def maps, one over clippy's 7-arg heuristic.
+#[allow(clippy::too_many_arguments)]
 fn emit_struct(
     out: &mut String,
     s: &StructDef,
     pkg: &str,
+    scope: &[String],
     enum_names: &HashSet<String>,
     struct_names: &HashSet<String>,
     structs: &HashMap<String, &StructDef>,
     typedefs: &HashMap<String, TypeSpec>,
 ) -> Result<()> {
+    // Member references resolve against this struct's module scope.
+    CURRENT_SCOPE.with(|c| *c.borrow_mut() = scope.to_vec());
     let ext = extensibility(s);
 
     struct FieldGen {
@@ -637,14 +1585,35 @@ fn emit_struct(
         // it already emits the correct row-major, no-length-prefix element
         // encoding (mirrors `idl-lua`'s `key_type: Option<..>` guard).
         key_type: Option<(TypeSpec, String)>,
+        // `@optional`: a companion `<name>_present` presence flag (u8) precedes
+        // the value, which is written only when present (XTypes 1.3 §7.4.5.1.4).
+        optional: bool,
+        // `@must_understand`: EMHEADER must-understand bit 31 under @mutable
+        // (XTypes 1.3 §7.4.3.4.2 — #A17). No effect on @final/@appendable wire.
+        must_understand: bool,
     }
     let mut fields: Vec<FieldGen> = Vec::new();
     let mut next_id: u32 = 0;
-    for m in &s.members {
+    // #A10/P3: base-class members precede the struct's own, in both the Elixir
+    // `defstruct` and the wire encode/decode/key order.
+    let mut base_seen: HashSet<String> = HashSet::new();
+    let mut resolved_members: Vec<&Member> = Vec::new();
+    collect_base_members(s, structs, &mut base_seen, &mut resolved_members);
+    for m in &resolved_members {
         let resolved = resolve_typedef(&m.type_spec, typedefs);
         let lowered = lower_annotations(&m.annotations).ok();
         let explicit_id = lowered.as_ref().and_then(|l| l.explicit_id());
         let key = lowered.as_ref().is_some_and(|l| l.has_key());
+        let optional = lowered.as_ref().is_some_and(|l| {
+            l.builtins
+                .iter()
+                .any(|a| matches!(a, BuiltinAnnotation::Optional))
+        });
+        let must_understand = lowered.as_ref().is_some_and(|l| {
+            l.builtins
+                .iter()
+                .any(|a| matches!(a, BuiltinAnnotation::MustUnderstand))
+        });
         for d in &m.declarators {
             let name = escape_elixir_ident(&d.name().text);
             let id = explicit_id.unwrap_or(next_id);
@@ -683,15 +1652,43 @@ fn emit_struct(
                 id,
                 key,
                 key_type,
+                optional,
+                must_understand,
             });
         }
     }
 
-    let ty = escape_elixir_ident(&s.name.text);
+    // A field's marshal pipe step. `@optional`: a u8 presence flag, then the
+    // value only when present (XTypes 1.3 §7.4.5.1.4). `zw`/the closure keep the
+    // step pipe-compatible; `v` is captured from the enclosing function.
+    let field_step = |f: &FieldGen| -> String {
+        if f.optional {
+            format!(
+                "then(fn zw -> zw = {pkg}.Wire.put_u8(zw, if(v.{n}_present, do: 1, else: 0)); if v.{n}_present, do: zw |> {seg}, else: zw end)",
+                n = f.name,
+                seg = f.seg
+            )
+        } else {
+            f.seg.clone()
+        }
+    };
+
+    let ty = escape_elixir_ident(&qualify(scope, &s.name.text));
     let wire = format!("{pkg}.Wire");
-    let names: Vec<String> = fields.iter().map(|f| format!(":{}", f.name)).collect();
+    let names: Vec<String> = fields
+        .iter()
+        .flat_map(|f| {
+            if f.optional {
+                vec![format!(":{}_present", f.name), format!(":{}", f.name)]
+            } else {
+                vec![format!(":{}", f.name)]
+            }
+        })
+        .collect();
     let _ = writeln!(out, "\ndefmodule {pkg}.{ty} do");
     let _ = writeln!(out, "  defstruct [{}]", names.join(", "));
+    // §7.2.2.4.8 — text as the first element inside the declaration.
+    emit_verbatim_at(out, "  ", &s.annotations, PlacementKind::BeginDeclaration);
 
     // marshal_into writes the struct into an existing writer (pipe-compatible:
     // takes the writer first, returns it) so nested composites keep stream-
@@ -699,20 +1696,48 @@ fn emit_struct(
     let _ = writeln!(out, "\n  def marshal_into(w, %__MODULE__{{}} = v) do");
     if ext == ExtensibilityKind::Mutable {
         // @mutable: DHEADER-framed member list; each member = EMHEADER (LC4 =
-        // member id) + NEXTINT (body length) + body (XTypes §7.4.3.4.2).
+        // member id, plus must-understand bit 31 when @must_understand — #A17) +
+        // NEXTINT (body length) + body (XTypes §7.4.3.4.2). LC4 is kept as the
+        // universal length code (compact per-width codes — #A19 — are a separate
+        // coordinated cross-backend change).
         let _ = writeln!(out, "    body = {wire}.writer(w.endian)");
         for (i, f) in fields.iter().enumerate() {
-            let emh = 0x4000_0000_u32 | f.id;
-            let _ = writeln!(out, "    body = body |> {wire}.put_u32(0x{emh:08x})");
-            let _ = writeln!(
-                out,
-                "    mem{i} = {wire}.writer(w.endian) |> {} |> {wire}.bytes()",
-                f.seg
-            );
-            let _ = writeln!(
-                out,
-                "    body = body |> {wire}.put_u32(byte_size(mem{i})) |> {wire}.put_bytes(mem{i})"
-            );
+            // An `@optional` member is omitted from the member list when absent
+            // (XTypes 1.3 §7.4.3.4.2): guard its EMHEADER+body on the flag.
+            let mu_bit = if f.must_understand {
+                0x8000_0000_u32
+            } else {
+                0
+            };
+            let emh = mu_bit | 0x4000_0000_u32 | (f.id & 0x0FFF_FFFF);
+            if f.optional {
+                let _ = writeln!(out, "    body =");
+                let _ = writeln!(out, "      if v.{}_present do", f.name);
+                let _ = writeln!(out, "        body = body |> {wire}.put_u32(0x{emh:08x})");
+                let _ = writeln!(
+                    out,
+                    "        mem{i} = {wire}.writer(w.endian) |> {} |> {wire}.bytes()",
+                    f.seg
+                );
+                let _ = writeln!(
+                    out,
+                    "        body |> {wire}.put_u32(byte_size(mem{i})) |> {wire}.put_bytes(mem{i})"
+                );
+                let _ = writeln!(out, "      else");
+                let _ = writeln!(out, "        body");
+                let _ = writeln!(out, "      end");
+            } else {
+                let _ = writeln!(out, "    body = body |> {wire}.put_u32(0x{emh:08x})");
+                let _ = writeln!(
+                    out,
+                    "    mem{i} = {wire}.writer(w.endian) |> {} |> {wire}.bytes()",
+                    f.seg
+                );
+                let _ = writeln!(
+                    out,
+                    "    body = body |> {wire}.put_u32(byte_size(mem{i})) |> {wire}.put_bytes(mem{i})"
+                );
+            }
         }
         let _ = writeln!(out, "    body_bytes = {wire}.bytes(body)");
         let _ = writeln!(
@@ -722,13 +1747,13 @@ fn emit_struct(
     } else if ext == ExtensibilityKind::Final {
         let _ = writeln!(out, "    w");
         for f in &fields {
-            let _ = writeln!(out, "    |> {}", f.seg);
+            let _ = writeln!(out, "    |> {}", field_step(f));
         }
     } else {
         let _ = writeln!(out, "    body =");
         let _ = writeln!(out, "      {wire}.writer(w.endian)");
         for f in &fields {
-            let _ = writeln!(out, "      |> {}", f.seg);
+            let _ = writeln!(out, "      |> {}", field_step(f));
         }
         let _ = writeln!(out, "      |> {wire}.bytes()");
         let _ = writeln!(out, "    w");
@@ -746,9 +1771,10 @@ fn emit_struct(
     let mut zdkeys: Vec<&FieldGen> = fields.iter().filter(|f| f.key).collect();
     zdkeys.sort_by_key(|f| f.id);
     if !zdkeys.is_empty() {
-        let key_members: Vec<&Member> = s
-            .members
+        // Include inherited `@key` members (#A10): key-hash covers base keys too.
+        let key_members: Vec<&Member> = resolved_members
             .iter()
+            .copied()
             .filter(|m| {
                 lower_annotations(&m.annotations)
                     .map(|l| l.has_key())
@@ -793,6 +1819,14 @@ fn emit_struct(
     // each field is `{name, r} = <get>`, then the struct is built. @final reads
     // inline, @appendable skips the DHEADER, @mutable skips DHEADER then per
     // member EMHEADER + NEXTINT (members in declaration order).
+    //
+    // `@optional` (final/appendable): read the u8 presence flag, then the value
+    // only when present — the exact inverse of the encode step. `@optional`
+    // under @mutable rides the existing naive positional decoder (it reads every
+    // member's EMHEADER+NEXTINT in declaration order and does not skip an omitted
+    // member), so it round-trips a *present* optional only; a member absent on
+    // the wire would misalign this decoder — same limitation the sibling
+    // backends carry for @mutable decode.
     let _ = writeln!(out, "\n  def read(r) do");
     if ext == ExtensibilityKind::Mutable {
         let _ = writeln!(out, "    {{_, r}} = {wire}.get_u32(r)");
@@ -800,18 +1834,40 @@ fn emit_struct(
             let _ = writeln!(out, "    {{_, r}} = {wire}.get_u32(r)");
             let _ = writeln!(out, "    {{_, r}} = {wire}.get_u32(r)");
             let _ = writeln!(out, "    {{{}, r}} = {}", f.name, f.get.replace("$r", "r"));
+            if f.optional {
+                let _ = writeln!(out, "    {}_present = true", f.name);
+            }
         }
     } else {
         if ext == ExtensibilityKind::Appendable {
             let _ = writeln!(out, "    {{_, r}} = {wire}.get_u32(r)");
         }
         for f in &fields {
-            let _ = writeln!(out, "    {{{}, r}} = {}", f.name, f.get.replace("$r", "r"));
+            if f.optional {
+                let _ = writeln!(out, "    {{{}_present, r}} = {wire}.get_bool(r)", f.name);
+                let _ = writeln!(
+                    out,
+                    "    {{{n}, r}} = if {n}_present, do: ({g}), else: {{nil, r}}",
+                    n = f.name,
+                    g = f.get.replace("$r", "r")
+                );
+            } else {
+                let _ = writeln!(out, "    {{{}, r}} = {}", f.name, f.get.replace("$r", "r"));
+            }
         }
     }
     let struct_fields = fields
         .iter()
-        .map(|f| format!("{n}: {n}", n = f.name))
+        .flat_map(|f| {
+            if f.optional {
+                vec![
+                    format!("{n}_present: {n}_present", n = f.name),
+                    format!("{n}: {n}", n = f.name),
+                ]
+            } else {
+                vec![format!("{n}: {n}", n = f.name)]
+            }
+        })
         .collect::<Vec<_>>()
         .join(", ");
     let _ = writeln!(out, "    {{%__MODULE__{{{struct_fields}}}, r}}");
@@ -820,6 +1876,8 @@ fn emit_struct(
     let _ = writeln!(out, "    {{v, _r}} = read({wire}.reader(bin, endian))");
     let _ = writeln!(out, "    v");
     let _ = writeln!(out, "  end");
+    // §7.2.2.4.8 — text as the last element inside the declaration.
+    emit_verbatim_at(out, "  ", &s.annotations, PlacementKind::EndDeclaration);
     let _ = writeln!(out, "end");
     Ok(())
 }
@@ -831,10 +1889,17 @@ fn is_primitive(t: &TypeSpec, enum_names: &HashSet<String>) -> bool {
     match t {
         TypeSpec::Primitive(_) => true,
         TypeSpec::Scoped(sn) => {
-            enum_names.contains(&sn.parts.last().map(|p| p.text.clone()).unwrap_or_default())
+            let n = resolve_scoped_name(sn);
+            enum_names.contains(&n) || is_bit_name(&n)
         }
         _ => false,
     }
+}
+
+/// `true` if `name` resolves to a `bitset`/`bitmask` declaration (its wire form
+/// is a single backing integer — fully descriptive, no collection DHEADER).
+fn is_bit_name(name: &str) -> bool {
+    BIT_NAMES.with(|b| b.borrow().contains(name))
 }
 
 /// Builds a map pipe segment: sort entries by key, then `u32 count` + key/value
@@ -909,16 +1974,32 @@ fn map_type(
             )),
             None => Ok(format!("{pkg}.Wire.put_wstring({expr})")),
         },
-        TypeSpec::Sequence(seq) => {
-            map_sequence(&seq.elem, seq.bound.as_ref(), expr, pkg, struct_names)
+        TypeSpec::Sequence(seq) => map_sequence(
+            &seq.elem,
+            seq.bound.as_ref(),
+            expr,
+            pkg,
+            enum_names,
+            struct_names,
+        ),
+        // A `fixed<P,S>` decimal: packed BCD, `(P+2)/2` raw octets, no length
+        // prefix and no alignment (CORBA/GIOP §9.3.2.7 ≡ XCDR2 §7.4.4.5). The
+        // Elixir field holds the BCD bytes directly (built by `Pkg.Fixed.enc/3`),
+        // so the put is a plain byte splice.
+        TypeSpec::Fixed(f) => {
+            USED_FIXED.with(|u| u.set(true));
+            let _ = fixed_ps(f)?; // validate P/S resolve at codegen time
+            Ok(format!("{pkg}.Wire.put_bytes({expr})"))
         }
         TypeSpec::Scoped(sn) => {
-            let name = sn.parts.last().map(|p| p.text.clone()).unwrap_or_default();
+            let name = resolve_scoped_name(sn);
             if enum_names.contains(&name) {
-                // Enum member: 32-bit signed integer on the wire.
-                Ok(format!("{pkg}.Wire.put_u32({expr})"))
-            } else if struct_names.contains(&name) {
-                // Nested struct member: marshal into the piped writer.
+                // Enum holder width follows @bit_bound (XTypes 1.3 §7.4.5.1);
+                // Elixir bitstrings write signed/unsigned identically (2's compl).
+                let (put, _get, _bits) = bit_storage((enum_wire_width(&name) * 8) as usize);
+                Ok(format!("{pkg}.Wire.{put}({expr})"))
+            } else if struct_names.contains(&name) || is_bit_name(&name) {
+                // Nested struct / bit-holder member: marshal into the piped writer.
                 let esc = escape_elixir_ident(&name);
                 Ok(format!("{pkg}.{esc}.marshal_into({expr})"))
             } else {
@@ -968,7 +2049,7 @@ fn map_key_type(
     typedefs: &HashMap<String, TypeSpec>,
 ) -> Result<Vec<String>> {
     if let TypeSpec::Scoped(sn) = t {
-        let name = sn.parts.last().map(|p| p.text.clone()).unwrap_or_default();
+        let name = resolve_scoped_name(sn);
         if let Some(sd) = structs.get(&name) {
             let nested_keys: Vec<&Member> = sd
                 .members
@@ -1058,11 +2139,13 @@ fn map_integer(i: IntegerType, expr: &str) -> Result<String> {
     Ok(seg)
 }
 
+/// zerodds-lint: recursion-depth 64 (codegen AST walk; bounded by IDL nesting).
 fn map_sequence(
     elem: &TypeSpec,
     bound: Option<&ConstExpr>,
     expr: &str,
     pkg: &str,
+    enum_names: &HashSet<String>,
     struct_names: &HashSet<String>,
 ) -> Result<String> {
     // Bounded `sequence<T, N>` (DDS-XTypes §7.4.3): over-bound = encode
@@ -1090,7 +2173,7 @@ fn map_sequence(
     // sequence<struct> → collection DHEADER + count + each element (XTypes
     // §7.4.3.5.3). A one-line `then/2` keeps the pipe threading the writer.
     if let TypeSpec::Scoped(sn) = elem {
-        let name = sn.parts.last().map(|p| p.text.clone()).unwrap_or_default();
+        let name = resolve_scoped_name(sn);
         if struct_names.contains(&name) {
             let esc = escape_elixir_ident(&name);
             let seg = format!(
@@ -1099,8 +2182,13 @@ fn map_sequence(
             return Ok(seg);
         }
     }
-    Err(IdlElixirError::Unsupported(
-        "sequence of non-struct, non-octet elements".to_string(),
+    // sequence<arbitrary> → u32 count + per-element encode (no collection
+    // DHEADER; the element type is fully descriptive on the wire for the
+    // primitive / enum / bitset / bitmask cases reached here). Mirrors the
+    // `idl-go`/`idl-d` fallback.
+    let elem_seg = map_type(elem, "zdElem", pkg, enum_names, struct_names)?;
+    Ok(format!(
+        "then(fn zw ->\n      {bound_check}zw = {pkg}.Wire.put_u32(zw, length({expr}))\n      Enum.reduce({expr}, zw, fn zdElem, zdAcc -> zdAcc |> {elem_seg} end)\n    end)"
     ))
 }
 
@@ -1171,13 +2259,22 @@ fn map_get(
             None => Ok(format!("{wire}.get_wstring($r)")),
         },
         TypeSpec::Sequence(seq) => {
-            map_get_sequence(&seq.elem, seq.bound.as_ref(), pkg, struct_names)
+            map_get_sequence(&seq.elem, seq.bound.as_ref(), pkg, enum_names, struct_names)
+        }
+        // `fixed<P,S>`: read the statically-known `(P+2)/2` BCD octets.
+        TypeSpec::Fixed(f) => {
+            USED_FIXED.with(|u| u.set(true));
+            let (p, _) = fixed_ps(f)?;
+            let n = (p + 2) / 2;
+            Ok(format!("{wire}.get_bytes_n($r, {n})"))
         }
         TypeSpec::Scoped(sn) => {
-            let name = sn.parts.last().map(|p| p.text.clone()).unwrap_or_default();
+            let name = resolve_scoped_name(sn);
             if enum_names.contains(&name) {
-                Ok(format!("{wire}.get_u32($r)"))
-            } else if struct_names.contains(&name) {
+                // Read the @bit_bound-wide holder (XTypes 1.3 §7.4.5.1).
+                let (_put, get, _bits) = bit_storage((enum_wire_width(&name) * 8) as usize);
+                Ok(format!("{wire}.{get}($r)"))
+            } else if struct_names.contains(&name) || is_bit_name(&name) {
                 let esc = escape_elixir_ident(&name);
                 Ok(format!("{pkg}.{esc}.read($r)"))
             } else {
@@ -1239,10 +2336,12 @@ fn map_get_integer(i: IntegerType) -> Result<String> {
     Ok(g.to_string())
 }
 
+/// zerodds-lint: recursion-depth 64 (codegen AST walk; bounded by IDL nesting).
 fn map_get_sequence(
     elem: &TypeSpec,
     bound: Option<&ConstExpr>,
     pkg: &str,
+    enum_names: &HashSet<String>,
     struct_names: &HashSet<String>,
 ) -> Result<String> {
     let wire = format!("{pkg}.Wire");
@@ -1263,7 +2362,7 @@ fn map_get_sequence(
         });
     }
     if let TypeSpec::Scoped(sn) = elem {
-        let name = sn.parts.last().map(|p| p.text.clone()).unwrap_or_default();
+        let name = resolve_scoped_name(sn);
         if struct_names.contains(&name) {
             let bound_check = match bv {
                 Some(bv) => format!(
@@ -1277,7 +2376,16 @@ fn map_get_sequence(
             ));
         }
     }
-    Err(IdlElixirError::Unsupported(
-        "sequence of non-struct, non-octet elements".to_string(),
+    // sequence<arbitrary> → u32 count + per-element decode (no DHEADER; inverse
+    // of the `map_sequence` arbitrary fallback).
+    let bound_check = match bv {
+        Some(bv) => format!(
+            "if zn > {bv}, do: raise(ArgumentError, \"decoded sequence length exceeds its IDL bound ({bv})\")\n      "
+        ),
+        None => String::new(),
+    };
+    let elem_get = map_get(elem, pkg, enum_names, struct_names)?.replace("$r", "zrr");
+    Ok(format!(
+        "(\n      zr = $r\n      {{zn, zr}} = {wire}.get_u32(zr)\n      {bound_check}{{zlst, zr}} = Enum.reduce(1..zn//1, {{[], zr}}, fn _, {{zacc, zrr}} -> {{ze, zrr}} = {elem_get}; {{[ze | zacc], zrr}} end)\n      {{Enum.reverse(zlst), zr}}\n    )"
     ))
 }

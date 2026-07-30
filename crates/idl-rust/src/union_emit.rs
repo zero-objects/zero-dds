@@ -13,6 +13,7 @@
 //! carry the respective case-body struct.
 
 use zerodds_idl::ast::types::{Case, ConstExpr, Declarator, SwitchTypeSpec, TypeSpec, UnionDef};
+use zerodds_idl::semantics::annotations::PlacementKind;
 
 use crate::error::{Result, RustGenError};
 use crate::type_map::escape_keyword;
@@ -25,14 +26,19 @@ pub fn emit_union(out: &mut String, u: &UnionDef) -> Result<()> {
     out.push_str("pub enum ");
     out.push_str(&escape_keyword(&u.name.text));
     out.push_str(" {\n");
+    // §7.2.2.4.8 — `@verbatim(placement=BEGIN_DECLARATION)`.
+    crate::verbatim::emit_verbatim_at(out, "    ", &u.annotations, PlacementKind::BeginDeclaration);
     for case in &u.cases {
         emit_case_variant(out, case)?;
     }
+    // §7.2.2.4.8 — `@verbatim(placement=END_DECLARATION)`.
+    crate::verbatim::emit_verbatim_at(out, "    ", &u.annotations, PlacementKind::EndDeclaration);
     out.push_str("}\n\n");
 
     // Default impl: first variant
     if let Some(first) = u.cases.first() {
         let variant_name = &first.element.declarator.name().text;
+        out.push_str(crate::emitter::IMPL_LINT_ALLOW);
         out.push_str("impl Default for ");
         out.push_str(&escape_keyword(&u.name.text));
         out.push_str(" {\n");
@@ -41,7 +47,7 @@ pub fn emit_union(out: &mut String, u: &UnionDef) -> Result<()> {
         let elem_type = rust_type_for(&first.element.type_spec)?;
         out.push_str(&format!(
             "        Self::{} (<{}>::default())\n",
-            capitalize(variant_name),
+            variant_ident(variant_name),
             elem_type
         ));
         out.push_str("    }\n");
@@ -90,7 +96,7 @@ fn gather_union_cases(u: &UnionDef) -> Result<Vec<UnionCase>> {
             }
         }
         out.push(UnionCase {
-            variant: capitalize(&case.element.declarator.name().text),
+            variant: variant_ident(&case.element.declarator.name().text),
             elem_type: rust_type_for(&case.element.type_spec)?,
             value_labels,
             is_default,
@@ -126,29 +132,154 @@ fn emit_union_cdr_encode(out: &mut String, u: &UnionDef, cases: &[UnionCase], sw
     // wire (the top-level frame only wraps the outermost type). Classic CDR
     // (CORBA/GIOP, max_align 8) has no DHEADER, so it stays plain. We detect
     // the path at runtime via `writer.max_alignment() == 4`.
-    let appendable = matches!(
-        crate::annotations::struct_extensibility(&u.annotations),
-        crate::annotations::StructExtensibility::Appendable
-    );
-    out.push_str(&format!("\nimpl zerodds_cdr::CdrEncode for {name} {{\n"));
+    let ext = crate::annotations::struct_extensibility(&u.annotations);
+    out.push('\n');
+    out.push_str(crate::emitter::IMPL_LINT_ALLOW);
+    out.push_str(&format!("impl zerodds_cdr::CdrEncode for {name} {{\n"));
     out.push_str("    fn encode(&self, writer: &mut zerodds_cdr::BufferWriter) -> ::core::result::Result<(), zerodds_cdr::EncodeError> {\n");
-    let (open, body_writer, indent) = if appendable {
-        out.push_str("        if writer.max_alignment() == 4 {\n");
-        out.push_str("            zerodds_cdr::struct_enc::encode_appendable(writer, |w| {\n");
-        emit_union_match_encode(out, &name, cases, switch_ty, dd, "w", "                ");
-        out.push_str("                Ok(())\n");
-        out.push_str("            })?;\n");
-        out.push_str("        } else {\n");
-        (true, "writer", "            ")
-    } else {
-        (false, "writer", "        ")
-    };
-    emit_union_match_encode(out, &name, cases, switch_ty, dd, body_writer, indent);
-    if open {
-        out.push_str("        }\n");
+    match ext {
+        crate::annotations::StructExtensibility::Mutable => {
+            // XTypes 1.3 §7.4.3.5.3: a MUTABLE union is PL_CDR2 — an outer
+            // DHEADER framing an EMHEADER-tagged member list, exactly like a
+            // MUTABLE struct (rule (21)/(22)). The discriminator is member id 0;
+            // the selected branch is a second EMHEADER-framed member (id
+            // `branch-index + 1`). Previously a `@mutable` union fell through to
+            // the plain (FINAL) path — disc + member with NO DHEADER/EMHEADER —
+            // a silent wire-format break. Classic CDR / XCDR1 (max_align 8) is
+            // PL_CDR1: PID-framed disc + member, terminated by the sentinel.
+            out.push_str("        if writer.max_alignment() == 4 {\n");
+            out.push_str("            zerodds_cdr::struct_enc::encode_appendable(writer, |w| {\n");
+            out.push_str("                let mut enc = zerodds_cdr::struct_enc::MutableStructEncoder::new(w, ::std::vec![]);\n");
+            emit_union_mutable_match_encode(out, &name, cases, switch_ty, dd, "                ");
+            out.push_str("                enc.finish()?;\n");
+            out.push_str("                Ok(())\n");
+            out.push_str("            })?;\n");
+            out.push_str("        } else {\n");
+            emit_union_pl_cdr1_match_encode(out, &name, cases, switch_ty, dd, "            ");
+            out.push_str("            zerodds_cdr::xcdr1::write_pl_cdr1_sentinel(writer)?;\n");
+            out.push_str("        }\n");
+        }
+        crate::annotations::StructExtensibility::Appendable => {
+            out.push_str("        if writer.max_alignment() == 4 {\n");
+            out.push_str("            zerodds_cdr::struct_enc::encode_appendable(writer, |w| {\n");
+            emit_union_match_encode(out, &name, cases, switch_ty, dd, "w", "                ");
+            out.push_str("                Ok(())\n");
+            out.push_str("            })?;\n");
+            out.push_str("        } else {\n");
+            emit_union_match_encode(out, &name, cases, switch_ty, dd, "writer", "            ");
+            out.push_str("        }\n");
+        }
+        crate::annotations::StructExtensibility::Final => {
+            emit_union_match_encode(out, &name, cases, switch_ty, dd, "writer", "        ");
+        }
     }
     out.push_str("        ::core::result::Result::Ok(())\n");
     out.push_str("    }\n}\n");
+}
+
+/// Emits the mutable (PL_CDR2) `match self { .. }` encode: the discriminator as
+/// EMHEADER member id 0, then the selected branch as EMHEADER member id
+/// `branch-index + 1`, via the shared `MutableStructEncoder` (`enc`).
+fn emit_union_mutable_match_encode(
+    out: &mut String,
+    name: &str,
+    cases: &[UnionCase],
+    switch_ty: &str,
+    dd: i128,
+    indent: &str,
+) {
+    // Discriminator EMHEADER length code from the switch wire size — the same
+    // compact LC a `@mutable` struct uses for an identically-sized primitive.
+    let disc_lc = switch_length_code(switch_ty);
+    out.push_str(indent);
+    out.push_str("match self {\n");
+    for (idx, c) in cases.iter().enumerate() {
+        let disc = c.value_labels.first().copied().unwrap_or(dd);
+        let member_id = idx + 1;
+        out.push_str(&format!("{indent}    {name}::{}(__v) => {{\n", c.variant));
+        // Discriminator — member id 0, must_understand, compact LC.
+        out.push_str(&format!(
+            "{indent}        enc.encode_member_lc(0u32, true, zerodds_cdr::struct_enc::LengthCode::{disc_lc}, |w| <{switch_ty} as zerodds_cdr::CdrEncode>::encode(&(({disc}) as {switch_ty}), w))?;\n"
+        ));
+        let mut checks = String::new();
+        crate::struct_emit::emit_bound_checks_decl(
+            &mut checks,
+            &c.type_spec,
+            &c.declarator,
+            "__v",
+            false,
+        );
+        if !checks.is_empty() {
+            out.push_str(&format!("{indent}        {checks}\n"));
+        }
+        // Selected branch — member id (branch-index + 1), must_understand. Use
+        // the same compact LC a `@mutable` struct member of this type would use
+        // (LC5 for a leading-length body, LC0–3 for a scalar), else universal LC4.
+        match crate::struct_emit::mutable_length_code_for(&c.type_spec, &c.declarator, false) {
+            Some(code) => out.push_str(&format!(
+                "{indent}        enc.encode_member_lc({member_id}u32, true, zerodds_cdr::struct_enc::LengthCode::{code}, |w| <_ as zerodds_cdr::CdrEncode>::encode(__v, w))?;\n"
+            )),
+            None => out.push_str(&format!(
+                "{indent}        enc.encode_member({member_id}u32, true, |w| <_ as zerodds_cdr::CdrEncode>::encode(__v, w))?;\n"
+            )),
+        }
+        out.push_str(&format!("{indent}    }}\n"));
+    }
+    out.push_str(indent);
+    out.push_str("}\n");
+}
+
+/// EMHEADER length code (XTypes 1.3 §7.4.3.4.2) for a union discriminator of
+/// the given switch wire type — LC0/1/2/3 by 1/2/4/8-byte size.
+fn switch_length_code(switch_ty: &str) -> &'static str {
+    match switch_ty {
+        "i8" | "u8" => "Lc0",
+        "i16" | "u16" => "Lc1",
+        "i64" | "u64" => "Lc3",
+        // i32/u32 and the enum discriminant (i32) are 4-byte.
+        _ => "Lc2",
+    }
+}
+
+/// Emits the classic-CDR / XCDR1 PL_CDR1 `match self { .. }` encode for a
+/// `@mutable` union: the discriminator as PID member 0, then the selected branch
+/// as PID member `branch-index + 1`. The trailing sentinel is written by the
+/// caller (symmetric to the `@mutable` struct path).
+fn emit_union_pl_cdr1_match_encode(
+    out: &mut String,
+    name: &str,
+    cases: &[UnionCase],
+    switch_ty: &str,
+    dd: i128,
+    indent: &str,
+) {
+    out.push_str(indent);
+    out.push_str("match self {\n");
+    for (idx, c) in cases.iter().enumerate() {
+        let disc = c.value_labels.first().copied().unwrap_or(dd);
+        let member_id = idx + 1;
+        out.push_str(&format!("{indent}    {name}::{}(__v) => {{\n", c.variant));
+        out.push_str(&format!(
+            "{indent}        zerodds_cdr::xcdr1::encode_pl_cdr1_member(writer, 0u32, |w| <{switch_ty} as zerodds_cdr::CdrEncode>::encode(&(({disc}) as {switch_ty}), w))?;\n"
+        ));
+        let mut checks = String::new();
+        crate::struct_emit::emit_bound_checks_decl(
+            &mut checks,
+            &c.type_spec,
+            &c.declarator,
+            "__v",
+            false,
+        );
+        if !checks.is_empty() {
+            out.push_str(&format!("{indent}        {checks}\n"));
+        }
+        out.push_str(&format!(
+            "{indent}        zerodds_cdr::xcdr1::encode_pl_cdr1_member(writer, {member_id}u32, |w| <_ as zerodds_cdr::CdrEncode>::encode(__v, w))?;\n"
+        ));
+        out.push_str(&format!("{indent}    }}\n"));
+    }
+    out.push_str(indent);
+    out.push_str("}\n");
 }
 
 /// Emits the `match self { .. }` discriminator+member encode into `writer_expr`.
@@ -193,40 +324,186 @@ fn emit_union_match_encode(
 
 fn emit_union_cdr_decode(out: &mut String, u: &UnionDef, cases: &[UnionCase], switch_ty: &str) {
     let name = escape_keyword(&u.name.text);
-    let appendable = matches!(
-        crate::annotations::struct_extensibility(&u.annotations),
-        crate::annotations::StructExtensibility::Appendable
-    );
-    out.push_str(&format!("\nimpl zerodds_cdr::CdrDecode for {name} {{\n"));
+    let ext = crate::annotations::struct_extensibility(&u.annotations);
+    out.push('\n');
+    out.push_str(crate::emitter::IMPL_LINT_ALLOW);
+    out.push_str(&format!("impl zerodds_cdr::CdrDecode for {name} {{\n"));
     out.push_str("    fn decode(reader: &mut zerodds_cdr::BufferReader<'_>) -> ::core::result::Result<Self, zerodds_cdr::DecodeError> {\n");
-    if appendable {
-        // XCDR2: strip the per-element DHEADER (rule (30)), symmetric to encode.
-        out.push_str("        if reader.max_alignment() == 4 {\n");
-        out.push_str(
-            "            return zerodds_cdr::struct_enc::decode_appendable(reader, |r| {\n",
-        );
-        emit_union_disc_match_decode(
-            out,
-            &name,
-            &u.name.text,
-            cases,
-            switch_ty,
-            "r",
-            "                ",
-        );
-        out.push_str("            });\n");
-        out.push_str("        }\n");
+    match ext {
+        crate::annotations::StructExtensibility::Mutable => {
+            // XCDR2 (PL_CDR2): strip the outer DHEADER, then read EMHEADER-tagged
+            // members. The active branch is keyed by member id (id 0 =
+            // discriminator, id `branch-index + 1` = branch), symmetric to
+            // `emit_union_mutable_match_encode`. Classic CDR / XCDR1 reads the
+            // PL_CDR1 PID list.
+            out.push_str("        if reader.max_alignment() == 4 {\n");
+            out.push_str(
+                "            return zerodds_cdr::struct_enc::decode_appendable(reader, |r| {\n",
+            );
+            emit_union_mutable_decode(
+                out,
+                &name,
+                &u.name.text,
+                cases,
+                switch_ty,
+                "                ",
+            );
+            out.push_str("            });\n");
+            out.push_str("        }\n");
+            emit_union_pl_cdr1_decode(out, &name, &u.name.text, cases, switch_ty, "        ");
+        }
+        crate::annotations::StructExtensibility::Appendable => {
+            // XCDR2: strip the per-element DHEADER (rule (30)), symmetric to encode.
+            out.push_str("        if reader.max_alignment() == 4 {\n");
+            out.push_str(
+                "            return zerodds_cdr::struct_enc::decode_appendable(reader, |r| {\n",
+            );
+            emit_union_disc_match_decode(
+                out,
+                &name,
+                &u.name.text,
+                cases,
+                switch_ty,
+                "r",
+                "                ",
+            );
+            out.push_str("            });\n");
+            out.push_str("        }\n");
+            emit_union_disc_match_decode(
+                out,
+                &name,
+                &u.name.text,
+                cases,
+                switch_ty,
+                "reader",
+                "        ",
+            );
+        }
+        crate::annotations::StructExtensibility::Final => {
+            emit_union_disc_match_decode(
+                out,
+                &name,
+                &u.name.text,
+                cases,
+                switch_ty,
+                "reader",
+                "        ",
+            );
+        }
     }
-    emit_union_disc_match_decode(
-        out,
-        &name,
-        &u.name.text,
-        cases,
-        switch_ty,
-        "reader",
-        "        ",
-    );
     out.push_str("    }\n}\n");
+}
+
+/// Emits the mutable (PL_CDR2) decode body: an EMHEADER `read_mutable_member`
+/// loop whose per-member-id match selects the active branch (id 0 =
+/// discriminator, id `branch-index + 1` = branch). Wrapped by the caller in
+/// `decode_appendable` (DHEADER strip). Symmetric to
+/// [`emit_union_mutable_match_encode`].
+fn emit_union_mutable_decode(
+    out: &mut String,
+    name: &str,
+    raw_name: &str,
+    cases: &[UnionCase],
+    switch_ty: &str,
+    indent: &str,
+) {
+    out.push_str(&format!(
+        "{indent}let mut __sel: ::core::option::Option<{name}> = ::core::option::Option::None;\n"
+    ));
+    out.push_str(&format!("{indent}loop {{\n"));
+    out.push_str(&format!(
+        "{indent}    match zerodds_cdr::struct_enc::read_mutable_member(r)? {{\n"
+    ));
+    out.push_str(&format!(
+        "{indent}        ::core::option::Option::Some(member) => {{\n"
+    ));
+    out.push_str(&format!(
+        "{indent}            let mut body_reader = zerodds_cdr::BufferReader::new(member.body, zerodds_cdr::BufferReader::endianness(r)).xcdr2();\n"
+    ));
+    out.push_str(&format!("{indent}            match member.member_id {{\n"));
+    // Member id 0 — discriminator (read to advance; the branch is keyed by id).
+    out.push_str(&format!(
+        "{indent}                0u32 => {{ let _ = <{switch_ty} as zerodds_cdr::CdrDecode>::decode(&mut body_reader)?; }}\n"
+    ));
+    for (idx, c) in cases.iter().enumerate() {
+        let member_id = idx + 1;
+        out.push_str(&format!(
+            "{indent}                {member_id}u32 => {{ __sel = ::core::option::Option::Some({name}::{}(<{} as zerodds_cdr::CdrDecode>::decode(&mut body_reader)?)); }}\n",
+            c.variant, c.elem_type
+        ));
+    }
+    out.push_str(&format!("{indent}                _ => {{\n"));
+    out.push_str(&format!(
+        "{indent}                    if member.must_understand {{\n"
+    ));
+    out.push_str(&format!(
+        "{indent}                        return ::core::result::Result::Err(zerodds_cdr::DecodeError::UnknownMustUnderstandMember {{ member_id: member.member_id }});\n"
+    ));
+    out.push_str(&format!("{indent}                    }}\n"));
+    out.push_str(&format!("{indent}                }}\n"));
+    out.push_str(&format!("{indent}            }}\n"));
+    out.push_str(&format!("{indent}        }}\n"));
+    out.push_str(&format!(
+        "{indent}        ::core::option::Option::None => break,\n"
+    ));
+    out.push_str(&format!("{indent}    }}\n"));
+    out.push_str(&format!("{indent}}}\n"));
+    out.push_str(&format!(
+        "{indent}__sel.ok_or(zerodds_cdr::DecodeError::InvalidEnum {{ kind: \"{raw_name}\", value: 0u32 }})\n"
+    ));
+}
+
+/// Emits the classic-CDR / XCDR1 PL_CDR1 decode body for a `@mutable` union: a
+/// `read_pl_cdr1_member` loop keyed by PID member id (0 = discriminator,
+/// `branch-index + 1` = branch). Symmetric to [`emit_union_pl_cdr1_match_encode`].
+fn emit_union_pl_cdr1_decode(
+    out: &mut String,
+    name: &str,
+    raw_name: &str,
+    cases: &[UnionCase],
+    switch_ty: &str,
+    indent: &str,
+) {
+    out.push_str(&format!(
+        "{indent}let __endian = zerodds_cdr::BufferReader::endianness(reader);\n"
+    ));
+    out.push_str(&format!(
+        "{indent}let mut __sel: ::core::option::Option<{name}> = ::core::option::Option::None;\n"
+    ));
+    out.push_str(&format!("{indent}loop {{\n"));
+    out.push_str(&format!(
+        "{indent}    match zerodds_cdr::xcdr1::read_pl_cdr1_member(reader)? {{\n"
+    ));
+    out.push_str(&format!(
+        "{indent}        ::core::option::Option::Some(member) => {{\n"
+    ));
+    out.push_str(&format!(
+        "{indent}            let mut body_reader = zerodds_cdr::BufferReader::new(&member.body, __endian);\n"
+    ));
+    out.push_str(&format!("{indent}            match member.member_id {{\n"));
+    out.push_str(&format!(
+        "{indent}                0u32 => {{ let _ = <{switch_ty} as zerodds_cdr::CdrDecode>::decode(&mut body_reader)?; }}\n"
+    ));
+    for (idx, c) in cases.iter().enumerate() {
+        let member_id = idx + 1;
+        out.push_str(&format!(
+            "{indent}                {member_id}u32 => {{ __sel = ::core::option::Option::Some({name}::{}(<{} as zerodds_cdr::CdrDecode>::decode(&mut body_reader)?)); }}\n",
+            c.variant, c.elem_type
+        ));
+    }
+    out.push_str(&format!(
+        "{indent}                _ => {{ /* unknown PL_CDR1 member: skip */ }}\n"
+    ));
+    out.push_str(&format!("{indent}            }}\n"));
+    out.push_str(&format!("{indent}        }}\n"));
+    out.push_str(&format!(
+        "{indent}        ::core::option::Option::None => break,\n"
+    ));
+    out.push_str(&format!("{indent}    }}\n"));
+    out.push_str(&format!("{indent}}}\n"));
+    out.push_str(&format!(
+        "{indent}__sel.ok_or(zerodds_cdr::DecodeError::InvalidEnum {{ kind: \"{raw_name}\", value: 0u32 }})\n"
+    ));
 }
 
 /// Emits the `let __disc = ..; match __disc { .. }` decode into `reader_expr`.
@@ -286,7 +563,7 @@ fn emit_case_variant(out: &mut String, case: &Case) -> Result<()> {
     let variant_name = case.element.declarator.name();
     let elem_type = rust_type_for(&case.element.type_spec)?;
     out.push_str("    ");
-    out.push_str(&capitalize(&variant_name.text));
+    out.push_str(&variant_ident(&variant_name.text));
     out.push('(');
     out.push_str(&elem_type);
     out.push_str("),\n");
@@ -299,6 +576,16 @@ fn capitalize(s: &str) -> String {
         None => String::new(),
         Some(first) => first.to_uppercase().chain(c).collect(),
     }
+}
+
+/// Rust enum-variant identifier for an IDL union branch name: PascalCased, then
+/// keyword-escaped. Escaping matters because PascalCasing a branch named `self`
+/// or `Self` yields `Self`, which is a reserved word and cannot name a variant
+/// (`Self` is not even a valid raw identifier) — `escape_keyword` mangles it to
+/// `Self_`. All variant-producing sites go through this so the definition, the
+/// `Default` impl and the encode/decode match arms stay consistent.
+fn variant_ident(name: &str) -> String {
+    crate::type_map::escape_keyword(&capitalize(name))
 }
 
 #[allow(dead_code)]

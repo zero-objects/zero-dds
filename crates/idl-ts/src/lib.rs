@@ -1028,7 +1028,7 @@ fn emit_definition_with_diagnostics(
         Definition::Type(td) => emit_type_decl(out, td, module_path),
         Definition::Const(c) => emit_const(out, c),
         Definition::Except(e) => emit_exception(out, e),
-        Definition::Interface(InterfaceDcl::Def(i)) => emit_interface(out, i),
+        Definition::Interface(InterfaceDcl::Def(i)) => emit_interface(out, i, module_path),
         Definition::Interface(InterfaceDcl::Forward(f)) => {
             // §11.7 — orphan forward declarations not in scope of a
             // matching complete declaration. We cannot at this point
@@ -1444,15 +1444,19 @@ fn annotation_string_value(
 /// byte-identical: `combo::Sample` and `combo::Reading` are unannotated and
 /// must carry no per-element/per-union DHEADER.
 fn struct_extensibility(annotations: &[zerodds_idl::ast::Annotation]) -> &'static str {
-    if has_annotation(annotations, "appendable") {
-        "appendable"
-    } else if has_annotation(annotations, "mutable") {
-        "mutable"
-    } else if has_annotation(annotations, "final") {
-        "final"
-    } else {
-        // SX2: unannotated default is APPENDABLE (§7.3.3.1).
-        "appendable"
+    // Broad-audit P0-4: read the effective extensibility through the ONE
+    // central normalizer, which honors both the short forms
+    // (`@final`/`@appendable`/`@mutable`) AND the long form
+    // `@extensibility(FINAL|APPENDABLE|MUTABLE)` (XTypes 1.3 §7.3.3). Scanning
+    // only the short forms here silently downgraded `@extensibility(MUTABLE)`
+    // to the default and drifted the TS descriptor away from Rust/Java/Python.
+    use zerodds_idl::semantics::ExtensibilityKind;
+    match zerodds_idl::semantics::extensibility_of(annotations) {
+        Some(ExtensibilityKind::Final) => "final",
+        Some(ExtensibilityKind::Mutable) => "mutable",
+        Some(ExtensibilityKind::Appendable) => "appendable",
+        // Un-annotated default is APPENDABLE (XTypes 1.3 §7.3.3.1).
+        None => "appendable",
     }
 }
 
@@ -1696,6 +1700,22 @@ fn typespec_typeof_check(t: &TypeSpec) -> Option<String> {
 
 /// Emits a `<Name>Type: DdsTypeDescriptor<<Name>>` side-table
 /// constant carrying the struct's metadata.
+/// P0-3: the annotation-fixed wire id of a struct member as `i64` — explicit
+/// `@id(N)`, `@hashid`, or a struct-level `@autoid(HASH)` name-hash, via the ONE
+/// central resolver in the semantic layer. `None` = SEQUENTIAL (the caller's
+/// running `next_id` counter). Before this the TS backend read only `@id`, so
+/// `@autoid(HASH)` / `@hashid` members got a positional id on the wire and in
+/// the descriptor.
+fn ts_member_id_override(
+    s: &zerodds_idl::ast::StructDef,
+    m: &zerodds_idl::ast::Member,
+) -> Option<i64> {
+    let autoid_hash = zerodds_idl::semantics::member_id::container_autoid_hash(&s.annotations);
+    let name = m.declarators.first().map_or("", |d| d.name().text.as_str());
+    zerodds_idl::semantics::member_id::fixed_member_id(autoid_hash, &m.annotations, name)
+        .map(i64::from)
+}
+
 fn emit_struct_descriptor(
     out: &mut String,
     s: &zerodds_idl::ast::StructDef,
@@ -1731,7 +1751,7 @@ fn emit_struct_descriptor(
         let optional_flag = has_annotation(&m.annotations, "optional");
         let must_flag = has_annotation(&m.annotations, "must_understand");
         let unit = annotation_string_value(&m.annotations, "unit");
-        let id_override = annotation_int_value(&m.annotations, "id");
+        let id_override = ts_member_id_override(s, m);
         let default_lit = annotation_default_to_ts(&m.annotations);
         let min_lit = annotation_const_text(&m.annotations, "min");
         let max_lit = annotation_const_text(&m.annotations, "max");
@@ -1886,7 +1906,9 @@ fn emit_struct_typesupport(
 }
 
 fn struct_has_any_key(s: &zerodds_idl::ast::StructDef) -> bool {
-    s.members
+    // Includes inherited @key members: a derived struct is keyed when its base
+    // carries a @key, even if the derived adds none (XTypes §7.4.3.4.1 + §7.6.8).
+    resolved_wire_members(s)
         .iter()
         .any(|m| has_annotation(&m.annotations, "key"))
 }
@@ -1929,9 +1951,11 @@ fn emit_struct_encode_body(
     indent: &str,
 ) -> Result<(), IdlTsError> {
     let extensibility = struct_extensibility(&s.annotations);
+    // Base-class members precede own members on the wire (XTypes §7.4.3.4.1).
+    let zd_members = resolved_wire_members(s);
     match extensibility {
         "final" => {
-            for m in &s.members {
+            for m in &zd_members {
                 emit_member_encode(out, m, indent, "s.")?;
             }
         }
@@ -1939,7 +1963,7 @@ fn emit_struct_encode_body(
             out.push_str(&alloc::format!(
                 "{indent}const _tok = w.beginAppendable();\n"
             ));
-            for m in &s.members {
+            for m in &zd_members {
                 emit_member_encode(out, m, indent, "s.")?;
             }
             out.push_str(&alloc::format!("{indent}w.endAppendable(_tok);\n"));
@@ -1951,8 +1975,8 @@ fn emit_struct_encode_body(
             out.push_str(&alloc::format!("{indent}if (w.isXcdr1) {{\n"));
             out.push_str(&alloc::format!("{indent}const _plOuter = w;\n"));
             let mut next_id1: i64 = 0;
-            for m in &s.members {
-                let id_override = annotation_int_value(&m.annotations, "id");
+            for m in &zd_members {
+                let id_override = ts_member_id_override(s, m);
                 let optional = has_annotation(&m.annotations, "optional");
                 for d in &m.declarators {
                     let id = id_override.unwrap_or(next_id1);
@@ -1993,8 +2017,8 @@ fn emit_struct_encode_body(
             out.push_str(&alloc::format!("{indent}}} else {{\n"));
             out.push_str(&alloc::format!("{indent}const _tok = w.beginMutable();\n"));
             let mut next_id: i64 = 0;
-            for m in &s.members {
-                let id_override = annotation_int_value(&m.annotations, "id");
+            for m in &zd_members {
+                let id_override = ts_member_id_override(s, m);
                 let must = has_annotation(&m.annotations, "must_understand");
                 let optional = has_annotation(&m.annotations, "optional");
                 for d in &m.declarators {
@@ -2584,6 +2608,44 @@ fn lookup_scoped_kind(s: &ScopedName) -> Option<ScopedKind> {
     TYPE_REG.with(|r| r.borrow().get(key).cloned())
 }
 
+/// Fully-resolved wire member list for a struct: base-class members FIRST
+/// (recursive, multi-level `A <- B <- C` => `A.a, B.b, C.c`), then the struct's
+/// own members. XTypes 1.3 §7.4.3.4.1 places base members before derived members
+/// on the wire, so the codec (encode/decode/keyHash) must serialize them in that
+/// order — the emitted TS interface still declares only own members and inherits
+/// the rest via `extends Base`. Base resolution is by simple name through
+/// `TYPE_REG`; a seen-list bounds pathological inheritance cycles.
+fn resolved_wire_members(s: &zerodds_idl::ast::StructDef) -> Vec<zerodds_idl::ast::Member> {
+    let mut chain: Vec<zerodds_idl::ast::StructDef> = Vec::new();
+    let mut seen: Vec<String> = Vec::new();
+    let mut cur = s.base.clone();
+    while let Some(bn) = cur {
+        let Some(name) = bn.parts.last().map(|p| p.text.clone()) else {
+            break;
+        };
+        if seen.contains(&name) {
+            break;
+        }
+        seen.push(name.clone());
+        let def = TYPE_REG.with(|r| match r.borrow().get(&name) {
+            Some(ScopedKind::Struct { def, .. }) => Some(def.clone()),
+            _ => None,
+        });
+        let Some(def) = def else {
+            break;
+        };
+        cur = def.base.clone();
+        chain.push(def);
+    }
+    // `chain` is [parent, grandparent, …]; reverse so the oldest ancestor leads.
+    let mut out: Vec<zerodds_idl::ast::Member> = Vec::new();
+    for def in chain.into_iter().rev() {
+        out.extend(def.members.iter().cloned());
+    }
+    out.extend(s.members.iter().cloned());
+    out
+}
+
 /// Dotted TS path for a scoped reference (`Module.Sub.Name`). Each
 /// path segment is escaped so a reference to a keyword-named type
 /// resolves to the same escaped name its definition emits under.
@@ -3009,11 +3071,13 @@ fn emit_struct_decode_body(
     let extensibility = struct_extensibility(&s.annotations);
     let name = escape_ts_ident(&s.name.text);
     let name = &name;
+    // Base-class members precede own members on the wire (XTypes §7.4.3.4.1).
+    let zd_members = resolved_wire_members(s);
 
     match extensibility {
         "final" => {
             // Sequenzielles Lesen.
-            for m in &s.members {
+            for m in &zd_members {
                 emit_member_decode_decl(out, m, indent)?;
             }
             emit_decode_return(out, s, indent, name)?;
@@ -3022,7 +3086,7 @@ fn emit_struct_decode_body(
             out.push_str(&alloc::format!(
                 "{indent}const _tok = r.beginAppendable();\n"
             ));
-            for m in &s.members {
+            for m in &zd_members {
                 emit_member_decode_decl(out, m, indent)?;
             }
             out.push_str(&alloc::format!("{indent}r.endAppendable(_tok);\n"));
@@ -3030,7 +3094,7 @@ fn emit_struct_decode_body(
         }
         "mutable" => {
             // Default initialization; fields are set via the EMHEADER loop.
-            for m in &s.members {
+            for m in &zd_members {
                 let optional = has_annotation(&m.annotations, "optional");
                 let base_ts = typespec_to_ts(&m.type_spec)?;
                 for d in &m.declarators {
@@ -3065,8 +3129,8 @@ fn emit_struct_decode_body(
             ));
             {
                 let mut next_id1: i64 = 0;
-                for m in &s.members {
-                    let id_override = annotation_int_value(&m.annotations, "id");
+                for m in &zd_members {
+                    let id_override = ts_member_id_override(s, m);
                     let base_ts = typespec_to_ts(&m.type_spec)?;
                     for d in &m.declarators {
                         let id = id_override.unwrap_or(next_id1);
@@ -3097,8 +3161,8 @@ fn emit_struct_decode_body(
             ));
             out.push_str(&alloc::format!("{indent}    switch (_emh.memberId) {{\n"));
             let mut next_id: i64 = 0;
-            for m in &s.members {
-                let id_override = annotation_int_value(&m.annotations, "id");
+            for m in &zd_members {
+                let id_override = ts_member_id_override(s, m);
                 let base_ts = typespec_to_ts(&m.type_spec)?;
                 for d in &m.declarators {
                     let id = id_override.unwrap_or(next_id);
@@ -3150,7 +3214,7 @@ fn emit_struct_decode_body(
             out.push_str(&alloc::format!("{indent}}}\n")); // close `else` (XCDR2 path)
             // Build the return object from _f_* variables.
             out.push_str(&alloc::format!("{indent}return {{\n"));
-            for m in &s.members {
+            for m in &zd_members {
                 let optional = has_annotation(&m.annotations, "optional");
                 let base_ts = typespec_to_ts(&m.type_spec)?;
                 for d in &m.declarators {
@@ -3288,26 +3352,20 @@ fn emit_decode_return(
     indent: &str,
     name: &str,
 ) -> Result<(), IdlTsError> {
-    // With `extends Base`, inherited fields cannot be obtained from the
-    // decode body; we cast the object via `as <Name>` so tsc accepts it.
-    // Downstream use knows the missing fields.
-    let needs_cast = s.base.is_some();
-    if needs_cast {
-        out.push_str(&alloc::format!("{indent}return ({{\n"));
-    } else {
-        out.push_str(&alloc::format!("{indent}return {{\n"));
-    }
-    for m in &s.members {
+    // Inherited (base-class) fields ARE decoded now — `resolved_wire_members`
+    // walks `s.base`, and the final/appendable decode declares `_f_<field>` for
+    // each base member before this return (XTypes §7.4.3.4.1). The object literal
+    // therefore carries every field of `<Name>` (own + inherited via `extends`),
+    // so no `as unknown as <Name>` cast is required.
+    let _ = name;
+    out.push_str(&alloc::format!("{indent}return {{\n"));
+    for m in &resolved_wire_members(s) {
         for d in &m.declarators {
             let field = d.name().text.clone();
             out.push_str(&alloc::format!("{indent}    {field}: _f_{field},\n"));
         }
     }
-    if needs_cast {
-        out.push_str(&alloc::format!("{indent}}} as unknown as {name});\n"));
-    } else {
-        out.push_str(&alloc::format!("{indent}}};\n"));
-    }
+    out.push_str(&alloc::format!("{indent}}};\n"));
     Ok(())
 }
 /// zerodds-lint: recursion-depth 64 (read_typespec_expr bounded by AST depth)
@@ -3476,12 +3534,24 @@ fn emit_struct_keyhash_body(
     // XTypes 1.3 §7.6.8.3.1.b: KeyHolder members in ascending member-id
     // order (explicit `@id(N)`, else positional index among the `@key`
     // members) — NOT declaration order.
-    let key_members: Vec<&zerodds_idl::ast::Member> =
-        s.members.iter().filter(|m| has_annotation(&m.annotations, "key")).collect();
+    // Base-class @key members contribute to the derived type's KeyHash and are
+    // ordered before the derived @key members (XTypes §7.4.3.4.1 + §7.6.8).
+    let zd_all_members = resolved_wire_members(s);
+    let key_members: Vec<&zerodds_idl::ast::Member> = zd_all_members
+        .iter()
+        .filter(|m| has_annotation(&m.annotations, "key"))
+        .collect();
     for m in sort_members_by_id(&key_members) {
         for d in &m.declarators {
             let field = d.name().text.clone();
-            emit_key_declarator_encode(out, &m.type_spec, d, &alloc::format!("s.{field}"), indent, 0)?;
+            emit_key_declarator_encode(
+                out,
+                &m.type_spec,
+                d,
+                &alloc::format!("s.{field}"),
+                indent,
+                0,
+            )?;
         }
     }
     Ok(())
@@ -3516,6 +3586,8 @@ fn sort_members_by_id<'a>(
 /// the scalar leaf delegates to `emit_key_typespec_encode` instead of
 /// `emit_typespec_encode`, so a nested `@key` struct expands to its own
 /// `@key` subset instead of being fully encoded.
+///
+/// zerodds-lint: recursion-depth 64 (codegen AST walk; bounded by IDL nesting).
 fn emit_key_declarator_encode(
     out: &mut String,
     t: &TypeSpec,
@@ -4690,13 +4762,45 @@ fn wrap_with_array_dimensions(base: &str, d: &zerodds_idl::ast::Declarator) -> S
 /// lie outside this file (§11.7) — `emit_definition`
 /// currently silently drops them; a strict-mode emit would call
 /// out as `DDS-TS-E002`.
-fn emit_interface(out: &mut String, i: &zerodds_idl::ast::InterfaceDef) -> Result<(), IdlTsError> {
+fn emit_interface(
+    out: &mut String,
+    i: &zerodds_idl::ast::InterfaceDef,
+    module_path: &[String],
+) -> Result<(), IdlTsError> {
     use zerodds_idl::ast::Export;
 
     let name = escape_ts_ident(&i.name.text);
     let name = &name;
     let client_name = alloc::format!("{name}Client");
     let handler_name = alloc::format!("{name}Handler");
+
+    // §7.4.1 — an IDL interface body may declare nested types (struct,
+    // union, enum, typedef, bitset/bitmask), constants and exceptions.
+    // Their IDL scope is the interface, so they map onto a TypeScript
+    // `namespace` matching the interface name: a scoped reference
+    // `Iface::Bar` then resolves to `Iface.Bar` (see `scoped_dotted`).
+    // Emitted before the Client/Handler declarations so the reflection
+    // registry entries for nested types are installed first. Skipping
+    // this (the previous `_ => {}` fall-through) silently dropped every
+    // interface-nested declaration from the generated output.
+    let has_nested = i
+        .exports
+        .iter()
+        .any(|ex| matches!(ex, Export::Type(_) | Export::Const(_) | Export::Except(_)));
+    if has_nested {
+        out.push_str(&alloc::format!("export namespace {name} {{\n"));
+        let mut nested_path: Vec<String> = module_path.to_vec();
+        nested_path.push(i.name.text.clone());
+        for ex in &i.exports {
+            match ex {
+                Export::Type(td) => emit_type_decl(out, td, &nested_path)?,
+                Export::Const(c) => emit_const(out, c)?,
+                Export::Except(e) => emit_exception(out, e)?,
+                _ => {}
+            }
+        }
+        out.push_str("}\n\n");
+    }
 
     // Compute base Client/Handler list for `extends` clauses.
     let base_client = i
@@ -5426,8 +5530,7 @@ mod tests {
     fn decode_rejects_over_bound_string_final() {
         let ts = gen_ts(r"@final struct Sample { string<32> name; };");
         assert!(
-            ts.contains("r.readString()")
-                && ts.contains("decoded string over capacity 32"),
+            ts.contains("r.readString()") && ts.contains("decoded string over capacity 32"),
             "decode of bounded string<32> must throw on over-bound decode:\n{ts}"
         );
     }
@@ -6531,17 +6634,25 @@ mod tests {
 
     #[test]
     fn module_declaration_merging_uses_export_namespace_only() {
-        // §7.1 — TS `export namespace` supports declaration merging
-        // automatically; verify two same-named modules produce two
-        // `export namespace M { … }` blocks rather than a single
-        // merged one (the merge is the consumer's tsc compile-time
-        // concern).
+        // §7.1 — a reopened IDL module is one module (IDL 7.5.2). The AST
+        // builder folds the two `module M` blocks into a single `ModuleDef`
+        // (`ast::builder::merge_reopened_modules`, commit 01eb7ead), so the
+        // TS backend emits exactly ONE `export namespace M { … }` carrying
+        // BOTH members. That single, pre-merged namespace is the faithful
+        // and idiomatic mapping; emitting two same-named blocks (relying on
+        // tsc declaration merging) would just re-introduce the duplication
+        // the AST fold removed.
         let ts = gen_ts(
             r"module M { struct A { long x; }; };
               module M { struct B { long y; }; };",
         );
         let occurrences = ts.matches("export namespace M {").count();
-        assert_eq!(occurrences, 2, "got:\n{ts}");
+        assert_eq!(occurrences, 1, "expected one merged namespace, got:\n{ts}");
+        // Both reopened-module members must land inside that one namespace.
+        assert!(
+            ts.contains("interface A") && ts.contains("interface B"),
+            "merged namespace must carry both A and B, got:\n{ts}"
+        );
     }
 
     #[test]

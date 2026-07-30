@@ -239,6 +239,56 @@ export function toJson(v: Value): string;
     Ok(())
 }
 
+/// Runs `tsc --noEmit --strict --noUnusedLocals` over a ready-made TypeScript
+/// source string with the `@zerodds/*` runtime stubs in place. Skips (returns
+/// `Ok`) when no `tsc` is on PATH.
+fn tsc_check_source(ts_source: &str) -> Result<(), String> {
+    if !tsc_available() {
+        eprintln!("WARNING: skipping TypeScript compile-check, no tsc in PATH");
+        return Ok(());
+    }
+    use std::io::Write;
+    let tmp = tempfile::tempdir().map_err(|e| e.to_string())?;
+    write_runtime_stubs(tmp.path())?;
+
+    let mut f =
+        std::fs::File::create(tmp.path().join("generated.ts")).map_err(|e| e.to_string())?;
+    write!(f, "{ts_source}").map_err(|e| e.to_string())?;
+
+    let tsconfig = r#"{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "noUnusedLocals": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "isolatedModules": false
+  },
+  "include": ["generated.ts"]
+}
+"#;
+    std::fs::write(tmp.path().join("tsconfig.json"), tsconfig).map_err(|e| e.to_string())?;
+
+    let output = Command::new("tsc")
+        .arg("--project")
+        .arg(tmp.path().join("tsconfig.json"))
+        .output()
+        .map_err(|e| e.to_string())?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(format!(
+            "tsc FAILED:\n--- source ---\n{ts_source}\n--- stdout ---\n{stdout}\n--- stderr ---\n{stderr}"
+        ))
+    }
+}
+
 fn check_compiles_with(src: &str, with_amqp: bool) -> Result<(), String> {
     if !tsc_available() {
         eprintln!("WARNING: skipping TypeScript compile-check, no tsc in PATH");
@@ -458,4 +508,47 @@ fn compiles_conformance_fixtures() {
             std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read fixture {f}: {e}"));
         check_compiles(&src).unwrap_or_else(|e| panic!("fixture {f} must compile: {e}"));
     }
+}
+
+/// Assembles the exact source the CLI writes for `--ts`: the emitter output
+/// followed by the shared TypeObject post-pass (`zerodds-idl-compose`'s
+/// `render_ts`). The emitter alone never carried the post-pass, so the older
+/// `check_compiles` tests could not see the P0-8 collision.
+fn combined_ts_source(src: &str) -> String {
+    let ast = zerodds_idl::parse(src, &ParserConfig::default()).expect("parse");
+    let mut out = generate_ts_source(&ast).expect("gen");
+    let blobs =
+        zerodds_idl_compose::typeobject::type_object_blobs(&ast).expect("lower TypeObjects");
+    out.push_str(&zerodds_idl_compose::typeobject::render_ts(&blobs));
+    out
+}
+
+/// P0-8 regression: an enum and a bitmask both emit `export const <Name> = {…}`
+/// in the value namespace. Before the `_TYPE_OBJECT` suffix the TypeObject
+/// post-pass re-declared those exact names (`tsc` TS2451 "Cannot redeclare
+/// block-scoped variable"), so the CLI's `--ts` output did not compile. The
+/// combined source must now type-check, and the TypeObject constants carry the
+/// suffix.
+#[test]
+fn compiles_enum_and_bitmask_with_typeobject_postpass() {
+    let src =
+        "enum NarrowEnum { A, B }; bitmask Flags { F0, F1 }; struct Point { long x; long y; };";
+    let combined = combined_ts_source(src);
+    // The value-namespace names the emitter owns appear exactly once each …
+    assert_eq!(
+        combined.matches("export const NarrowEnum = ").count(),
+        1,
+        "enum value export must not be re-declared by the post-pass:\n{combined}"
+    );
+    assert_eq!(
+        combined.matches("export const Flags = ").count(),
+        1,
+        "bitmask value export must not be re-declared by the post-pass:\n{combined}"
+    );
+    // … and the TypeObject bytes live under the suffixed identifier.
+    assert!(combined.contains("export const NarrowEnum_TYPE_OBJECT = new Uint8Array(["));
+    assert!(combined.contains("export const Flags_TYPE_OBJECT = new Uint8Array(["));
+    assert!(combined.contains("export const Point_TYPE_OBJECT = new Uint8Array(["));
+    // And the combination the CLI emits must actually type-check.
+    tsc_check_source(&combined).expect("combined emitter + TypeObject post-pass must compile");
 }

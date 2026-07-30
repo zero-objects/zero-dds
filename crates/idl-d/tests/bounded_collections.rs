@@ -31,7 +31,8 @@ fn emit(src: &str) -> String {
 fn bounded_string_encode_and_decode_checks() {
     let d = emit("@final struct Named { string<16> name; };");
     assert!(
-        d.contains(".length > 16") && d.contains("bounded string length exceeds its IDL bound (16)"),
+        d.contains(".length > 16")
+            && d.contains("bounded string length exceeds its IDL bound (16)"),
         "encode must throw on over-bound string<16>:\n{d}"
     );
     assert!(
@@ -44,7 +45,8 @@ fn bounded_string_encode_and_decode_checks() {
 fn bounded_wstring_uses_utf16_code_unit_count() {
     let d = emit("@final struct Named { wstring<8> name; };");
     assert!(
-        d.contains("codeLength!wchar") && d.contains("bounded wstring length exceeds its IDL bound (8)"),
+        d.contains("codeLength!wchar")
+            && d.contains("bounded wstring length exceeds its IDL bound (8)"),
         "encode must count UTF-16 code units, not D string.length:\n{d}"
     );
     assert!(
@@ -57,7 +59,8 @@ fn bounded_wstring_uses_utf16_code_unit_count() {
 fn bounded_octet_sequence_encode_and_decode_checks() {
     let d = emit("@final struct Cap { sequence<octet, 4> data; };");
     assert!(
-        d.contains(".length > 4") && d.contains("bounded sequence length exceeds its IDL bound (4)"),
+        d.contains(".length > 4")
+            && d.contains("bounded sequence length exceeds its IDL bound (4)"),
         "encode must throw on over-bound sequence<octet,4>:\n{d}"
     );
     assert!(
@@ -70,9 +73,8 @@ fn bounded_octet_sequence_encode_and_decode_checks() {
 fn bounded_struct_sequence_encode_and_decode_checks() {
     // Non-octet element path (sequence<struct,N>) — a separate branch in
     // map_sequence/map_get_sequence from the octet fast path above.
-    let d = emit(
-        "@final struct Pt { long x; long y; }; @final struct Cap { sequence<Pt, 3> pts; };",
-    );
+    let d =
+        emit("@final struct Pt { long x; long y; }; @final struct Cap { sequence<Pt, 3> pts; };");
     assert!(
         d.contains("bounded sequence length exceeds its IDL bound (3)"),
         "encode of sequence<Pt,3> must throw on over-bound:\n{d}"

@@ -263,3 +263,91 @@ console.log("RESULT", (constsOk && arrOk) ? "PASS" : "FAIL", JSON.stringify({BAS
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// P0.3 struct inheritance — base-class fields on the wire (idl-ts reference).
+// Regression: emit_struct_encode_body/decode_body/decode_return iterated only
+// `s.members`, never `s.base`, so inherited fields were silently dropped.
+// XTypes 1.3 §7.4.3.4.1: base members precede derived members on the wire.
+// ---------------------------------------------------------------------------
+
+/// Base member `a` is written BEFORE derived member `b`, and the base field is
+/// present at all. @final => plain-CDR2, no DHEADER: exactly [a][b] = 8 bytes.
+/// Canonical vector shared with idl-cpp/idl-csharp/idl-java (cross-binding
+/// byte-identity).
+#[test]
+fn inheritance_base_field_before_derived_final_bytes() {
+    let idl = "@final struct Base { long a; }; @final struct Derived : Base { long b; };";
+    let driver = r#"
+import { DerivedTypeSupport } from "./generated.ts";
+const s = { a: 0x11223344, b: 0x55667788 };
+const bytes = DerivedTypeSupport.encode(s, "le");
+console.log("BYTES", Array.from(bytes).map((x) => x.toString(16).padStart(2, "0")).join(" "));
+"#;
+    if let Some(out) = run_driver(idl, driver) {
+        // a=0x11223344 (LE 44 33 22 11) then b=0x55667788 (LE 88 77 66 55).
+        assert!(
+            out.contains("BYTES 44 33 22 11 88 77 66 55"),
+            "inheritance final wire bytes wrong (base field dropped?): {out}"
+        );
+    }
+}
+
+/// Multi-level A <- B <- C: oldest ancestor first (A.a, B.b, C.c).
+#[test]
+fn inheritance_multilevel_order_final_bytes() {
+    let idl = "@final struct A { long a; }; @final struct B : A { long b; }; \
+               @final struct C : B { long c; };";
+    let driver = r#"
+import { CTypeSupport } from "./generated.ts";
+const s = { a: 0x11111111, b: 0x22222222, c: 0x33333333 };
+const bytes = CTypeSupport.encode(s, "le");
+console.log("BYTES", Array.from(bytes).map((x) => x.toString(16).padStart(2, "0")).join(" "));
+"#;
+    if let Some(out) = run_driver(idl, driver) {
+        assert!(
+            out.contains("BYTES 11 11 11 11 22 22 22 22 33 33 33 33"),
+            "multilevel inheritance wire bytes wrong: {out}"
+        );
+    }
+}
+
+/// Round-trip recovers BOTH base `a` and derived `b`.
+#[test]
+fn inheritance_roundtrip_recovers_base_and_derived() {
+    let idl = "@final struct Base { long a; }; @final struct Derived : Base { long b; };";
+    let driver = r#"
+import { DerivedTypeSupport } from "./generated.ts";
+const s = { a: 0x11223344, b: 0x55667788 };
+const r = DerivedTypeSupport.decode(DerivedTypeSupport.encode(s, "le"));
+const ok = r.a === 0x11223344 && r.b === 0x55667788;
+console.log("RESULT", ok ? "PASS" : "FAIL", JSON.stringify(r));
+"#;
+    if let Some(out) = run_driver(idl, driver) {
+        assert!(
+            out.contains("RESULT PASS"),
+            "inheritance round-trip failed (base field lost): {out}"
+        );
+    }
+}
+
+/// A @key base member contributes to the derived type's KeyHash, ordered
+/// before the derived @key member. BE holder, zero-padded to 16 (XTypes §7.6.8).
+#[test]
+fn inheritance_keyhash_includes_base_key() {
+    let idl = "@final struct Base { @key long a; }; \
+               @final struct Derived : Base { @key long b; };";
+    let driver = r#"
+import { DerivedTypeSupport } from "./generated.ts";
+const s = { a: 0x0000000A, b: 0x0000000B };
+const h = DerivedTypeSupport.keyHash(s);
+console.log("KEY", Array.from(h).map((x) => x.toString(16).padStart(2, "0")).join(" "));
+"#;
+    if let Some(out) = run_driver(idl, driver) {
+        // a=0x0A then b=0x0B, big-endian, 8-byte holder zero-padded to 16.
+        assert!(
+            out.contains("KEY 00 00 00 0a 00 00 00 0b 00 00 00 00 00 00 00 00"),
+            "inheritance keyHash wrong (base @key excluded?): {out}"
+        );
+    }
+}

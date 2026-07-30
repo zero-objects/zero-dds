@@ -22,6 +22,12 @@ public sealed class EmptyTypeSupport : IDdsTopicType<Empty>
     public string TypeName => "Empty";
     public bool IsKeyed => false;
     public ExtensibilityKind Extensibility => ExtensibilityKind.Final;
+    public byte[] TypeObject => __ZeroDdsTypeObject;
+    private static readonly byte[] __ZeroDdsTypeObject = new byte[] {
+        0xf2, 0x51, 0x01, 0x00, 0x0e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+        0x06, 0x00, 0x00, 0x00, 0x45, 0x6d, 0x70, 0x74, 0x79, 0x00, 0x00, 0x00, 
+        0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+    };
 
     public byte[] Encode(Empty sample) => Encode(sample, EndianMode.LittleEndian);
 

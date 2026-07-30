@@ -34,6 +34,17 @@ const BACKENDS: [&str; 17] = [
 /// python, go, ada, zig, nim, d, elixir, ocaml, julia, lua, swift]). `true` =
 /// generation must succeed, `false` = known-unsupported (see the trailing
 /// comment for the tracking bug).
+//
+// Thin-backend scope (go, ada, zig, nim, d, elixir, ocaml, julia, lua, swift):
+// several `false` cells below are genuine feature limitations of these
+// flattening backends, surfaced as a HARD generation error since #21/#24
+// (`53132d54`, `622a50d5`). Before those merges the same cells exited 0 while
+// SILENTLY dropping the unsupported type/member from the emitted file — a
+// false green the exit-code gate could not see (verified: at the matrix's
+// original all-`true` commit `9397614d`, e.g. `06_typedefs --go` emitted the
+// wire prelude with NO `UsesTypedefs` record). Honest error > silent drop, so
+// these cells now correctly read `false`. Per-cell reason in the trailing
+// comment.
 const EXPECTED: &[(&str, [bool; 17])] = &[
     //                       c      cpp    rust   ts     c#     java   py     go     ada    zig    nim    d      elixir ocaml  julia  lua    swift
     (
@@ -74,31 +85,31 @@ const EXPECTED: &[(&str, [bool; 17])] = &[
     (
         "06_typedefs",
         [
-            true, true, true, true, true, true, true, true, true, true, true, true, true, true,
-            true, true, true,
+            true, true, true, true, true, true, true, false, false, false, false, false, false,
+            false, false, false, false,
         ],
-    ), // C: typedef-to-aggregate still open
+    ), // C: typedef-to-aggregate still open. go..swift: typedef-to-array (`long M[3][3]`) / typedef-to-`sequence<primitive>` not supported by the flattening backends (was a silent drop pre-#21).
     (
         "07_sequences",
         [
-            true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+            true, true, true, true, true, true, true, true, false, true, true, true, true, true,
             true, true, true,
         ],
-    ), // C: seq still open (java Bug J fixed)
+    ), // ada: sequence<primitive>/<string> noch offen (limit-blockiert). go/zig/nim/d/elixir/ocaml/julia/lua/swift: unterstützt seit thin-F Welle 1.
     (
         "08_arrays",
         [
             true, true, true, true, true, true, true, true, true, true, true, true, true, true,
             true, true, true,
         ],
-    ), // C scope widened (Bug C)
+    ), // ocaml: array-of-struct-Default seit Welle 2 (F27) unterstützt.
     (
         "09_unions",
         [
             true, true, true, true, true, true, true, true, true, true, true, true, true, true,
             true, true, true,
         ],
-    ), // C: Bug C (rust Bug H, py Bug I fixed)
+    ), // Alle Backends: non-integer union-Discriminator (enum/char/bool) seit Welle 2 (F11) unterstützt.
     (
         "10_keys",
         [
@@ -119,7 +130,7 @@ const EXPECTED: &[(&str, [bool; 17])] = &[
             true, true, true, true, true, true, true, true, true, true, true, true, true, true,
             true, true, true,
         ],
-    ), // C: Bug C; go/ada/zig/nim/d/elixir/ocaml/julia/lua/swift: generation succeeds, TypeObject emission skipped (UnresolvedScoped("Permissions"), warning only)
+    ), // Alle Backends: bitset/bitmask unterstützt (thin-F Welle 1 + go-Fix).
     (
         "13_maps",
         [
@@ -144,10 +155,10 @@ const EXPECTED: &[(&str, [bool; 17])] = &[
     (
         "15_constants",
         [
-            true, true, true, true, true, true, true, true, true, true, true, true, true, true,
-            true, true, true,
+            true, true, true, true, true, true, true, true, false, false, false, false, false,
+            false, false, false, false,
         ],
-    ), // ts Bug N + py Bug M fixed; C: const array bound still open
+    ), // ts Bug N + py Bug M fixed; C: const array bound still open. go: central const-eval resolves `long items[MAX_ITEMS]` (audit P1 "Const-Eval driftet"). ada..swift: const-expression array size still unsupported (literal-only array_size in those backends).
     (
         "16_modules",
         [
@@ -158,10 +169,10 @@ const EXPECTED: &[(&str, [bool; 17])] = &[
     (
         "17_forward_decl",
         [
-            true, true, true, true, true, true, true, true, true, true, true, true, true, true,
+            true, true, true, true, true, true, true, true, true, true, true, true, true, false,
             true, true, true,
         ],
-    ), // C: Bug C
+    ), // C: Bug C. ocaml: recursive `Node`/`Variant` — no default for the array-of-struct element type.
     (
         "18_annotations",
         [
@@ -169,16 +180,16 @@ const EXPECTED: &[(&str, [bool; 17])] = &[
             true, true, true,
         ],
     ),
-    // Combined-feature topic type. Generation passes on all but C — but several
-    // of these ✓ cells FAIL a real-DCPS roundtrip (union dropped, array decode,
-    // module flattening, …); see internal/idl-codegen/real-dcps-findings.md.
+    // Combined-feature topic type. It exercises the union/typedef/sequence/const
+    // features above, so the flattening backends (go..swift) hit the same
+    // limitations here and fail generation; the seven mature backends pass.
     (
         "20_mixed_combo",
         [
-            true, true, true, true, true, true, true, true, true, true, true, true, true, true,
-            true, true, true,
+            true, true, true, true, true, true, true, false, false, false, false, false, false,
+            false, false, false, false,
         ],
-    ), // C: Bug C
+    ), // C: Bug C. go..swift: inherits the union/typedef/const limitations of the individual feature rows.
 ];
 
 fn fixture_path(name: &str) -> String {

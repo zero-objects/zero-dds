@@ -143,12 +143,20 @@ fn qualified(scope: &[String], name: &str) -> String {
     }
 }
 
+/// Injectively flattens the module path + type name into a single C# method
+/// identifier (F35/A35). A C# identifier cannot carry `.`, so the scope is
+/// joined with `_`; to keep the mapping injective, each segment's own
+/// underscores are doubled first. Thus `A::B::C` (`A_B_C`) never collides with
+/// `module A { struct B_C }` (`A_B__C`) — the previous plain `join("_")` mapped
+/// both to `A_B_C`. Global scope returns the bare name (existing output
+/// unchanged).
 fn scoped_method(scope: &[String], name: &str) -> String {
     if scope.is_empty() {
-        name.to_string()
-    } else {
-        format!("{}_{name}", scope.join("_"))
+        return name.to_string();
     }
+    let mut parts: Vec<String> = scope.iter().map(|s| s.replace('_', "__")).collect();
+    parts.push(name.replace('_', "__"));
+    parts.join("_")
 }
 
 fn struct_is_variable(s: &StructDef) -> bool {

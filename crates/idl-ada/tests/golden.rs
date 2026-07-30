@@ -43,7 +43,12 @@ fn module_wrapped_struct_is_emitted_not_dropped() {
         "module Telemetry { @final struct Reading { long value; }; };",
         &AdaGenOptions::default(),
     );
-    assert!(m.spec.contains("type Reading is record"), "{}", m.spec);
+    // #21: a module-wrapped type is emitted with its module-qualified name.
+    assert!(
+        m.spec.contains("type Telemetry_sReading is record"),
+        "{}",
+        m.spec
+    );
     assert!(m.spec.contains("value : Integer_32;"), "{}", m.spec);
 }
 
@@ -56,8 +61,88 @@ fn reopened_module_emits_both_structs() {
          module M { @final struct B { long y; }; };",
         &AdaGenOptions::default(),
     );
-    assert!(m.spec.contains("type A is record"), "{}", m.spec);
-    assert!(m.spec.contains("type B is record"), "{}", m.spec);
+    // #21: both halves emit under the module-qualified name `M_*`.
+    assert!(m.spec.contains("type M_sA is record"), "{}", m.spec);
+    assert!(m.spec.contains("type M_sB is record"), "{}", m.spec);
+}
+
+/// #21 cross-module collision: two different modules each declaring `Reading`
+/// must emit distinct, module-qualified Ada records, never a duplicate bare type.
+#[test]
+fn cross_module_same_name_types_are_qualified() {
+    let m = emit(
+        "module a { @final struct Reading { long v; }; }; \
+         module b { @final struct Reading { double w; }; };",
+        &AdaGenOptions::default(),
+    );
+    assert!(m.spec.contains("type a_sReading is record"), "{}", m.spec);
+    assert!(m.spec.contains("type b_sReading is record"), "{}", m.spec);
+    assert!(!m.spec.contains("type Reading is record"), "{}", m.spec);
+    assert!(m.spec.contains("v : Integer_32;"), "{}", m.spec);
+    assert!(m.spec.contains("w : IEEE_Float_64;"), "{}", m.spec);
+}
+
+/// #21 cross-module reference: `module b`'s struct references `a::R`, which
+/// must resolve to the qualified type `a_R`, not the bare `R`.
+#[test]
+fn cross_module_reference_resolves_to_qualified_type() {
+    let m = emit(
+        "module a { @final struct R { long v; }; }; \
+         module b { @final struct S { a::R r; }; };",
+        &AdaGenOptions::default(),
+    );
+    assert!(m.spec.contains("type a_sR is record"), "{}", m.spec);
+    assert!(m.spec.contains("type b_sS is record"), "{}", m.spec);
+    // S's member `r` has the qualified type a_R.
+    assert!(m.spec.contains("r : a_sR;"), "{}", m.spec);
+    assert!(m.body.contains("Marshal_Into (V.r,"), "{}", m.body);
+}
+
+const XMOD_MAIN_ADB: &str = r#"with Xmod_Gen; use Xmod_Gen;
+with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
+with Ada.Text_IO; use Ada.Text_IO;
+with Interfaces; use Interfaces;
+procedure Main is
+   S : constant Xmod_Gen.b_sS := (r => (v => 7));
+   B : constant Byte_Array := Marshal (S, Little);
+begin
+   Put_Line (Integer'Image (B'Length));
+end Main;
+"#;
+
+/// #21 compile gate: a two-module spec with a cross-module reference must
+/// produce compilable Ada.
+#[test]
+fn cross_module_reference_compiles_with_gnatmake() {
+    if Command::new("gnatmake").arg("--version").output().is_err() {
+        eprintln!("SKIP cross_module_reference_compiles_with_gnatmake: `gnatmake` not on PATH");
+        return;
+    }
+    let m = emit(
+        "module a { @final struct R { long v; }; }; \
+         module b { @final struct S { a::R r; }; };",
+        &AdaGenOptions {
+            package_name: "Xmod_Gen".to_string(),
+        },
+    );
+    let dir = std::env::temp_dir().join(format!("idlada_xmod_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    std::fs::write(dir.join("xmod_gen.ads"), &m.spec).expect("write ads");
+    std::fs::write(dir.join("xmod_gen.adb"), &m.body).expect("write adb");
+    std::fs::write(dir.join("main.adb"), XMOD_MAIN_ADB).expect("write main");
+    let build = Command::new("gnatmake")
+        .arg("main.adb")
+        .current_dir(&dir)
+        .output()
+        .expect("gnatmake");
+    assert!(
+        build.status.success(),
+        "gnatmake failed:\n{}\n--- spec ---\n{}\n--- body ---\n{}",
+        String::from_utf8_lossy(&build.stderr),
+        m.spec,
+        m.body
+    );
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
@@ -1470,4 +1555,544 @@ fn keyhash_md5_is_byte_identical_vs_rust_golden() {
         hex_of(Path::new(&golden_dir).join("golden_keyhash_md5.bin"))
     );
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ============================================================================
+// Section-F Wave-1 features: bitset/bitmask, @optional, fixed<d,s>,
+// sequence-arbitrary element, @verbatim.
+//
+// Each feature gets (a) always-on source-assert tests and (b) a gated
+// compile-and-run test that invokes `gnatmake`, runs the binary and compares
+// the emitted wire hex against a value computed independently (no GOLDEN_DIR
+// cross-backend oracle — that is a separate central-fixture step). The gated
+// tests need only `gnatmake` on PATH (they carry their own expected bytes), so
+// they run on codepit and skip cleanly elsewhere.
+// ============================================================================
+
+/// Compiles the generated Ada + `main_adb`, runs it, returns stdout lines.
+/// Skips (returns `None`) when `gnatmake` is not on PATH.
+fn compile_run(idl: &str, pkg: &str, main_adb: &str, stem: &str) -> Option<Vec<String>> {
+    if Command::new("gnatmake").arg("--version").output().is_err() {
+        eprintln!("SKIP {stem}: `gnatmake` not on PATH");
+        return None;
+    }
+    let m = emit(
+        idl,
+        &AdaGenOptions {
+            package_name: pkg.to_string(),
+        },
+    );
+    let dir = std::env::temp_dir().join(format!("idlada_{stem}_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    std::fs::write(dir.join(format!("{}.ads", pkg.to_lowercase())), &m.spec).expect("ads");
+    std::fs::write(dir.join(format!("{}.adb", pkg.to_lowercase())), &m.body).expect("adb");
+    std::fs::write(dir.join("main.adb"), main_adb).expect("main");
+    let build = Command::new("gnatmake")
+        .arg("main.adb")
+        .current_dir(&dir)
+        .output()
+        .expect("gnatmake");
+    assert!(
+        build.status.success(),
+        "gnatmake failed:\n{}\n--- spec ---\n{}\n--- body ---\n{}\n--- main ---\n{main_adb}",
+        String::from_utf8_lossy(&build.stderr),
+        m.spec,
+        m.body
+    );
+    let run = Command::new("./main")
+        .current_dir(&dir)
+        .output()
+        .expect("run");
+    assert!(
+        run.status.success(),
+        "run failed:\n{}",
+        String::from_utf8_lossy(&run.stderr)
+    );
+    let stdout = String::from_utf8(run.stdout).expect("utf8");
+    let lines: Vec<String> = stdout.lines().map(|l| l.trim().to_string()).collect();
+    let _ = std::fs::remove_dir_all(&dir);
+    Some(lines)
+}
+
+// ---- bitset / bitmask -------------------------------------------------------
+
+const BITSET_IDL: &str = "\
+bitset Flags {
+    bitfield<1> a;
+    bitfield<3> b;
+    bitfield<4> c;
+};";
+
+#[test]
+fn bitset_emits_backing_int_and_accessors() {
+    let m = emit(BITSET_IDL, &AdaGenOptions::default());
+    // Total width 1+3+4 = 8 bits → Unsigned_8 backing store.
+    assert!(m.spec.contains("type Flags is record"), "{}", m.spec);
+    assert!(m.spec.contains("storage : Unsigned_8 := 0;"), "{}", m.spec);
+    // Single-bit field → Boolean getter; multi-bit → integer getter + shift/mask.
+    assert!(
+        m.spec.contains("function a (V : Flags) return Boolean is"),
+        "{}",
+        m.spec
+    );
+    assert!(
+        m.spec.contains(
+            "function b (V : Flags) return Unsigned_8 is (Shift_Right (V.storage, 1) and 7);"
+        ),
+        "{}",
+        m.spec
+    );
+    assert!(
+        m.spec.contains(
+            "function c (V : Flags) return Unsigned_8 is (Shift_Right (V.storage, 4) and 15);"
+        ),
+        "{}",
+        m.spec
+    );
+    assert!(
+        m.spec
+            .contains("procedure Set_b (V : in out Flags; Val : Unsigned_8);"),
+        "{}",
+        m.spec
+    );
+    // Wire form is the backing integer.
+    assert!(m.body.contains("Put_U8 (W, V.storage);"), "{}", m.body);
+    assert!(
+        m.body.contains("V.storage := Get_U8 (Data, Pos);"),
+        "{}",
+        m.body
+    );
+}
+
+const BITSET_MAIN_ADB: &str = r#"with Bset_Gen; use Bset_Gen;
+with Ada.Text_IO; use Ada.Text_IO;
+with Interfaces; use Interfaces;
+procedure Main is
+   function Hex (B : Byte_Array) return String is
+      Nib : constant String := "0123456789abcdef";
+      R   : String (1 .. B'Length * 2);
+      I   : Natural := 1;
+   begin
+      for X of B loop
+         R (I)     := Nib (Natural (X / 16) + 1);
+         R (I + 1) := Nib (Natural (X mod 16) + 1);
+         I := I + 2;
+      end loop;
+      return R;
+   end Hex;
+   F : Flags;
+   G : Flags;
+begin
+   Set_a (F, True);
+   Set_b (F, 5);
+   Set_c (F, 10);
+   Put_Line (Hex (Marshal (F, Little)));
+   G := Unmarshal (Marshal (F, Little), Little);
+   Put_Line (Hex ((1 => Byte (b (G)), 2 => Byte (c (G)))));
+end Main;
+"#;
+
+#[test]
+fn bitset_is_byte_identical() {
+    // storage = a(bit0=1) | b(5<<1=0x0A) | c(10<<4=0xA0) = 0xAB.
+    // line1: Marshal = single byte 0xAB. line2: getters b=5, c=10 → bytes 05 0a.
+    let Some(lines) = compile_run(BITSET_IDL, "Bset_Gen", BITSET_MAIN_ADB, "bitset") else {
+        return;
+    };
+    assert_eq!(lines[0], "ab", "bitset backing-int wire");
+    assert_eq!(lines[1], "050a", "bitset getters after roundtrip");
+}
+
+const BITMASK_IDL: &str = "\
+bitmask Options { OPT_X, OPT_Y, OPT_Z };";
+
+#[test]
+fn bitmask_emits_backing_int_and_constants() {
+    let m = emit(BITMASK_IDL, &AdaGenOptions::default());
+    // Unannotated bitmask → @bit_bound default 32 → Unsigned_32.
+    assert!(m.spec.contains("type Options is record"), "{}", m.spec);
+    assert!(m.spec.contains("storage : Unsigned_32 := 0;"), "{}", m.spec);
+    assert!(
+        m.spec
+            .contains("OPT_X : constant Options := (storage => 1);"),
+        "{}",
+        m.spec
+    );
+    assert!(
+        m.spec
+            .contains("OPT_Y : constant Options := (storage => 2);"),
+        "{}",
+        m.spec
+    );
+    assert!(
+        m.spec
+            .contains("OPT_Z : constant Options := (storage => 4);"),
+        "{}",
+        m.spec
+    );
+    assert!(
+        m.spec
+            .contains("function \"or\" (L, R : Options) return Options"),
+        "{}",
+        m.spec
+    );
+    assert!(m.body.contains("Put_U32 (W, V.storage);"), "{}", m.body);
+}
+
+const BITMASK_MAIN_ADB: &str = r#"with Bmask_Gen; use Bmask_Gen;
+with Ada.Text_IO; use Ada.Text_IO;
+with Interfaces; use Interfaces;
+procedure Main is
+   function Hex (B : Byte_Array) return String is
+      Nib : constant String := "0123456789abcdef";
+      R   : String (1 .. B'Length * 2);
+      I   : Natural := 1;
+   begin
+      for X of B loop
+         R (I)     := Nib (Natural (X / 16) + 1);
+         R (I + 1) := Nib (Natural (X mod 16) + 1);
+         I := I + 2;
+      end loop;
+      return R;
+   end Hex;
+   V : constant Options := OPT_X or OPT_Z;
+begin
+   Put_Line (Hex (Marshal (V, Little)));
+   Put_Line (Hex (Marshal (V, Big)));
+end Main;
+"#;
+
+#[test]
+fn bitmask_is_byte_identical() {
+    // OPT_X(1) | OPT_Z(4) = 5, u32 backing store.
+    let Some(lines) = compile_run(BITMASK_IDL, "Bmask_Gen", BITMASK_MAIN_ADB, "bitmask") else {
+        return;
+    };
+    assert_eq!(lines[0], "05000000", "bitmask LE");
+    assert_eq!(lines[1], "00000005", "bitmask BE");
+}
+
+// ---- @optional --------------------------------------------------------------
+
+const OPTIONAL_IDL: &str = "\
+@final struct Opt { uint32 a; @optional uint32 b; @optional string s; };";
+
+#[test]
+fn optional_emits_presence_wrapper() {
+    let m = emit(OPTIONAL_IDL, &AdaGenOptions::default());
+    // A wrapper record { Present : Boolean; Value : T } per optional member.
+    assert!(m.spec.contains("type Opt_b_Opt is record"), "{}", m.spec);
+    assert!(m.spec.contains("Present : Boolean := False;"), "{}", m.spec);
+    assert!(m.spec.contains("Value   : Unsigned_32;"), "{}", m.spec);
+    assert!(m.spec.contains("type Opt_s_Opt is record"), "{}", m.spec);
+    assert!(m.spec.contains("b : Opt_b_Opt;"), "{}", m.spec);
+    // Encode: uint8 presence flag then the value only if present.
+    assert!(
+        m.body
+            .contains("Put_Bool (W, V.b.Present); if V.b.Present then Put_U32 (W, V.b.Value);"),
+        "{}",
+        m.body
+    );
+    // Decode mirror.
+    assert!(
+        m.body
+            .contains("V.b.Present := Get_Bool (Data, Pos); if V.b.Present then"),
+        "{}",
+        m.body
+    );
+}
+
+#[test]
+fn optional_in_mutable_is_rejected() {
+    // @optional in @mutable needs member-presence framing (omit absent EMHEADER),
+    // not an inline flag — explicitly unsupported, never a wrong wire form.
+    let ast = zerodds_idl::parse(
+        "@mutable struct M { @id(1) uint32 a; @id(2) @optional uint32 b; };",
+        &ParserConfig::default(),
+    )
+    .expect("parse");
+    let r = generate_ada_module(&ast, &AdaGenOptions::default());
+    assert!(r.is_err(), "expected Unsupported for @optional in @mutable");
+}
+
+const OPTIONAL_MAIN_ADB: &str = r#"with Opt_Gen; use Opt_Gen;
+with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
+with Ada.Text_IO; use Ada.Text_IO;
+with Interfaces; use Interfaces;
+procedure Main is
+   function Hex (B : Byte_Array) return String is
+      Nib : constant String := "0123456789abcdef";
+      R   : String (1 .. B'Length * 2);
+      I   : Natural := 1;
+   begin
+      for X of B loop
+         R (I)     := Nib (Natural (X / 16) + 1);
+         R (I + 1) := Nib (Natural (X mod 16) + 1);
+         I := I + 2;
+      end loop;
+      return R;
+   end Hex;
+   P : Opt;
+   Q : Opt;
+begin
+   --  present: a, b, s all set.
+   P.a := 16#11223344#;
+   P.b := (Present => True, Value => 16#AABBCCDD#);
+   P.s := (Present => True, Value => To_Unbounded_String ("hi"));
+   Put_Line (Hex (Marshal (P, Little)));
+   Put_Line (Hex (Marshal (P, Big)));
+   --  absent: only a set, b and s absent.
+   Q.a := 16#11223344#;
+   Q.b := (Present => False, Value => 0);
+   Q.s := (Present => False, Value => Null_Unbounded_String);
+   Put_Line (Hex (Marshal (Q, Little)));
+   --  roundtrip the present form and re-marshal.
+   Put_Line (Hex (Marshal (Unmarshal (Marshal (P, Little), Little), Little)));
+end Main;
+"#;
+
+#[test]
+fn optional_present_and_absent_wire() {
+    let Some(lines) = compile_run(OPTIONAL_IDL, "Opt_Gen", OPTIONAL_MAIN_ADB, "optional") else {
+        return;
+    };
+    // present LE: a=44332211, b flag 01 + pad + DDCCBBAA, s flag 01 + pad +
+    // strlen 03000000 + "hi"(6869) + nul 00.
+    assert_eq!(
+        lines[0], "4433221101000000ddccbbaa0100000003000000686900",
+        "optional present LE"
+    );
+    assert_eq!(
+        lines[1], "1122334401000000aabbccdd0100000000000003686900",
+        "optional present BE"
+    );
+    // absent LE: a=44332211, then two zero presence flags.
+    assert_eq!(lines[2], "443322110000", "optional absent LE");
+    // roundtrip of the present form is byte-identical.
+    assert_eq!(
+        lines[3], "4433221101000000ddccbbaa0100000003000000686900",
+        "optional roundtrip LE"
+    );
+}
+
+// ---- fixed<d,s> -------------------------------------------------------------
+
+const FIXED_IDL: &str = "\
+@final struct Fx { fixed<5,2> a; fixed<6,2> b; };";
+
+#[test]
+fn fixed_emits_subtype_and_bcd_prelude() {
+    let m = emit(FIXED_IDL, &AdaGenOptions::default());
+    // (P+2)/2 BCD octets: fixed<5,2> → 3 bytes (0..2), fixed<6,2> → 4 bytes.
+    assert!(
+        m.spec.contains("subtype Fixed_5_2 is Byte_Array (0 .. 2);"),
+        "{}",
+        m.spec
+    );
+    assert!(
+        m.spec.contains("subtype Fixed_6_2 is Byte_Array (0 .. 3);"),
+        "{}",
+        m.spec
+    );
+    assert!(m.spec.contains("a : Fixed_5_2;"), "{}", m.spec);
+    // BCD codec + raw-octet wire (no length prefix).
+    assert!(m.body.contains("function Fixed_From_String"), "{}", m.body);
+    assert!(m.body.contains("function Fixed_To_String"), "{}", m.body);
+    assert!(m.body.contains("Put_Fixed (W, V.a);"), "{}", m.body);
+    assert!(
+        m.body.contains("V.a := Get_Fixed (Data, Pos, 3);"),
+        "{}",
+        m.body
+    );
+}
+
+const FIXED_MAIN_ADB: &str = r#"with Fx_Gen; use Fx_Gen;
+with Ada.Text_IO; use Ada.Text_IO;
+with Interfaces; use Interfaces;
+procedure Main is
+   function Hex (B : Byte_Array) return String is
+      Nib : constant String := "0123456789abcdef";
+      R   : String (1 .. B'Length * 2);
+      I   : Natural := 1;
+   begin
+      for X of B loop
+         R (I)     := Nib (Natural (X / 16) + 1);
+         R (I + 1) := Nib (Natural (X mod 16) + 1);
+         I := I + 2;
+      end loop;
+      return R;
+   end Hex;
+   F : Fx;
+   G : Fx;
+begin
+   F.a := Fixed_From_String ("123.45", 5, 2);
+   F.b := Fixed_From_String ("-1.50", 6, 2);
+   Put_Line (Hex (Marshal (F, Little)));
+   Put_Line (Hex (Marshal (F, Big)));
+   G := Unmarshal (Marshal (F, Little), Little);
+   Put_Line (Fixed_To_String (G.a, 2) & "/" & Fixed_To_String (G.b, 2));
+end Main;
+"#;
+
+#[test]
+fn fixed_wire_and_roundtrip() {
+    // CORBA/omniORB vendor oracle: fixed<5,2> 123.45 = 12 34 5c,
+    // fixed<6,2> -1.50 = 00 00 15 0d. Raw octets, no length prefix, LE==BE.
+    let Some(lines) = compile_run(FIXED_IDL, "Fx_Gen", FIXED_MAIN_ADB, "fixed") else {
+        return;
+    };
+    assert_eq!(lines[0], "12345c0000150d", "fixed LE");
+    assert_eq!(
+        lines[1], "12345c0000150d",
+        "fixed BE (raw BCD, endian-invariant)"
+    );
+    assert_eq!(lines[2], "123.45/-1.50", "fixed BCD string roundtrip");
+}
+
+// ---- sequence-arbitrary element ---------------------------------------------
+
+const SEQ_ARB_IDL: &str = "\
+@final struct Seqs { sequence<long> nums; sequence<string> tags; };";
+
+#[test]
+fn sequence_arbitrary_emits_vector_and_count() {
+    let m = emit(SEQ_ARB_IDL, &AdaGenOptions::default());
+    // A generic vector instance per distinct element Ada type.
+    assert!(
+        m.spec.contains(
+            "package Integer_32_Vectors is new Ada.Containers.Vectors (Natural, Integer_32);"
+        ),
+        "{}",
+        m.spec
+    );
+    assert!(
+        m.spec.contains(
+            "package Unbounded_String_Vectors is new Ada.Containers.Vectors (Natural, Unbounded_String);"
+        ),
+        "{}",
+        m.spec
+    );
+    assert!(
+        m.spec.contains("nums : Integer_32_Vectors.Vector;"),
+        "{}",
+        m.spec
+    );
+    // u32 count + per-element encode, NO collection DHEADER (primitive element).
+    assert!(
+        m.body
+            .contains("Put_U32 (W, Unsigned_32 (Natural (V.nums.Length))); for E of V.nums loop"),
+        "{}",
+        m.body
+    );
+    // Decode reads the count then per element (no DHEADER skip).
+    assert!(
+        m.body
+            .contains("Zn := Natural (Get_U32 (Data, Pos, Endian));"),
+        "{}",
+        m.body
+    );
+}
+
+const SEQ_ARB_MAIN_ADB: &str = r#"with Seqa_Gen; use Seqa_Gen;
+with Ada.Strings.Unbounded; use Ada.Strings.Unbounded;
+with Ada.Text_IO; use Ada.Text_IO;
+with Interfaces; use Interfaces;
+procedure Main is
+   function Hex (B : Byte_Array) return String is
+      Nib : constant String := "0123456789abcdef";
+      R   : String (1 .. B'Length * 2);
+      I   : Natural := 1;
+   begin
+      for X of B loop
+         R (I)     := Nib (Natural (X / 16) + 1);
+         R (I + 1) := Nib (Natural (X mod 16) + 1);
+         I := I + 2;
+      end loop;
+      return R;
+   end Hex;
+   S : Seqs;
+begin
+   S.nums.Append (1);
+   S.nums.Append (-2);
+   S.nums.Append (3);
+   S.tags.Append (To_Unbounded_String ("ab"));
+   Put_Line (Hex (Marshal (S, Little)));
+   Put_Line (Hex (Marshal (S, Big)));
+   Put_Line (Hex (Marshal (Unmarshal (Marshal (S, Little), Little), Little)));
+end Main;
+"#;
+
+#[test]
+fn sequence_arbitrary_wire() {
+    // nums=[1,-2,3] → u32 count 3 + three i32; tags=["ab"] → u32 count 1 +
+    // string(len 3 + "ab" + nul). No DHEADER (fully-descriptive elements).
+    let Some(lines) = compile_run(SEQ_ARB_IDL, "Seqa_Gen", SEQ_ARB_MAIN_ADB, "seqarb") else {
+        return;
+    };
+    assert_eq!(
+        lines[0], "0300000001000000feffffff030000000100000003000000616200",
+        "seq-arbitrary LE"
+    );
+    assert_eq!(
+        lines[1], "0000000300000001fffffffe000000030000000100000003616200",
+        "seq-arbitrary BE"
+    );
+    assert_eq!(lines[2], lines[0], "seq-arbitrary roundtrip LE");
+}
+
+// ---- @verbatim --------------------------------------------------------------
+
+const VERBATIM_IDL: &str = "\
+@verbatim(language=\"ada\", placement=BEGIN_FILE, text=\"-- zd begin-file marker\")\n\
+@verbatim(language=\"ada\", placement=BEFORE_DECLARATION, text=\"-- zd before-decl marker\")\n\
+@verbatim(language=\"ada\", placement=AFTER_DECLARATION, text=\"-- zd after-decl marker\")\n\
+@verbatim(language=\"ada\", placement=END_FILE, text=\"-- zd end-file marker\")\n\
+@final struct VB { uint32 x; };";
+
+#[test]
+fn verbatim_injects_text_at_placements() {
+    let m = emit(VERBATIM_IDL, &AdaGenOptions::default());
+    let s = &m.spec;
+    for marker in [
+        "-- zd begin-file marker",
+        "-- zd before-decl marker",
+        "-- zd after-decl marker",
+        "-- zd end-file marker",
+    ] {
+        assert!(s.contains(marker), "missing verbatim `{marker}`:\n{s}");
+    }
+    // BEGIN_FILE precedes the record; END_FILE follows it; BEFORE precedes the
+    // `type VB` and AFTER follows the record's Marshal declarations.
+    let begin_file = s.find("begin-file marker").expect("begin-file");
+    let before = s.find("before-decl marker").expect("before");
+    let type_vb = s.find("type VB is record").expect("record");
+    let after = s.find("after-decl marker").expect("after");
+    let end_file = s.find("end-file marker").expect("end-file");
+    assert!(
+        begin_file < before && before < type_vb,
+        "BEGIN_FILE/BEFORE_DECLARATION ordering wrong:\n{s}"
+    );
+    assert!(
+        type_vb < after && after < end_file,
+        "AFTER_DECLARATION/END_FILE ordering wrong:\n{s}"
+    );
+}
+
+/// A `@verbatim`-carrying spec must still compile (the injected text is a
+/// legal Ada comment here) — proves the placement points are syntactically sound.
+#[test]
+fn verbatim_spec_compiles() {
+    let main = r#"with Vb_Gen; use Vb_Gen;
+with Ada.Text_IO; use Ada.Text_IO;
+with Interfaces; use Interfaces;
+procedure Main is
+   V : constant VB := (x => 7);
+begin
+   Put_Line (Integer'Image (Marshal (V, Little)'Length));
+end Main;
+"#;
+    let Some(lines) = compile_run(VERBATIM_IDL, "Vb_Gen", main, "verbatim") else {
+        return;
+    };
+    assert_eq!(lines[0].trim(), "4", "verbatim struct marshals u32 x");
 }

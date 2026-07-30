@@ -119,7 +119,7 @@ fn bounded_struct_sequence_encode_and_decode_checks() {
         "encode of bounded sequence<Pt,3> must throw on over-bound:\n{s}"
     );
     assert!(
-        s.contains("if zdN > 3")
+        s.contains("if zdN0 > 3")
             && s.contains(
                 "throw XcdrBoundError(\"decoded sequence length exceeds its IDL bound (3)\")"
             ),
@@ -132,7 +132,7 @@ fn bounded_struct_sequence_encode_and_decode_checks() {
         "sequence<struct> element decode must `try` the nested unmarshalFrom:\n{s}"
     );
     assert!(
-        s.contains("try e.marshalInto(&sub)"),
+        s.contains("try zdElem0.marshalInto(&zdSub0)"),
         "sequence<struct> element encode must `try` the nested marshalInto:\n{s}"
     );
 }
@@ -145,7 +145,7 @@ fn bounded_map_encode_and_decode_checks() {
         "encode of bounded map<string,long,2> must throw on over-bound:\n{s}"
     );
     assert!(
-        s.contains("if zdN > 2")
+        s.contains("if zdN0 > 2")
             && s.contains("throw XcdrBoundError(\"decoded map length exceeds its IDL bound (2)\")"),
         "decode of bounded map<string,long,2> must throw on over-bound:\n{s}"
     );

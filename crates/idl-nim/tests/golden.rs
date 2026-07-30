@@ -40,7 +40,8 @@ fn emit(src: &str) -> String {
 #[test]
 fn module_wrapped_struct_is_emitted_not_dropped() {
     let n = emit("module Telemetry { @final struct Reading { long value; }; };");
-    assert!(n.contains("type Reading* = object"), "{n}");
+    // #21: a module-wrapped type is emitted with its module-qualified name.
+    assert!(n.contains("type Telemetry_Reading* = object"), "{n}");
     assert!(n.contains("value*: int32"), "{n}");
 }
 
@@ -52,8 +53,84 @@ fn reopened_module_emits_both_structs() {
         "module M { @final struct A { long x; }; }; \
          module M { @final struct B { long y; }; };",
     );
-    assert!(n.contains("type A* = object"), "{n}");
-    assert!(n.contains("type B* = object"), "{n}");
+    // #21: both halves emit under the module-qualified name `M_*`.
+    assert!(n.contains("type M_A* = object"), "{n}");
+    assert!(n.contains("type M_B* = object"), "{n}");
+}
+
+/// #21 cross-module collision: two different modules each declaring `Reading`
+/// must emit distinct, module-qualified Nim types, never a duplicate one.
+#[test]
+fn cross_module_same_name_types_are_qualified() {
+    let n = emit(
+        "module a { @final struct Reading { long v; }; }; \
+         module b { @final struct Reading { double w; }; };",
+    );
+    assert!(n.contains("type a_Reading* = object"), "{n}");
+    assert!(n.contains("type b_Reading* = object"), "{n}");
+    assert!(!n.contains("type Reading* = object"), "{n}");
+    assert!(n.contains("v*: int32"), "{n}");
+    assert!(n.contains("w*: float64"), "{n}");
+}
+
+/// #21 cross-module reference: `module b`'s struct references `a::R`, which
+/// must resolve to the qualified type `a_R`, not the bare `R`.
+#[test]
+fn cross_module_reference_resolves_to_qualified_type() {
+    let n = emit(
+        "module a { @final struct R { long v; }; }; \
+         module b { @final struct S { a::R r; }; };",
+    );
+    assert!(n.contains("type a_R* = object"), "{n}");
+    assert!(n.contains("type b_S* = object"), "{n}");
+    // S's member `r` has the qualified type a_R.
+    assert!(n.contains("r*: a_R"), "{n}");
+}
+
+/// #21 compile gate: a two-module spec with a cross-module reference must
+/// produce compilable Nim.
+#[test]
+fn cross_module_reference_compiles_with_nim() {
+    if Command::new("nim").arg("--version").output().is_err() {
+        eprintln!("SKIP cross_module_reference_compiles_with_nim: `nim` not on PATH");
+        return;
+    }
+    let mut src = emit(
+        "module a { @final struct R { long v; }; }; \
+         module b { @final struct S { a::R r; }; };",
+    );
+    src.push_str(
+        r#"
+when isMainModule:
+  var s: b_S
+  s.r.v = 7'i32
+  discard s.marshalXCDR(eLE)
+  echo "ok"
+"#,
+    );
+    let dir = std::env::temp_dir().join(format!("idlnim_xmod_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    let nf = dir.join("main.nim");
+    std::fs::write(&nf, &src).expect("write");
+    let out = Command::new("nim")
+        .args([
+            "c",
+            "-r",
+            "--hints:off",
+            "--warnings:off",
+            "--nimcache:nimc",
+        ])
+        .arg(&nf)
+        .current_dir(&dir)
+        .output()
+        .expect("nim c -r");
+    assert!(
+        out.status.success(),
+        "nim c -r failed:\n{}\n--- src ---\n{src}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "ok");
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
@@ -1152,4 +1229,372 @@ fn keyword_identifiers_are_escaped_in_output() {
     // No bare (unescaped) keyword declaration token leaked through.
     assert!(!n.contains("type type* = enum"), "{n}");
     assert!(!n.contains("type block* = object"), "{n}");
+}
+
+// ===========================================================================
+// Section-F Wave-1: bitset/bitmask, @optional, fixed<d,s>, sequence-arbitrary,
+// @verbatim. Always-on source-asserts + nim-gated compile-and-run tests whose
+// expected wire hex is derived from the spec IN the test (no GOLDEN_DIR oracle).
+// ===========================================================================
+
+/// A shared `toHex` helper (module scope), appended before each test's main.
+const NIM_HEX: &str = r#"
+proc toHex(b: seq[byte]): string =
+  const hexd = "0123456789abcdef"
+  result = newStringOfCap(b.len * 2)
+  for x in b:
+    result.add(hexd[int(x) shr 4])
+    result.add(hexd[int(x) and 0xf])
+"#;
+
+/// Compiles `emit(idl) + NIM_HEX + main_body` with `nim c -r`, runs it, and
+/// returns the trimmed stdout lines. `None` (skip) if `nim` is not on PATH.
+fn nim_lines(idl: &str, main_body: &str, tag: &str) -> Option<Vec<String>> {
+    if Command::new("nim").arg("--version").output().is_err() {
+        eprintln!("SKIP {tag}: `nim` not on PATH");
+        return None;
+    }
+    let mut src = emit(idl);
+    src.push_str(NIM_HEX);
+    src.push_str(main_body);
+    let dir = std::env::temp_dir().join(format!("idlnim_{tag}_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    let nf = dir.join("main.nim");
+    std::fs::write(&nf, &src).expect("write");
+    let out = Command::new("nim")
+        .args([
+            "c",
+            "-r",
+            "--hints:off",
+            "--warnings:off",
+            "--nimcache:nimc",
+        ])
+        .arg(&nf)
+        .current_dir(&dir)
+        .output()
+        .expect("nim c -r");
+    assert!(
+        out.status.success(),
+        "nim c -r failed:\n{}\n--- src ---\n{src}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8(out.stdout).expect("utf8");
+    let lines: Vec<String> = stdout.lines().map(|l| l.trim().to_string()).collect();
+    let _ = std::fs::remove_dir_all(&dir);
+    Some(lines)
+}
+
+// ---- bitset -------------------------------------------------------------
+
+const BITSET_IDL: &str = "bitset Flags { bitfield<4> a; bitfield<8> b; };";
+
+#[test]
+fn bitset_emits_holder_object_and_accessors() {
+    let n = emit(BITSET_IDL);
+    // 4 + 8 = 12 bits → uint16 backing (XTypes §7.4.7).
+    assert!(n.contains("type Flags* = object"), "{n}");
+    assert!(n.contains("storage*: uint16"), "{n}");
+    assert!(n.contains("proc a*(self: Flags): uint16"), "{n}");
+    assert!(n.contains("proc b*(self: Flags): uint16"), "{n}");
+    assert!(
+        n.contains("proc marshalInto*(self: Flags, w: var Writer) ="),
+        "{n}"
+    );
+    assert!(n.contains("w.putU16(int(self.storage))"), "{n}");
+    assert!(n.contains("proc unmarshalXCDRFlags*"), "{n}");
+}
+
+#[test]
+fn bitset_wire_is_backing_int() {
+    // storage 0xABCD as a uint16 → LE "cdab", BE "abcd"; round-trips.
+    let body = r#"
+when isMainModule:
+  var f: Flags
+  f.storage = 0xABCD'u16
+  echo toHex(f.marshalXCDR(eLE))
+  echo toHex(f.marshalXCDR(eBE))
+  echo toHex(unmarshalXCDRFlags(f.marshalXCDR(eLE), eLE).marshalXCDR(eLE))
+"#;
+    let Some(l) = nim_lines(BITSET_IDL, body, "bitset") else {
+        return;
+    };
+    assert_eq!(l[0], "cdab", "LE");
+    assert_eq!(l[1], "abcd", "BE");
+    assert_eq!(l[2], "cdab", "round-trip");
+}
+
+// ---- bitmask ------------------------------------------------------------
+
+const BITMASK_IDL: &str = "bitmask Perms { PERM_READ, PERM_WRITE, PERM_EXEC };";
+
+#[test]
+fn bitmask_emits_holder_and_constants() {
+    let n = emit(BITMASK_IDL);
+    // Default @bit_bound = 32 → uint32 backing (XTypes §7.3.1.2.1.1).
+    assert!(n.contains("type Perms* = object"), "{n}");
+    assert!(n.contains("storage*: uint32"), "{n}");
+    assert!(
+        n.contains("const PermsPERM_READ*: uint32 = uint32(1) shl 0"),
+        "{n}"
+    );
+    assert!(
+        n.contains("const PermsPERM_EXEC*: uint32 = uint32(1) shl 2"),
+        "{n}"
+    );
+    assert!(n.contains("w.putU32(self.storage)"), "{n}");
+}
+
+#[test]
+fn bitmask_wire_is_backing_uint32() {
+    // PERM_READ | PERM_EXEC = 0x05 → LE "05000000", BE "00000005"; round-trips.
+    let body = r#"
+when isMainModule:
+  var p: Perms
+  p.storage = PermsPERM_READ or PermsPERM_EXEC
+  echo toHex(p.marshalXCDR(eLE))
+  echo toHex(p.marshalXCDR(eBE))
+  echo toHex(unmarshalXCDRPerms(p.marshalXCDR(eBE), eBE).marshalXCDR(eBE))
+"#;
+    let Some(l) = nim_lines(BITMASK_IDL, body, "bitmask") else {
+        return;
+    };
+    assert_eq!(l[0], "05000000", "LE");
+    assert_eq!(l[1], "00000005", "BE");
+    assert_eq!(l[2], "00000005", "round-trip");
+}
+
+#[test]
+fn bitmask_bit_bound_narrows_backing() {
+    let n = emit("@bit_bound(8) bitmask Small { A, B };");
+    assert!(n.contains("storage*: uint8"), "{n}");
+    assert!(n.contains("w.putU8(int(self.storage))"), "{n}");
+}
+
+// ---- fixed<d,s> ---------------------------------------------------------
+
+const FIXED_IDL: &str = "@final struct HasFixed { fixed<5,2> price; };";
+
+#[test]
+fn fixed_emits_bcd_field_and_prelude() {
+    let n = emit(FIXED_IDL);
+    assert!(n.contains("price*: seq[byte]"), "{n}");
+    assert!(n.contains("w.putBytes(self.price)"), "{n}");
+    assert!(
+        n.contains("proc zdFixedEnc*(s: string, P: int, S: int): seq[byte] ="),
+        "{n}"
+    );
+}
+
+#[test]
+fn fixed_wire_is_packed_bcd() {
+    // fixed<5,2> 123.45 → BCD "12 34 5c" (odd P, no pad, CORBA §9.3.2.7).
+    let body = r#"
+when isMainModule:
+  var h: HasFixed
+  h.price = zdFixedEnc("123.45", 5, 2)
+  echo toHex(h.marshalXCDR(eLE))
+  echo toHex(h.marshalXCDR(eBE))
+  echo toHex(unmarshalXCDRHasFixed(h.marshalXCDR(eLE), eLE).marshalXCDR(eLE))
+"#;
+    let Some(l) = nim_lines(FIXED_IDL, body, "fixed") else {
+        return;
+    };
+    // Raw BCD bytes: identical for LE and BE (no byte-swap, no length prefix).
+    assert_eq!(l[0], "12345c", "LE");
+    assert_eq!(l[1], "12345c", "BE");
+    assert_eq!(l[2], "12345c", "round-trip");
+}
+
+#[test]
+fn fixed_even_p_keeps_msd() {
+    // fixed<4,0> 1234 → BCD "01 23 4c" (leading pad nibble; even P keeps MSD).
+    let body = r#"
+when isMainModule:
+  var h: HasFixed
+  h.price = zdFixedEnc("1234", 4, 0)
+  echo toHex(h.marshalXCDR(eLE))
+"#;
+    let Some(l) = nim_lines(
+        "@final struct HasFixed { fixed<4,0> price; };",
+        body,
+        "fixed40",
+    ) else {
+        return;
+    };
+    assert_eq!(l[0], "01234c");
+}
+
+// ---- sequence-arbitrary -------------------------------------------------
+
+const SEQARB_IDL: &str = "@final struct S { sequence<long> xs; };";
+
+#[test]
+fn sequence_arbitrary_emits_count_and_loop() {
+    let n = emit(SEQARB_IDL);
+    assert!(n.contains("xs*: seq[int32]"), "{n}");
+    assert!(n.contains("w.putU32(uint32(self.xs.len))"), "{n}");
+    assert!(n.contains("for zdElem in self.xs:"), "{n}");
+}
+
+#[test]
+fn sequence_arbitrary_wire_count_plus_elements() {
+    // [0x01020304, 0x05060708] → u32 count 2 + two i32 elements, no DHEADER.
+    let body = r#"
+when isMainModule:
+  var s: S
+  s.xs = @[0x01020304'i32, 0x05060708'i32]
+  echo toHex(s.marshalXCDR(eLE))
+  echo toHex(s.marshalXCDR(eBE))
+  echo toHex(unmarshalXCDRS(s.marshalXCDR(eLE), eLE).marshalXCDR(eLE))
+"#;
+    let Some(l) = nim_lines(SEQARB_IDL, body, "seqarb") else {
+        return;
+    };
+    assert_eq!(l[0], "020000000403020108070605", "LE");
+    assert_eq!(l[1], "000000020102030405060708", "BE");
+    assert_eq!(l[2], "020000000403020108070605", "round-trip");
+}
+
+#[test]
+fn sequence_of_enum_is_arbitrary_path() {
+    // A `sequence<enum>` must now emit (was rejected pre-Wave-1).
+    let n = emit("enum E { E0, E1 }; @final struct SE { sequence<E> es; };");
+    assert!(n.contains("es*: seq[E]"), "{n}");
+    assert!(n.contains("for zdElem in self.es:"), "{n}");
+    assert!(n.contains("w.putU32(uint32(self.es.len))"), "{n}");
+}
+
+// ---- @optional ----------------------------------------------------------
+
+const OPT_IDL: &str = "@final struct Opt { uint32 a; @optional uint32 b; };";
+
+#[test]
+fn optional_emits_presence_flag() {
+    let n = emit(OPT_IDL);
+    assert!(n.contains("b_present*: bool"), "{n}");
+    assert!(n.contains("w.putU8(if self.b_present: 1 else: 0)"), "{n}");
+    assert!(n.contains("if self.b_present:"), "{n}");
+    assert!(n.contains("result.b_present = r.getBool()"), "{n}");
+    assert!(n.contains("if result.b_present:"), "{n}");
+}
+
+#[test]
+fn optional_final_wire_present_and_absent() {
+    // present: u32 a, u8 flag=1, pad(3), u32 b. absent: u32 a, u8 flag=0.
+    let body = r#"
+when isMainModule:
+  var p: Opt
+  p.a = 0x11223344'u32
+  p.b_present = true
+  p.b = 0xAABBCCDD'u32
+  echo toHex(p.marshalXCDR(eLE))
+  echo toHex(p.marshalXCDR(eBE))
+  var q: Opt
+  q.a = 0x11223344'u32
+  q.b_present = false
+  echo toHex(q.marshalXCDR(eLE))
+  echo toHex(unmarshalXCDROpt(p.marshalXCDR(eLE), eLE).marshalXCDR(eLE))
+  echo toHex(unmarshalXCDROpt(q.marshalXCDR(eLE), eLE).marshalXCDR(eLE))
+"#;
+    let Some(l) = nim_lines(OPT_IDL, body, "opt") else {
+        return;
+    };
+    assert_eq!(l[0], "4433221101000000ddccbbaa", "present LE");
+    assert_eq!(l[1], "1122334401000000aabbccdd", "present BE");
+    assert_eq!(l[2], "4433221100", "absent LE");
+    assert_eq!(l[3], "4433221101000000ddccbbaa", "present round-trip");
+    assert_eq!(l[4], "4433221100", "absent round-trip");
+}
+
+#[test]
+fn optional_appendable_round_trips() {
+    // Appendable body is DHEADER-framed; verify decode∘encode identity for
+    // both present and absent, without hand-computing the DHEADER length.
+    let idl = "@appendable struct OptA { uint32 a; @optional uint32 b; };";
+    let body = r#"
+when isMainModule:
+  var p: OptA
+  p.a = 0xCAFEBABE'u32
+  p.b_present = true
+  p.b = 0x01020304'u32
+  let pe = p.marshalXCDR(eLE)
+  echo toHex(pe)
+  echo toHex(unmarshalXCDROptA(pe, eLE).marshalXCDR(eLE))
+  var q: OptA
+  q.a = 0xCAFEBABE'u32
+  q.b_present = false
+  let qe = q.marshalXCDR(eLE)
+  echo toHex(qe)
+  echo toHex(unmarshalXCDROptA(qe, eLE).marshalXCDR(eLE))
+"#;
+    let Some(l) = nim_lines(idl, body, "opta") else {
+        return;
+    };
+    assert_eq!(l[0], l[1], "present round-trip");
+    assert_eq!(l[2], l[3], "absent round-trip");
+}
+
+// ---- @verbatim ----------------------------------------------------------
+
+#[test]
+fn verbatim_placements_inject_text() {
+    let n = emit(
+        "@verbatim(language=\"nim\", placement=BEGIN_FILE, text=\"# zd-begin-file\")\n\
+         @verbatim(language=\"nim\", placement=BEFORE_DECLARATION, text=\"# zd-before\")\n\
+         @verbatim(language=\"nim\", placement=BEGIN_DECLARATION, text=\"# zd-begin-decl\")\n\
+         @verbatim(language=\"nim\", placement=END_DECLARATION, text=\"# zd-end-decl\")\n\
+         @verbatim(language=\"nim\", placement=AFTER_DECLARATION, text=\"# zd-after\")\n\
+         @verbatim(language=\"nim\", placement=END_FILE, text=\"# zd-end-file\")\n\
+         @final struct V { uint32 a; };",
+    );
+    for marker in [
+        "# zd-begin-file",
+        "# zd-before",
+        "# zd-begin-decl",
+        "# zd-end-decl",
+        "# zd-after",
+        "# zd-end-file",
+    ] {
+        assert!(n.contains(marker), "missing {marker}:\n{n}");
+    }
+    // Ordering: begin-file before the object; before-decl before `type V`;
+    // begin-decl after the object header; after-decl/end-file trail the type.
+    let sidx = n.find("type V* = object").expect("object");
+    assert!(n.find("# zd-begin-file").unwrap() < sidx, "{n}");
+    assert!(n.find("# zd-before").unwrap() < sidx, "{n}");
+    assert!(n.find("# zd-begin-decl").unwrap() > sidx, "{n}");
+    assert!(n.find("# zd-end-file").unwrap() > sidx, "{n}");
+}
+
+#[test]
+fn verbatim_language_filter_excludes_other_langs() {
+    // A non-Nim language tag must NOT leak into the Nim output.
+    let n = emit(
+        "@verbatim(language=\"java\", placement=BEFORE_DECLARATION, text=\"# java-only\")\n\
+         @final struct V { uint32 a; };",
+    );
+    assert!(!n.contains("# java-only"), "{n}");
+    // The wildcard `*` still matches Nim.
+    let n2 = emit(
+        "@verbatim(placement=BEFORE_DECLARATION, text=\"# wildcard\")\n\
+         @final struct V { uint32 a; };",
+    );
+    assert!(n2.contains("# wildcard"), "{n2}");
+}
+
+#[test]
+fn verbatim_output_still_compiles() {
+    let idl = "@verbatim(language=\"nim\", placement=BEGIN_FILE, text=\"# zd file header\")\n\
+         @verbatim(language=\"nim\", placement=BEGIN_DECLARATION, text=\"# zd inside struct\")\n\
+         @final struct V { uint32 a; };";
+    let body = r#"
+when isMainModule:
+  var v: V
+  v.a = 0x2A'u32
+  echo toHex(v.marshalXCDR(eLE))
+"#;
+    let Some(l) = nim_lines(idl, body, "verbatim") else {
+        return;
+    };
+    assert_eq!(l[0], "2a000000");
 }

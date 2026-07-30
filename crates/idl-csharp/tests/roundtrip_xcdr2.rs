@@ -758,3 +758,81 @@ fn roundtrip_bounded_sequence_member() {
 "#;
     assert_roundtrip_ok(idl, body);
 }
+
+/// Prints the encoded bytes of `main_body` (which must `Console.WriteLine` a
+/// hex string) and returns the last whitespace-delimited token (the hex).
+fn run_hex(idl: &str, main_body: &str) -> Option<String> {
+    run_roundtrip(idl, main_body).map(|s| s.split_whitespace().last().unwrap_or("").to_string())
+}
+
+// ---------------------------------------------------------------------------
+// P0.3 struct inheritance — base-class fields on the wire.
+// Regression: the codec (collect_member_info) iterated only `s.members`, never
+// `s.base`, dropping inherited fields. XTypes 1.3 §7.4.3.4.1: base BEFORE
+// derived. Byte vectors are the SAME as idl-cpp's (cross-binding identity).
+// ---------------------------------------------------------------------------
+
+#[test]
+fn inheritance_base_field_before_derived_wire() {
+    let idl = "@final struct Base { long a; }; @final struct Derived : Base { long b; };";
+    let body = r#"
+        var s = new Derived { A = 0x11223344, B = 0x55667788 };
+        var bytes = DerivedTypeSupport.Instance.Encode(s);
+        Console.WriteLine(Convert.ToHexString(bytes));
+"#;
+    let Some(hex) = run_hex(idl, body) else {
+        return;
+    };
+    // a=0x11223344 (LE 44332211) BEFORE b=0x55667788 (LE 88776655); 8 bytes.
+    assert_eq!(
+        hex, "4433221188776655",
+        "base field `a` must precede derived `b` on the wire"
+    );
+}
+
+#[test]
+fn inheritance_multilevel_base_order_wire() {
+    // Type names avoid the C# CS0542 clash (a PascalCased member `b` would equal
+    // an enclosing type `B`); the wire vector is name-independent.
+    let idl = "@final struct Lvl0 { long a; }; @final struct Lvl1 : Lvl0 { long b; }; \
+               @final struct Lvl2 : Lvl1 { long c; };";
+    let body = r#"
+        var s = new Lvl2 { A = 0x11111111, B = 0x22222222, C = 0x33333333 };
+        var bytes = Lvl2TypeSupport.Instance.Encode(s);
+        Console.WriteLine(Convert.ToHexString(bytes));
+"#;
+    let Some(hex) = run_hex(idl, body) else {
+        return;
+    };
+    assert_eq!(hex, "111111112222222233333333");
+}
+
+#[test]
+fn inheritance_roundtrip_recovers_base_and_derived() {
+    let idl = "@final struct Base { long a; }; @final struct Derived : Base { long b; };";
+    let body = r#"
+        var s = new Derived { A = 0x11223344, B = 0x55667788 };
+        var bytes = DerivedTypeSupport.Instance.Encode(s);
+        var back = DerivedTypeSupport.Instance.Decode(bytes);
+        if (back.A != 0x11223344) throw new Exception("base field a lost on decode");
+        if (back.B != 0x55667788) throw new Exception("derived field b lost on decode");
+        Console.WriteLine("OK");
+"#;
+    assert_roundtrip_ok(idl, body);
+}
+
+#[test]
+fn inheritance_keyhash_includes_base_key() {
+    let idl = "@final struct Base { @key long a; }; \
+               @final struct Derived : Base { @key long b; };";
+    let body = r#"
+        var s = new Derived { A = 0x0000000A, B = 0x0000000B };
+        var h = DerivedTypeSupport.Instance.KeyHash(s);
+        Console.WriteLine(Convert.ToHexString(h));
+"#;
+    let Some(hex) = run_hex(idl, body) else {
+        return;
+    };
+    // BE key: base a=0x0A then derived b=0x0B, 8-byte holder zero-padded to 16.
+    assert_eq!(hex, "0000000A0000000B0000000000000000");
+}

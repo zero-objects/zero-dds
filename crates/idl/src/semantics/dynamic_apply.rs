@@ -48,10 +48,14 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use zerodds_types::dynamic::descriptor::{
-    ExtensibilityKind as DynExtKind, MemberDescriptor, TypeDescriptor,
+    ExtensibilityKind as DynExtKind, MemberDescriptor, TryConstructKind as DynTryConstruct,
+    TypeDescriptor,
 };
 
-use super::annotations::{AutoidKind, BuiltinAnnotation, ExtensibilityKind as IdlExtKind, Lowered};
+use super::annotations::{
+    AutoidKind, BuiltinAnnotation, ExtensibilityKind as IdlExtKind, Lowered,
+    TryConstructKind as IdlTryConstruct,
+};
 
 /// Report on the apply of an annotation collection to a member.
 ///
@@ -137,6 +141,15 @@ pub fn apply_to_member(
             | BuiltinAnnotation::Appendable
             | BuiltinAnnotation::Mutable => {}
             BuiltinAnnotation::Autoid(kind) => report.autoid = Some(*kind),
+            // §7.2.4.2 — @try_construct maps 1:1 onto the MemberDescriptor
+            // field (the DynamicData bridge honours it via apply_try_construct).
+            BuiltinAnnotation::TryConstruct(kind) => {
+                out.try_construct = match kind {
+                    IdlTryConstruct::Discard => DynTryConstruct::Discard,
+                    IdlTryConstruct::UseDefault => DynTryConstruct::UseDefault,
+                    IdlTryConstruct::Trim => DynTryConstruct::Trim,
+                };
+            }
             // Pass-through: codegen-/tooling-relevant but not mapped in the
             // spec MemberDescriptor.
             BuiltinAnnotation::Topic
@@ -193,6 +206,7 @@ pub fn apply_to_type(base: TypeDescriptor, lowered: &Lowered) -> (TypeDescriptor
             | BuiltinAnnotation::IgnoreLiteralNames
             | BuiltinAnnotation::Default(_)
             | BuiltinAnnotation::DefaultLiteral
+            | BuiltinAnnotation::TryConstruct(_)
             | BuiltinAnnotation::Position(_) => {}
             // Pass-Through.
             BuiltinAnnotation::Topic
@@ -246,6 +260,7 @@ fn annotation_name(ann: &BuiltinAnnotation) -> &'static str {
         BuiltinAnnotation::Appendable => "appendable",
         BuiltinAnnotation::Mutable => "mutable",
         BuiltinAnnotation::Autoid(_) => "autoid",
+        BuiltinAnnotation::TryConstruct(_) => "try_construct",
         BuiltinAnnotation::Topic => "topic",
         BuiltinAnnotation::Nested => "nested",
         BuiltinAnnotation::Unit(_) => "unit",

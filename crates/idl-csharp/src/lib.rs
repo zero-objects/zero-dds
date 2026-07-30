@@ -60,6 +60,7 @@ pub(crate) mod corba_traits;
 pub mod emitter;
 pub mod error;
 pub mod keywords;
+pub(crate) mod rpc;
 pub mod type_map;
 pub(crate) mod typesupport;
 pub(crate) mod verbatim;
@@ -219,8 +220,9 @@ mod tests {
     fn enum_emits_int_backed_enum() {
         let cs = gen_cs("enum Color { RED, GREEN, BLUE };");
         assert!(cs.contains("public enum Color : int"));
-        assert!(cs.contains("RED,"));
-        assert!(cs.contains("BLUE,"));
+        // F4/A4: explicit ordinals so `@value` gaps survive on the wire.
+        assert!(cs.contains("RED = 0,"));
+        assert!(cs.contains("BLUE = 2,"));
     }
 
     #[test]
@@ -352,13 +354,15 @@ mod tests {
             !cs.contains("if (__kb.Length"),
             "a statically-small KeyHolder must not emit a runtime branch decision:\n{cs}"
         );
-        assert!(cs.contains("var __h = new byte[16];"), "must zero-pad:\n{cs}");
+        assert!(
+            cs.contains("var __h = new byte[16];"),
+            "must zero-pad:\n{cs}"
+        );
 
         // Four longs = exactly 16 (the zero-pad boundary) -> still zero-pad,
         // unconditionally.
-        let cs16 = gen_cs(
-            "@final struct K { @key long a; @key long b; @key long c; @key long d; };",
-        );
+        let cs16 =
+            gen_cs("@final struct K { @key long a; @key long b; @key long c; @key long d; };");
         assert!(
             cs16.contains("var __h = new byte[16];") && !cs16.contains("Md5.Hash"),
             "16 bytes exactly is still the zero-pad branch:\n{cs16}"

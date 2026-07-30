@@ -76,11 +76,13 @@ pub mod bitset_emit;
 pub mod emitter;
 pub mod enum_emit;
 pub mod error;
+pub mod rpc;
 pub mod struct_emit;
 pub mod type_identifier;
 pub mod type_map;
 pub mod typedef_emit;
 pub mod union_emit;
+pub(crate) mod verbatim;
 
 pub use emitter::{RustGenOptions, generate_rust_module};
 pub use error::{Result, RustGenError};

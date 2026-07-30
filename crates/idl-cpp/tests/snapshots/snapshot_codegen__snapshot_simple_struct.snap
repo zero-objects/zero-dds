@@ -43,6 +43,8 @@ struct topic_type_support<::Point> {
     static const char* type_name() { return "Point"; }
     static constexpr bool is_keyed() { return false; }
     static constexpr ::dds::topic::core::policy::DataRepresentationKind extensibility() { return ::dds::topic::core::policy::DataRepresentationKind::APPENDABLE; }
+    static const uint8_t* type_object();
+    static uintptr_t type_object_len();
     static std::vector<uint8_t> encode(const ::Point& zd_v);
     static std::vector<uint8_t> encode(const ::Point& zd_v, ::dds::topic::xcdr2::XcdrVersion zd_repr);
     static std::vector<uint8_t> encode_be(const ::Point& zd_v);
@@ -51,6 +53,18 @@ struct topic_type_support<::Point> {
     static std::array<uint8_t, 16> key_hash(const ::Point& zd_v);
 };
 
+inline const uint8_t* topic_type_support<::Point>::type_object() {
+    static const uint8_t ZD_TYPE_OBJECT[] = {
+        0xf2, 0x51, 0x02, 0x00, 0x0e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 
+        0x06, 0x00, 0x00, 0x00, 0x50, 0x6f, 0x69, 0x6e, 0x74, 0x00, 0x00, 0x00, 
+        0x2c, 0x00, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 
+        0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x04, 0x00, 0x02, 0x00, 0x00, 0x00, 
+        0x78, 0x00, 0x00, 0x00, 0x10, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 
+        0x01, 0x00, 0x04, 0x00, 0x02, 0x00, 0x00, 0x00, 0x79, 0x00, 0x00, 0x00, 
+    };
+    return ZD_TYPE_OBJECT;
+}
+inline uintptr_t topic_type_support<::Point>::type_object_len() { return 72; }
 inline std::vector<uint8_t> topic_type_support<::Point>::encode(const ::Point& zd_v) {
         return encode(zd_v, ::dds::topic::xcdr2::XcdrVersion::Xcdr2);
     }

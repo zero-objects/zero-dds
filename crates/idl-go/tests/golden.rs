@@ -718,8 +718,13 @@ const NESTED_KEY_IDL: &str = "\
 #[test]
 fn nested_struct_key_excludes_non_key_fields() {
     let go = emit(NESTED_KEY_IDL, &GoGenOptions::default());
-    let start = go.find("func (v Outer) KeyHash() [16]byte {").expect("KeyHash method");
-    let end = go[start..].find("\n}\n").map(|i| start + i).unwrap_or(go.len());
+    let start = go
+        .find("func (v Outer) KeyHash() [16]byte {")
+        .expect("KeyHash method");
+    let end = go[start..]
+        .find("\n}\n")
+        .map(|i| start + i)
+        .unwrap_or(go.len());
     let body = &go[start..end];
     assert!(body.contains("v.I.X"), "{body}");
     assert!(body.contains("v.I.Y"), "{body}");
@@ -739,8 +744,13 @@ const NESTED_KEY_SMALL_IDL: &str = "\
 #[test]
 fn nested_struct_key_small_takes_zero_pad_branch() {
     let go = emit(NESTED_KEY_SMALL_IDL, &GoGenOptions::default());
-    let start = go.find("func (v Outer) KeyHash() [16]byte {").expect("KeyHash method");
-    let end = go[start..].find("\n}\n").map(|i| start + i).unwrap_or(go.len());
+    let start = go
+        .find("func (v Outer) KeyHash() [16]byte {")
+        .expect("KeyHash method");
+    let end = go[start..]
+        .find("\n}\n")
+        .map(|i| start + i)
+        .unwrap_or(go.len());
     let body = &go[start..end];
     assert!(body.contains("copy(out[:], kw.Buf)"), "{body}");
     assert!(!body.contains("md5.Sum("), "{body}");
@@ -1083,7 +1093,8 @@ fn module_wrapped_struct_is_emitted_not_dropped() {
         "module Telemetry { @final struct Reading { long value; }; };",
         &GoGenOptions::default(),
     );
-    assert!(go.contains("type Reading struct {"), "{go}");
+    // #21: a module-wrapped type is emitted with its module-qualified name.
+    assert!(go.contains("type Telemetry_Reading struct {"), "{go}");
     assert!(go.contains("\tValue int32"), "{go}");
 }
 
@@ -1096,8 +1107,104 @@ fn reopened_module_emits_both_structs() {
          module M { @final struct B { long y; }; };",
         &GoGenOptions::default(),
     );
-    assert!(go.contains("type A struct {"), "{go}");
-    assert!(go.contains("type B struct {"), "{go}");
+    // #21: both halves emit under the module-qualified name `M_*`.
+    assert!(go.contains("type M_A struct {"), "{go}");
+    assert!(go.contains("type M_B struct {"), "{go}");
+}
+
+/// #21 cross-module collision: two different modules each declaring `Reading`
+/// must emit distinct, module-qualified Go types (`a_Reading`, `b_Reading`),
+/// never a duplicate bare `type Reading` (which would be invalid Go).
+#[test]
+fn cross_module_same_name_types_are_qualified() {
+    let go = emit(
+        "module a { @final struct Reading { long v; }; }; \
+         module b { @final struct Reading { double w; }; };",
+        &GoGenOptions::default(),
+    );
+    assert!(go.contains("type a_Reading struct {"), "{go}");
+    assert!(go.contains("type b_Reading struct {"), "{go}");
+    // No bare, colliding top-level type.
+    assert!(!go.contains("type Reading struct {"), "{go}");
+    // Each keeps its own member type.
+    assert!(go.contains("\tV int32"), "{go}");
+    assert!(go.contains("\tW float64"), "{go}");
+}
+
+/// #21 cross-module reference: `module b`'s struct references `a::R`, which
+/// must resolve to the qualified type `a_R` (the definition-site name), not
+/// the bare `R`.
+#[test]
+fn cross_module_reference_resolves_to_qualified_type() {
+    let go = emit(
+        "module a { @final struct R { long v; }; }; \
+         module b { @final struct S { a::R r; }; };",
+        &GoGenOptions::default(),
+    );
+    assert!(go.contains("type a_R struct {"), "{go}");
+    assert!(go.contains("type b_S struct {"), "{go}");
+    // S's member `r` (exported field `R`) has the qualified type a_R and
+    // marshals via the nested-struct path into that type.
+    assert!(go.contains("\tR a_R"), "{go}");
+    assert!(go.contains("v.R.marshalInto"), "{go}");
+    // The reference must not fall back to a bare `R` type.
+    assert!(!go.contains("\tR R\n"), "{go}");
+}
+
+/// #21 compile gate: a two-module spec with a cross-module reference must
+/// produce compilable Go.
+#[test]
+fn cross_module_reference_compiles_with_go() {
+    if Command::new("go").arg("version").output().is_err() {
+        eprintln!("SKIP cross_module_reference_compiles_with_go: `go` not on PATH");
+        return;
+    }
+    let mut src = generate_go_module(
+        &zerodds_idl::parse(
+            "module a { @final struct R { long v; }; }; \
+             module b { @final struct S { a::R r; }; };",
+            &ParserConfig::default(),
+        )
+        .expect("parse"),
+        &GoGenOptions {
+            package_name: "main".to_string(),
+        },
+    )
+    .expect("gen");
+    src.push_str(
+        r#"
+func main() {
+	s := b_S{R: a_R{V: 7}}
+	b := s.MarshalXCDR(Little)
+	s2 := unmarshalFromb_S(NewReader(b, Little))
+	if s2.R.V != 7 {
+		panic("roundtrip mismatch")
+	}
+	fmt.Println("ok")
+}
+"#,
+    );
+    let src = src.replacen(
+        "import \"math\"\n",
+        "import (\n\t\"math\"\n\t\"fmt\"\n)\n",
+        1,
+    );
+    let dir = std::env::temp_dir().join(format!("idlgo_xmod_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    let gofile = dir.join("main.go");
+    std::fs::write(&gofile, &src).expect("write go");
+    let out = Command::new("go")
+        .arg("run")
+        .arg(&gofile)
+        .output()
+        .expect("go run");
+    assert!(
+        out.status.success(),
+        "go run failed:\n{}\n--- src ---\n{src}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "ok");
+    let _ = std::fs::remove_dir_all(&dir);
 }
 
 const KEYWORD_IDL: &str = "\
@@ -1183,4 +1290,397 @@ func main() {
     );
     assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "ok");
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ===========================================================================
+// Section-F Wave-1: bitset/bitmask, @optional, fixed<d,s>, sequence-arbitrary,
+// @verbatim. Always-on source-asserts + `go`-gated compile-and-run tests whose
+// expected wire hex is derived from the spec IN the test (no GOLDEN_DIR oracle).
+// ===========================================================================
+
+/// Generates the module (package `main`) for `idl`, appends `main_body`, injects
+/// the `fmt`+`encoding/hex` imports, then compiles+runs it with `go run` and
+/// returns the trimmed stdout lines. `None` (skip) if `go` is not on PATH.
+fn go_lines(idl: &str, main_body: &str, tag: &str) -> Option<Vec<String>> {
+    if Command::new("go").arg("version").output().is_err() {
+        eprintln!("SKIP {tag}: `go` not on PATH");
+        return None;
+    }
+    let mut src = generate_go_module(
+        &zerodds_idl::parse(idl, &ParserConfig::default()).expect("parse"),
+        &GoGenOptions {
+            package_name: "main".to_string(),
+        },
+    )
+    .expect("gen");
+    src.push_str(main_body);
+    let src = src.replacen(
+        "import \"math\"\n",
+        "import (\n\t\"math\"\n\t\"encoding/hex\"\n\t\"fmt\"\n)\n",
+        1,
+    );
+    let dir = std::env::temp_dir().join(format!("idlgo_{tag}_{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("mkdir");
+    let gofile = dir.join("main.go");
+    std::fs::write(&gofile, &src).expect("write go");
+    let out = Command::new("go")
+        .arg("run")
+        .arg(&gofile)
+        .output()
+        .expect("go run");
+    assert!(
+        out.status.success(),
+        "go run failed:\n{}\n--- src ---\n{src}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let lines: Vec<String> = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .map(|l| l.trim().to_string())
+        .collect();
+    let _ = std::fs::remove_dir_all(&dir);
+    Some(lines)
+}
+
+// ---- bitset -------------------------------------------------------------
+
+const BITSET_IDL: &str = "bitset Flags { bitfield<4> a; bitfield<8> b; };";
+
+#[test]
+fn bitset_emits_holder_struct_and_accessors() {
+    let d = emit(BITSET_IDL, &GoGenOptions::default());
+    // 4 + 8 = 12 bits → uint16 backing (XTypes §7.4.7).
+    assert!(d.contains("type Flags struct {"), "{d}");
+    assert!(d.contains("\tStorage uint16"), "{d}");
+    assert!(d.contains("func (v Flags) A() uint16"), "{d}");
+    assert!(d.contains("func (v Flags) B() uint16"), "{d}");
+    assert!(
+        d.contains("func (v Flags) marshalInto(w *Writer) { w.PutU16(v.Storage) }"),
+        "{d}"
+    );
+    assert!(
+        d.contains("func unmarshalFromFlags(r *Reader) Flags"),
+        "{d}"
+    );
+}
+
+#[test]
+fn bitset_wire_is_backing_int() {
+    // storage 0xABCD as a uint16 → LE "cdab", BE "abcd"; round-trips.
+    let body = r#"
+func main() {
+	var f Flags
+	f.Storage = 0xABCD
+	fmt.Println(hex.EncodeToString(f.MarshalXCDR(Little)))
+	fmt.Println(hex.EncodeToString(f.MarshalXCDR(Big)))
+	fmt.Println(hex.EncodeToString(UnmarshalXCDRFlags(f.MarshalXCDR(Little), Little).MarshalXCDR(Little)))
+}
+"#;
+    let Some(l) = go_lines(BITSET_IDL, body, "bitset") else {
+        return;
+    };
+    assert_eq!(l[0], "cdab", "LE");
+    assert_eq!(l[1], "abcd", "BE");
+    assert_eq!(l[2], "cdab", "round-trip");
+}
+
+// ---- bitmask ------------------------------------------------------------
+
+const BITMASK_IDL: &str = "bitmask Perms { PERM_READ, PERM_WRITE, PERM_EXEC };";
+
+#[test]
+fn bitmask_emits_holder_and_constants() {
+    let d = emit(BITMASK_IDL, &GoGenOptions::default());
+    // Default @bit_bound = 32 → uint32 backing (XTypes §7.3.1.2.1.1).
+    assert!(d.contains("type Perms struct {"), "{d}");
+    assert!(d.contains("\tStorage uint32"), "{d}");
+    assert!(d.contains("PermsPERM_READ uint32 = 1 << 0"), "{d}");
+    assert!(d.contains("PermsPERM_EXEC uint32 = 1 << 2"), "{d}");
+    assert!(
+        d.contains("func (v Perms) marshalInto(w *Writer) { w.PutU32(v.Storage) }"),
+        "{d}"
+    );
+}
+
+#[test]
+fn bitmask_wire_is_backing_uint32() {
+    // PERM_READ | PERM_EXEC = 0x05 → LE "05000000", BE "00000005"; round-trips.
+    let body = r#"
+func main() {
+	var p Perms
+	p.Storage = PermsPERM_READ | PermsPERM_EXEC
+	fmt.Println(hex.EncodeToString(p.MarshalXCDR(Little)))
+	fmt.Println(hex.EncodeToString(p.MarshalXCDR(Big)))
+	fmt.Println(hex.EncodeToString(UnmarshalXCDRPerms(p.MarshalXCDR(Big), Big).MarshalXCDR(Big)))
+}
+"#;
+    let Some(l) = go_lines(BITMASK_IDL, body, "bitmask") else {
+        return;
+    };
+    assert_eq!(l[0], "05000000", "LE");
+    assert_eq!(l[1], "00000005", "BE");
+    assert_eq!(l[2], "00000005", "round-trip");
+}
+
+#[test]
+fn bitmask_bit_bound_narrows_backing() {
+    let d = emit(
+        "@bit_bound(8) bitmask Small { A, B };",
+        &GoGenOptions::default(),
+    );
+    assert!(d.contains("\tStorage uint8"), "{d}");
+    assert!(
+        d.contains("func (v Small) marshalInto(w *Writer) { w.PutU8(v.Storage) }"),
+        "{d}"
+    );
+}
+
+// ---- fixed<d,s> ---------------------------------------------------------
+
+const FIXED_IDL: &str = "@final struct HasFixed { fixed<5,2> price; };";
+
+#[test]
+fn fixed_emits_bcd_field_and_prelude() {
+    let d = emit(FIXED_IDL, &GoGenOptions::default());
+    assert!(d.contains("\tPrice []byte"), "{d}");
+    assert!(d.contains("w.PutBytes(v.Price)"), "{d}");
+    assert!(
+        d.contains("func zdFixedEnc(s string, P uint, S uint) []byte"),
+        "{d}"
+    );
+}
+
+#[test]
+fn fixed_wire_is_packed_bcd() {
+    // fixed<5,2> 123.45 → BCD "12 34 5c" (odd P, no pad, CORBA §9.3.2.7).
+    let body = r#"
+func main() {
+	var h HasFixed
+	h.Price = zdFixedEnc("123.45", 5, 2)
+	fmt.Println(hex.EncodeToString(h.MarshalXCDR(Little)))
+	fmt.Println(hex.EncodeToString(h.MarshalXCDR(Big)))
+	fmt.Println(hex.EncodeToString(UnmarshalXCDRHasFixed(h.MarshalXCDR(Little), Little).MarshalXCDR(Little)))
+}
+"#;
+    let Some(l) = go_lines(FIXED_IDL, body, "fixed") else {
+        return;
+    };
+    // Raw BCD bytes: identical for LE and BE (no byte-swap, no length prefix).
+    assert_eq!(l[0], "12345c", "LE");
+    assert_eq!(l[1], "12345c", "BE");
+    assert_eq!(l[2], "12345c", "round-trip");
+}
+
+#[test]
+fn fixed_even_p_keeps_msd() {
+    // fixed<4,0> 1234 → BCD "01 23 4c" (leading pad nibble; even P keeps MSD).
+    let body = r#"
+func main() {
+	var h HasFixed
+	h.Price = zdFixedEnc("1234", 4, 0)
+	fmt.Println(hex.EncodeToString(h.MarshalXCDR(Little)))
+}
+"#;
+    let Some(l) = go_lines(
+        "@final struct HasFixed { fixed<4,0> price; };",
+        body,
+        "fixed40",
+    ) else {
+        return;
+    };
+    assert_eq!(l[0], "01234c");
+}
+
+// ---- sequence-arbitrary -------------------------------------------------
+
+const SEQARB_IDL: &str = "@final struct S { sequence<long> xs; };";
+
+#[test]
+fn sequence_arbitrary_emits_count_and_loop() {
+    let d = emit(SEQARB_IDL, &GoGenOptions::default());
+    assert!(d.contains("\tXs []int32"), "{d}");
+    assert!(d.contains("w.PutU32(uint32(len(v.Xs)))"), "{d}");
+    assert!(d.contains("for _, e := range v.Xs"), "{d}");
+}
+
+#[test]
+fn sequence_arbitrary_wire_count_plus_elements() {
+    // [0x01020304, 0x05060708] → u32 count 2 + two i32 elements, no DHEADER.
+    let body = r#"
+func main() {
+	s := S{Xs: []int32{0x01020304, 0x05060708}}
+	fmt.Println(hex.EncodeToString(s.MarshalXCDR(Little)))
+	fmt.Println(hex.EncodeToString(s.MarshalXCDR(Big)))
+	fmt.Println(hex.EncodeToString(UnmarshalXCDRS(s.MarshalXCDR(Little), Little).MarshalXCDR(Little)))
+}
+"#;
+    let Some(l) = go_lines(SEQARB_IDL, body, "seqarb") else {
+        return;
+    };
+    assert_eq!(l[0], "020000000403020108070605", "LE");
+    assert_eq!(l[1], "000000020102030405060708", "BE");
+    assert_eq!(l[2], "020000000403020108070605", "round-trip");
+}
+
+#[test]
+fn sequence_of_enum_is_arbitrary_path() {
+    let d = emit(
+        "enum E { E0, E1 }; @final struct SE { sequence<E> es; };",
+        &GoGenOptions::default(),
+    );
+    assert!(d.contains("\tEs []E"), "{d}");
+    assert!(d.contains("for _, e := range v.Es"), "{d}");
+    assert!(d.contains("w.PutU32(uint32(len(v.Es)))"), "{d}");
+}
+
+#[test]
+fn sequence_of_bitmask_is_backing_int_no_dheader() {
+    // sequence<bitmask> rides the arbitrary path: count + backing ints, and the
+    // bitmask element is fully descriptive (no per-element collection DHEADER).
+    let idl = "bitmask Perms { A, B, C }; @final struct SP { sequence<Perms> ps; };";
+    let d = emit(idl, &GoGenOptions::default());
+    assert!(d.contains("\tPs []Perms"), "{d}");
+    let body = r#"
+func main() {
+	sp := SP{Ps: []Perms{{Storage: 0x01}, {Storage: 0x04}}}
+	fmt.Println(hex.EncodeToString(sp.MarshalXCDR(Little)))
+	fmt.Println(hex.EncodeToString(UnmarshalXCDRSP(sp.MarshalXCDR(Little), Little).MarshalXCDR(Little)))
+}
+"#;
+    let Some(l) = go_lines(idl, body, "seqbits") else {
+        return;
+    };
+    // count 2 (LE) + 0x00000001 (LE) + 0x00000004 (LE), no DHEADER.
+    assert_eq!(l[0], "020000000100000004000000", "LE");
+    assert_eq!(l[1], l[0], "round-trip");
+}
+
+// ---- @optional ----------------------------------------------------------
+
+const OPT_IDL: &str = "@final struct Opt { uint32 a; @optional uint32 b; };";
+
+#[test]
+fn optional_emits_presence_flag() {
+    let d = emit(OPT_IDL, &GoGenOptions::default());
+    assert!(d.contains("\tBPresent bool"), "{d}");
+    assert!(d.contains("w.PutBool(v.BPresent); if v.BPresent {"), "{d}");
+    assert!(
+        d.contains("v.BPresent = r.GetBool(); if v.BPresent {"),
+        "{d}"
+    );
+}
+
+#[test]
+fn optional_final_wire_present_and_absent() {
+    // present: u32 a, u8 flag=1, pad(3), u32 b. absent: u32 a, u8 flag=0.
+    let body = r#"
+func main() {
+	p := Opt{A: 0x11223344, BPresent: true, B: 0xAABBCCDD}
+	fmt.Println(hex.EncodeToString(p.MarshalXCDR(Little)))
+	fmt.Println(hex.EncodeToString(p.MarshalXCDR(Big)))
+	q := Opt{A: 0x11223344, BPresent: false}
+	fmt.Println(hex.EncodeToString(q.MarshalXCDR(Little)))
+	fmt.Println(hex.EncodeToString(UnmarshalXCDROpt(p.MarshalXCDR(Little), Little).MarshalXCDR(Little)))
+	fmt.Println(hex.EncodeToString(UnmarshalXCDROpt(q.MarshalXCDR(Little), Little).MarshalXCDR(Little)))
+}
+"#;
+    let Some(l) = go_lines(OPT_IDL, body, "opt") else {
+        return;
+    };
+    assert_eq!(l[0], "4433221101000000ddccbbaa", "present LE");
+    assert_eq!(l[1], "1122334401000000aabbccdd", "present BE");
+    assert_eq!(l[2], "4433221100", "absent LE");
+    assert_eq!(l[3], "4433221101000000ddccbbaa", "present round-trip");
+    assert_eq!(l[4], "4433221100", "absent round-trip");
+}
+
+#[test]
+fn optional_appendable_round_trips() {
+    // Appendable body is DHEADER-framed; verify decode∘encode identity for both
+    // present and absent, without hand-computing the DHEADER length.
+    let idl = "@appendable struct OptA { uint32 a; @optional uint32 b; };";
+    let body = r#"
+func main() {
+	p := OptA{A: 0xCAFEBABE, BPresent: true, B: 0x01020304}
+	pe := p.MarshalXCDR(Little)
+	fmt.Println(hex.EncodeToString(pe))
+	fmt.Println(hex.EncodeToString(UnmarshalXCDROptA(pe, Little).MarshalXCDR(Little)))
+	q := OptA{A: 0xCAFEBABE, BPresent: false}
+	qe := q.MarshalXCDR(Little)
+	fmt.Println(hex.EncodeToString(qe))
+	fmt.Println(hex.EncodeToString(UnmarshalXCDROptA(qe, Little).MarshalXCDR(Little)))
+}
+"#;
+    let Some(l) = go_lines(idl, body, "opta") else {
+        return;
+    };
+    assert_eq!(l[0], l[1], "present round-trip");
+    assert_eq!(l[2], l[3], "absent round-trip");
+}
+
+// ---- @verbatim ----------------------------------------------------------
+
+#[test]
+fn verbatim_placements_inject_text() {
+    let d = emit(
+        "@verbatim(language=\"go\", placement=BEGIN_FILE, text=\"// zd-begin-file\")\n\
+         @verbatim(language=\"go\", placement=BEFORE_DECLARATION, text=\"// zd-before\")\n\
+         @verbatim(language=\"go\", placement=BEGIN_DECLARATION, text=\"// zd-begin-decl\")\n\
+         @verbatim(language=\"go\", placement=END_DECLARATION, text=\"// zd-end-decl\")\n\
+         @verbatim(language=\"go\", placement=AFTER_DECLARATION, text=\"// zd-after\")\n\
+         @verbatim(language=\"go\", placement=END_FILE, text=\"// zd-end-file\")\n\
+         @final struct V { uint32 a; };",
+        &GoGenOptions::default(),
+    );
+    for marker in [
+        "// zd-begin-file",
+        "// zd-before",
+        "// zd-begin-decl",
+        "// zd-end-decl",
+        "// zd-after",
+        "// zd-end-file",
+    ] {
+        assert!(d.contains(marker), "missing {marker}:\n{d}");
+    }
+    // Ordering: begin-file before the struct; before-decl before `type V`;
+    // begin-decl after the opening brace; after-decl/end-file trail the type.
+    let sidx = d.find("type V struct {").expect("struct");
+    assert!(d.find("// zd-begin-file").unwrap() < sidx, "{d}");
+    assert!(d.find("// zd-before").unwrap() < sidx, "{d}");
+    assert!(d.find("// zd-begin-decl").unwrap() > sidx, "{d}");
+    assert!(d.find("// zd-end-file").unwrap() > sidx, "{d}");
+}
+
+#[test]
+fn verbatim_language_filter_excludes_other_langs() {
+    // A non-Go language tag must NOT leak into the Go output.
+    let d = emit(
+        "@verbatim(language=\"java\", placement=BEFORE_DECLARATION, text=\"// java-only\")\n\
+         @final struct V { uint32 a; };",
+        &GoGenOptions::default(),
+    );
+    assert!(!d.contains("// java-only"), "{d}");
+    // The wildcard `*` still matches Go.
+    let d2 = emit(
+        "@verbatim(placement=BEFORE_DECLARATION, text=\"// wildcard\")\n\
+         @final struct V { uint32 a; };",
+        &GoGenOptions::default(),
+    );
+    assert!(d2.contains("// wildcard"), "{d2}");
+}
+
+#[test]
+fn verbatim_output_still_compiles() {
+    let idl = "@verbatim(language=\"go\", placement=BEGIN_FILE, text=\"// zd file header\")\n\
+         @verbatim(language=\"go\", placement=BEGIN_DECLARATION, text=\"// zd inside struct\")\n\
+         @final struct V { uint32 a; };";
+    let body = r#"
+func main() {
+	v := V{A: 0x2A}
+	fmt.Println(hex.EncodeToString(v.MarshalXCDR(Little)))
+}
+"#;
+    let Some(l) = go_lines(idl, body, "verbatim") else {
+        return;
+    };
+    assert_eq!(l[0], "2a000000");
 }

@@ -129,6 +129,10 @@ enum CliError {
     Usage(String),
     Io(String),
     Parse(String),
+    /// Semantic validation failed (resolver, unresolved type references, or
+    /// a spec-constraint validator). Reported by the `check` and `generate`
+    /// paths; carries one finding per line.
+    Semantic(String),
     NotImplemented(String),
 }
 
@@ -136,7 +140,7 @@ impl CliError {
     fn exit_code(&self) -> u8 {
         match self {
             Self::Usage(_) | Self::Io(_) => 2,
-            Self::Parse(_) => 1,
+            Self::Parse(_) | Self::Semantic(_) => 1,
             Self::NotImplemented(_) => 3,
         }
     }
@@ -145,9 +149,11 @@ impl CliError {
 impl core::fmt::Display for CliError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            Self::Usage(m) | Self::Io(m) | Self::Parse(m) | Self::NotImplemented(m) => {
-                f.write_str(m)
-            }
+            Self::Usage(m)
+            | Self::Io(m)
+            | Self::Parse(m)
+            | Self::Semantic(m)
+            | Self::NotImplemented(m) => f.write_str(m),
         }
     }
 }
@@ -263,6 +269,10 @@ struct CliOptions {
     /// Aktiver Sub-Command, falls als erstes Positional angegeben.
     subcommand: Option<SubCommand>,
     parse_only: bool,
+    /// `check` sub-command — run the semantic gate, emit no code and dump no
+    /// AST. Distinct from `parse_only` (`dump-ast` / `--parse-only`), which
+    /// stays lenient so a broken AST can still be inspected.
+    check: bool,
     /// `--dump-deps` — Make-Dependency-Zeile statt Codegen.
     dump_deps: bool,
     /// `--dump-typeobject` — XTypes-TypeObject je Struct statt Codegen.
@@ -298,6 +308,19 @@ struct CliOptions {
     /// `--scaffold` — pro Backend die idiomatische Build-Datei
     /// (Cargo.toml / CMakeLists.txt / …) mit-emittieren.
     scaffold: bool,
+    /// `--depfile <path>` — Make-/Ninja-kompatible Depfile schreiben.
+    /// Target = Stamp (falls gesetzt) sonst alle erzeugten Outputs;
+    /// Prerequisites = die IDL + alle transitiv `#include`-ten Dateien
+    /// (kanonische Resolver-Pfade). Teil des Build-Vertrags.
+    depfile: Option<PathBuf>,
+    /// `--output-manifest <path>` (Alias `--manifest`) — JSON mit allen
+    /// tatsaechlich erzeugten Dateien je Backend. Consumer (CMake/Gradle/
+    /// MSBuild/SPM) brauchen keine Endungslogik mehr.
+    manifest: Option<PathBuf>,
+    /// `--stamp <path>` — eine stabile Stamp-Datei als einziger deklarierter
+    /// OUTPUT (touch nach Erfolg), unabhaengig davon wie viele/welche Dateien
+    /// ein Backend erzeugt.
+    stamp: Option<PathBuf>,
 }
 
 impl CliOptions {
@@ -353,7 +376,7 @@ fn out_flag_backend(flag: &str) -> Option<Backend> {
         .find(|b| backend_flag_suffix(*b) == suffix)
 }
 
-/// Alle neun Backends — fuer `--all`.
+/// Alle 17 Backends — fuer `--all`.
 const ALL_BACKENDS: [Backend; 17] = [
     Backend::C,
     Backend::Cpp,
@@ -392,7 +415,8 @@ fn run(args: &[String]) -> Result<(), CliError> {
     // aus, er waehlt nur den Default-Modus).
     match subcommand {
         Some(SubCommand::Generate) | None => {}
-        Some(SubCommand::Check | SubCommand::DumpAst) => opts.parse_only = true,
+        Some(SubCommand::Check) => opts.check = true,
+        Some(SubCommand::DumpAst) => opts.parse_only = true,
         Some(SubCommand::DumpTypeObject) => opts.dump_typeobject = true,
         Some(SubCommand::PrintDeps) => opts.dump_deps = true,
     }
@@ -462,6 +486,25 @@ fn run(args: &[String]) -> Result<(), CliError> {
             "--with-typeobject" => opts.no_type_objects = false,
             // Projekt-Scaffolding (opt-in, die „extra Meile").
             "--scaffold" => opts.scaffold = true,
+            // Build-Vertrag (Schritt 1a): Depfile / Manifest / Stamp.
+            "--depfile" => {
+                let value = iter
+                    .next()
+                    .ok_or_else(|| CliError::Usage("--depfile requires a path".to_string()))?;
+                opts.depfile = Some(PathBuf::from(value));
+            }
+            "--output-manifest" | "--manifest" => {
+                let value = iter
+                    .next()
+                    .ok_or_else(|| CliError::Usage(format!("{arg} requires a path")))?;
+                opts.manifest = Some(PathBuf::from(value));
+            }
+            "--stamp" => {
+                let value = iter
+                    .next()
+                    .ok_or_else(|| CliError::Usage("--stamp requires a path".to_string()))?;
+                opts.stamp = Some(PathBuf::from(value));
+            }
             // Default-Nested (Cyclone -n).
             "--default-nested" => {
                 let value = iter.next().ok_or_else(|| {
@@ -575,7 +618,10 @@ fn run(args: &[String]) -> Result<(), CliError> {
         }
     }
     let dump_action = opts.parse_only || opts.dump_deps || opts.dump_typeobject;
-    if !dump_action && opts.backends.is_empty() {
+    // Modes that produce no backend code: the dump/parse actions plus
+    // `check` (semantic gate only).
+    let non_emitting = dump_action || opts.check;
+    if !non_emitting && opts.backends.is_empty() {
         // Bei `generate` ohne Backend eine praezisere Meldung als beim
         // flachen Aufruf — der Sub-Command sagt klar, was gewollt war.
         let msg = if opts.subcommand == Some(SubCommand::Generate) {
@@ -587,10 +633,20 @@ fn run(args: &[String]) -> Result<(), CliError> {
         };
         return Err(CliError::NotImplemented(msg.to_string()));
     }
-    if dump_action && !opts.backends.is_empty() {
+    if non_emitting && !opts.backends.is_empty() {
         return Err(CliError::Usage(
             "the selected mode (check / dump-ast / dump-typeobject / print-deps / \
              --parse-only) does not emit code — drop the backend flag"
+                .to_string(),
+        ));
+    }
+    // Build-Vertrag (--depfile/--output-manifest/--stamp) beschreibt den
+    // Codegen-Output — in einem nicht-emittierenden Modus gibt es nichts zu
+    // beschreiben.
+    if non_emitting && (opts.depfile.is_some() || opts.manifest.is_some() || opts.stamp.is_some()) {
+        return Err(CliError::Usage(
+            "--depfile / --output-manifest / --stamp require a backend (generate mode); \
+             they describe the generated output"
                 .to_string(),
         ));
     }
@@ -598,8 +654,12 @@ fn run(args: &[String]) -> Result<(), CliError> {
         .file
         .as_ref()
         .ok_or_else(|| CliError::Usage("missing input file (try --help)".to_string()))?;
-    let raw = std::fs::read_to_string(path)
+    let mut raw = std::fs::read_to_string(path)
         .map_err(|e| CliError::Io(format!("cannot read {path}: {e}")))?;
+    // Strip a leading UTF-8 BOM (U+FEFF) — not part of the IDL.
+    if raw.starts_with('\u{feff}') {
+        raw.remove(0);
+    }
 
     // Preprocessor-Lauf: `-D`-Defines werden als synthetische
     // `#define`-Prelude vorangestellt (gcc-Konvention: `-D NAME` ohne
@@ -680,14 +740,34 @@ fn run(args: &[String]) -> Result<(), CliError> {
         }
     }
 
+    // Semantic gate — the single barrier that `check` and `generate` share.
+    // It runs after parse + default-patches and BEFORE TypeObject lowering,
+    // so `--no-typeobject` cannot bypass it. The lenient inspection modes
+    // (`dump-ast` / `--parse-only` / `dump-typeobject` / `print-deps`) skip
+    // it so a broken AST stays inspectable.
+    if opts.check || !non_emitting {
+        let pragma_prefixes: Vec<(String, usize)> = processed
+            .pragma_prefixes
+            .iter()
+            .map(|p| (p.prefix.clone(), p.line))
+            .collect();
+        zerodds_idl::semantics::resolve_and_validate(&ast, &pragma_prefixes)
+            .map_err(|e| CliError::Semantic(format!("semantic validation failed:\n{e}")))?;
+        opts.report(1, "semantic validation passed");
+    }
+
+    if opts.check {
+        opts.report(0, &format!("{path}: OK"));
+        return Ok(());
+    }
+
     if opts.parse_only {
         println!("{ast}");
         return Ok(());
     }
 
     if opts.dump_typeobject {
-        dump_typeobjects(&ast);
-        return Ok(());
+        return dump_typeobjects(&ast);
     }
 
     let base = basename_stem(path)
@@ -712,9 +792,16 @@ fn run(args: &[String]) -> Result<(), CliError> {
         }
     };
 
-    // Jedes gewaehlte Backend in sein Ziel-Verzeichnis emittieren. Bei
-    // --all sind das alle 17; Reihenfolge = ALL_BACKENDS. Ziel ist
-    // der `--out-<lang>`-Override, sonst das globale `-o`.
+    // Jedes gewaehlte Backend erzeugt seinen Output ZUERST vollstaendig im
+    // Speicher (kein `std::fs::write`). Bei --all sind das alle 17; Reihenfolge
+    // = ALL_BACKENDS. Ziel ist der `--out-<lang>`-Override, sonst das globale
+    // `-o`. Jeder Lauf sammelt die erzeugten Dateien fuer den Build-Vertrag —
+    // kein Raten von Endungen, ein Backend ohne Output wird ehrlich mit leerer
+    // Dateiliste abgebildet. Erst wenn ALLE Backends erfolgreich gestaged
+    // haben, werden die Dateien atomar auf die Platte geschrieben: faellt ein
+    // Backend (oder das Semantik-Gate oben) aus, bleibt keine Teil-Ausgabe
+    // eines anderen Backends liegen.
+    let mut manifest_entries: Vec<BackendOutput> = Vec::with_capacity(opts.backends.len());
     for backend in &opts.backends {
         let suffix = backend_flag_suffix(*backend);
         let out_dir = opts.backend_out_dir(*backend).ok_or_else(|| {
@@ -723,19 +810,264 @@ fn run(args: &[String]) -> Result<(), CliError> {
                 backend_name(*backend)
             ))
         })?;
-        std::fs::create_dir_all(out_dir)
-            .map_err(|e| CliError::Io(format!("cannot create {}: {e}", out_dir.display())))?;
-        emit_backend(*backend, &ast, &opts, out_dir, &base, &type_objects)?;
+        let files = emit_backend(*backend, &ast, &opts, out_dir, &base, &type_objects)?;
         opts.report(
             1,
             &format!(
-                "emitted {} backend → {}",
+                "staged {} backend ({} file(s)) → {}",
                 backend_name(*backend),
+                files.len(),
                 out_dir.display()
             ),
         );
+        manifest_entries.push(BackendOutput {
+            backend: *backend,
+            out_dir: out_dir.to_path_buf(),
+            files,
+        });
+    }
+
+    // Atomarer Veroeffentlichungs-Punkt: alle gestageten Dateien jetzt — nach
+    // dem Erfolg saemtlicher Backends — auf die Platte schreiben.
+    flush_staged_files(&manifest_entries)?;
+
+    // Build-Vertrag: Depfile + Manifest + Stamp. Werden erst NACH dem
+    // erfolgreichen Codegen aller Backends geschrieben — schlaegt ein
+    // Backend fehl (oder das Semantik-Gate weiter oben), entsteht weder
+    // Stamp noch Manifest noch Depfile.
+    if opts.depfile.is_some() || opts.manifest.is_some() || opts.stamp.is_some() {
+        write_build_contract(path, &processed, &opts, &manifest_entries)?;
     }
     Ok(())
+}
+
+/// Ein Backend-Eintrag fuer den Build-Vertrag: das Ziel-Verzeichnis und die
+/// Liste der erzeugten Dateien (kann leer sein, wenn ein Backend fuer die
+/// gegebene IDL keinen Output erzeugt). Die Dateien sind bis zum atomaren
+/// Flush im Speicher gehalten ([`StagedFile`]).
+struct BackendOutput {
+    backend: Backend,
+    out_dir: PathBuf,
+    files: Vec<StagedFile>,
+}
+
+/// Schreibt die Build-Vertrag-Artefakte (Depfile / Manifest / Stamp) nach
+/// erfolgreichem Codegen. Reihenfolge: Depfile + Manifest zuerst, Stamp
+/// zuletzt — der Stamp ist der einzige deklarierte OUTPUT und wird als
+/// letztes getoucht, damit seine mtime alle anderen Artefakte dominiert.
+fn write_build_contract(
+    idl_path: &str,
+    processed: &zerodds_idl::preprocessor::ProcessedSource,
+    opts: &CliOptions,
+    entries: &[BackendOutput],
+) -> Result<(), CliError> {
+    // Prerequisites = die IDL + alle transitiv #include-ten Dateien. Der
+    // Resolver liefert die kanonischen Pfade via Resolved{path}; die
+    // source_map fuehrt Datei 0 = Top-IDL, danach die kanonischen Includes.
+    let mut deps: Vec<String> = Vec::new();
+    let map = &processed.source_map;
+    for i in 0..map.file_count() {
+        if let Some(name) = map.file_name(zerodds_idl::preprocessor::FileId(
+            u32::try_from(i).unwrap_or(0),
+        )) {
+            // Die Top-IDL (Index 0) steht als CLI-Pfad drin — fuer eine
+            // einheitliche (kanonische) Depfile wird sie ebenfalls
+            // kanonisiert; Includes sind bereits kanonisch.
+            let canon = std::fs::canonicalize(name)
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_else(|_| name.to_string());
+            if !deps.contains(&canon) {
+                deps.push(canon);
+            }
+        }
+    }
+
+    // Flache, deduplizierte, sortierte Liste aller erzeugten Dateien.
+    let mut all_outputs: Vec<String> = Vec::new();
+    for e in entries {
+        for f in &e.files {
+            let s = f.path.to_string_lossy().into_owned();
+            if !all_outputs.contains(&s) {
+                all_outputs.push(s);
+            }
+        }
+    }
+    all_outputs.sort();
+
+    if let Some(dep_path) = &opts.depfile {
+        // Depfile-Target: der Stamp (Ninja verlangt genau EIN Target),
+        // sonst alle erzeugten Outputs (Make-Multi-Target-Regel).
+        let targets: Vec<String> = match &opts.stamp {
+            Some(stamp) => vec![stamp.to_string_lossy().into_owned()],
+            None => all_outputs.clone(),
+        };
+        let content = render_depfile(&targets, &deps);
+        write_contract_file(dep_path, content.as_bytes())?;
+        opts.report(1, &format!("wrote depfile → {}", dep_path.display()));
+    }
+
+    if let Some(man_path) = &opts.manifest {
+        let content = render_manifest(idl_path, opts, &deps, entries, &all_outputs);
+        write_contract_file(man_path, content.as_bytes())?;
+        opts.report(1, &format!("wrote manifest → {}", man_path.display()));
+    }
+
+    if let Some(stamp_path) = &opts.stamp {
+        // Stamp zuletzt: leerer Inhalt, mtime = Erfolgs-Zeitpunkt.
+        write_contract_file(stamp_path, b"")?;
+        opts.report(1, &format!("touched stamp → {}", stamp_path.display()));
+    }
+    Ok(())
+}
+
+/// Schreibt eine Build-Vertrag-Datei; legt fehlende Elternverzeichnisse an.
+fn write_contract_file(path: &Path, bytes: &[u8]) -> Result<(), CliError> {
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| CliError::Io(format!("cannot create {}: {e}", parent.display())))?;
+        }
+    }
+    std::fs::write(path, bytes)
+        .map_err(|e| CliError::Io(format!("cannot write {}: {e}", path.display())))
+}
+
+/// Rendert eine Make-/Ninja-kompatible Depfile-Regel:
+/// `<target...>: <prereq...>`. Pfade werden GNU-Make-Style escaped
+/// (Space/`#`/`$`). Eine einzelne Regel — der von Ninja verlangte
+/// gemeinsame Nenner (kein `-MP`-Phony-Block, den Ninja ablehnt).
+fn render_depfile(targets: &[String], deps: &[String]) -> String {
+    let target = targets
+        .iter()
+        .map(|t| escape_make_path(t))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let mut out = String::new();
+    out.push_str(&target);
+    out.push(':');
+    for d in deps {
+        out.push(' ');
+        out.push_str(&escape_make_path(d));
+    }
+    out.push('\n');
+    out
+}
+
+/// GNU-Make/Ninja-Depfile-Escaping fuer einen Pfad: Space → `\ `,
+/// `#` → `\#`, `$` → `$$`.
+fn escape_make_path(p: &str) -> String {
+    let mut s = String::with_capacity(p.len());
+    for c in p.chars() {
+        match c {
+            ' ' => s.push_str("\\ "),
+            '#' => s.push_str("\\#"),
+            '$' => s.push_str("$$"),
+            _ => s.push(c),
+        }
+    }
+    s
+}
+
+/// Rendert das Output-Manifest als JSON (ohne serde — die einzige
+/// Datenquelle sind Strings + Backend-Namen). Schema:
+/// `{ idl, compiler_version, stamp, depfile, inputs[], backends[{backend,
+/// output_dir, files[]}], outputs[] }`.
+fn render_manifest(
+    idl_path: &str,
+    opts: &CliOptions,
+    deps: &[String],
+    entries: &[BackendOutput],
+    all_outputs: &[String],
+) -> String {
+    let mut s = String::new();
+    s.push_str("{\n");
+    s.push_str(&format!("  \"idl\": {},\n", json_string(idl_path)));
+    s.push_str(&format!(
+        "  \"compiler_version\": {},\n",
+        json_string(VERSION)
+    ));
+    s.push_str(&format!(
+        "  \"stamp\": {},\n",
+        json_opt_path(opts.stamp.as_deref())
+    ));
+    s.push_str(&format!(
+        "  \"depfile\": {},\n",
+        json_opt_path(opts.depfile.as_deref())
+    ));
+    s.push_str("  \"inputs\": ");
+    s.push_str(&json_string_array(deps));
+    s.push_str(",\n");
+    s.push_str("  \"backends\": [\n");
+    for (idx, e) in entries.iter().enumerate() {
+        let files: Vec<String> = e
+            .files
+            .iter()
+            .map(|f| f.path.to_string_lossy().into_owned())
+            .collect();
+        s.push_str("    {\n");
+        s.push_str(&format!(
+            "      \"backend\": {},\n",
+            json_string(backend_flag_suffix(e.backend))
+        ));
+        s.push_str(&format!(
+            "      \"output_dir\": {},\n",
+            json_string(&e.out_dir.to_string_lossy())
+        ));
+        s.push_str("      \"files\": ");
+        s.push_str(&json_string_array(&files));
+        s.push('\n');
+        s.push_str("    }");
+        if idx + 1 < entries.len() {
+            s.push(',');
+        }
+        s.push('\n');
+    }
+    s.push_str("  ],\n");
+    s.push_str("  \"outputs\": ");
+    s.push_str(&json_string_array(all_outputs));
+    s.push('\n');
+    s.push_str("}\n");
+    s
+}
+
+/// JSON-Array aus Strings, eingerueckt auf einer Zeile.
+fn json_string_array(items: &[String]) -> String {
+    if items.is_empty() {
+        return "[]".to_string();
+    }
+    let inner = items
+        .iter()
+        .map(|s| json_string(s))
+        .collect::<Vec<_>>()
+        .join(", ");
+    format!("[{inner}]")
+}
+
+/// Optionaler Pfad als JSON-String oder `null`.
+fn json_opt_path(p: Option<&Path>) -> String {
+    match p {
+        Some(path) => json_string(&path.to_string_lossy()),
+        None => "null".to_string(),
+    }
+}
+
+/// Minimaler JSON-String-Encoder (Quotes + Standard-Escapes).
+fn json_string(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
 }
 
 /// `--dump-typeobject`: alle benannten Typen einer Spec ueber den
@@ -743,14 +1075,37 @@ fn run(args: &[String]) -> Result<(), CliError> {
 /// (Abhaengigkeiten zuerst) ausgeben. Scoped Cross-Referenzen werden
 /// aufgeloest. Schlaegt das Mapping fehl (z.B. zyklischer Typ), wird die
 /// Mapper-Fehlermeldung ausgegeben.
-fn dump_typeobjects(spec: &zerodds_idl::ast::Specification) {
+/// Dumps every successfully-lowered minimal `TypeObject` to stdout and — this
+/// is the error contract — fails (non-zero exit, message on stderr) when the
+/// mapping was not total. A type that cannot be lowered (a recursive cycle, an
+/// unsupported construct, or a dependent of either) is isolated per SCC by
+/// `build_type_registry`: the lowerable types are still printed, but their
+/// presence must not mask that others were dropped. Previously this printed
+/// `// TypeObject mapping failed` to stdout and returned Ok, so a consumer saw
+/// exit 0 ("success") despite the failure.
+fn dump_typeobjects(spec: &zerodds_idl::ast::Specification) -> Result<(), CliError> {
     match zerodds_idl::semantics::build_type_registry(spec) {
         Ok(lowered) => {
             for (fqn, obj) in lowered.iter() {
                 println!("// TypeObject for {fqn}\n{obj:#?}\n");
             }
+            if lowered.skipped.is_empty() {
+                return Ok(());
+            }
+            let detail = lowered
+                .skipped
+                .iter()
+                .map(|(fqn, e)| format!("  {fqn}: {e:?}"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            Err(CliError::NotImplemented(format!(
+                "TypeObject mapping incomplete — {} type(s) could not be lowered:\n{detail}",
+                lowered.skipped.len()
+            )))
         }
-        Err(e) => println!("// TypeObject mapping failed: {e:?}"),
+        Err(e) => Err(CliError::NotImplemented(format!(
+            "TypeObject mapping failed: {e:?}"
+        ))),
     }
 }
 
@@ -777,9 +1132,103 @@ fn backend_name(b: Backend) -> &'static str {
     }
 }
 
+/// Splices the C TypeObject `block` into `header` immediately before the
+/// header's closing include-guard `#endif`, so the block sits inside the
+/// guard. `c_mode.rs` closes the guard with a trailing `#endif` line; appending
+/// the block after that line placed the `static const` arrays outside the
+/// guard, so a double `#include` of the header re-emitted them → clang
+/// redefinition. The insertion point is the last line that is an `#endif`
+/// directive (the guard closer). If `block` is empty the header is returned
+/// unchanged; if no `#endif` is found (never for a well-formed C header) the
+/// block is appended as a safe fallback.
+fn splice_c_typeobject_block(header: &str, block: &str) -> String {
+    if block.is_empty() {
+        return header.to_string();
+    }
+    // Byte offset of the last `#endif` directive line.
+    let mut insert_at: Option<usize> = None;
+    let mut offset = 0usize;
+    for line in header.split_inclusive('\n') {
+        if line.trim_start().starts_with("#endif") {
+            insert_at = Some(offset);
+        }
+        offset += line.len();
+    }
+    match insert_at {
+        Some(idx) => {
+            let mut out = String::with_capacity(header.len() + block.len() + 1);
+            out.push_str(&header[..idx]);
+            out.push_str(block);
+            if !block.ends_with('\n') {
+                out.push('\n');
+            }
+            out.push_str(&header[idx..]);
+            out
+        }
+        None => {
+            let mut out = String::with_capacity(header.len() + block.len());
+            out.push_str(header);
+            out.push_str(block);
+            out
+        }
+    }
+}
+
+/// Eine im Speicher gehaltene, erzeugte Backend-Datei (Pfad + Inhalt). Nichts
+/// wird auf die Platte geschrieben, bevor ALLE Backends ihren Output erzeugt
+/// haben — der Flush ist der eine atomare Veroeffentlichungs-Punkt. Faellt ein
+/// spaeteres Backend aus (oder das Semantik-Gate), bleibt keine Teil-Ausgabe
+/// eines frueheren Backends liegen.
+struct StagedFile {
+    path: PathBuf,
+    contents: Vec<u8>,
+    /// `false` fuer eine bereits existierende Scaffold-Datei, die unveraendert
+    /// bleibt: im Manifest gefuehrt, aber nicht (neu) geschrieben.
+    write: bool,
+}
+
+/// Staged eine erzeugte Backend-Datei im Speicher (Pfad + Inhalt) und
+/// protokolliert sie im Manifest-Sammler `files`. Der eigentliche Platten-
+/// Schreib passiert gebuendelt in [`flush_staged_files`] NACH dem Erfolg
+/// aller Backends (atomares `--all`). Zentraler Sammel-Pfad, damit jede vom
+/// Codegen erzeugte Datei ohne Endungs-Raten im Build-Vertrag auftaucht.
+fn stage_file(path: &Path, contents: impl AsRef<[u8]>, files: &mut Vec<StagedFile>) {
+    files.push(StagedFile {
+        path: path.to_path_buf(),
+        contents: contents.as_ref().to_vec(),
+        write: true,
+    });
+}
+
+/// Schreibt alle gestageten Dateien auf die Platte — der atomare
+/// Veroeffentlichungs-Punkt. Legt fehlende Elternverzeichnisse an.
+/// Scaffold-Dateien mit `write == false` (bereits vorhanden) werden
+/// uebersprungen.
+fn flush_staged_files(entries: &[BackendOutput]) -> Result<(), CliError> {
+    for entry in entries {
+        for f in &entry.files {
+            if !f.write {
+                continue;
+            }
+            if let Some(parent) = f.path.parent() {
+                if !parent.as_os_str().is_empty() {
+                    std::fs::create_dir_all(parent).map_err(|e| {
+                        CliError::Io(format!("cannot create {}: {e}", parent.display()))
+                    })?;
+                }
+            }
+            std::fs::write(&f.path, &f.contents)
+                .map_err(|e| CliError::Io(format!("cannot write {}: {e}", f.path.display())))?;
+        }
+    }
+    Ok(())
+}
+
 /// Emittiert ein einzelnes Backend in `out_dir`. `type_objects` ist der
 /// XTypes-TypeObject-Block, der an die generierte Ausgabe angehaengt
-/// wird (leer = `--no-typeobject` oder Mapping fehlgeschlagen).
+/// wird (leer = `--no-typeobject` oder Mapping fehlgeschlagen). Rueckgabe:
+/// die Liste der wirklich geschriebenen Dateien (fuer den Build-Vertrag) —
+/// kann leer sein, wenn ein Backend fuer die IDL keinen Output erzeugt.
 fn emit_backend(
     backend: Backend,
     ast: &zerodds_idl::ast::Specification,
@@ -787,24 +1236,32 @@ fn emit_backend(
     out_dir: &Path,
     base: &str,
     type_objects: &[TypeObjectBlob],
-) -> Result<(), CliError> {
+) -> Result<Vec<StagedFile>, CliError> {
+    let mut files: Vec<StagedFile> = Vec::new();
     match backend {
         Backend::C => {
-            let mut code = generate_c_header(ast, &CGenOptions::default())
+            let code = generate_c_header(ast, &CGenOptions::default())
                 .map_err(|e| CliError::NotImplemented(format!("c codegen failed: {e}")))?;
-            code.push_str(&typeobject_emit::render(backend, type_objects));
+            // The C header wraps its body in an include guard (`#ifndef …_H` /
+            // closing `#endif`, emitted by c_mode.rs). The TypeObject block
+            // must live INSIDE that guard: appended after the closing `#endif`
+            // it lands outside the guard, so a second `#include` of the same
+            // header re-emits the `static const` arrays → clang redefinition.
+            // Splice it before the guard's closing `#endif` instead. C++ uses
+            // `#pragma once` and the other single-file backends carry no guard,
+            // so this fix-up is C-only.
+            let block = typeobject_emit::render(backend, ast, base, type_objects);
+            let code = splice_c_typeobject_block(&code, &block);
             let out_path = out_dir.join(format!("{base}.h"));
-            std::fs::write(&out_path, code)
-                .map_err(|e| CliError::Io(format!("cannot write {}: {e}", out_path.display())))?;
+            stage_file(&out_path, code, &mut files);
         }
         Backend::Rust => {
             // DataTypes immer.
             let mut code = generate_rust_module(ast, &RustGenOptions::default())
                 .map_err(|e| CliError::NotImplemented(format!("rust codegen failed: {e}")))?;
-            code.push_str(&typeobject_emit::render(backend, type_objects));
+            code.push_str(&typeobject_emit::render(backend, ast, base, type_objects));
             let out_path = out_dir.join(format!("{base}.rs"));
-            std::fs::write(&out_path, code)
-                .map_err(|e| CliError::Io(format!("cannot write {}: {e}", out_path.display())))?;
+            stage_file(&out_path, code, &mut files);
             // Mit --corba zusaetzlich Service-Code in zweite Datei. Anders
             // als bei C++/C#/Java (Single-File-Header) kollidieren die
             // File-level Inner-Attributes von idl-rust und corba-rust beim
@@ -816,9 +1273,7 @@ fn emit_backend(
                         CliError::NotImplemented(format!("corba-rust codegen failed: {e}"))
                     })?;
                 let svc_path = out_dir.join(format!("{base}_corba.rs"));
-                std::fs::write(&svc_path, svc).map_err(|e| {
-                    CliError::Io(format!("cannot write {}: {e}", svc_path.display()))
-                })?;
+                stage_file(&svc_path, svc, &mut files);
             }
         }
         Backend::Cpp => {
@@ -829,18 +1284,16 @@ fn emit_backend(
                 generate_cpp_header(ast, &cpp_opts)
             }
             .map_err(|e| CliError::NotImplemented(format!("cpp codegen failed: {e}")))?;
-            code.push_str(&typeobject_emit::render(backend, type_objects));
+            code.push_str(&typeobject_emit::render(backend, ast, base, type_objects));
             let out_path = out_dir.join(format!("{base}.hpp"));
-            std::fs::write(&out_path, code)
-                .map_err(|e| CliError::Io(format!("cannot write {}: {e}", out_path.display())))?;
+            stage_file(&out_path, code, &mut files);
         }
         Backend::Ts => {
             let mut code = generate_ts_source(ast)
                 .map_err(|e| CliError::NotImplemented(format!("ts codegen failed: {e}")))?;
-            code.push_str(&typeobject_emit::render(backend, type_objects));
+            code.push_str(&typeobject_emit::render(backend, ast, base, type_objects));
             let out_path = out_dir.join(format!("{base}.ts"));
-            std::fs::write(&out_path, code)
-                .map_err(|e| CliError::Io(format!("cannot write {}: {e}", out_path.display())))?;
+            stage_file(&out_path, code, &mut files);
         }
         Backend::CSharp => {
             let cs_opts = CsGenOptions::default();
@@ -850,57 +1303,60 @@ fn emit_backend(
                 generate_csharp(ast, &cs_opts)
             }
             .map_err(|e| CliError::NotImplemented(format!("csharp codegen failed: {e}")))?;
-            code.push_str(&typeobject_emit::render(backend, type_objects));
+            code.push_str(&typeobject_emit::render(backend, ast, base, type_objects));
             let out_path = out_dir.join(format!("{base}.cs"));
-            std::fs::write(&out_path, code)
-                .map_err(|e| CliError::Io(format!("cannot write {}: {e}", out_path.display())))?;
+            stage_file(&out_path, code, &mut files);
         }
         Backend::Java => {
             let java_opts = JavaGenOptions::default();
-            let files = if opts.corba {
+            let java_files = if opts.corba {
                 generate_java_files_with_corba_traits(ast, &java_opts)
             } else {
                 generate_java_files(ast, &java_opts)
             }
             .map_err(|e| CliError::NotImplemented(format!("java codegen failed: {e}")))?;
-            for file in files {
+            for file in java_files {
                 let pkg_subpath = file.package_path.replace('.', "/");
                 let pkg_dir = if pkg_subpath.is_empty() {
                     out_dir.to_path_buf()
                 } else {
                     out_dir.join(&pkg_subpath)
                 };
-                std::fs::create_dir_all(&pkg_dir).map_err(|e| {
-                    CliError::Io(format!("cannot create {}: {e}", pkg_dir.display()))
-                })?;
+                // Das Package-Verzeichnis wird erst beim atomaren Flush
+                // angelegt (flush_staged_files legt Elternverzeichnisse an) —
+                // ein Fehler in einem spaeteren Backend hinterlaesst so keine
+                // leeren Package-Ordner.
                 let class_path = pkg_dir.join(format!("{}.java", file.class_name));
-                std::fs::write(&class_path, &file.source).map_err(|e| {
-                    CliError::Io(format!("cannot write {}: {e}", class_path.display()))
-                })?;
+                stage_file(&class_path, &file.source, &mut files);
             }
             // Java ist Multi-File — der TypeObject-Block kommt als
-            // eigenstaendige Compilation-Unit `TypeObjects.java`.
+            // eigenstaendige Compilation-Unit. Klasse + Dateiname sind pro
+            // Basis-IDL eindeutig (`TypeObjects_<base>`), damit mehrere
+            // separat generierte IDLs im selben Package nicht als
+            // Doppel-Klasse kollidieren (Java bindet Dateiname an
+            // public-class-Name).
             if !type_objects.is_empty() {
-                let to_path = out_dir.join("TypeObjects.java");
-                std::fs::write(&to_path, typeobject_emit::render(backend, type_objects)).map_err(
-                    |e| CliError::Io(format!("cannot write {}: {e}", to_path.display())),
-                )?;
+                let class = typeobject_emit::type_objects_class_name(ast, base);
+                let to_path = out_dir.join(format!("{class}.java"));
+                stage_file(
+                    &to_path,
+                    typeobject_emit::render(backend, ast, base, type_objects),
+                    &mut files,
+                );
             }
         }
         Backend::Python => {
             let mut code = generate_python_module(ast, &PythonGenOptions::default())
                 .map_err(|e| CliError::NotImplemented(format!("python codegen failed: {e}")))?;
-            code.push_str(&typeobject_emit::render(backend, type_objects));
+            code.push_str(&typeobject_emit::render(backend, ast, base, type_objects));
             let out_path = out_dir.join(format!("{base}.py"));
-            std::fs::write(&out_path, code)
-                .map_err(|e| CliError::Io(format!("cannot write {}: {e}", out_path.display())))?;
+            stage_file(&out_path, code, &mut files);
         }
         Backend::Go => {
             let code = generate_go_module(ast, &GoGenOptions::default())
                 .map_err(|e| CliError::NotImplemented(format!("go codegen failed: {e}")))?;
             let out_path = out_dir.join(format!("{base}.go"));
-            std::fs::write(&out_path, code)
-                .map_err(|e| CliError::Io(format!("cannot write {}: {e}", out_path.display())))?;
+            stage_file(&out_path, code, &mut files);
         }
         Backend::Ada => {
             // GNAT maps the unit name to lower-case file names; `base` is the
@@ -913,31 +1369,26 @@ fn emit_backend(
             let lower = base.to_lowercase();
             for (ext, code) in [("ads", &module.spec), ("adb", &module.body)] {
                 let out_path = out_dir.join(format!("{lower}.{ext}"));
-                std::fs::write(&out_path, code).map_err(|e| {
-                    CliError::Io(format!("cannot write {}: {e}", out_path.display()))
-                })?;
+                stage_file(&out_path, code, &mut files);
             }
         }
         Backend::Zig => {
             let code = generate_zig_module(ast, &ZigGenOptions::default())
                 .map_err(|e| CliError::NotImplemented(format!("zig codegen failed: {e}")))?;
             let out_path = out_dir.join(format!("{base}.zig"));
-            std::fs::write(&out_path, code)
-                .map_err(|e| CliError::Io(format!("cannot write {}: {e}", out_path.display())))?;
+            stage_file(&out_path, code, &mut files);
         }
         Backend::Nim => {
             let code = generate_nim_module(ast, &NimGenOptions::default())
                 .map_err(|e| CliError::NotImplemented(format!("nim codegen failed: {e}")))?;
             let out_path = out_dir.join(format!("{base}.nim"));
-            std::fs::write(&out_path, code)
-                .map_err(|e| CliError::Io(format!("cannot write {}: {e}", out_path.display())))?;
+            stage_file(&out_path, code, &mut files);
         }
         Backend::D => {
             let code = generate_d_module(ast, &DGenOptions::default())
                 .map_err(|e| CliError::NotImplemented(format!("d codegen failed: {e}")))?;
             let out_path = out_dir.join(format!("{base}.d"));
-            std::fs::write(&out_path, code)
-                .map_err(|e| CliError::Io(format!("cannot write {}: {e}", out_path.display())))?;
+            stage_file(&out_path, code, &mut files);
         }
         Backend::Elixir => {
             let module = base
@@ -961,36 +1412,31 @@ fn emit_backend(
             let code = generate_elixir_module(ast, &opts_ex)
                 .map_err(|e| CliError::NotImplemented(format!("elixir codegen failed: {e}")))?;
             let out_path = out_dir.join(format!("{base}.ex"));
-            std::fs::write(&out_path, code)
-                .map_err(|e| CliError::Io(format!("cannot write {}: {e}", out_path.display())))?;
+            stage_file(&out_path, code, &mut files);
         }
         Backend::OCaml => {
             let code = generate_ocaml_module(ast, &OcamlGenOptions::default())
                 .map_err(|e| CliError::NotImplemented(format!("ocaml codegen failed: {e}")))?;
             let out_path = out_dir.join(format!("{base}.ml"));
-            std::fs::write(&out_path, code)
-                .map_err(|e| CliError::Io(format!("cannot write {}: {e}", out_path.display())))?;
+            stage_file(&out_path, code, &mut files);
         }
         Backend::Julia => {
             let code = generate_julia_module(ast, &JuliaGenOptions::default())
                 .map_err(|e| CliError::NotImplemented(format!("julia codegen failed: {e}")))?;
             let out_path = out_dir.join(format!("{base}.jl"));
-            std::fs::write(&out_path, code)
-                .map_err(|e| CliError::Io(format!("cannot write {}: {e}", out_path.display())))?;
+            stage_file(&out_path, code, &mut files);
         }
         Backend::Lua => {
             let code = generate_lua_module(ast, &LuaGenOptions::default())
                 .map_err(|e| CliError::NotImplemented(format!("lua codegen failed: {e}")))?;
             let out_path = out_dir.join(format!("{base}.lua"));
-            std::fs::write(&out_path, code)
-                .map_err(|e| CliError::Io(format!("cannot write {}: {e}", out_path.display())))?;
+            stage_file(&out_path, code, &mut files);
         }
         Backend::Swift => {
             let code = generate_swift_module(ast, &SwiftGenOptions::default())
                 .map_err(|e| CliError::NotImplemented(format!("swift codegen failed: {e}")))?;
             let out_path = out_dir.join(format!("{base}.swift"));
-            std::fs::write(&out_path, code)
-                .map_err(|e| CliError::Io(format!("cannot write {}: {e}", out_path.display())))?;
+            stage_file(&out_path, code, &mut files);
         }
     }
 
@@ -1002,14 +1448,21 @@ fn emit_backend(
             let path = out_dir.join(&name);
             if path.exists() {
                 opts.report(1, &format!("scaffold: {name} exists — kept"));
+                // Bereits vorhandene Build-Datei ist trotzdem Teil des
+                // Projekt-Outputs → im Manifest fuehren, aber NICHT
+                // ueberschreiben (write == false).
+                files.push(StagedFile {
+                    path,
+                    contents: Vec::new(),
+                    write: false,
+                });
             } else {
-                std::fs::write(&path, content)
-                    .map_err(|e| CliError::Io(format!("cannot write {}: {e}", path.display())))?;
-                opts.report(1, &format!("scaffold: wrote {name}"));
+                stage_file(&path, content, &mut files);
+                opts.report(1, &format!("scaffold: staged {name}"));
             }
         }
     }
-    Ok(())
+    Ok(files)
 }
 
 /// Filename-Stem ohne Directory + ohne letzte Extension.
@@ -1062,6 +1515,13 @@ fn print_help() {
          \x20                      (default an, wie RTI/Fast/Cyclone)\n\
          \x20   --scaffold         Build-Datei je Backend mit-emittieren\n\
          \x20                      (Cargo.toml/CMakeLists.txt/pom.xml/…)\n\
+         \x20   --depfile FILE     Make-/Ninja-Depfile schreiben: Target =\n\
+         \x20                      Stamp (falls gesetzt) sonst alle Outputs,\n\
+         \x20                      Prereqs = IDL + alle transitiven #includes\n\
+         \x20   --output-manifest FILE  JSON aller erzeugten Dateien je\n\
+         \x20                      Backend (Alias --manifest); kein Endungs-Raten\n\
+         \x20   --stamp FILE       Stabile Stamp-Datei als einziger OUTPUT\n\
+         \x20                      (touch nach erfolgreichem Codegen)\n\
          \x20   -o, --output DIR   Ausgabe-Verzeichnis (fuer Backend-Modi)\n\
          \x20   --out-<lang> DIR   Per-Backend-Output-Override; <lang> =\n\
          \x20                      rust|c|cpp|csharp|java|python|ts\n\
@@ -1169,6 +1629,137 @@ mod tests {
         assert!(
             generated.contains("Greeting"),
             "c header should declare Greeting symbol, got:\n{generated}"
+        );
+
+        std::fs::remove_dir_all(&work).ok();
+    }
+
+    #[test]
+    fn multi_backend_partial_failure_leaves_no_files() {
+        // Atomares `--all` (P1): staged ein Backend erfolgreich und ein
+        // spaeteres Backend faellt aus, darf KEINE Datei des ersten Backends
+        // liegenbleiben. `long double` wird vom TS-Backend akzeptiert, vom
+        // C-Backend abgelehnt (C5.1-a Foundation scope) — Reihenfolge
+        // `--ts --c`: TS staged, C schlaegt fehl, Flush laeuft nie.
+        let work = unique_workdir("atomic-partial");
+        let idl_path = work.join("t.idl");
+        std::fs::write(&idl_path, "struct S { long double d; };").expect("write idl");
+        let out_dir = work.join("out");
+
+        let result = run(&[
+            "--ts".to_string(),
+            "--c".to_string(),
+            "-o".to_string(),
+            out_dir.to_string_lossy().to_string(),
+            idl_path.to_string_lossy().to_string(),
+        ]);
+        assert!(
+            matches!(result, Err(CliError::NotImplemented(_))),
+            "expected the C backend to fail, got {result:?}"
+        );
+
+        // Der TS-Output (t.ts) des zuvor erfolgreich gestageten Backends darf
+        // nicht existieren — und generell keine Datei im Zielverzeichnis.
+        assert!(
+            !out_dir.join("t.ts").exists(),
+            "TS file must not be left behind after the C backend failed"
+        );
+        let leftover: Vec<_> = std::fs::read_dir(&out_dir)
+            .map(|rd| rd.filter_map(Result::ok).map(|e| e.path()).collect())
+            .unwrap_or_default();
+        assert!(
+            leftover.is_empty(),
+            "no files may be published on partial failure, found: {leftover:?}"
+        );
+
+        std::fs::remove_dir_all(&work).ok();
+    }
+
+    #[test]
+    fn multi_backend_all_success_publishes_every_file() {
+        // Gegenprobe: gelingt jedes Backend, werden alle Dateien atomar
+        // veroeffentlicht.
+        let work = unique_workdir("atomic-success");
+        let idl_path = work.join("t.idl");
+        std::fs::write(&idl_path, "struct S { long id; };").expect("write idl");
+        let out_dir = work.join("out");
+
+        let result = run(&[
+            "--ts".to_string(),
+            "--c".to_string(),
+            "-o".to_string(),
+            out_dir.to_string_lossy().to_string(),
+            idl_path.to_string_lossy().to_string(),
+        ]);
+        assert!(result.is_ok(), "expected Ok, got {result:?}");
+        assert!(out_dir.join("t.ts").exists(), "TS file must be published");
+        assert!(out_dir.join("t.h").exists(), "C header must be published");
+
+        std::fs::remove_dir_all(&work).ok();
+    }
+
+    #[test]
+    fn splice_puts_block_before_closing_endif() {
+        let header =
+            "#ifndef FOO_H\n#define FOO_H\nint x;\n#ifdef __cplusplus\n}\n#endif\n#endif\n";
+        let block = "\n/* TO */\nstatic const unsigned char t[] = {0};\n";
+        let spliced = splice_c_typeobject_block(header, block);
+        // Block is present and lies before the final guard-closing `#endif`.
+        let block_pos = spliced
+            .find("static const unsigned char t[]")
+            .expect("block present");
+        let last_endif = spliced.rfind("#endif").expect("guard endif present");
+        assert!(
+            block_pos < last_endif,
+            "typeobject block must precede the closing #endif:\n{spliced}"
+        );
+        // The guard closer survives (still ends the file inside the guard).
+        assert!(spliced.trim_end().ends_with("#endif"));
+    }
+
+    #[test]
+    fn splice_empty_block_is_identity() {
+        let header = "#ifndef FOO_H\n#define FOO_H\nint x;\n#endif\n";
+        assert_eq!(splice_c_typeobject_block(header, ""), header);
+    }
+
+    #[test]
+    fn splice_without_endif_appends() {
+        let header = "int x;\n";
+        let block = "static const unsigned char t[] = {0};\n";
+        let spliced = splice_c_typeobject_block(header, block);
+        assert!(spliced.starts_with("int x;"));
+        assert!(spliced.contains("static const unsigned char t[]"));
+    }
+
+    #[test]
+    fn run_c_backend_keeps_typeobject_inside_include_guard() {
+        let work = unique_workdir("c-typeobject-guard");
+        let idl_path = work.join("keyed.idl");
+        // A @key member triggers a TypeObject block in the post-pass.
+        std::fs::write(&idl_path, "@final struct Keyed { @key long id; long v; };")
+            .expect("write idl");
+        let out_dir = work.join("out");
+
+        let result = run(&[
+            "--c".to_string(),
+            "-o".to_string(),
+            out_dir.to_string_lossy().to_string(),
+            idl_path.to_string_lossy().to_string(),
+        ]);
+        assert!(result.is_ok(), "expected Ok, got {result:?}");
+
+        let generated =
+            std::fs::read_to_string(out_dir.join("keyed.h")).expect("read generated c header");
+        let block_pos = generated
+            .find("_type_object[]")
+            .expect("typeobject block should be emitted for a @key type");
+        let last_endif = generated
+            .rfind("#endif")
+            .expect("include-guard #endif present");
+        assert!(
+            block_pos < last_endif,
+            "typeobject block must sit inside the include guard, got:\n{generated}"
         );
 
         std::fs::remove_dir_all(&work).ok();
@@ -1344,6 +1935,98 @@ mod tests {
             source.contains("class Greeting"),
             "Greeting.java should declare class Greeting, got:\n{source}"
         );
+
+        std::fs::remove_dir_all(&work).ok();
+    }
+
+    /// Multi-File-Compose-Regression: zwei getrennt generierte IDLs, die im
+    /// selben Namespace/Package zusammengefuehrt werden, duerfen keinen
+    /// zweiten TypeObject-Holder gleichen Namens deklarieren
+    /// (C# CS0101 / Java Doppel-Klasse). Der Holder ist pro Basis-IDL
+    /// eindeutig (`TypeObjects_<base>`). Statische Invariante — der echte
+    /// csc/javac-Compose-Compile ist gated auf codepit / lokaler Toolchain.
+    #[test]
+    fn compose_two_idls_yield_unique_typeobject_holders() {
+        let work = unique_workdir("compose-to");
+        let common = work.join("common.idl");
+        let metrics = work.join("metrics.idl");
+        std::fs::write(
+            &common,
+            "module common { struct KeyLabel { @key uint32 id; string label; }; };",
+        )
+        .expect("write common.idl");
+        std::fs::write(
+            &metrics,
+            "module metrics { struct SystemCpuInfo { @key string id; string brand; \
+             string name; float usage; }; };",
+        )
+        .expect("write metrics.idl");
+
+        // C#: beide in DASSELBE Out-Dir (= ein Projekt/Namespace).
+        let cs = work.join("cs");
+        for idl in [&common, &metrics] {
+            let r = run(&[
+                "--csharp".to_string(),
+                "-o".to_string(),
+                cs.to_string_lossy().to_string(),
+                idl.to_string_lossy().to_string(),
+            ]);
+            assert!(r.is_ok(), "csharp gen failed: {r:?}");
+        }
+        let cs_common = std::fs::read_to_string(cs.join("common.cs")).expect("read common.cs");
+        let cs_metrics = std::fs::read_to_string(cs.join("metrics.cs")).expect("read metrics.cs");
+        assert!(cs_common.contains("public static class TypeObjects_common"));
+        assert!(cs_metrics.contains("public static class TypeObjects_metrics"));
+        // Kein bare `class TypeObjects` (ohne per-Base-Suffix) => kein CS0101.
+        assert!(!cs_common.contains("class TypeObjects\n"));
+        assert!(!cs_metrics.contains("class TypeObjects\n"));
+        assert!(!cs_metrics.contains("class TypeObjects_common"));
+
+        // Java: beide ins selbe Out-Dir. Datei + Klasse pro Basis eindeutig.
+        let java = work.join("java");
+        for idl in [&common, &metrics] {
+            let r = run(&[
+                "--java".to_string(),
+                "-o".to_string(),
+                java.to_string_lossy().to_string(),
+                idl.to_string_lossy().to_string(),
+            ]);
+            assert!(r.is_ok(), "java gen failed: {r:?}");
+        }
+        let jc = std::fs::read_to_string(java.join("TypeObjects_common.java"))
+            .expect("TypeObjects_common.java must exist");
+        let jm = std::fs::read_to_string(java.join("TypeObjects_metrics.java"))
+            .expect("TypeObjects_metrics.java must exist");
+        assert!(jc.contains("public final class TypeObjects_common"));
+        assert!(jm.contains("public final class TypeObjects_metrics"));
+        // Die alte feste `TypeObjects.java` darf nicht mehr entstehen.
+        assert!(
+            !java.join("TypeObjects.java").exists(),
+            "fixed-name TypeObjects.java would collide on multi-file compose"
+        );
+
+        // Rust (GH #25): das TypeObject-Modul muss pro Basis eindeutig sein
+        // (`type_objects_common`/`type_objects_metrics`), sonst E0428
+        // "type_objects defined multiple times" beim `include!` beider Dateien
+        // in ein gemeinsames Eltern-Modul. Der frühere Fix f2341dae behob nur
+        // die doppelten `use`-Imports, nicht den `pub mod type_objects`-Wrapper.
+        let rust = work.join("rust");
+        for idl in [&common, &metrics] {
+            let r = run(&[
+                "--rust".to_string(),
+                "-o".to_string(),
+                rust.to_string_lossy().to_string(),
+                idl.to_string_lossy().to_string(),
+            ]);
+            assert!(r.is_ok(), "rust gen failed: {r:?}");
+        }
+        let rc = std::fs::read_to_string(rust.join("common.rs")).expect("read common.rs");
+        let rm = std::fs::read_to_string(rust.join("metrics.rs")).expect("read metrics.rs");
+        assert!(rc.contains("pub mod type_objects_common"));
+        assert!(rm.contains("pub mod type_objects_metrics"));
+        // Kein bare `pub mod type_objects {` (ohne per-Base-Suffix) => kein E0428.
+        assert!(!rc.contains("pub mod type_objects {"));
+        assert!(!rm.contains("pub mod type_objects {"));
 
         std::fs::remove_dir_all(&work).ok();
     }
@@ -2229,6 +2912,383 @@ mod tests {
             idl.to_string_lossy().to_string(),
         ]);
         assert!(matches!(result, Err(CliError::Parse(_))), "got {result:?}");
+        std::fs::remove_dir_all(&work).ok();
+    }
+
+    // ---- Injective naming regressions (compose-naming-robustness spec §1) ----
+    //
+    // These drive the FULL CLI path (`run`), so the TypeObject post-pass that
+    // appends the const block runs — unlike the emitter-direct W3 gate, which
+    // never sees it. The core bug: `A::B_C` and `A_B::C` both flattened to
+    // `A_B_C`, so the two TypeObject consts collided (Rust E0428, C# CS0102,
+    // TS2451, javac redef; Python silently overwrote the first).
+
+    /// Runs `run` for `backend` on `idl`, returns the single generated file's
+    /// text. `out_name` is the emitted filename (`<base>.<ext>`).
+    fn gen_via_cli(label: &str, idl: &str, backend: &str, base: &str, out_name: &str) -> String {
+        let work = unique_workdir(label);
+        let idl_path = work.join(format!("{base}.idl"));
+        std::fs::write(&idl_path, idl).expect("write idl");
+        let out_dir = work.join("out");
+        let result = run(&[
+            backend.to_string(),
+            "-o".to_string(),
+            out_dir.to_string_lossy().to_string(),
+            idl_path.to_string_lossy().to_string(),
+        ]);
+        assert!(result.is_ok(), "{backend} generate failed: {result:?}");
+        let text = std::fs::read_to_string(out_dir.join(out_name))
+            .unwrap_or_else(|e| panic!("read {out_name}: {e}"));
+        std::fs::remove_dir_all(&work).ok();
+        text
+    }
+
+    /// `A::B_C` and `A_B::C` in one IDL must yield DISTINCT TypeObject const
+    /// names in every wired post-pass backend (was a hard compile error).
+    #[test]
+    fn scope_vs_underscore_yield_distinct_typeobject_consts() {
+        // `module A { struct B_C {..}; }` and top-level `struct A_B { .. }`
+        // referencing an inner `C` — two FQNs `A::B_C` and `A_B::C`.
+        let idl = "\
+            module A { @final struct B_C { long v; }; }; \
+            module A_B { @final struct C { long w; }; };";
+        // Injective encoding: A::B_C -> A_sB_uC, A_B::C -> A_uB_sC.
+        for (backend, base, out, a, b) in [
+            ("--rust", "n", "n.rs", "A_sB_uC", "A_uB_sC"),
+            ("--cpp", "n", "n.hpp", "A_sB_uC", "A_uB_sC"),
+            ("--c", "n", "n.h", "A_sB_uC", "A_uB_sC"),
+            ("--csharp", "n", "n.cs", "A_sB_uC", "A_uB_sC"),
+            ("--python", "n", "n.py", "A_sB_uC", "A_uB_sC"),
+            ("--ts", "n", "n.ts", "A_sB_uC", "A_uB_sC"),
+        ] {
+            let text = gen_via_cli("scope-vs-us", idl, backend, base, out);
+            assert!(text.contains(a), "{backend}: missing {a} in:\n{text}");
+            assert!(text.contains(b), "{backend}: missing {b} in:\n{text}");
+            assert_ne!(a, b);
+        }
+        // Java writes the holder as its own compilation unit.
+        let java = gen_via_cli("scope-vs-us-java", idl, "--java", "n", "TypeObjects_n.java");
+        assert!(java.contains("A_sB_uC"), "java missing A_sB_uC:\n{java}");
+        assert!(java.contains("A_uB_sC"), "java missing A_uB_sC:\n{java}");
+    }
+
+    /// Two files `a-b.idl` and `a_b.idl` must yield DISTINCT Rust holder
+    /// modules (`type_objects_a_hb` vs `type_objects_a_ub`) so composing both
+    /// via `include!` into one parent module does not raise E0428 (#25).
+    #[test]
+    fn hyphen_vs_underscore_basename_yield_distinct_holders() {
+        let idl = "@final struct S { long x; };";
+        let hyphen = gen_via_cli("base-hyphen", idl, "--rust", "a-b", "a-b.rs");
+        let under = gen_via_cli("base-under", idl, "--rust", "a_b", "a_b.rs");
+        assert!(
+            hyphen.contains("pub mod type_objects_a_hb"),
+            "hyphen holder:\n{hyphen}"
+        );
+        assert!(
+            under.contains("pub mod type_objects_a_ub"),
+            "underscore holder:\n{under}"
+        );
+        // The old lossy sanitiser folded both to `type_objects_a_b`.
+        assert!(!hyphen.contains("pub mod type_objects_a_b "));
+        assert!(!under.contains("pub mod type_objects_a_hb"));
+    }
+
+    /// A user symbol equal to the synthetic holder must NOT be overwritten:
+    /// the holder is disambiguated instead.
+    #[test]
+    fn user_symbol_colliding_with_holder_is_not_overwritten() {
+        // Rust: user `module type_objects_input` vs holder for base `input`.
+        let ridl = "\
+            module type_objects_input { @final struct Marker { long x; }; }; \
+            @final struct Payload { long y; };";
+        let rust = gen_via_cli("holder-rust", ridl, "--rust", "input", "input.rs");
+        // The user module survives verbatim …
+        assert!(
+            rust.contains("pub mod type_objects_input"),
+            "user module lost:\n{rust}"
+        );
+        // … and the holder took a disambiguated name (never the user's).
+        assert!(
+            rust.contains("pub mod type_objects_input_x"),
+            "holder not disambiguated:\n{rust}"
+        );
+
+        // Java: user `struct TypeObjects_input` vs holder for base `input`.
+        let jidl = "\
+            @final struct TypeObjects_input { long x; }; \
+            @final struct Payload { long y; };";
+        let work = unique_workdir("holder-java");
+        let idl_path = work.join("input.idl");
+        std::fs::write(&idl_path, jidl).expect("write idl");
+        let out_dir = work.join("out");
+        run(&[
+            "--java".to_string(),
+            "-o".to_string(),
+            out_dir.to_string_lossy().to_string(),
+            idl_path.to_string_lossy().to_string(),
+        ])
+        .expect("java generate");
+        // The user class file must exist and be untouched by the holder.
+        let user = std::fs::read_to_string(out_dir.join("TypeObjects_input.java"))
+            .expect("user class file present");
+        assert!(
+            user.contains("class TypeObjects_input"),
+            "user class overwritten:\n{user}"
+        );
+        assert!(
+            !user.contains("Minimal TypeObject"),
+            "holder overwrote user file:\n{user}"
+        );
+        // The holder went to a disambiguated file.
+        let disambig = out_dir.join("TypeObjects_input_x.java");
+        assert!(disambig.exists(), "holder file not disambiguated");
+        std::fs::remove_dir_all(&work).ok();
+    }
+
+    // ---- Build-Vertrag: --depfile / --output-manifest / --stamp ----
+
+    /// Sammelt rekursiv alle Dateien unter `dir` (absolute Pfade).
+    fn collect_files_recursive(dir: &Path) -> Vec<PathBuf> {
+        let mut out = Vec::new();
+        let mut stack = vec![dir.to_path_buf()];
+        while let Some(d) = stack.pop() {
+            let Ok(rd) = std::fs::read_dir(&d) else {
+                continue;
+            };
+            for entry in rd.filter_map(Result::ok) {
+                let p = entry.path();
+                if p.is_dir() {
+                    stack.push(p);
+                } else {
+                    out.push(p);
+                }
+            }
+        }
+        out
+    }
+
+    /// Escaping-Einheitstest fuer die Depfile-Pfade.
+    #[test]
+    fn escape_make_path_escapes_space_hash_dollar() {
+        assert_eq!(escape_make_path("a b.idl"), "a\\ b.idl");
+        assert_eq!(escape_make_path("a#b.idl"), "a\\#b.idl");
+        assert_eq!(escape_make_path("a$b.idl"), "a$$b.idl");
+        assert_eq!(escape_make_path("plain.idl"), "plain.idl");
+    }
+
+    /// JSON-Encoder: Quotes/Backslash/Steuerzeichen.
+    #[test]
+    fn json_string_escapes_specials() {
+        assert_eq!(json_string("a\"b"), "\"a\\\"b\"");
+        assert_eq!(json_string("a\\b"), "\"a\\\\b\"");
+        assert_eq!(json_string("a\nb"), "\"a\\nb\"");
+    }
+
+    /// Depfile listet die kanonische `common.idl` als Prerequisite, das
+    /// Manifest die real erzeugten Java-Dateien (mehrere .java +
+    /// TypeObjects_<base>.java, nichts geraten), der Stamp existiert.
+    #[test]
+    fn build_contract_depfile_manifest_stamp_for_include() {
+        let work = unique_workdir("bc-include");
+        let inc = work.join("inc");
+        std::fs::create_dir_all(&inc).expect("mkdir inc");
+        std::fs::write(
+            inc.join("common.idl"),
+            "module common { @final struct Vec3 { @key long id; double x; }; };",
+        )
+        .expect("write common");
+        let idl = work.join("robot.idl");
+        std::fs::write(
+            &idl,
+            "#include \"common.idl\"\n\
+             module robot { @final struct Pose { common::Vec3 p; }; };",
+        )
+        .expect("write robot");
+        let out = work.join("out");
+        let depfile = work.join("robot.d");
+        let manifest = work.join("robot.manifest.json");
+        let stamp = work.join("robot.stamp");
+
+        let result = run(&[
+            "--java".to_string(),
+            "-I".to_string(),
+            inc.to_string_lossy().to_string(),
+            "-o".to_string(),
+            out.to_string_lossy().to_string(),
+            "--depfile".to_string(),
+            depfile.to_string_lossy().to_string(),
+            "--output-manifest".to_string(),
+            manifest.to_string_lossy().to_string(),
+            "--stamp".to_string(),
+            stamp.to_string_lossy().to_string(),
+            idl.to_string_lossy().to_string(),
+        ]);
+        assert!(result.is_ok(), "expected Ok, got {result:?}");
+
+        // Stamp existiert nach Erfolg.
+        assert!(stamp.exists(), "stamp not created");
+
+        // Depfile: Target = Stamp, Prereq = common.idl (kanonisch).
+        let dep = std::fs::read_to_string(&depfile).expect("read depfile");
+        let canon_common = std::fs::canonicalize(inc.join("common.idl"))
+            .expect("canonicalize common")
+            .to_string_lossy()
+            .into_owned();
+        assert!(
+            dep.contains(&escape_make_path(&canon_common)),
+            "depfile must list canonical common.idl as prerequisite:\n{dep}"
+        );
+        let stamp_str = stamp.to_string_lossy().into_owned();
+        assert!(
+            dep.starts_with(&escape_make_path(&stamp_str)),
+            "depfile target must be the stamp:\n{dep}"
+        );
+
+        // Manifest: die real erzeugten Java-Dateien (kein geratenes
+        // Module.java), inkl. TypeObjects_robot.java.
+        let man = std::fs::read_to_string(&manifest).expect("read manifest");
+        assert!(man.contains("\"backend\": \"java\""), "manifest:\n{man}");
+        assert!(
+            man.contains("TypeObjects_robot.java"),
+            "manifest must list the real TypeObjects holder:\n{man}"
+        );
+        // Jede real geschriebene Datei muss im Manifest stehen.
+        let written = collect_files_recursive(&out);
+        assert!(!written.is_empty(), "no java files written");
+        for f in &written {
+            let s = f.to_string_lossy().into_owned();
+            assert!(
+                man.contains(&s),
+                "manifest missing generated file {s}:\n{man}"
+            );
+        }
+        // Kein geratener Module.java-Name.
+        assert!(!man.contains("robot/Module.java"), "guessed name leaked");
+
+        std::fs::remove_dir_all(&work).ok();
+    }
+
+    /// Manifest-Inhalt = exakt die geschriebenen Dateien (kein Raten):
+    /// die `outputs`-Liste deckt sich mit `ls` des out-dir.
+    #[test]
+    fn build_contract_manifest_matches_ls_of_outdir() {
+        let work = unique_workdir("bc-exact");
+        let idl = work.join("chat.idl");
+        std::fs::write(&idl, "@final struct Greeting { @key long id; };").expect("write idl");
+        let out = work.join("out");
+        let manifest = work.join("chat.manifest.json");
+
+        let result = run(&[
+            "--rust".to_string(),
+            "-o".to_string(),
+            out.to_string_lossy().to_string(),
+            "--output-manifest".to_string(),
+            manifest.to_string_lossy().to_string(),
+            idl.to_string_lossy().to_string(),
+        ]);
+        assert!(result.is_ok(), "expected Ok, got {result:?}");
+
+        let man = std::fs::read_to_string(&manifest).expect("read manifest");
+        let on_disk = collect_files_recursive(&out);
+        // Rust ist Single-File: genau eine Datei auf Platte.
+        assert_eq!(
+            on_disk.len(),
+            1,
+            "expected exactly chat.rs, got {on_disk:?}"
+        );
+        let path_str = on_disk[0].to_string_lossy().into_owned();
+        // Die outputs-Liste enthaelt genau diese eine Datei.
+        assert!(
+            man.contains(&format!("\"outputs\": [{}]", json_string(&path_str))),
+            "outputs array must equal exactly the ls of out-dir:\n{man}"
+        );
+        std::fs::remove_dir_all(&work).ok();
+    }
+
+    /// Ein Backend ohne Output bildet sich ehrlich mit leerer Dateiliste ab
+    /// (Manifest-Struktur), statt still Exit 0 ohne Spur. Hier ueber ein
+    /// zweites Backend im selben Lauf geprueft: jeder Backend-Eintrag traegt
+    /// seine eigene files-Liste.
+    #[test]
+    fn build_contract_manifest_has_per_backend_file_lists() {
+        let work = unique_workdir("bc-perbackend");
+        let idl = work.join("t.idl");
+        std::fs::write(&idl, "@final struct T { @key long a; };").expect("write idl");
+        let out = work.join("out");
+        let manifest = work.join("t.manifest.json");
+        let result = run(&[
+            "--rust".to_string(),
+            "--python".to_string(),
+            "-o".to_string(),
+            out.to_string_lossy().to_string(),
+            "--output-manifest".to_string(),
+            manifest.to_string_lossy().to_string(),
+            idl.to_string_lossy().to_string(),
+        ]);
+        assert!(result.is_ok(), "got {result:?}");
+        let man = std::fs::read_to_string(&manifest).expect("read manifest");
+        assert!(man.contains("\"backend\": \"rust\""), "{man}");
+        assert!(man.contains("\"backend\": \"python\""), "{man}");
+        assert!(man.contains("t.rs"), "{man}");
+        assert!(man.contains("t.py"), "{man}");
+        std::fs::remove_dir_all(&work).ok();
+    }
+
+    /// Bei einem semantischen Fehler entsteht weder Stamp noch Manifest noch
+    /// Depfile, und der Exit-Code ist != 0 (Semantic → 1).
+    #[test]
+    fn build_contract_no_artifacts_on_semantic_error() {
+        let work = unique_workdir("bc-semerr");
+        let idl = work.join("bad.idl");
+        // Unaufloesbarer Typ-Verweis → Semantik-Gate schlaegt fehl.
+        std::fs::write(&idl, "@final struct Bad { DoesNotExist m; };").expect("write idl");
+        let out = work.join("out");
+        let depfile = work.join("bad.d");
+        let manifest = work.join("bad.manifest.json");
+        let stamp = work.join("bad.stamp");
+
+        let result = run(&[
+            "--rust".to_string(),
+            "-o".to_string(),
+            out.to_string_lossy().to_string(),
+            "--depfile".to_string(),
+            depfile.to_string_lossy().to_string(),
+            "--output-manifest".to_string(),
+            manifest.to_string_lossy().to_string(),
+            "--stamp".to_string(),
+            stamp.to_string_lossy().to_string(),
+            idl.to_string_lossy().to_string(),
+        ]);
+        assert!(
+            matches!(result, Err(CliError::Semantic(_))),
+            "expected Semantic error, got {result:?}"
+        );
+        assert_eq!(CliError::Semantic("x".into()).exit_code(), 1);
+        assert!(!stamp.exists(), "stamp must not exist on semantic error");
+        assert!(
+            !manifest.exists(),
+            "manifest must not exist on semantic error"
+        );
+        assert!(
+            !depfile.exists(),
+            "depfile must not exist on semantic error"
+        );
+        std::fs::remove_dir_all(&work).ok();
+    }
+
+    /// Build-Vertrag-Flags ohne Backend (nicht-emittierender Modus) → Usage.
+    #[test]
+    fn build_contract_flags_require_generate_mode() {
+        let work = unique_workdir("bc-check");
+        let idl = work.join("c.idl");
+        std::fs::write(&idl, "@final struct C { long n; };").expect("write idl");
+        let result = run(&[
+            "check".to_string(),
+            idl.to_string_lossy().to_string(),
+            "--stamp".to_string(),
+            work.join("c.stamp").to_string_lossy().to_string(),
+        ]);
+        assert!(matches!(result, Err(CliError::Usage(_))), "got {result:?}");
         std::fs::remove_dir_all(&work).ok();
     }
 }

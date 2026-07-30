@@ -13,16 +13,170 @@ use std::fmt::Write as _;
 use std::collections::{HashMap, HashSet};
 
 use zerodds_idl::ast::types::{
-    CaseLabel, ConstExpr, ConstrTypeDecl, Declarator, Definition, EnumDef, FloatingType,
-    IntegerType, Literal, LiteralKind, Member, PrimitiveType, SequenceType, Specification,
-    StructDcl, StructDef, SwitchTypeSpec, TypeDecl, TypeSpec, UnaryOp, UnionDcl, UnionDef,
+    BinaryOp, BitmaskDecl, BitsetDecl, CaseLabel, ConstDecl, ConstExpr, ConstType, ConstrTypeDecl,
+    Declarator, Definition, EnumDef, Export, FixedPtType, FloatingType, IntegerType, InterfaceDcl,
+    Literal, LiteralKind, Member, ModuleDef, PrimitiveType, ScopedName, SequenceType,
+    Specification, StructDcl, StructDef, SwitchTypeSpec, TypeDecl, TypeSpec, UnaryOp, UnionDcl,
+    UnionDef,
 };
 use zerodds_idl::semantics::annotations::{
-    BuiltinAnnotation, ExtensibilityKind, lower_annotations, lower_single,
+    BuiltinAnnotation, ExtensibilityKind, PlacementKind, enum_bit_bound, enum_wire_octets,
+    lower_annotations, lower_single,
 };
 
 use crate::error::{IdlAdaError, Result};
 use crate::keywords::escape_ada_ident;
+
+thread_local! {
+    /// Fully-qualified IDL scope path of every named type declaration
+    /// (e.g. `["a", "Reading"]`), populated by [`register_type_paths`] at the
+    /// start of each run. A reference site resolves a (possibly partially
+    /// qualified) `ScopedName` against the enclosing module scope by walking
+    /// outward and matching one of these paths (§7.5.2), then flattens the
+    /// match the SAME way [`qualify`] flattens the definition (#21).
+    static TYPE_PATHS: std::cell::RefCell<Vec<Vec<String>>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+
+    /// Module scope of the aggregate currently being built. Set at the top of
+    /// [`build_struct`]/[`build_union`]; empty at global scope.
+    static CURRENT_SCOPE: std::cell::RefCell<Vec<String>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+
+    /// Flattened qualified enum name → signed wire holder width in OCTETS
+    /// (1/2/4), from `@bit_bound` (XTypes 1.3 §7.3.1.2.1.9 + §7.4.5.1) via the
+    /// shared [`enum_wire_octets`]. Populated once per run; read at the single
+    /// enum encode/decode site so a `@bit_bound(8)`/`@bit_bound(16)` enum
+    /// narrows to 1/2 bytes instead of the former fixed 4.
+    static ENUM_WIDTHS: std::cell::RefCell<HashMap<String, u32>> =
+        std::cell::RefCell::new(HashMap::new());
+}
+
+/// Signed wire holder width in octets (1/2/4) an enum named `name` serializes
+/// at, per its `@bit_bound`. Defaults to 4 for an unregistered name / no
+/// `@bit_bound` (XTypes 1.3 §7.4.5.1 default bound 32).
+fn enum_wire_width(name: &str) -> u32 {
+    ENUM_WIDTHS
+        .with(|m| m.borrow().get(name).copied())
+        .unwrap_or(4)
+}
+
+/// Injective flattened name for a declaration `simple` in module `scope`, via
+/// the shared [`zerodds_idl::naming::encode_scoped`] encoding. The scope
+/// separator (`_s`) and a literal underscore in a name (`_u`) are distinct, so
+/// `A::B_C` and `A_B::C` no longer collapse to `A_B_C` (unlike the old
+/// `join("_")`, which was NOT collision-free). Two same-simple-name types in
+/// different modules become distinct types (`a_sReading`/`b_sReading`, #21).
+fn qualify(scope: &[String], simple: &str) -> String {
+    zerodds_idl::naming::encode_scoped(scope, simple)
+}
+
+/// Case-insensitive identifier uniquifier for the components of a single Ada
+/// aggregate (record). Ada identifiers are case-insensitive (RM §2.3), so two
+/// IDL members differing only in case — `value`/`Value`, or a case-branch named
+/// `Disc` alongside the synthetic `disc` discriminator — would collapse to the
+/// same Ada component and raise a "duplicate component" error. Each colliding
+/// name gets a `_U`/`_U_U`/… suffix (single underscore, never trailing/doubled,
+/// so it stays a legal Ada identifier) until it is unique. Non-colliding names
+/// pass through unchanged, so existing single-case goldens are untouched.
+struct CiDedup {
+    seen: HashSet<String>,
+}
+
+impl CiDedup {
+    fn new() -> Self {
+        Self {
+            seen: HashSet::new(),
+        }
+    }
+
+    /// Reserves `name` verbatim (used to seed a fixed component such as the
+    /// union `disc` so a same-spelled branch is the one that gets suffixed).
+    fn reserve(&mut self, name: &str) {
+        self.seen.insert(name.to_ascii_lowercase());
+    }
+
+    /// Returns an Ada component name for `name` unique (case-insensitively)
+    /// among all names handed out by this instance so far.
+    fn unique(&mut self, name: &str) -> String {
+        let mut cand = name.to_string();
+        while !self.seen.insert(cand.to_ascii_lowercase()) {
+            cand.push_str("_U");
+        }
+        cand
+    }
+}
+
+/// Records the fully-qualified path of every named type declaration before
+/// emission, so reference resolution can flatten a name the same way the
+/// definition site does.
+/// zerodds-lint: recursion-depth 16 (module nesting; bounded by the IDL grammar).
+fn register_type_paths(defs: &[Definition], scope: &mut Vec<String>) {
+    for def in defs {
+        match def {
+            Definition::Module(m) => {
+                scope.push(m.name.text.clone());
+                register_type_paths(&m.definitions, scope);
+                scope.pop();
+            }
+            Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Struct(StructDcl::Def(s)))) => {
+                push_type_path(scope, &s.name.text);
+            }
+            Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Enum(e))) => {
+                push_type_path(scope, &e.name.text);
+            }
+            Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Union(UnionDcl::Def(u)))) => {
+                push_type_path(scope, &u.name.text);
+            }
+            Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Bitset(b))) => {
+                push_type_path(scope, &b.name.text);
+            }
+            Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Bitmask(m))) => {
+                push_type_path(scope, &m.name.text);
+            }
+            Definition::Type(TypeDecl::Typedef(td)) => {
+                for d in &td.declarators {
+                    push_type_path(scope, &d.name().text);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn push_type_path(scope: &[String], simple: &str) {
+    let mut path = scope.to_vec();
+    path.push(simple.to_string());
+    TYPE_PATHS.with(|t| t.borrow_mut().push(path));
+}
+
+/// Resolves a referenced `ScopedName` against [`CURRENT_SCOPE`], returning the
+/// flattened logical name (`join("_")`) of the matching declaration. Mirrors
+/// IDL name lookup (§7.5.2): for each prefix of the enclosing scope (longest
+/// first), then the global scope, check whether `prefix + parts` is a known
+/// type path. Falls back to the literal flattening of the written parts.
+fn resolve_scoped_name(sn: &ScopedName) -> String {
+    let parts: Vec<String> = sn.parts.iter().map(|p| p.text.clone()).collect();
+    let scope = CURRENT_SCOPE.with(|s| s.borrow().clone());
+    let known: Vec<Vec<String>> = TYPE_PATHS.with(|t| t.borrow().clone());
+    for cut in (0..=scope.len()).rev() {
+        let mut cand = scope[..cut].to_vec();
+        cand.extend(parts.iter().cloned());
+        if known.contains(&cand) {
+            return flatten_path(&cand);
+        }
+    }
+    flatten_path(&parts)
+}
+
+/// Flattens a full type path (module components + simple name) exactly as the
+/// definition site does via [`qualify`]/[`zerodds_idl::naming::encode_scoped`],
+/// so a reference resolves to the same identifier the declaration emitted.
+fn flatten_path(path: &[String]) -> String {
+    match path.split_last() {
+        Some((simple, scope)) => zerodds_idl::naming::encode_scoped(scope, simple),
+        None => String::new(),
+    }
+}
 
 /// Options for the Ada backend.
 #[derive(Debug, Clone)]
@@ -398,59 +552,120 @@ const WIRE_BODY: &str = r#"   Max_Buffer : constant := 4096;
 ///
 /// # Errors
 /// Returns [`IdlAdaError::Unsupported`] for constructs the Ada backend does not
-/// yet emit (unions, nested-struct members, maps, `long double`, `@mutable`, …).
+/// yet emit (e.g. `@mutable` unions and non-literal array/sequence bounds).
 pub fn generate_ada_module(spec: &Specification, opts: &AdaGenOptions) -> Result<AdaModule> {
     let pkg = &opts.package_name;
 
-    // `module X { ... }` content is promoted into the same flat, top-level
-    // definition list (see `flatten_module_defs`) so it is no longer
-    // silently dropped (swarm59 #21b).
-    let flat = flatten_module_defs(&spec.definitions);
+    // Rewrite interfaces into modules holding their type/const exports so
+    // interface-nested declarations are emitted like any other type (§7.4.7).
+    let definitions = expand_interfaces(&spec.definitions);
 
-    // Keyed by the *raw* IDL name (not the Ada-escaped `ada_name`) so that
-    // `Scoped` type-reference lookups below — which start from raw AST text
-    // — resolve correctly regardless of keyword escaping.
+    // Register every named type's fully-qualified path so reference sites can
+    // resolve a `ScopedName` against its enclosing scope (#21 cross-module).
+    TYPE_PATHS.with(|t| t.borrow_mut().clear());
+    register_type_paths(&definitions, &mut Vec::new());
+
+    // `module X { ... }` content is promoted to the top level, each definition
+    // paired with its module scope path (see `flatten_module_defs`).
+    let flat = flatten_module_defs(&definitions);
+
+    // Keyed by the flattened module-qualified *raw* IDL name (not the
+    // Ada-escaped `ada_name`) so `Scoped` type-reference lookups below — which
+    // resolve raw AST text via `resolve_scoped_name` — match regardless of
+    // keyword escaping. `a::Reading` and `b::Reading` become distinct keys
+    // `a_Reading`/`b_Reading` (#21).
     let enum_names: HashSet<String> = flat
         .iter()
-        .filter_map(|d| match d {
+        .filter_map(|(scope, d)| match d {
             Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Enum(e))) => {
-                Some(e.name.text.clone())
+                Some(qualify(scope, &e.name.text))
             }
             _ => None,
         })
         .collect();
     let enums: Vec<EnumGen> = flat
         .iter()
-        .filter_map(|d| match d {
-            Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Enum(e))) => Some(build_enum(e)),
+        .filter_map(|(scope, d)| match d {
+            Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Enum(e))) => {
+                Some(build_enum(e, scope))
+            }
             _ => None,
         })
         .collect();
+    // Register each enum's @bit_bound-derived wire width (1/2/4 octets), P1.
+    ENUM_WIDTHS.with(|m| {
+        let mut m = m.borrow_mut();
+        m.clear();
+        for (scope, d) in &flat {
+            if let Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Enum(e))) = d {
+                m.insert(
+                    qualify(scope, &e.name.text),
+                    u32::from(enum_wire_octets(enum_bit_bound(&e.annotations))),
+                );
+            }
+        }
+    });
 
-    let struct_names: HashSet<String> = flat
+    let real_struct_names: HashSet<String> = flat
         .iter()
-        .filter_map(|d| match d {
+        .filter_map(|(scope, d)| match d {
             Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Struct(StructDcl::Def(s)))) => {
-                Some(s.name.text.clone())
+                Some(qualify(scope, &s.name.text))
             }
             _ => None,
         })
         .collect();
 
-    let typedefs = collect_typedefs(spec);
-    // struct name → def, so a nested-struct `@key` member's own `@key`
-    // subset can be resolved for Key_Hash emission (Bug A) and for the
-    // static MD5-vs-zero-pad branch decision (Bug B) — mirrors
-    // `collect_typedefs`.
-    let struct_defs = collect_structs(spec);
+    // Bitsets/bitmasks are emitted as "pseudo-structs": a record with a single
+    // backing-integer `storage`, a `Marshal_Into`/`Read_<name>` pair, plus bit
+    // accessors (bitset) or OR-able value constants (bitmask). Registering their
+    // names alongside the real structs lets a member reference resolve through
+    // the SAME `map_type`/`map_get` struct path (`Marshal_Into`/`Read_`).
+    let bitsets: Vec<BitsetGen> = flat
+        .iter()
+        .filter_map(|(scope, d)| match d {
+            Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Bitset(b))) => {
+                Some(build_bitset(b, scope))
+            }
+            _ => None,
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let bitmasks: Vec<BitmaskGen> = flat
+        .iter()
+        .filter_map(|(scope, d)| match d {
+            Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Bitmask(m))) => {
+                Some(build_bitmask(m, scope))
+            }
+            _ => None,
+        })
+        .collect::<Result<Vec<_>>>()?;
+
+    // Names resolvable as a marshalable aggregate (`Marshal_Into`/`Read_`):
+    // real structs plus the bitset/bitmask pseudo-structs. Passed everywhere a
+    // struct-reference lookup happens; `struct_defs` (nested-`@key` expansion)
+    // stays real-structs-only so a bitset key member falls to the generic put.
+    let mut struct_names = real_struct_names.clone();
+    for b in &bitsets {
+        struct_names.insert(b.raw_name.clone());
+    }
+    for m in &bitmasks {
+        struct_names.insert(m.raw_name.clone());
+    }
+
+    let typedefs = collect_typedefs(&definitions);
+    // struct qualified-name → def, so a nested-struct `@key` member's own
+    // `@key` subset can be resolved for Key_Hash emission (Bug A) and for the
+    // static MD5-vs-zero-pad branch decision (Bug B) — mirrors `collect_typedefs`.
+    let struct_defs = collect_structs(&definitions);
 
     let mut structs: Vec<StructGen> = Vec::new();
     let mut unions: Vec<UnionGen> = Vec::new();
-    for def in &flat {
+    for (scope, def) in &flat {
         match def {
             Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Struct(StructDcl::Def(s)))) => {
                 structs.push(build_struct(
                     s,
+                    scope,
                     &enum_names,
                     &struct_names,
                     &typedefs,
@@ -458,7 +673,13 @@ pub fn generate_ada_module(spec: &Specification, opts: &AdaGenOptions) -> Result
                 )?);
             }
             Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Union(UnionDcl::Def(u)))) => {
-                unions.push(build_union(u, &enum_names, &struct_names, &typedefs)?);
+                unions.push(build_union(
+                    u,
+                    scope,
+                    &enum_names,
+                    &struct_names,
+                    &typedefs,
+                )?);
             }
             _ => {}
         }
@@ -490,7 +711,50 @@ pub fn generate_ada_module(spec: &Specification, opts: &AdaGenOptions) -> Result
             }
         }
     }
+    // A `sequence<T>` whose element `T` is a primitive/enum/string (not a
+    // marshalable aggregate) needs a generic `Ada.Containers.Vectors` instance
+    // keyed by the element's Ada type (e.g. `Integer_32_Vectors`). These are
+    // emitted once, after the enum declarations and before any record that uses
+    // them (their element types — Interfaces integers, enums, Unbounded_String
+    // — are all already in scope there). Aggregate-element vectors keep being
+    // emitted next to their (pseudo-)struct record.
+    let mut elem_vector_types: Vec<String> = vectors_used
+        .iter()
+        .filter(|n| !struct_names.contains(*n))
+        .cloned()
+        .collect();
+    elem_vector_types.sort();
+
     let any_map = structs.iter().any(|sg| !sg.map_packages.is_empty());
+
+    // Distinct `fixed<P,S>` layouts used anywhere → one `Fixed_<P>_<S>` subtype
+    // each, plus the shared packed-BCD prelude (emitted once).
+    let mut fixed_layouts: Vec<(u32, u32)> = Vec::new();
+    for sg in &structs {
+        for f in &sg.fields {
+            if let Some(ps) = f.fixed_layout {
+                if !fixed_layouts.contains(&ps) {
+                    fixed_layouts.push(ps);
+                }
+            }
+        }
+    }
+    for ug in &unions {
+        for c in &ug.cases {
+            if let Some(ps) = c.fixed_layout {
+                if !fixed_layouts.contains(&ps) {
+                    fixed_layouts.push(ps);
+                }
+            }
+        }
+    }
+    fixed_layouts.sort_unstable();
+    let any_fixed = !fixed_layouts.is_empty();
+
+    // File-scope `@verbatim` blocks (BEGIN_FILE / END_FILE), gathered from every
+    // top-level declaration's annotations in document order (§8.3.5.1).
+    let verbatim_begin_file = collect_file_verbatim(&flat, PlacementKind::BeginFile);
+    let verbatim_end_file = collect_file_verbatim(&flat, PlacementKind::EndFile);
 
     // --- spec (.ads) ---
     let mut spec_src = String::new();
@@ -511,12 +775,49 @@ pub fn generate_ada_module(spec: &Specification, opts: &AdaGenOptions) -> Result
         let _ = writeln!(spec_src, "with Ada.Containers.Ordered_Maps;");
     }
     let _ = writeln!(spec_src, "package {pkg} is\n");
+    // The package body is always emitted (it carries the wire helpers). Ada
+    // (RM §7.2) only permits a body when the spec "requires" one — i.e. declares
+    // a subprogram. A spec with only types/constants (enum-only, const-only, or
+    // a lone empty struct with nothing to marshal declared as a subprogram)
+    // needs `pragma Elaborate_Body` so its body is legal. Structs, unions,
+    // bitsets, bitmasks, and `fixed<>` all declare subprograms in the spec.
+    let spec_declares_subprogram = !structs.is_empty()
+        || !unions.is_empty()
+        || !bitsets.is_empty()
+        || !bitmasks.is_empty()
+        || any_fixed;
+    if !spec_declares_subprogram {
+        let _ = writeln!(spec_src, "   pragma Elaborate_Body;\n");
+    }
+    for line in &verbatim_begin_file {
+        let _ = writeln!(spec_src, "   {line}");
+    }
     let _ = writeln!(spec_src, "   type Byte is new Interfaces.Unsigned_8;");
     let _ = writeln!(
         spec_src,
         "   type Byte_Array is array (Natural range <>) of Byte;"
     );
     let _ = writeln!(spec_src, "   type Endianness is (Little, Big);\n");
+    // `fixed<P,S>`: packed-BCD storage of `(P + 2) / 2` octets (CORBA/GIOP
+    // §9.3.2.7 ≡ XCDR2 §7.4.4.5); one constrained subtype per distinct layout.
+    for (p, s) in &fixed_layouts {
+        let n = fixed_byte_len(*p);
+        let _ = writeln!(
+            spec_src,
+            "   subtype Fixed_{p}_{s} is Byte_Array (0 .. {});",
+            n - 1
+        );
+    }
+    if any_fixed {
+        let _ = writeln!(
+            spec_src,
+            "   function Fixed_From_String (Img : String; P : Natural; S : Natural) return Byte_Array;"
+        );
+        let _ = writeln!(
+            spec_src,
+            "   function Fixed_To_String (Bytes : Byte_Array; S : Natural) return String;\n"
+        );
+    }
     // Named enums (32-bit signed integer on the wire, XTypes 1.3 §7.4.5.1).
     for eg in &enums {
         let _ = writeln!(
@@ -529,18 +830,62 @@ pub fn generate_ada_module(spec: &Specification, opts: &AdaGenOptions) -> Result
     if !enums.is_empty() {
         let _ = writeln!(spec_src);
     }
+    // `const` declarations (§7.4.1.4.4) as Ada named constants, emitted after
+    // the enum types so an enum-typed constant's type is in scope. Previously
+    // every `const` fell through the definition dispatch and was dropped.
+    let mut any_const = false;
+    for (scope, def) in &flat {
+        if let Definition::Const(cd) = def {
+            let _ = writeln!(spec_src, "   {}", render_const_decl(scope, cd)?);
+            any_const = true;
+        }
+    }
+    if any_const {
+        let _ = writeln!(spec_src);
+    }
+    // Generic vector instances for `sequence<primitive|enum|string>` members.
+    for t in &elem_vector_types {
+        let _ = writeln!(
+            spec_src,
+            "   package {t}_Vectors is new Ada.Containers.Vectors (Natural, {t});"
+        );
+    }
+    if !elem_vector_types.is_empty() {
+        let _ = writeln!(spec_src);
+    }
+    // Bitset/bitmask pseudo-structs (record + backing int + accessors/consts).
+    for bg in &bitsets {
+        emit_bitset_spec(&mut spec_src, bg, &vectors_used);
+    }
+    for mg in &bitmasks {
+        emit_bitmask_spec(&mut spec_src, mg, &vectors_used);
+    }
     for sg in &structs {
+        for line in &sg.verbatim_before {
+            let _ = writeln!(spec_src, "   {line}");
+        }
+        for ot in &sg.opt_types {
+            let _ = writeln!(spec_src, "   {ot}");
+        }
         for at in &sg.array_types {
             let _ = writeln!(spec_src, "   {at}");
         }
         for mp in &sg.map_packages {
             let _ = writeln!(spec_src, "   {mp}");
         }
-        let _ = writeln!(spec_src, "   type {} is record", sg.ada_name);
-        for f in &sg.fields {
-            let _ = writeln!(spec_src, "      {} : {};", f.ada_name, f.ada_type);
+        // An IDL struct with no members (or one whose members all vanished)
+        // maps to a component-less Ada record. `record end record;` with no
+        // component list is a GNAT syntax error, so emit the `null record`
+        // form (Ada RM §3.8) — the byte-identical empty-aggregate wire.
+        if sg.fields.is_empty() {
+            let _ = writeln!(spec_src, "   type {} is null record;", sg.ada_name);
+        } else {
+            let _ = writeln!(spec_src, "   type {} is record", sg.ada_name);
+            for f in &sg.fields {
+                let _ = writeln!(spec_src, "      {} : {};", f.ada_name, f.ada_type);
+            }
+            let _ = writeln!(spec_src, "   end record;");
         }
-        let _ = writeln!(spec_src, "   end record;");
         // A vector package so this struct can be a sequence<struct> element —
         // only when something in the spec actually declares `sequence<{n}>`.
         if vectors_used.contains(&sg.ada_name) {
@@ -567,6 +912,9 @@ pub fn generate_ada_module(spec: &Specification, opts: &AdaGenOptions) -> Result
                 sg.ada_name
             );
         }
+        for line in &sg.verbatim_after {
+            let _ = writeln!(spec_src, "   {line}");
+        }
     }
     for ug in &unions {
         let _ = writeln!(spec_src, "   type {} is record", ug.ada_name);
@@ -585,6 +933,9 @@ pub fn generate_ada_module(spec: &Specification, opts: &AdaGenOptions) -> Result
             "   function Unmarshal (Data : Byte_Array; Endian : Endianness) return {};\n",
             ug.ada_name
         );
+    }
+    for line in &verbatim_end_file {
+        let _ = writeln!(spec_src, "   {line}");
     }
     let _ = writeln!(spec_src, "end {pkg};");
 
@@ -614,9 +965,18 @@ pub fn generate_ada_module(spec: &Specification, opts: &AdaGenOptions) -> Result
     }
     let _ = writeln!(body_src, "package body {pkg} is\n");
     body_src.push_str(WIRE_BODY);
+    if any_fixed {
+        body_src.push_str(FIXED_BODY);
+    }
     for eg in &enums {
         emit_enum_to_u32(&mut body_src, eg);
         emit_u32_to_enum(&mut body_src, eg);
+    }
+    for bg in &bitsets {
+        emit_bitset_body(&mut body_src, bg);
+    }
+    for mg in &bitmasks {
+        emit_bitmask_body(&mut body_src, mg);
     }
     for sg in &structs {
         emit_marshal(&mut body_src, sg);
@@ -641,7 +1001,7 @@ struct EnumGen {
 
 /// Resolves each enumerator's discriminant: default 0..N-1, honoring `@value`
 /// (XTypes 1.3 §7.4.5.1). Values are returned as their `u32` wire bit pattern.
-fn build_enum(e: &EnumDef) -> EnumGen {
+fn build_enum(e: &EnumDef, scope: &[String]) -> EnumGen {
     let mut u32vals = Vec::with_capacity(e.enumerators.len());
     let mut next: i64 = 0;
     for en in &e.enumerators {
@@ -654,7 +1014,7 @@ fn build_enum(e: &EnumDef) -> EnumGen {
         next = i64::from(v) + 1;
     }
     EnumGen {
-        ada_name: escape_ada_ident(&e.name.text),
+        ada_name: escape_ada_ident(&qualify(scope, &e.name.text)),
         ctors: e
             .enumerators
             .iter()
@@ -671,6 +1031,485 @@ fn parse_int(s: &str) -> Option<i64> {
         i64::from_str_radix(hex, 16).ok()
     } else {
         t.parse::<i64>().ok()
+    }
+}
+
+/// `true` if the member carries `@optional` (XTypes 1.3 §7.4.5.1.4).
+fn member_is_optional(anns: &[zerodds_idl::ast::types::Annotation]) -> bool {
+    lower_annotations(anns)
+        .map(|l| {
+            l.builtins
+                .iter()
+                .any(|a| matches!(a, BuiltinAnnotation::Optional))
+        })
+        .unwrap_or(false)
+}
+
+/// Packed-BCD octet count of a `fixed<P,S>` = `(P + 2) / 2` (CORBA §9.3.2.7).
+fn fixed_byte_len(p: u32) -> u32 {
+    (p + 2) / 2
+}
+
+/// Evaluates a `fixed<P,S>`'s digit count and scale from its const-expr fields.
+fn fixed_ps(f: &FixedPtType) -> Result<(u32, u32)> {
+    let p = array_size(&f.digits)
+        .and_then(|v| u32::try_from(v).ok())
+        .ok_or_else(|| IdlAdaError::Unsupported("non-literal fixed<> digit count".to_string()))?;
+    let s = array_size(&f.scale)
+        .and_then(|v| u32::try_from(v).ok())
+        .ok_or_else(|| IdlAdaError::Unsupported("non-literal fixed<> scale".to_string()))?;
+    Ok((p, s))
+}
+
+/// The Ada `Interfaces.Unsigned_*` backing type + `Put_*`/`Get_*` suffix for a
+/// bit width (bitset total width / bitmask `@bit_bound`). ≤8 → U8, ≤16 → U16,
+/// ≤32 → U32, else U64 (mirrors `idl-rust`'s `bitset_storage_type`).
+fn bit_storage(total_bits: u32) -> (&'static str, &'static str) {
+    match total_bits {
+        0..=8 => ("Unsigned_8", "U8"),
+        9..=16 => ("Unsigned_16", "U16"),
+        17..=32 => ("Unsigned_32", "U32"),
+        _ => ("Unsigned_64", "U64"),
+    }
+}
+
+/// The packed-BCD `fixed<P,S>` codec, emitted into the package body once when
+/// any `fixed` layout is present. `Fixed_From_String`/`Fixed_To_String` convert
+/// between a decimal string and the CORBA/GIOP §9.3.2.7 packed-BCD octets; the
+/// wire (`Put_Fixed`/`Get_Fixed`) is those raw octets, no length prefix
+/// (XCDR2 §7.4.4.5, byte count statically known from P).
+const FIXED_BODY: &str = r#"   function Fixed_From_String (Img : String; P : Natural; S : Natural) return Byte_Array is
+      N          : constant Natural := (P + 2) / 2;
+      Result     : Byte_Array (0 .. N - 1) := (others => 0);
+      Sign_Pos   : Boolean := True;
+      First      : Natural := Img'First;
+      Last       : constant Natural := Img'Last;
+      Dot        : Integer := -1;
+      Int_Needed : constant Natural := P - S;
+      Digits_Buf : String (1 .. P) := (others => '0');
+      Int_Last   : Natural;
+      Int_Len    : Natural;
+   begin
+      if First <= Last and then (Img (First) = '-' or Img (First) = '+') then
+         Sign_Pos := Img (First) /= '-';
+         First := First + 1;
+      end if;
+      for I in First .. Last loop
+         if Img (I) = '.' then
+            Dot := I;
+         end if;
+      end loop;
+      Int_Last := (if Dot >= 0 then Dot - 1 else Last);
+      Int_Len := (if Int_Last >= First then Int_Last - First + 1 else 0);
+      for K in 0 .. Int_Len - 1 loop
+         Digits_Buf (Int_Needed - Int_Len + 1 + K) := Img (First + K);
+      end loop;
+      if Dot >= 0 then
+         for K in 0 .. Last - Dot - 1 loop
+            Digits_Buf (Int_Needed + 1 + K) := Img (Dot + 1 + K);
+         end loop;
+      end if;
+      declare
+         Nibbles : array (0 .. N * 2 - 1) of Unsigned_8 := (others => 0);
+         Idx     : Natural := 0;
+      begin
+         if (P + 1) mod 2 = 1 then
+            Idx := Idx + 1;
+         end if;
+         for K in 1 .. P loop
+            Nibbles (Idx) :=
+              Unsigned_8 (Character'Pos (Digits_Buf (K)) - Character'Pos ('0'));
+            Idx := Idx + 1;
+         end loop;
+         Nibbles (Idx) := (if Sign_Pos then 16#0C# else 16#0D#);
+         for B in 0 .. N - 1 loop
+            Result (B) :=
+              Byte (Shift_Left (Nibbles (2 * B), 4) or Nibbles (2 * B + 1));
+         end loop;
+      end;
+      return Result;
+   end Fixed_From_String;
+
+   function Fixed_To_String (Bytes : Byte_Array; S : Natural) return String is
+      Chars : String (1 .. Bytes'Length * 2) := (others => '0');
+      Neg   : Boolean := False;
+      Cnt   : Natural := 0;
+   begin
+      for I in Bytes'Range loop
+         declare
+            Hi : constant Natural :=
+              Natural (Shift_Right (Unsigned_8 (Bytes (I)), 4) and 16#0F#);
+            Lo : constant Natural := Natural (Unsigned_8 (Bytes (I)) and 16#0F#);
+         begin
+            Cnt := Cnt + 1;
+            Chars (Cnt) := Character'Val (Character'Pos ('0') + Hi);
+            if I = Bytes'Last then
+               Neg := Lo = 16#0D#;
+            else
+               Cnt := Cnt + 1;
+               Chars (Cnt) := Character'Val (Character'Pos ('0') + Lo);
+            end if;
+         end;
+      end loop;
+      declare
+         Start : Natural := 1;
+      begin
+         while Cnt - Start + 1 > S + 1 and then Chars (Start) = '0' loop
+            Start := Start + 1;
+         end loop;
+         declare
+            Dot_At : constant Natural := (Cnt - Start + 1) - S;
+            Out_S  : String
+              (1 .. (Cnt - Start + 1)
+                    + (if S > 0 then 1 else 0)
+                    + (if Neg then 1 else 0));
+            O : Natural := 0;
+         begin
+            if Neg then
+               O := O + 1;
+               Out_S (O) := '-';
+            end if;
+            for K in 0 .. Cnt - Start loop
+               if S > 0 and then K = Dot_At then
+                  O := O + 1;
+                  Out_S (O) := '.';
+               end if;
+               O := O + 1;
+               Out_S (O) := Chars (Start + K);
+            end loop;
+            return Out_S (1 .. O);
+         end;
+      end;
+   end Fixed_To_String;
+
+   procedure Put_Fixed (W : in out Buf_T; V : Byte_Array) is
+   begin
+      for I in V'Range loop
+         W.Data (W.Len) := V (I);
+         W.Len := W.Len + 1;
+      end loop;
+   end Put_Fixed;
+
+   function Get_Fixed (Data : Byte_Array; Pos : in out Natural; N : Positive) return Byte_Array is
+      R : Byte_Array (0 .. N - 1);
+   begin
+      for I in 0 .. N - 1 loop
+         R (I) := Data (Data'First + Pos + I);
+      end loop;
+      Pos := Pos + N;
+      return R;
+   end Get_Fixed;
+"#;
+
+/// A generated bitset: an Ada record wrapping a backing integer, plus bit
+/// getters/setters (XTypes 1.3 §7.4.7). The wire form is the backing integer.
+struct BitsetGen {
+    raw_name: String,
+    ada_name: String,
+    storage_type: &'static str,
+    put_suffix: &'static str,
+    /// `(field_name, offset, width)` for each *named* bitfield.
+    fields: Vec<(String, u32, u32)>,
+}
+
+/// A generated bitmask: an Ada record wrapping a backing integer sized by
+/// `@bit_bound` (default 32), plus one OR-able constant per bit value.
+struct BitmaskGen {
+    raw_name: String,
+    ada_name: String,
+    storage_type: &'static str,
+    put_suffix: &'static str,
+    /// `(const_name, bit_position)`.
+    values: Vec<(String, u32)>,
+}
+
+/// zerodds-lint: recursion-depth 32
+fn const_expr_u32(e: &ConstExpr) -> Option<u32> {
+    array_size(e).and_then(|v| u32::try_from(v).ok())
+}
+
+fn build_bitset(b: &BitsetDecl, scope: &[String]) -> Result<BitsetGen> {
+    let mut total: u32 = 0;
+    let mut fields = Vec::new();
+    for bf in &b.bitfields {
+        let width = const_expr_u32(&bf.spec.width).ok_or_else(|| {
+            IdlAdaError::Unsupported(format!(
+                "non-integer bitfield width in bitset {}",
+                b.name.text
+            ))
+        })?;
+        if let Some(name) = &bf.name {
+            fields.push((escape_ada_ident(&name.text), total, width));
+        }
+        total += width;
+    }
+    let (storage_type, put_suffix) = bit_storage(total.max(1));
+    let raw_name = qualify(scope, &b.name.text);
+    Ok(BitsetGen {
+        ada_name: escape_ada_ident(&raw_name),
+        raw_name,
+        storage_type,
+        put_suffix,
+        fields,
+    })
+}
+
+/// The default bitmask holder width is `@bit_bound` (XTypes §7.3.1.2.1.1),
+/// default 32 — NOT the declared-bit count. An unannotated bitmask is a uint32.
+fn bitmask_bit_bound(anns: &[zerodds_idl::ast::types::Annotation]) -> u32 {
+    lower_annotations(anns)
+        .ok()
+        .and_then(|l| {
+            l.builtins.iter().find_map(|a| match a {
+                BuiltinAnnotation::BitBound(n) => Some(u32::from(*n)),
+                _ => None,
+            })
+        })
+        .unwrap_or(32)
+}
+
+fn build_bitmask(m: &BitmaskDecl, scope: &[String]) -> Result<BitmaskGen> {
+    let (storage_type, put_suffix) = bit_storage(bitmask_bit_bound(&m.annotations));
+    let mut values = Vec::new();
+    for (idx, v) in m.values.iter().enumerate() {
+        let pos = lower_annotations(&v.annotations)
+            .ok()
+            .and_then(|l| {
+                l.builtins.iter().find_map(|a| match a {
+                    BuiltinAnnotation::Position(p) => Some(*p),
+                    _ => None,
+                })
+            })
+            .unwrap_or(idx as u32);
+        values.push((escape_ada_ident(&v.name.text), pos));
+    }
+    let raw_name = qualify(scope, &m.name.text);
+    Ok(BitmaskGen {
+        ada_name: escape_ada_ident(&raw_name),
+        raw_name,
+        storage_type,
+        put_suffix,
+        values,
+    })
+}
+
+fn emit_bitset_spec(out: &mut String, bg: &BitsetGen, vectors_used: &HashSet<String>) {
+    let n = &bg.ada_name;
+    let st = bg.storage_type;
+    let _ = writeln!(out, "   type {n} is record");
+    let _ = writeln!(out, "      storage : {st} := 0;");
+    let _ = writeln!(out, "   end record;");
+    for (field, offset, width) in &bg.fields {
+        if *width == 1 {
+            let _ = writeln!(
+                out,
+                "   function {field} (V : {n}) return Boolean is \
+                 ((Shift_Right (V.storage, {offset}) and 1) /= 0);"
+            );
+        } else {
+            let mask = (1u128 << width) - 1;
+            let _ = writeln!(
+                out,
+                "   function {field} (V : {n}) return {st} is \
+                 (Shift_Right (V.storage, {offset}) and {mask});"
+            );
+        }
+        let ty = if *width == 1 { "Boolean" } else { st };
+        let _ = writeln!(
+            out,
+            "   procedure Set_{field} (V : in out {n}; Val : {ty});"
+        );
+    }
+    emit_pseudo_struct_ops_decl(out, n, vectors_used);
+}
+
+fn emit_bitmask_spec(out: &mut String, mg: &BitmaskGen, vectors_used: &HashSet<String>) {
+    let n = &mg.ada_name;
+    let st = mg.storage_type;
+    let _ = writeln!(out, "   type {n} is record");
+    let _ = writeln!(out, "      storage : {st} := 0;");
+    let _ = writeln!(out, "   end record;");
+    for (name, pos) in &mg.values {
+        let bit: u128 = 1u128 << pos;
+        let _ = writeln!(out, "   {name} : constant {n} := (storage => {bit});");
+    }
+    let _ = writeln!(
+        out,
+        "   function \"or\" (L, R : {n}) return {n} is ((storage => L.storage or R.storage));"
+    );
+    let _ = writeln!(
+        out,
+        "   function \"and\" (L, R : {n}) return {n} is ((storage => L.storage and R.storage));"
+    );
+    let _ = writeln!(
+        out,
+        "   function Bits (V : {n}) return {st} is (V.storage);"
+    );
+    emit_pseudo_struct_ops_decl(out, n, vectors_used);
+}
+
+/// Common spec declarations for a pseudo-struct (bitset/bitmask): an optional
+/// `_Vectors` instance (when used as a `sequence<>` element) plus the
+/// `Marshal`/`Unmarshal` pair (the `Marshal_Into`/`Read_` body operations let a
+/// member reference reuse the struct `map_type`/`map_get` path).
+fn emit_pseudo_struct_ops_decl(out: &mut String, n: &str, vectors: &HashSet<String>) {
+    if vectors.contains(n) {
+        let _ = writeln!(
+            out,
+            "   package {n}_Vectors is new Ada.Containers.Vectors (Natural, {n});"
+        );
+    }
+    let _ = writeln!(
+        out,
+        "   function Marshal (V : {n}; Endian : Endianness) return Byte_Array;"
+    );
+    let _ = writeln!(
+        out,
+        "   function Unmarshal (Data : Byte_Array; Endian : Endianness) return {n};\n"
+    );
+}
+
+fn emit_bitset_body(out: &mut String, bg: &BitsetGen) {
+    let n = &bg.ada_name;
+    let st = bg.storage_type;
+    for (field, offset, width) in &bg.fields {
+        let ty = if *width == 1 { "Boolean" } else { st };
+        let _ = writeln!(
+            out,
+            "\n   procedure Set_{field} (V : in out {n}; Val : {ty}) is"
+        );
+        if *width == 1 {
+            let _ = writeln!(
+                out,
+                "      Mask : constant {st} := Shift_Left ({st} (1), {offset});"
+            );
+            let _ = writeln!(out, "   begin");
+            let _ = writeln!(out, "      if Val then");
+            let _ = writeln!(out, "         V.storage := V.storage or Mask;");
+            let _ = writeln!(out, "      else");
+            let _ = writeln!(out, "         V.storage := V.storage and not Mask;");
+            let _ = writeln!(out, "      end if;");
+        } else {
+            let mask = (1u128 << width) - 1;
+            let _ = writeln!(
+                out,
+                "      Mask : constant {st} := Shift_Left ({st} ({mask}), {offset});"
+            );
+            let _ = writeln!(out, "   begin");
+            let _ = writeln!(
+                out,
+                "      V.storage := (V.storage and not Mask) or Shift_Left (Val and {mask}, {offset});"
+            );
+        }
+        let _ = writeln!(out, "   end Set_{field};");
+    }
+    emit_pseudo_struct_body(out, n, st, bg.put_suffix);
+}
+
+fn emit_bitmask_body(out: &mut String, mg: &BitmaskGen) {
+    emit_pseudo_struct_body(out, &mg.ada_name, mg.storage_type, mg.put_suffix);
+}
+
+/// The `Marshal_Into`/`Marshal`/`Read_`/`Unmarshal` body for a pseudo-struct:
+/// the backing integer is written/read directly (the bitset/bitmask wire form).
+fn emit_pseudo_struct_body(out: &mut String, n: &str, st: &str, suffix: &str) {
+    let _ = writeln!(
+        out,
+        "\n   procedure Marshal_Into (V : {n}; W : in out Buf_T) is"
+    );
+    let _ = writeln!(out, "   begin");
+    // Put_U8 takes no endianness; the wider Put_U16/32/64 read it from W.
+    let _ = writeln!(out, "      Put_{suffix} (W, V.storage);");
+    let _ = writeln!(out, "   end Marshal_Into;");
+    let _ = writeln!(
+        out,
+        "\n   function Marshal (V : {n}; Endian : Endianness) return Byte_Array is"
+    );
+    let _ = writeln!(out, "      W : Buf_T;");
+    let _ = writeln!(out, "   begin");
+    let _ = writeln!(out, "      W.Endian := Endian;");
+    let _ = writeln!(out, "      Marshal_Into (V, W);");
+    let _ = writeln!(out, "      return W.Data (0 .. W.Len - 1);");
+    let _ = writeln!(out, "   end Marshal;");
+    let get_call = if suffix == "U8" {
+        "Get_U8 (Data, Pos)".to_string()
+    } else {
+        format!("Get_{suffix} (Data, Pos, Endian)")
+    };
+    let _ = st;
+    let _ = writeln!(
+        out,
+        "\n   function Read_{n} (Data : Byte_Array; Pos : in out Natural; Endian : Endianness) return {n} is"
+    );
+    let _ = writeln!(out, "      V : {n};");
+    let _ = writeln!(out, "   begin");
+    let _ = writeln!(out, "      V.storage := {get_call};");
+    let _ = writeln!(out, "      return V;");
+    let _ = writeln!(out, "   end Read_{n};");
+    let _ = writeln!(
+        out,
+        "\n   function Unmarshal (Data : Byte_Array; Endian : Endianness) return {n} is"
+    );
+    let _ = writeln!(out, "      Pos : Natural := 0;");
+    let _ = writeln!(out, "   begin");
+    let _ = writeln!(out, "      return Read_{n} (Data, Pos, Endian);");
+    let _ = writeln!(out, "   end Unmarshal;");
+}
+
+/// Gathers `@verbatim` text lines for a file-scope placement (BEGIN_FILE /
+/// END_FILE) from every top-level declaration, in document order. Ada codegen
+/// language tag: `ada` (plus the `*` wildcard, handled by `verbatims_for_language`).
+fn collect_file_verbatim(
+    flat: &[(Vec<String>, &Definition)],
+    placement: PlacementKind,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    for (_, def) in flat {
+        for anns in definition_annotations(def) {
+            collect_verbatim_lines(&mut out, anns, placement);
+        }
+    }
+    out
+}
+
+/// The annotation list(s) attached to a top-level definition (struct/union/
+/// enum/bitset/bitmask), used for `@verbatim` gathering.
+fn definition_annotations(def: &Definition) -> Vec<&[zerodds_idl::ast::types::Annotation]> {
+    match def {
+        Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Struct(StructDcl::Def(s)))) => {
+            vec![s.annotations.as_slice()]
+        }
+        Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Union(UnionDcl::Def(u)))) => {
+            vec![u.annotations.as_slice()]
+        }
+        Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Enum(e))) => {
+            vec![e.annotations.as_slice()]
+        }
+        Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Bitset(b))) => {
+            vec![b.annotations.as_slice()]
+        }
+        Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Bitmask(m))) => {
+            vec![m.annotations.as_slice()]
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// Appends each source line of every `@verbatim` block matching `placement` and
+/// the Ada language tag to `out`.
+fn collect_verbatim_lines(
+    out: &mut Vec<String>,
+    anns: &[zerodds_idl::ast::types::Annotation],
+    placement: PlacementKind,
+) {
+    if let Ok(lowered) = lower_annotations(anns) {
+        for v in lowered.verbatims_for_language(&["ada"]) {
+            if v.placement == placement {
+                for line in v.text.lines() {
+                    out.push(line.to_string());
+                }
+            }
+        }
     }
 }
 
@@ -724,6 +1563,9 @@ struct FieldGen {
     resolved: TypeSpec,
     /// `true` for a `Declarator::Simple` (not a fixed array).
     simple: bool,
+    /// `Some((P, S))` when this member's (dealiased) type is `fixed<P,S>`, so
+    /// the enclosing spec knows to emit the `Fixed_<P>_<S>` subtype + BCD prelude.
+    fixed_layout: Option<(u32, u32)>,
 }
 
 struct StructGen {
@@ -731,6 +1573,15 @@ struct StructGen {
     /// Named array-type declarations (Ada forbids anonymous array record
     /// components), emitted in the spec before the record.
     array_types: Vec<String>,
+    /// `@optional`-member wrapper record types (`Present : Boolean; Value : T`),
+    /// emitted in the spec before the record.
+    opt_types: Vec<String>,
+    /// `@verbatim(placement=BEFORE_DECLARATION)` text lines (Ada tag), emitted
+    /// immediately before the record type.
+    verbatim_before: Vec<String>,
+    /// `@verbatim(placement=AFTER_DECLARATION)` text lines, emitted after the
+    /// record + its `Marshal`/`Unmarshal`/`Key_Hash` declarations.
+    verbatim_after: Vec<String>,
     /// Struct names used as the *element type* of a fixed array declared in
     /// `array_types` (i.e. `sequence<Struct> f[N]`). The array element type is
     /// `{Struct}_Vectors.Vector`, but that string never reaches
@@ -773,6 +1624,49 @@ fn array_size(e: &ConstExpr) -> Option<i64> {
     }
 }
 
+/// Evaluates a constant integer expression (literals, unary, and the binary
+/// operators of §7.4.1.4.4) to an `i64`. Used for `const` integer/octet values
+/// and integer union labels, which — unlike array sizes — may be full
+/// expressions (`1 << 3`, `A | B`). `None` for non-integer or unresolvable
+/// operands (e.g. a named constant reference, which this backend does not
+/// track).
+///
+/// zerodds-lint: recursion-depth 64 (const-expr tree; bounded by IDL nesting).
+fn eval_int(e: &ConstExpr) -> Option<i64> {
+    match e {
+        ConstExpr::Literal(Literal {
+            kind: LiteralKind::Integer,
+            raw,
+            ..
+        }) => parse_int(raw),
+        ConstExpr::Unary { op, operand, .. } => {
+            let v = eval_int(operand)?;
+            match op {
+                UnaryOp::Plus => Some(v),
+                UnaryOp::Minus => Some(v.checked_neg()?),
+                UnaryOp::BitNot => Some(!v),
+            }
+        }
+        ConstExpr::Binary { op, lhs, rhs, .. } => {
+            let a = eval_int(lhs)?;
+            let b = eval_int(rhs)?;
+            match op {
+                BinaryOp::Or => Some(a | b),
+                BinaryOp::Xor => Some(a ^ b),
+                BinaryOp::And => Some(a & b),
+                BinaryOp::Shl => Some(a.checked_shl(u32::try_from(b).ok()?)?),
+                BinaryOp::Shr => Some(a.checked_shr(u32::try_from(b).ok()?)?),
+                BinaryOp::Add => a.checked_add(b),
+                BinaryOp::Sub => a.checked_sub(b),
+                BinaryOp::Mul => a.checked_mul(b),
+                BinaryOp::Div => a.checked_div(b),
+                BinaryOp::Mod => a.checked_rem(b),
+            }
+        }
+        ConstExpr::Literal(_) | ConstExpr::Scoped(_) => None,
+    }
+}
+
 /// Wraps a per-element put (`$elem`) in nested row-major `for … loop` loops over
 /// a fixed Ada array `V.<field> (i0, i1)` (Ada true multi-dim indexing).
 fn build_array_put(field: &str, sizes: &[i64], elem_put: &str) -> String {
@@ -792,38 +1686,94 @@ fn build_array_put(field: &str, sizes: &[i64], elem_put: &str) -> String {
 /// The IDL AST builder already merges a reopened `module M {} ... module
 /// M {}` into one AST node (`crates/idl/src/ast/builder.rs`); this promotes
 /// a module's members into the same flat namespace this backend already
-/// uses for type-reference resolution (`sn.parts.last()` below) — module
-/// content is no longer silently dropped (swarm59 #21b), it is simply not
-/// namespaced: two same-named types in different modules collide, exactly
-/// as two same-named top-level types would.
+/// uses for type-reference resolution — a module's members are promoted to the
+/// top level, each paired with its module scope path so the definition and
+/// reference sites can flatten each name to `scope_simple` ([`qualify`] /
+/// [`resolve_scoped_name`]). Two same-simple-name types in different modules
+/// therefore become distinct types rather than colliding (#21).
 ///
 /// zerodds-lint: recursion-depth 16 (module nesting; bounded by the IDL grammar).
-fn flatten_module_defs(defs: &[Definition]) -> Vec<&Definition> {
+fn flatten_module_defs(defs: &[Definition]) -> Vec<(Vec<String>, &Definition)> {
     let mut out = Vec::new();
-    flatten_module_defs_into(defs, &mut out);
+    let mut scope = Vec::new();
+    flatten_module_defs_into(defs, &mut scope, &mut out);
     out
 }
 
 /// zerodds-lint: recursion-depth 16 (module nesting; bounded by the IDL grammar).
-fn flatten_module_defs_into<'a>(defs: &'a [Definition], out: &mut Vec<&'a Definition>) {
+fn flatten_module_defs_into<'a>(
+    defs: &'a [Definition],
+    scope: &mut Vec<String>,
+    out: &mut Vec<(Vec<String>, &'a Definition)>,
+) {
     for d in defs {
         match d {
-            Definition::Module(m) => flatten_module_defs_into(&m.definitions, out),
-            other => out.push(other),
+            Definition::Module(m) => {
+                scope.push(m.name.text.clone());
+                flatten_module_defs_into(&m.definitions, scope, out);
+                scope.pop();
+            }
+            other => out.push((scope.clone(), other)),
         }
     }
+}
+
+/// Rewrites every `interface` into a same-named module holding its `type` and
+/// `const` exports (IDL 4.2 §7.4.7 — an interface is a naming scope, and its
+/// nested type/const declarations are data types the backend must still emit).
+/// Operations and attributes carry no serializable data type and are dropped.
+/// The result is an owned definition list the rest of the emitter treats
+/// exactly like ordinary modules, so a struct declared inside an interface
+/// becomes `<Iface>_<Struct>` — previously the whole interface body was
+/// silently discarded.
+///
+/// zerodds-lint: recursion-depth 16 (module nesting; bounded by the IDL grammar).
+fn expand_interfaces(defs: &[Definition]) -> Vec<Definition> {
+    let mut out = Vec::with_capacity(defs.len());
+    for d in defs {
+        match d {
+            Definition::Module(m) => {
+                out.push(Definition::Module(ModuleDef {
+                    name: m.name.clone(),
+                    definitions: expand_interfaces(&m.definitions),
+                    annotations: m.annotations.clone(),
+                    span: m.span,
+                    reopen_spans: m.reopen_spans.clone(),
+                }));
+            }
+            Definition::Interface(InterfaceDcl::Def(iface)) => {
+                let mut inner = Vec::new();
+                for e in &iface.exports {
+                    match e {
+                        Export::Type(t) => inner.push(Definition::Type(t.clone())),
+                        Export::Const(c) => inner.push(Definition::Const(c.clone())),
+                        Export::Op(_) | Export::Attr(_) | Export::Except(_) => {}
+                    }
+                }
+                out.push(Definition::Module(ModuleDef {
+                    name: iface.name.clone(),
+                    definitions: expand_interfaces(&inner),
+                    annotations: Vec::new(),
+                    span: iface.span,
+                    reopen_spans: Vec::new(),
+                }));
+            }
+            other => out.push(other.clone()),
+        }
+    }
+    out
 }
 
 /// Collects `typedef` aliases (simple declarators) as name -> aliased type-spec.
 /// A typedef is wire-transparent, so members are resolved to the underlying
 /// type before mapping (`typedef long Score; Score s;` marshals as `long`).
-fn collect_typedefs(spec: &Specification) -> HashMap<String, TypeSpec> {
+fn collect_typedefs(defs: &[Definition]) -> HashMap<String, TypeSpec> {
     let mut m = HashMap::new();
-    for def in flatten_module_defs(&spec.definitions) {
+    for (scope, def) in flatten_module_defs(defs) {
         if let Definition::Type(TypeDecl::Typedef(td)) = def {
             for d in &td.declarators {
                 if let Declarator::Simple(name) = d {
-                    m.insert(name.text.clone(), td.type_spec.clone());
+                    m.insert(qualify(&scope, &name.text), td.type_spec.clone());
                 }
             }
         }
@@ -835,12 +1785,11 @@ fn collect_typedefs(spec: &Specification) -> HashMap<String, TypeSpec> {
 /// `@key` member can be expanded into its own `@key` subset (XTypes 1.3
 /// §7.6.8) for Key_Hash emission and for the static max-size (MD5 vs.
 /// zero-pad) branch decision.
-fn collect_structs(spec: &Specification) -> HashMap<String, &StructDef> {
+fn collect_structs(defs: &[Definition]) -> HashMap<String, &StructDef> {
     let mut m = HashMap::new();
-    for def in &spec.definitions {
-        if let Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Struct(StructDcl::Def(s)))) = def
-        {
-            m.insert(s.name.text.clone(), s);
+    for (scope, def) in flatten_module_defs(defs) {
+        if let Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Struct(StructDcl::Def(s)))) = def {
+            m.insert(qualify(&scope, &s.name.text), s);
         }
     }
     m
@@ -854,7 +1803,7 @@ fn collect_structs(spec: &Specification) -> HashMap<String, &StructDef> {
 fn resolve_typedef(t: &TypeSpec, typedefs: &HashMap<String, TypeSpec>) -> TypeSpec {
     match t {
         TypeSpec::Scoped(sn) => {
-            let name = sn.parts.last().map(|p| p.text.clone()).unwrap_or_default();
+            let name = resolve_scoped_name(sn);
             match typedefs.get(&name) {
                 Some(u) => resolve_typedef(u, typedefs),
                 None => t.clone(),
@@ -874,40 +1823,125 @@ fn resolve_typedef(t: &TypeSpec, typedefs: &HashMap<String, TypeSpec>) -> TypeSp
 fn is_primitive(t: &TypeSpec, enum_names: &HashSet<String>) -> bool {
     match t {
         TypeSpec::Primitive(_) => true,
-        TypeSpec::Scoped(sn) => {
-            enum_names.contains(&sn.parts.last().map(|p| p.text.clone()).unwrap_or_default())
-        }
+        TypeSpec::Scoped(sn) => enum_names.contains(&resolve_scoped_name(sn)),
         _ => false,
     }
 }
 
+/// Returns a struct's effective members: every inherited member from its base
+/// chain (base-most first, in declaration order) followed by its own, cloned so
+/// the caller owns a single flat sequence (Extended Data Types BB §7.4.13). The
+/// base is resolved through the same `resolve_scoped_name`/`struct_defs` path
+/// used for member references; an unresolvable base contributes nothing rather
+/// than aborting (mirrors how a dangling reference degrades elsewhere).
+///
+/// zerodds-lint: recursion-depth 16 (struct inheritance chain; bounded by the
+/// IDL's aggregate-inheritance depth).
+fn effective_members(s: &StructDef, struct_defs: &HashMap<String, &StructDef>) -> Vec<Member> {
+    let mut out = Vec::new();
+    if let Some(base) = &s.base {
+        if let Some(bs) = struct_defs.get(&resolve_scoped_name(base)) {
+            out.extend(effective_members(bs, struct_defs));
+        }
+    }
+    out.extend(s.members.iter().cloned());
+    out
+}
+
 fn build_struct(
     s: &StructDef,
+    scope: &[String],
     enum_names: &HashSet<String>,
     struct_names: &HashSet<String>,
     typedefs: &HashMap<String, TypeSpec>,
     struct_defs: &HashMap<String, &StructDef>,
 ) -> Result<StructGen> {
+    // Member references resolve against this struct's module scope.
+    CURRENT_SCOPE.with(|c| *c.borrow_mut() = scope.to_vec());
     let ext = lower_annotations(&s.annotations)
         .ok()
         .and_then(|l| l.extensibility())
         .unwrap_or(ExtensibilityKind::Appendable);
-    let struct_ada_name = escape_ada_ident(&s.name.text);
+    // Struct inheritance (Extended Data Types BB §7.4.13): a derived struct's
+    // wire is its base's members first, then its own, in a single member-id
+    // sequence (XTypes 1.3 §7.3.1.2.1). Flatten the base chain here so the
+    // record, marshal, and key logic all see the full effective member set;
+    // previously `.base` was ignored and inherited members silently vanished.
+    let members = effective_members(s, struct_defs);
+    // `@optional` in `@mutable` is expressed by omitting the absent member's
+    // EMHEADER (XTypes 1.3 §7.4.3.4.2), not an inline presence byte — the Ada
+    // backend does not yet emit that conditional member framing, so reject it
+    // rather than emit a wrong wire form (final/appendable optional IS emitted).
+    if ext == ExtensibilityKind::Mutable
+        && members.iter().any(|m| member_is_optional(&m.annotations))
+    {
+        return Err(IdlAdaError::Unsupported(format!(
+            "@optional member in @mutable struct {} (member-presence framing not yet emitted)",
+            s.name.text
+        )));
+    }
+    let struct_ada_name = escape_ada_ident(&qualify(scope, &s.name.text));
     let mut fields = Vec::new();
     let mut array_types = Vec::new();
+    let mut opt_types = Vec::new();
     let mut array_vector_elems = Vec::new();
     let mut map_packages = Vec::new();
     let mut next_id: u32 = 0;
-    for m in &s.members {
+    // Ada records are case-insensitive; keep the emitted component names
+    // case-insensitively distinct (see `CiDedup`).
+    let mut dedup = CiDedup::new();
+    for m in &members {
         let resolved = resolve_typedef(&m.type_spec, typedefs);
         let lowered = lower_annotations(&m.annotations).ok();
         let explicit_id = lowered.as_ref().and_then(|l| l.explicit_id());
         let key = lowered.as_ref().is_some_and(|l| l.has_key());
+        let optional = member_is_optional(&m.annotations);
         for d in &m.declarators {
-            let name = escape_ada_ident(&d.name().text);
+            let name = dedup.unique(&escape_ada_ident(&d.name().text));
             let id = explicit_id.unwrap_or(next_id);
             next_id = id + 1;
             let simple = matches!(d, Declarator::Simple(_));
+            let fixed_layout = match &resolved {
+                TypeSpec::Fixed(f) => Some(fixed_ps(f)?),
+                _ => None,
+            };
+            // `@optional` (XTypes §7.4.5.1.4, final/appendable): a `uint8`
+            // presence flag then the value if present. Represented as an Ada
+            // wrapper record `{ Present : Boolean; Value : T }`. Supported for
+            // simple (non-array, non-map) members; the value goes through the
+            // ordinary `map_type`/`map_get` path via `V.<name>.Value`.
+            if optional {
+                if !simple || matches!(resolved, TypeSpec::Map(_)) {
+                    return Err(IdlAdaError::Unsupported(format!(
+                        "@optional on an array or map member `{name}`"
+                    )));
+                }
+                let inner = format!("V.{name}.Value");
+                let (t, p) = map_type(&resolved, &inner, enum_names, struct_names)?;
+                let g = map_get(&resolved, &inner, enum_names, struct_names)?;
+                let opt_type = format!("{struct_ada_name}_{name}_Opt");
+                opt_types.push(format!(
+                    "type {opt_type} is record\n      Present : Boolean := False;\n      Value   : {t};\n   end record;"
+                ));
+                let put = format!(
+                    "Put_Bool ($w, V.{name}.Present); if V.{name}.Present then {p} end if;"
+                );
+                let get = format!(
+                    "V.{name}.Present := Get_Bool (Data, Pos); if V.{name}.Present then {g} end if;"
+                );
+                fields.push(FieldGen {
+                    ada_name: name,
+                    ada_type: opt_type,
+                    put,
+                    get,
+                    id,
+                    key,
+                    resolved: resolved.clone(),
+                    simple,
+                    fixed_layout,
+                });
+                continue;
+            }
             let (ada_type, put, get) = match (&resolved, d) {
                 // A map: an Ada.Containers.Ordered_Maps instance (iterates
                 // ascending by key) — `u32 count` + key/value pairs, DHEADER-
@@ -1030,11 +2064,11 @@ fn build_struct(
                 key,
                 resolved: resolved.clone(),
                 simple,
+                fixed_layout,
             });
         }
     }
-    let key_members: Vec<&Member> = s
-        .members
+    let key_members: Vec<&Member> = members
         .iter()
         .filter(|m| {
             lower_annotations(&m.annotations)
@@ -1057,10 +2091,7 @@ fn build_struct(
     for f in &zdkeys {
         let nested_struct = if f.simple {
             match &f.resolved {
-                TypeSpec::Scoped(sn) => {
-                    let name = sn.parts.last().map(|p| p.text.clone()).unwrap_or_default();
-                    struct_defs.get(&name).copied()
-                }
+                TypeSpec::Scoped(sn) => struct_defs.get(&resolve_scoped_name(sn)).copied(),
                 _ => None,
             }
         } else {
@@ -1081,9 +2112,25 @@ fn build_struct(
         }
     }
 
+    let mut verbatim_before = Vec::new();
+    collect_verbatim_lines(
+        &mut verbatim_before,
+        &s.annotations,
+        PlacementKind::BeforeDeclaration,
+    );
+    let mut verbatim_after = Vec::new();
+    collect_verbatim_lines(
+        &mut verbatim_after,
+        &s.annotations,
+        PlacementKind::AfterDeclaration,
+    );
+
     Ok(StructGen {
         ada_name: struct_ada_name,
         array_types,
+        opt_types,
+        verbatim_before,
+        verbatim_after,
         array_vector_elems,
         map_packages,
         fields,
@@ -1152,7 +2199,7 @@ fn emit_key_struct_member(
             let field = d.name().text.clone();
             let nested_expr = format!("{expr}.{field}");
             if let TypeSpec::Scoped(sn) = &resolved {
-                let name = sn.parts.last().map(|p| p.text.clone()).unwrap_or_default();
+                let name = resolve_scoped_name(sn);
                 if let Some(nested_sd) = struct_defs.get(&name) {
                     emit_key_struct_member(
                         out,
@@ -1348,15 +2395,19 @@ fn switch_typespec(s: &SwitchTypeSpec) -> TypeSpec {
     }
 }
 
-/// A generated union case: integer labels (empty + is_default = `default`), the
-/// member field, its Ada type, and its put statement.
+/// A generated union case: Ada-rendered case-choice labels (empty +
+/// is_default = `default`), the member field, its Ada type, and its put
+/// statement. Labels are already rendered for the discriminator's Ada type —
+/// integer literals, enumerator names, `Character'Val (n)`, or `True`/`False` —
+/// so a non-integer discriminator (enum/char/bool) emits a legal `when` choice.
 struct UnionCaseAda {
-    labels: Vec<i64>,
+    labels: Vec<String>,
     is_default: bool,
     field: String,
     ada_type: String,
     put: String,
     get: String,
+    fixed_layout: Option<(u32, u32)>,
 }
 
 struct UnionGen {
@@ -1366,24 +2417,22 @@ struct UnionGen {
     disc_get: String,
     cases: Vec<UnionCaseAda>,
     appendable: bool,
+    mutable: bool,
 }
 
 fn build_union(
     u: &UnionDef,
+    scope: &[String],
     enum_names: &HashSet<String>,
     struct_names: &HashSet<String>,
     typedefs: &HashMap<String, TypeSpec>,
 ) -> Result<UnionGen> {
+    // Member references resolve against this union's module scope.
+    CURRENT_SCOPE.with(|c| *c.borrow_mut() = scope.to_vec());
     let ext = lower_annotations(&u.annotations)
         .ok()
         .and_then(|l| l.extensibility())
         .unwrap_or(ExtensibilityKind::Appendable);
-    if ext == ExtensibilityKind::Mutable {
-        return Err(IdlAdaError::Unsupported(format!(
-            "@mutable union {} (EMHEADER framing not yet emitted)",
-            u.name.text
-        )));
-    }
     let (disc_type, disc_put) = map_type(
         &switch_typespec(&u.switch_type),
         "V.disc",
@@ -1396,23 +2445,28 @@ fn build_union(
         enum_names,
         struct_names,
     )?;
+    // The record's synthetic `disc` component: reserve its name so a case
+    // branch spelled `Disc`/`DISC` (Ada is case-insensitive) is suffixed.
+    let mut dedup = CiDedup::new();
+    dedup.reserve("disc");
     let mut cases = Vec::new();
     for c in &u.cases {
-        let field = escape_ada_ident(&c.element.declarator.name().text);
+        let field = dedup.unique(&escape_ada_ident(&c.element.declarator.name().text));
         let resolved = resolve_typedef(&c.element.type_spec, typedefs);
         let (ada_type, put) = map_type(&resolved, &format!("V.{field}"), enum_names, struct_names)?;
         let get = map_get(&resolved, &format!("V.{field}"), enum_names, struct_names)?;
+        let fixed_layout = match &resolved {
+            TypeSpec::Fixed(f) => Some(fixed_ps(f)?),
+            _ => None,
+        };
         let mut labels = Vec::new();
         let mut is_default = false;
         for l in &c.labels {
             match l {
                 CaseLabel::Default => is_default = true,
-                CaseLabel::Value(e) => labels.push(array_size(e).ok_or_else(|| {
-                    IdlAdaError::Unsupported(format!(
-                        "non-integer union label in `{}`",
-                        u.name.text
-                    ))
-                })?),
+                CaseLabel::Value(e) => {
+                    labels.push(render_union_label(e, &u.switch_type, &u.name.text)?);
+                }
             }
         }
         cases.push(UnionCaseAda {
@@ -1422,16 +2476,262 @@ fn build_union(
             ada_type,
             put,
             get,
+            fixed_layout,
         });
     }
     Ok(UnionGen {
-        ada_name: escape_ada_ident(&u.name.text),
+        ada_name: escape_ada_ident(&qualify(scope, &u.name.text)),
         disc_type,
         disc_put,
         disc_get,
         cases,
         appendable: ext == ExtensibilityKind::Appendable,
+        mutable: ext == ExtensibilityKind::Mutable,
     })
+}
+
+/// Renders one union case-label constant as an Ada case-choice literal of the
+/// discriminator's Ada type (XTypes 1.3 §7.4.3.5 / IDL 4.2 §7.4.1.4). An
+/// integer/octet switch yields the decimal value; an enum switch yields the
+/// referenced enumerator's (escaped) simple name — resolved by the case
+/// expression's known type, so unqualified is legal even across overloaded
+/// enumerals; a `char` switch yields `Character'Val (codepoint)`; a `boolean`
+/// switch yields `True`/`False`. Non-evaluable labels are rejected loudly
+/// rather than mis-emitted.
+fn render_union_label(e: &ConstExpr, sw: &SwitchTypeSpec, uname: &str) -> Result<String> {
+    let bad = || IdlAdaError::Unsupported(format!("unresolvable union label in `{uname}`"));
+    match sw {
+        SwitchTypeSpec::Integer(_) | SwitchTypeSpec::Octet => {
+            eval_int(e).map(|v| v.to_string()).ok_or_else(bad)
+        }
+        SwitchTypeSpec::Boolean => match e {
+            ConstExpr::Literal(Literal {
+                kind: LiteralKind::Boolean,
+                raw,
+                ..
+            }) => Ok(if raw.eq_ignore_ascii_case("true") {
+                "True".to_string()
+            } else {
+                "False".to_string()
+            }),
+            _ => Err(bad()),
+        },
+        SwitchTypeSpec::Char => char_literal_codepoint(e)
+            .map(|c| format!("Character'Val ({c})"))
+            .ok_or_else(bad),
+        SwitchTypeSpec::Scoped(_) => match e {
+            // A bare or qualified enumerator reference: the last path segment
+            // is the enumerator; the case expression's type disambiguates it.
+            ConstExpr::Scoped(sn) => sn
+                .parts
+                .last()
+                .map(|p| escape_ada_ident(&p.text))
+                .ok_or_else(bad),
+            _ => Err(bad()),
+        },
+    }
+}
+
+/// Codepoint of a `'c'` char-literal `ConstExpr` (source text incl. quotes),
+/// handling the common C-style escapes. `None` for anything else.
+fn char_literal_codepoint(e: &ConstExpr) -> Option<u32> {
+    let raw = match e {
+        ConstExpr::Literal(Literal {
+            kind: LiteralKind::Char | LiteralKind::WideChar,
+            raw,
+            ..
+        }) => raw,
+        _ => return None,
+    };
+    let inner = raw.strip_prefix('\'')?.strip_suffix('\'')?;
+    let mut it = inner.chars();
+    let c = it.next()?;
+    if c != '\\' {
+        return Some(c as u32);
+    }
+    let esc = it.next()?;
+    match esc {
+        'n' => Some(0x0A),
+        't' => Some(0x09),
+        'r' => Some(0x0D),
+        '0' => Some(0x00),
+        'a' => Some(0x07),
+        'b' => Some(0x08),
+        'f' => Some(0x0C),
+        'v' => Some(0x0B),
+        '\\' => Some(0x5C),
+        '\'' => Some(0x27),
+        '"' => Some(0x22),
+        'x' => u32::from_str_radix(&it.collect::<String>(), 16).ok(),
+        _ => None,
+    }
+}
+
+/// Renders one IDL `const` as an Ada `Name : constant Type := Value;` line
+/// (§7.4.1.4.4). The value is evaluated for the constant's declared type:
+/// integers/octet fold the expression to a decimal, floats keep an Ada-legal
+/// literal, chars/wchars become `'Val` codepoints, booleans `True`/`False`,
+/// strings a re-quoted Ada string, and an enum-typed constant its enumerator.
+fn render_const_decl(scope: &[String], cd: &ConstDecl) -> Result<String> {
+    CURRENT_SCOPE.with(|c| *c.borrow_mut() = scope.to_vec());
+    let name = escape_ada_ident(&qualify(scope, &cd.name.text));
+    let bad = || IdlAdaError::Unsupported(format!("unresolvable const value for `{name}`"));
+    let (ty, val): (String, String) = match &cd.type_ {
+        ConstType::Integer(i) => {
+            let (t, _) = map_integer(*i, "x")?;
+            (t, eval_int(&cd.value).ok_or_else(bad)?.to_string())
+        }
+        ConstType::Octet => (
+            "Unsigned_8".to_string(),
+            eval_int(&cd.value).ok_or_else(bad)?.to_string(),
+        ),
+        ConstType::Boolean => (
+            "Boolean".to_string(),
+            bool_literal_str(&cd.value).ok_or_else(bad)?,
+        ),
+        ConstType::Char => (
+            "Character".to_string(),
+            format!(
+                "Character'Val ({})",
+                char_literal_codepoint(&cd.value).ok_or_else(bad)?
+            ),
+        ),
+        ConstType::WideChar => (
+            "Wide_Character".to_string(),
+            format!(
+                "Wide_Character'Val ({})",
+                char_literal_codepoint(&cd.value).ok_or_else(bad)?
+            ),
+        ),
+        ConstType::Floating(FloatingType::Float) => (
+            "IEEE_Float_32".to_string(),
+            float_literal_str(&cd.value).ok_or_else(bad)?,
+        ),
+        ConstType::Floating(FloatingType::Double | FloatingType::LongDouble) => (
+            "IEEE_Float_64".to_string(),
+            float_literal_str(&cd.value).ok_or_else(bad)?,
+        ),
+        ConstType::String { wide: false } => (
+            "String".to_string(),
+            ada_string_from_raw(&cd.value).ok_or_else(bad)?,
+        ),
+        ConstType::String { wide: true } => (
+            "Wide_String".to_string(),
+            ada_string_from_raw(&cd.value).ok_or_else(bad)?,
+        ),
+        // A `fixed<P,S>` constant has no primitive Ada type; keep its decimal
+        // image as a String constant (the wire form is BCD, computed at use).
+        ConstType::Fixed => (
+            "String".to_string(),
+            match &cd.value {
+                ConstExpr::Literal(l) => format!("\"{}\"", l.raw.trim_end_matches(['d', 'D'])),
+                _ => return Err(bad()),
+            },
+        ),
+        // An enum-typed constant: the type is the (escaped, flattened) enum
+        // name; the value is the referenced enumerator's simple name.
+        ConstType::Scoped(sn) => {
+            let ty = escape_ada_ident(&resolve_scoped_name(sn));
+            let v = match &cd.value {
+                ConstExpr::Scoped(vn) => vn
+                    .parts
+                    .last()
+                    .map(|p| escape_ada_ident(&p.text))
+                    .ok_or_else(bad)?,
+                _ => return Err(bad()),
+            };
+            (ty, v)
+        }
+    };
+    Ok(format!("{name} : constant {ty} := {val};"))
+}
+
+/// `True`/`False` for a boolean-literal const-expr; `None` otherwise.
+fn bool_literal_str(e: &ConstExpr) -> Option<String> {
+    match e {
+        ConstExpr::Literal(Literal {
+            kind: LiteralKind::Boolean,
+            raw,
+            ..
+        }) => Some(if raw.eq_ignore_ascii_case("true") {
+            "True".to_string()
+        } else {
+            "False".to_string()
+        }),
+        _ => None,
+    }
+}
+
+/// An Ada floating literal for a float/integer const-expr (with optional leading
+/// sign), normalising the source text to Ada syntax (a mantissa needs digits on
+/// both sides of the point). `None` for non-numeric expressions.
+///
+/// zerodds-lint: recursion-depth 8 (leading unary signs; bounded by IDL syntax).
+fn float_literal_str(e: &ConstExpr) -> Option<String> {
+    match e {
+        ConstExpr::Unary {
+            op: UnaryOp::Minus,
+            operand,
+            ..
+        } => Some(format!("-{}", float_literal_str(operand)?)),
+        ConstExpr::Unary {
+            op: UnaryOp::Plus,
+            operand,
+            ..
+        } => float_literal_str(operand),
+        ConstExpr::Literal(Literal {
+            kind: LiteralKind::Floating,
+            raw,
+            ..
+        }) => Some(sanitize_ada_float(raw)),
+        ConstExpr::Literal(Literal {
+            kind: LiteralKind::Integer,
+            raw,
+            ..
+        }) => parse_int(raw).map(|n| format!("{n}.0")),
+        _ => None,
+    }
+}
+
+/// Normalises an IDL float literal to an Ada-legal one: drops any `f`/`d`/`l`
+/// suffix, gives the mantissa digits on both sides of the point (`.5` → `0.5`,
+/// `3.` → `3.0`, `1e9` → `1.0e9`).
+fn sanitize_ada_float(raw: &str) -> String {
+    let s = raw.trim().trim_end_matches(['f', 'F', 'd', 'D', 'l', 'L']);
+    let (mut mant, exp) = match s.find(['e', 'E']) {
+        Some(i) => (s[..i].to_string(), s[i..].to_string()),
+        None => (s.to_string(), String::new()),
+    };
+    if !mant.contains('.') {
+        mant.push_str(".0");
+    }
+    if mant.starts_with('.') {
+        mant.insert(0, '0');
+    }
+    if mant.ends_with('.') {
+        mant.push('0');
+    }
+    format!("{mant}{exp}")
+}
+
+/// Re-quotes a string/wstring literal (source text incl. quotes and an optional
+/// `L` prefix) as an Ada string literal, doubling embedded quotes. `None` if the
+/// const-expr is not a string literal.
+fn ada_string_from_raw(e: &ConstExpr) -> Option<String> {
+    let raw = match e {
+        ConstExpr::Literal(Literal {
+            kind: LiteralKind::String | LiteralKind::WideString,
+            raw,
+            ..
+        }) => raw,
+        _ => return None,
+    };
+    let t = raw.strip_prefix('L').unwrap_or(raw);
+    let inner = t
+        .strip_prefix('"')
+        .and_then(|x| x.strip_suffix('"'))
+        .unwrap_or(t);
+    Some(format!("\"{}\"", inner.replace('"', "\"\"")))
 }
 
 /// Emits a union's body-local `Marshal_Into` (discriminator + `case` dispatch)
@@ -1442,39 +2742,45 @@ fn emit_union_marshal(out: &mut String, ug: &UnionGen) {
         "\n   procedure Marshal_Into (V : {}; W : in out Buf_T) is",
         ug.ada_name
     );
-    if ug.appendable {
+    if ug.appendable || ug.mutable {
         let _ = writeln!(out, "      B : Buf_T;");
     }
     let _ = writeln!(out, "   begin");
-    let wv = if ug.appendable {
-        let _ = writeln!(out, "      B.Endian := W.Endian;");
-        "B"
-    } else {
-        "W"
-    };
-    let _ = writeln!(out, "      {}", ug.disc_put.replace("$w", wv));
-    let _ = writeln!(out, "      case V.disc is");
     let has_default = ug.cases.iter().any(|c| c.is_default);
-    for c in &ug.cases {
-        if c.is_default {
-            let _ = writeln!(out, "         when others => {}", c.put.replace("$w", wv));
+    if ug.mutable {
+        // @mutable union (XTypes 1.3 §7.4.3.5.3): PL_CDR2 — an outer DHEADER
+        // framing an EMHEADER-tagged member list, exactly like a @mutable
+        // struct. The discriminator is member id 0; the selected branch is a
+        // second EMHEADER-framed member (id branch-index+1). The Ada backend
+        // uses the universal LC4 EMHEADER framing throughout (see the @mutable
+        // struct path); a compact-LC variant is the coordinated cross-backend
+        // wire change tracked separately.
+        emit_union_mutable_marshal_body(out, ug, has_default);
+    } else {
+        let wv = if ug.appendable {
+            let _ = writeln!(out, "      B.Endian := W.Endian;");
+            "B"
         } else {
-            let labels = c
-                .labels
-                .iter()
-                .map(i64::to_string)
-                .collect::<Vec<_>>()
-                .join(" | ");
-            let _ = writeln!(out, "         when {labels} => {}", c.put.replace("$w", wv));
+            "W"
+        };
+        let _ = writeln!(out, "      {}", ug.disc_put.replace("$w", wv));
+        let _ = writeln!(out, "      case V.disc is");
+        for c in &ug.cases {
+            if c.is_default {
+                let _ = writeln!(out, "         when others => {}", c.put.replace("$w", wv));
+            } else {
+                let labels = c.labels.join(" | ");
+                let _ = writeln!(out, "         when {labels} => {}", c.put.replace("$w", wv));
+            }
         }
-    }
-    if !has_default {
-        let _ = writeln!(out, "         when others => null;");
-    }
-    let _ = writeln!(out, "      end case;");
-    if ug.appendable {
-        let _ = writeln!(out, "      Put_U32 (W, Unsigned_32 (B.Len));");
-        let _ = writeln!(out, "      Append (W, B);");
+        if !has_default {
+            let _ = writeln!(out, "         when others => null;");
+        }
+        let _ = writeln!(out, "      end case;");
+        if ug.appendable {
+            let _ = writeln!(out, "      Put_U32 (W, Unsigned_32 (B.Len));");
+            let _ = writeln!(out, "      Append (W, B);");
+        }
     }
     let _ = writeln!(out, "   end Marshal_Into;");
 
@@ -1500,22 +2806,30 @@ fn emit_union_marshal(out: &mut String, ug: &UnionGen) {
     );
     let _ = writeln!(out, "      V : {n};");
     let _ = writeln!(out, "   begin");
-    if ug.appendable {
+    // @appendable skips the leading DHEADER; @mutable skips the DHEADER then
+    // the discriminator's EMHEADER + NEXTINT (members read in fixed order, so
+    // the member-id/length tags are skipped, not interpreted).
+    if ug.appendable || ug.mutable {
+        let _ = writeln!(out, "      Skip_U32 (Data, Pos, Endian);");
+    }
+    if ug.mutable {
+        let _ = writeln!(out, "      Skip_U32 (Data, Pos, Endian);");
         let _ = writeln!(out, "      Skip_U32 (Data, Pos, Endian);");
     }
     let _ = writeln!(out, "      {}", ug.disc_get);
     let _ = writeln!(out, "      case V.disc is");
     for c in &ug.cases {
-        if c.is_default {
-            let _ = writeln!(out, "         when others => {}", c.get);
+        // For @mutable, the selected branch is EMHEADER + NEXTINT framed.
+        let skip = if ug.mutable {
+            "Skip_U32 (Data, Pos, Endian); Skip_U32 (Data, Pos, Endian); "
         } else {
-            let labels = c
-                .labels
-                .iter()
-                .map(i64::to_string)
-                .collect::<Vec<_>>()
-                .join(" | ");
-            let _ = writeln!(out, "         when {labels} => {}", c.get);
+            ""
+        };
+        if c.is_default {
+            let _ = writeln!(out, "         when others => {skip}{}", c.get);
+        } else {
+            let labels = c.labels.join(" | ");
+            let _ = writeln!(out, "         when {labels} => {skip}{}", c.get);
         }
     }
     if !has_default {
@@ -1532,6 +2846,46 @@ fn emit_union_marshal(out: &mut String, ug: &UnionGen) {
     let _ = writeln!(out, "   begin");
     let _ = writeln!(out, "      return Read_{n} (Data, Pos, Endian);");
     let _ = writeln!(out, "   end Unmarshal;");
+}
+
+/// Emits the `@mutable` union `Marshal_Into` body: DHEADER-framed member list
+/// with the discriminator (member id 0) then the selected branch (member id
+/// branch-index+1), each wrapped in an LC4 EMHEADER + NEXTINT — the same
+/// universal framing the `@mutable` struct path uses (`emit_marshal`). Writes
+/// into `B`, then flushes `B` behind an outer DHEADER.
+fn emit_union_mutable_marshal_body(out: &mut String, ug: &UnionGen, has_default: bool) {
+    let _ = writeln!(out, "      B.Endian := W.Endian;");
+    // Discriminator — member id 0.
+    let _ = writeln!(out, "      Put_U32 (B, 16#40000000#);");
+    let _ = writeln!(out, "      declare");
+    let _ = writeln!(out, "         M2 : Buf_T;");
+    let _ = writeln!(out, "      begin");
+    let _ = writeln!(out, "         M2.Endian := W.Endian;");
+    let _ = writeln!(out, "         {}", ug.disc_put.replace("$w", "M2"));
+    let _ = writeln!(out, "         Put_U32 (B, Unsigned_32 (M2.Len));");
+    let _ = writeln!(out, "         Append (B, M2);");
+    let _ = writeln!(out, "      end;");
+    // Selected branch — member id branch-index + 1, EMHEADER + NEXTINT framed.
+    let _ = writeln!(out, "      case V.disc is");
+    for (idx, c) in ug.cases.iter().enumerate() {
+        let emh = 0x4000_0000_u32 | (u32::try_from(idx).unwrap_or(0) + 1);
+        let branch = format!(
+            "declare M2 : Buf_T; begin M2.Endian := W.Endian; Put_U32 (B, 16#{emh:08X}#); {} Put_U32 (B, Unsigned_32 (M2.Len)); Append (B, M2); end;",
+            c.put.replace("$w", "M2")
+        );
+        if c.is_default {
+            let _ = writeln!(out, "         when others => {branch}");
+        } else {
+            let labels = c.labels.join(" | ");
+            let _ = writeln!(out, "         when {labels} => {branch}");
+        }
+    }
+    if !has_default {
+        let _ = writeln!(out, "         when others => null;");
+    }
+    let _ = writeln!(out, "      end case;");
+    let _ = writeln!(out, "      Put_U32 (W, Unsigned_32 (B.Len));");
+    let _ = writeln!(out, "      Append (W, B);");
 }
 
 /// Maps an IDL type to `(Ada type, put statement)`. The put uses `$w` as the
@@ -1551,12 +2905,7 @@ fn emit_union_marshal(out: &mut String, ug: &UnionGen) {
 /// bound is a non-literal `ConstExpr` — `array_size` cannot evaluate it,
 /// matching how array sizes / union labels already fail elsewhere in this
 /// backend rather than silently skipping enforcement.
-fn bound_check_stmt(
-    len_expr: &str,
-    bound: &ConstExpr,
-    prefix: &str,
-    what: &str,
-) -> Result<String> {
+fn bound_check_stmt(len_expr: &str, bound: &ConstExpr, prefix: &str, what: &str) -> Result<String> {
     let bv = array_size(bound).ok_or_else(|| {
         IdlAdaError::Unsupported(format!("non-literal bound on {what} `{len_expr}`"))
     })?;
@@ -1565,6 +2914,7 @@ fn bound_check_stmt(
     ))
 }
 
+/// zerodds-lint: recursion-depth 64 (codegen AST walk; bounded by IDL nesting).
 fn map_type(
     t: &TypeSpec,
     expr: &str,
@@ -1593,13 +2943,32 @@ fn map_type(
             };
             Ok(("Unbounded_String".to_string(), put))
         }
-        TypeSpec::Sequence(seq) => map_sequence(&seq.elem, seq.bound.as_ref(), expr, struct_names),
+        TypeSpec::Sequence(seq) => map_sequence(
+            &seq.elem,
+            seq.bound.as_ref(),
+            expr,
+            enum_names,
+            struct_names,
+        ),
+        // fixed<P,S>: packed-BCD octets (CORBA §9.3.2.7 ≡ XCDR2 §7.4.4.5),
+        // written raw with no length prefix (the octet count is P-derived).
+        TypeSpec::Fixed(f) => {
+            let (p, s) = fixed_ps(f)?;
+            Ok((format!("Fixed_{p}_{s}"), format!("Put_Fixed ($w, {expr});")))
+        }
         // A named enum (i32 wire) or a nested struct member (inline marshal).
         TypeSpec::Scoped(sn) => {
-            let name = sn.parts.last().map(|p| p.text.clone()).unwrap_or_default();
+            let name = resolve_scoped_name(sn);
             let esc = escape_ada_ident(&name);
             if enum_names.contains(&name) {
-                Ok((esc.clone(), format!("Put_U32 ($w, {esc}_To_U32 ({expr}));")))
+                // Enum holder width follows @bit_bound (XTypes 1.3 §7.4.5.1);
+                // narrow the Unsigned_32 codec value to 1/2 octets.
+                let put = match enum_wire_width(&name) {
+                    1 => format!("Put_U8 ($w, Unsigned_8 ({esc}_To_U32 ({expr}) and 16#FF#));"),
+                    2 => format!("Put_U16 ($w, Unsigned_16 ({esc}_To_U32 ({expr}) and 16#FFFF#));"),
+                    _ => format!("Put_U32 ($w, {esc}_To_U32 ({expr}));"),
+                };
+                Ok((esc.clone(), put))
             } else if struct_names.contains(&name) {
                 Ok((esc, format!("Marshal_Into ({expr}, $w);")))
             } else {
@@ -1666,10 +3035,12 @@ fn map_integer(i: IntegerType, expr: &str) -> Result<(String, String)> {
     Ok((ty.to_string(), put))
 }
 
+/// zerodds-lint: recursion-depth 64 (codegen AST walk; bounded by IDL nesting).
 fn map_sequence(
     elem: &TypeSpec,
     bound: Option<&ConstExpr>,
     expr: &str,
+    enum_names: &HashSet<String>,
     struct_names: &HashSet<String>,
 ) -> Result<(String, String)> {
     if let TypeSpec::Primitive(PrimitiveType::Octet | PrimitiveType::Integer(IntegerType::UInt8)) =
@@ -1687,7 +3058,7 @@ fn map_sequence(
     }
     // sequence<struct> → collection DHEADER + count + each element.
     if let TypeSpec::Scoped(sn) = elem {
-        let name = sn.parts.last().map(|p| p.text.clone()).unwrap_or_default();
+        let name = resolve_scoped_name(sn);
         if struct_names.contains(&name) {
             let check = bound
                 .map(|b| {
@@ -1707,9 +3078,53 @@ fn map_sequence(
             return Ok((format!("{}_Vectors.Vector", escape_ada_ident(&name)), put));
         }
     }
+    // sequence<primitive|enum|string> (#9, thin→thin per idl-go): a `u32` count
+    // followed by each element encoded inline — a fully-descriptive element type
+    // takes no collection DHEADER (XCDR2 §7.4.3.5.3). Element goes through the
+    // normal `map_type` mapper; the Ada value is an `Ada.Containers.Vectors`
+    // instance keyed by the element's Ada type (e.g. `Integer_32_Vectors`).
+    if elem_is_arbitrary_seq_element(elem, enum_names, struct_names) {
+        let (elem_ty, elem_put) = map_type(elem, "E", enum_names, struct_names)?;
+        let check = bound
+            .map(|b| {
+                bound_check_stmt(
+                    &format!("Natural ({expr}.Length)"),
+                    b,
+                    "bounded",
+                    "sequence",
+                )
+            })
+            .transpose()?
+            .map(|s| format!("{s} "))
+            .unwrap_or_default();
+        let put = format!(
+            "{check}Put_U32 ($w, Unsigned_32 (Natural ({expr}.Length))); \
+             for E of {expr} loop {elem_put} end loop;"
+        );
+        return Ok((format!("{elem_ty}_Vectors.Vector"), put));
+    }
     Err(IdlAdaError::Unsupported(
         "sequence of non-struct, non-octet elements".to_string(),
     ))
+}
+
+/// `true` if `elem` is a primitive, enum, or string — an element type that
+/// [`map_sequence`] can encode as a plain `u32`-count-prefixed vector. Nested
+/// sequences/maps (which would need a named nested vector/map type) and structs
+/// (handled by the DHEADER-framed path above) return `false`.
+fn elem_is_arbitrary_seq_element(
+    elem: &TypeSpec,
+    enum_names: &HashSet<String>,
+    struct_names: &HashSet<String>,
+) -> bool {
+    match elem {
+        TypeSpec::Primitive(_) | TypeSpec::String(_) => true,
+        TypeSpec::Scoped(sn) => {
+            let name = resolve_scoped_name(sn);
+            enum_names.contains(&name) && !struct_names.contains(&name)
+        }
+        _ => false,
+    }
 }
 
 // ---- decode (inverse of the put path): a `Reader` (Get_* over `Data`/`Pos`) in
@@ -1733,6 +3148,7 @@ fn build_array_get(field: &str, sizes: &[i64], elem_get: &str) -> String {
 }
 
 /// Emits a statement reading one value of IDL type `t` into the lvalue `target`.
+/// zerodds-lint: recursion-depth 64 (codegen AST walk; bounded by IDL nesting).
 fn map_get(
     t: &TypeSpec,
     target: &str,
@@ -1761,14 +3177,32 @@ fn map_get(
                 None => Ok(read),
             }
         }
-        TypeSpec::Sequence(seq) => map_get_sequence(&seq.elem, seq.bound.as_ref(), target, struct_names),
+        TypeSpec::Sequence(seq) => map_get_sequence(
+            &seq.elem,
+            seq.bound.as_ref(),
+            target,
+            enum_names,
+            struct_names,
+        ),
+        TypeSpec::Fixed(f) => {
+            let (p, _s) = fixed_ps(f)?;
+            let n = fixed_byte_len(p);
+            Ok(format!("{target} := Get_Fixed (Data, Pos, {n});"))
+        }
         TypeSpec::Scoped(sn) => {
-            let name = sn.parts.last().map(|p| p.text.clone()).unwrap_or_default();
+            let name = resolve_scoped_name(sn);
             let esc = escape_ada_ident(&name);
             if enum_names.contains(&name) {
-                Ok(format!(
-                    "{target} := {esc}_Of_U32 (Get_U32 (Data, Pos, Endian));"
-                ))
+                // Read the @bit_bound-wide holder (XTypes 1.3 §7.4.5.1); Get_U8
+                // takes no Endian, Get_U16/Get_U32 do.
+                let get = match enum_wire_width(&name) {
+                    1 => format!("{target} := {esc}_Of_U32 (Unsigned_32 (Get_U8 (Data, Pos)));"),
+                    2 => format!(
+                        "{target} := {esc}_Of_U32 (Unsigned_32 (Get_U16 (Data, Pos, Endian)));"
+                    ),
+                    _ => format!("{target} := {esc}_Of_U32 (Get_U32 (Data, Pos, Endian));"),
+                };
+                Ok(get)
             } else if struct_names.contains(&name) {
                 Ok(format!("{target} := Read_{esc} (Data, Pos, Endian);"))
             } else {
@@ -1827,10 +3261,12 @@ fn map_get_integer(i: IntegerType, target: &str) -> Result<String> {
     Ok(s)
 }
 
+/// zerodds-lint: recursion-depth 64 (codegen AST walk; bounded by IDL nesting).
 fn map_get_sequence(
     elem: &TypeSpec,
     bound: Option<&ConstExpr>,
     target: &str,
+    enum_names: &HashSet<String>,
     struct_names: &HashSet<String>,
 ) -> Result<String> {
     if let TypeSpec::Primitive(PrimitiveType::Octet | PrimitiveType::Integer(IntegerType::UInt8)) =
@@ -1846,7 +3282,7 @@ fn map_get_sequence(
         };
     }
     if let TypeSpec::Scoped(sn) = elem {
-        let name = sn.parts.last().map(|p| p.text.clone()).unwrap_or_default();
+        let name = resolve_scoped_name(sn);
         if struct_names.contains(&name) {
             let check = bound
                 .map(|b| bound_check_stmt("Zn", b, "decoded", "sequence"))
@@ -1858,6 +3294,20 @@ fn map_get_sequence(
                 "declare Zn : Natural; begin Skip_U32 (Data, Pos, Endian); Zn := Natural (Get_U32 (Data, Pos, Endian)); {check}{target}.Clear; for Zi in 1 .. Zn loop {target}.Append (Read_{esc} (Data, Pos, Endian)); end loop; end;"
             ));
         }
+    }
+    // sequence<primitive|enum|string> decode: `u32` count then per-element read,
+    // no leading collection DHEADER (inverse of the arbitrary encode branch).
+    if elem_is_arbitrary_seq_element(elem, enum_names, struct_names) {
+        let (elem_ty, _) = map_type(elem, "E", enum_names, struct_names)?;
+        let elem_get = map_get(elem, "E", enum_names, struct_names)?;
+        let check = bound
+            .map(|b| bound_check_stmt("Zn", b, "decoded", "sequence"))
+            .transpose()?
+            .map(|s| format!("{s} "))
+            .unwrap_or_default();
+        return Ok(format!(
+            "declare Zn : Natural; begin Zn := Natural (Get_U32 (Data, Pos, Endian)); {check}{target}.Clear; for Zi in 1 .. Zn loop declare E : {elem_ty}; begin {elem_get} {target}.Append (E); end; end loop; end;"
+        ));
     }
     Err(IdlAdaError::Unsupported(
         "sequence of non-struct, non-octet elements".to_string(),
