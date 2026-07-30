@@ -60,10 +60,56 @@ procedure Test_Native_Framing is
      Xrce_Write_Frame (16#80#, 16#01#, 1, Encode_Final (Little));
    Ok   : Boolean := True;
 
+   --  Negative frame vectors (self-contained): the reader must bound the body
+   --  to the declared submessage_length and reject malformed frames.
+   procedure Negative_Frame_Vectors (Pass : in out Boolean) is
+      First  : constant Byte_Array := Xrce_Write_Frame (16#80#, 16#01#, 1, (16#AA#, 16#BB#, 16#CC#));
+      Second : constant Byte_Array := Xrce_Write_Frame (16#80#, 16#01#, 2, (16#DD#, 16#EE#));
+      Concat : constant Byte_Array := First & Second;
+      Bf     : Natural;
+      Bl     : Integer;
+      Valid  : Boolean;
+   begin
+      Xrce_Read_Frame (Concat, Bf, Bl, Valid);
+      if not Valid or else Bl - Bf + 1 /= 3
+        or else Concat (Bf) /= 16#AA# or else Concat (Bf + 1) /= 16#BB#
+        or else Concat (Bf + 2) /= 16#CC#
+      then
+         Put_Line ("negative: appended submessage leaked"); Pass := False;
+      else
+         Put_Line ("negative: appended submessage bounded out");
+      end if;
+
+      declare
+         Overlong : Byte_Array := First;
+      begin
+         Overlong (Overlong'First + 6) := 16#FF#;
+         Overlong (Overlong'First + 7) := 16#FF#;
+         Xrce_Read_Frame (Overlong, Bf, Bl, Valid);
+         if Valid then
+            Put_Line ("negative: over-long length not rejected"); Pass := False;
+         else
+            Put_Line ("negative: over-long length rejected");
+         end if;
+      end;
+
+      declare
+         Trunc : constant Byte_Array := (16#80#, 16#01#, 16#00#, 16#00#, 16#07#);
+      begin
+         Xrce_Read_Frame (Trunc, Bf, Bl, Valid);
+         if Valid then
+            Put_Line ("negative: truncated header not rejected"); Pass := False;
+         else
+            Put_Line ("negative: truncated header rejected");
+         end if;
+      end;
+   end Negative_Frame_Vectors;
+
 begin
    Ok := Compare (Xrce, Dir & "/golden_xrce_le.bin", "xrce") and then Ok;
    Ok := Compare (Serial_Frame (Xrce), Dir & "/golden_serial_le.bin", "serial")
      and then Ok;
+   Negative_Frame_Vectors (Ok);
 
    if Ok then
       Put_Line ("ALL OK");

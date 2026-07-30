@@ -14,10 +14,11 @@ use zerodds_qos::{DurabilityQosPolicy, ReaderQos, WriterQos};
 // ---------- BuiltinTopicData → Qos-Aggregate ----------
 //
 // **Important:** `PublicationBuiltinTopicData` /
-// `SubscriptionBuiltinTopicData` currently carry only a subset of the
-// QoS on the wire (durability, reliability, presentation). The remaining
-// policies (deadline, liveliness, partition, ownership, …) stay at the
-// zerodds-qos defaults if they are not set explicitly.
+// `SubscriptionBuiltinTopicData` carry only a subset of the QoS on the
+// wire (durability, reliability, presentation, latency_budget,
+// destination_order). The remaining policies (liveliness, partition,
+// ownership, …) stay at the zerodds-qos defaults if they are not set
+// explicitly.
 //
 // Effect on `zerodds_qos::check_compatibility`: if a peer actually
 // requests a strict deadline but we assume the default INFINITE, the
@@ -31,9 +32,9 @@ use zerodds_qos::{DurabilityQosPolicy, ReaderQos, WriterQos};
 impl PublicationBuiltinTopicData {
     /// Builds a `WriterQos` from the wire fields.
     ///
-    /// **Limitation:** only durability + reliability + presentation are
-    /// taken from `self`; all other policies stay at their
-    /// `WriterQos::default()` values. Applications that want to match
+    /// **Limitation:** only durability + reliability + presentation +
+    /// latency_budget + destination_order are taken from `self`; all other
+    /// policies stay at their `WriterQos::default()` values. Applications that want to match
     /// against the discovered peer must be aware of this limitation —
     /// see the module documentation.
     #[must_use]
@@ -44,6 +45,8 @@ impl PublicationBuiltinTopicData {
             },
             reliability: self.reliability,
             presentation: self.presentation,
+            latency_budget: self.latency_budget,
+            destination_order: self.destination_order,
             ..WriterQos::default()
         }
     }
@@ -56,6 +59,8 @@ impl PublicationBuiltinTopicData {
         self.durability = qos.durability.kind;
         self.reliability = qos.reliability;
         self.presentation = qos.presentation;
+        self.latency_budget = qos.latency_budget;
+        self.destination_order = qos.destination_order;
         self
     }
 }
@@ -63,8 +68,9 @@ impl PublicationBuiltinTopicData {
 impl SubscriptionBuiltinTopicData {
     /// Analogous to [`PublicationBuiltinTopicData::as_writer_qos`] for readers.
     ///
-    /// **Limitation:** only durability + reliability + presentation; the
-    /// remaining policies at `ReaderQos::default()`.
+    /// **Limitation:** only durability + reliability + presentation +
+    /// latency_budget + destination_order; the remaining policies at
+    /// `ReaderQos::default()`.
     #[must_use]
     pub fn as_reader_qos(&self) -> ReaderQos {
         ReaderQos {
@@ -73,6 +79,8 @@ impl SubscriptionBuiltinTopicData {
             },
             reliability: self.reliability,
             presentation: self.presentation,
+            latency_budget: self.latency_budget,
+            destination_order: self.destination_order,
             ..ReaderQos::default()
         }
     }
@@ -83,6 +91,8 @@ impl SubscriptionBuiltinTopicData {
         self.durability = qos.durability.kind;
         self.reliability = qos.reliability;
         self.presentation = qos.presentation;
+        self.latency_budget = qos.latency_budget;
+        self.destination_order = qos.destination_order;
         self
     }
 }
@@ -142,6 +152,8 @@ mod tests {
             ownership_strength: 0,
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
+            destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
             lifespan: zerodds_qos::LifespanQosPolicy::default(),
             presentation: zerodds_qos::PresentationQosPolicy::default(),
             partition: alloc::vec::Vec::new(),
@@ -177,6 +189,8 @@ mod tests {
             ownership: zerodds_qos::OwnershipKind::Shared,
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
+            destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
             presentation: zerodds_qos::PresentationQosPolicy::default(),
             partition: alloc::vec::Vec::new(),
             user_data: alloc::vec::Vec::new(),
@@ -225,6 +239,8 @@ mod tests {
             ownership_strength: 0,
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
+            destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
             lifespan: zerodds_qos::LifespanQosPolicy::default(),
             presentation: zerodds_qos::PresentationQosPolicy::default(),
             partition: alloc::vec::Vec::new(),
@@ -260,6 +276,8 @@ mod tests {
             ownership: zerodds_qos::OwnershipKind::Shared,
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
+            destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
             presentation: zerodds_qos::PresentationQosPolicy::default(),
             partition: alloc::vec::Vec::new(),
             user_data: alloc::vec::Vec::new(),
@@ -317,6 +335,8 @@ mod tests {
             ownership_strength: 0,
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
+            destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
             lifespan: zerodds_qos::LifespanQosPolicy::default(),
             presentation: zerodds_qos::PresentationQosPolicy::default(),
             partition: alloc::vec::Vec::new(),
@@ -352,6 +372,8 @@ mod tests {
             ownership: zerodds_qos::OwnershipKind::Shared,
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
+            destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
             presentation: zerodds_qos::PresentationQosPolicy::default(),
             partition: alloc::vec::Vec::new(),
             user_data: alloc::vec::Vec::new(),

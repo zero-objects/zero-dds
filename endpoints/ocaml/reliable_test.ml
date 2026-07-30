@@ -167,6 +167,44 @@ let () =
    let d2 = Receiver.drain_in_order r in
    check (List.length d2 = 2) "seq1+2 after recovery");
 
+  (* --- RFC-1982 regression: HEARTBEAT window + loss recovery across the
+     16-bit wrap (mirrors crates/xrce's wrap regression tests). Window
+     0xFFFE,0xFFFF,0x0000,0x0001 -> old numeric min/max reported first=0 /
+     last=0xFFFF; correct is first=0xFFFE, last=0x0001. --- *)
+  (let s = Sender.create () in
+   s.Sender.next_seq <- 0xFFFE;
+   let sub p = match Sender.submit s (bytes_of_ints [ p ]) with Ok seq -> seq | Error _ -> check false "wrap submit"; 0 in
+   let q0 = sub 10 and q1 = sub 11 and q2 = sub 12 and q3 = sub 13 in
+   check (q0 = 0xFFFE && q1 = 0xFFFF && q2 = 0x0000 && q3 = 0x0001) "wrap seqs 0xFFFE..0x0001";
+   (match Sender.pending_heartbeat s 0.0 with
+    | Some hb ->
+      check (hb.hb_first = 0xFFFE && hb.hb_last = 0x0001)
+        "heartbeat window across wrap = [0xFFFE,0x0001] (not numeric 0,0xFFFF)"
+    | None -> check false "wrap heartbeat fires");
+   let r = Receiver.create () in
+   r.Receiver.expected_seq <- 0xFFFE;
+   ignore (Receiver.recv_data r q0 (bytes_of_ints [ 10 ])); (* 0xFFFF lost *)
+   ignore (Receiver.recv_data r q2 (bytes_of_ints [ 12 ]));
+   ignore (Receiver.recv_data r q3 (bytes_of_ints [ 13 ]));
+   let d1 = Receiver.drain_in_order r in
+   check (match d1 with [ (0xFFFE, _) ] -> true | _ -> false) "only 0xFFFE before recovery";
+   check (Receiver.expected r = 0xFFFF) "receiver blocked at 0xFFFF";
+   let ack = Receiver.pending_acknack r (Some q3) in
+   check (ack.ak_first_unacked = 0xFFFF) "acknack base = 0xFFFF across wrap";
+   let n0, n1 = ack.ak_nack in
+   let bm = n0 lor (n1 lsl 8) in
+   check (bm land 0b1 <> 0 && bm land 0b110 = 0) "only 0xFFFF NACKed";
+   Sender.recv_acknack s ack;
+   check (Sender.get_in_flight s q1 <> None) "0xFFFF retransmittable";
+   check (Sender.get_in_flight s q0 = None && Sender.in_flight_count s = 1) "others acked";
+   (match Sender.get_in_flight s q1 with
+    | Some p -> ignore (Receiver.recv_data r q1 p)
+    | None -> check false "retransmit lookup");
+   let d2 = Receiver.drain_in_order r in
+   check
+     (match d2 with [ (0xFFFF, _); (0x0000, _); (0x0001, _) ] -> true | _ -> false)
+     "0xFFFF,0x0000,0x0001 deliver in RFC-1982 order");
+
   (* --- byte-golden (hardcoded, matches golden-gen's HeartbeatPayload{first=1,
      last=3, stream=0x80} / AckNackPayload{first_unacked=1, bitmap=[0,0],
      stream=0x80} under StreamId::NONE, msg-seq=1) --- *)

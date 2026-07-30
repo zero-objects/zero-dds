@@ -109,18 +109,40 @@ pub trait DdsType: Sized {
     /// Once both sides (writer + reader) provide a TypeIdentifier, the
     /// subscriber match path calls
     /// [`zerodds_types::type_matcher::TypeMatcher::match_types`]
-    /// (XTypes §7.6.3.7 + DDS 1.4 §2.2.3 TypeConsistencyEnforcement). Note
-    /// the runtime match currently compares `EquivalenceHashComplete` ids
-    /// against an empty [`zerodds_types::resolve::TypeRegistry`] (no
-    /// TypeLookup-service wiring yet): identical hashes match; differing
-    /// hashes are treated as a hard mismatch (fail-closed) rather than a
-    /// structural (e.g. widening-compatible) comparison, since the
-    /// registry has no `TypeObject` to compare against. This correctly
-    /// DETECTS type evolution (added/removed/reordered/widened members) as
-    /// a mismatch, but does not yet allow provably-compatible evolutions
-    /// through — a follow-up (TypeLookup / registry population at match
-    /// time), tracked separately from #24.
+    /// (XTypes §7.6.3.7 + DDS 1.4 §2.2.3 TypeConsistencyEnforcement). As of
+    /// the Gap 2 (#24) fix the runtime match resolves `EquivalenceHash` ids
+    /// against the runtime's POPULATED [`zerodds_types::resolve::TypeRegistry`]
+    /// (owned by the TypeLookup server, filled by
+    /// [`DcpsRuntime::register_type_object`](crate::runtime::DcpsRuntime::register_type_object)
+    /// and by TypeLookup `getTypes` replies): identical hashes match by
+    /// identity (short-circuit, before any lookup); differing hashes are
+    /// compared STRUCTURALLY once both `TypeObject`s are in the registry, so
+    /// provably-compatible evolutions (added/reordered/widening-safe members
+    /// under `@appendable`) now match. A remote id ABSENT from the registry
+    /// triggers a `getTypes` fetch: under `force_type_validation` the match
+    /// DEFERS until the reply lands (no optimistic match); otherwise it
+    /// matches optimistically and confirms asynchronously. See
+    /// `wire_reader_to_remote_writer` / `wire_writer_to_remote_reader`.
     const TYPE_IDENTIFIER: zerodds_types::TypeIdentifier = zerodds_types::TypeIdentifier::None;
+
+    /// XTypes 1.3 §7.3.4 — the full `TypeObject` for this type, if the
+    /// codegen (or a hand impl) can provide it. Gap 2 (#24) auto-registration
+    /// hook: `Publisher::create_datawriter` / `Subscriber::create_datareader`
+    /// register the returned object with the runtime's TypeLookup server
+    /// (`DcpsRuntime::register_type_object`) at endpoint creation, so
+    ///   * remote peers can fetch it via `getTypes`, and
+    ///   * the local runtime match sites can resolve this endpoint's
+    ///     `TYPE_IDENTIFIER` structurally against the registry.
+    ///
+    /// Default `None` = "no object emitted": the endpoint still carries its
+    /// `TYPE_IDENTIFIER`, and matching falls back to identity / TypeLookup
+    /// fetch from the peer. The idl-rust `MinimalTypeObject`/`CompleteTypeObject`
+    /// emitter that fills this in is a follow-up (today only `TYPE_IDENTIFIER`
+    /// is codegen-emitted); a hand-written `DdsType` may override it.
+    #[must_use]
+    fn type_object() -> Option<zerodds_types::type_object::TypeObject> {
+        None
+    }
 
     /// Serializes `self` into the XCDR2 payload sent as the
     /// `serialized_payload` of a DATA submessage. Default endianness:

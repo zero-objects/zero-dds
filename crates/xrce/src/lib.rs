@@ -139,6 +139,11 @@ pub use fragment::{
 #[cfg(feature = "alloc")]
 pub use object_id::{KIND_MASK_BIT, OBJECTID_AGENT, OBJECTID_CLIENT, OBJECTID_INVALID, ObjectId};
 #[cfg(feature = "alloc")]
+pub use object_info::{
+    ActivityInfoVariant, BaseObjectReply, BaseObjectRequest, ObjectInfo, RelatedObjectRequest,
+    ResultStatus, ResultStatusCode,
+};
+#[cfg(feature = "alloc")]
 pub use object_kind::{
     OBJK_AGENT, OBJK_APPLICATION, OBJK_CLIENT, OBJK_DATAREADER, OBJK_DATAWRITER, OBJK_DOMAIN,
     OBJK_INVALID, OBJK_PARTICIPANT, OBJK_PUBLISHER, OBJK_QOSPROFILE, OBJK_SUBSCRIBER, OBJK_TOPIC,

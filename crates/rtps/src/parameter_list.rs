@@ -50,6 +50,10 @@ pub mod pid {
     pub const LIVELINESS: u16 = QosPid::LIVELINESS;
     /// Deadline QoS. (Re-export from `zerodds_qos::Pid::DEADLINE`.)
     pub const DEADLINE: u16 = QosPid::DEADLINE;
+    /// LatencyBudget QoS. (Re-export from `zerodds_qos::Pid::LATENCY_BUDGET`.)
+    pub const LATENCY_BUDGET: u16 = QosPid::LATENCY_BUDGET;
+    /// DestinationOrder QoS. (Re-export from `zerodds_qos::Pid::DESTINATION_ORDER`.)
+    pub const DESTINATION_ORDER: u16 = QosPid::DESTINATION_ORDER;
     /// Lifespan QoS. (Re-export from `zerodds_qos::Pid::LIFESPAN`.)
     pub const LIFESPAN: u16 = QosPid::LIFESPAN;
     /// Partition QoS. (Re-export from `zerodds_qos::Pid::PARTITION`.)
@@ -290,6 +294,8 @@ pub fn is_standard_pid(masked_pid: u16) -> bool {
             | OWNERSHIP_STRENGTH
             | LIVELINESS
             | DEADLINE
+            | LATENCY_BUDGET
+            | DESTINATION_ORDER
             | LIFESPAN
             | PARTITION
             | PRESENTATION

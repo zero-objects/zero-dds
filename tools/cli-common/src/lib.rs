@@ -166,6 +166,8 @@ pub fn raw_reader_config_typed(topic: &str, type_name: &str) -> UserReaderConfig
         reliable: true,
         durability: DurabilityKind::Volatile,
         deadline: DeadlineQosPolicy::default(),
+        latency_budget: Default::default(),
+        destination_order: Default::default(),
         liveliness: LivelinessQosPolicy::default(),
         ownership: OwnershipKind::Shared,
         presentation: Default::default(),

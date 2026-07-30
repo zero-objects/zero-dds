@@ -65,4 +65,39 @@ for i in 0 .. 4 do
     if id <> 0x1000u + uint32 i then failwith "async: id mismatch"
 printfn "async loopback: 5 samples OK"
 
+// string is UTF-8 with a byte-count length prefix (not the char count).
+// "grüße": g r [ü=C3 BC] [ß=C3 9F] e = 7 UTF-8 bytes, but only 5 chars.
+let s = "grüße"
+let utf8 = [| 0x67uy; 0x72uy; 0xC3uy; 0xBCuy; 0xC3uy; 0x9Fuy; 0x65uy |]
+let sw = Writer(LE)
+sw.PutString(s)
+let wire = sw.Bytes()
+let prefix =
+    (int wire.[0]) ||| ((int wire.[1]) <<< 8) ||| ((int wire.[2]) <<< 16) ||| ((int wire.[3]) <<< 24)
+if prefix <> utf8.Length + 1 then failwithf "length prefix must be UTF-8 byte count + 1, got %d" prefix
+if wire.[4 .. 4 + utf8.Length - 1] <> utf8 then failwith "UTF-8 body mismatch"
+if int wire.[4 + utf8.Length] <> 0 then failwith "missing NUL terminator"
+if wire.Length <> 4 + utf8.Length + 1 then failwithf "total wire length %d" wire.Length
+if Reader(wire, LE).GetString() <> s then failwith "roundtrip mismatch"
+printfn "string UTF-8: byte-count length prefix + roundtrip OK"
+
+// negative frame vectors: length bounding + malformed reject
+let first = writeFrame SessionNoKey StreamBestEffort 1 [| 0xAAuy; 0xBBuy; 0xCCuy |]
+let second = writeFrame SessionNoKey StreamBestEffort 2 [| 0xDDuy; 0xEEuy |]
+match readFrame (Array.append first second) with
+| Some body when body = [| 0xAAuy; 0xBBuy; 0xCCuy |] -> ()
+| _ -> failwith "appended submessage must not leak into sample"
+let overlong = Array.copy first
+overlong.[6] <- 0xFFuy
+overlong.[7] <- 0xFFuy
+match readFrame overlong with
+| None -> ()
+| Some _ -> failwith "over-long length must reject"
+match readFrame [| 0x80uy; 0x01uy; 0x00uy; 0x00uy; 0x07uy |] with
+| None -> ()
+| Some _ -> failwith "truncated header must reject"
+if writeFrame SessionNoKey StreamBestEffort 1 (Array.zeroCreate 0x10000) <> Array.empty then
+    failwith "sample > 0xFFFF must be refused"
+printfn "negative frame vectors: OK"
+
 printfn "ALL OK"

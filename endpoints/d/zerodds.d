@@ -134,6 +134,11 @@ enum ubyte SessionNoKey = 0x80;
 enum ubyte StreamBestEffort = 0x01;
 
 ubyte[] writeFrame(ubyte session, ubyte stream, int seqNo, const(ubyte)[] sample) {
+    // The 16-bit submessage_length field cannot describe a sample larger than
+    // 0xFFFF; refuse (null) rather than truncate the length while appending the
+    // full payload (mirrors the C SDK's rejection).
+    if (sample.length > 0xFFFF)
+        return null;
     ubyte[] r = [
         session, stream,
         cast(ubyte)(seqNo & 0xff), cast(ubyte)((seqNo >> 8) & 0xff),
@@ -144,10 +149,22 @@ ubyte[] writeFrame(ubyte session, ubyte stream, int seqNo, const(ubyte)[] sample
     return r;
 }
 
+// Frame layout: [session, stream, seq_lo, seq_hi, sm_id, flags, len_lo, len_hi]
+// then the sample body. The 16-bit little-endian submessage_length (bytes 6..7)
+// bounds the body exactly: frame[8 .. 8+smLen], never frame[8 .. $], so trailing
+// padding or an appended submessage is not folded into the sample.
+//
+// Accepts WRITE_DATA (0x07, endpoint->hub / loopback) and DATA (0x09,
+// hub->endpoint) — the hub pushes samples to a client with DATA. See DDS-XRCE
+// spec section 8.3.5. Returns null for a short header, a wrong submessage id, or
+// a declared length that runs past the datagram (truncation / wrong length).
 ubyte[] readFrame(const(ubyte)[] frame) {
-    if (frame.length >= 8 && frame[4] == 0x07)
-        return frame[8 .. $].dup;
-    return null;
+    if (frame.length < 8 || (frame[4] != 0x07 && frame[4] != 0x09))
+        return null;
+    size_t smLen = cast(size_t)frame[6] | (cast(size_t)frame[7] << 8);
+    if (8 + smLen > frame.length)
+        return null;
+    return frame[8 .. 8 + smLen].dup;
 }
 
 // --- transport ---

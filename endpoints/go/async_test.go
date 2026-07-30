@@ -69,6 +69,48 @@ func TestAsyncLoopback(t *testing.T) {
 	}
 }
 
+// floodTransport always yields the same valid frame and never reports `again`,
+// so the reader produces continuously and fills the 64-slot Samples buffer.
+type floodTransport struct{ frame []byte }
+
+func (f *floodTransport) Deliver(frame []byte) error { return nil }
+
+func (f *floodTransport) Receive(buf []byte) (int, bool, error) {
+	return copy(buf, f.frame), false, nil
+}
+
+// TestAsyncCloseUnblocksFullChannel pins the fix for the full-channel Close hang:
+// with no consumer the send goroutine blocks on a full Samples buffer, and Close
+// must still reach it. The bug (a bare `Samples <- cp`) left the goroutine wedged
+// so close(done) never landed and the goroutine leaked.
+func TestAsyncCloseUnblocksFullChannel(t *testing.T) {
+	body := sampleBody(0x9000)
+	frame := XrceWriteFrame(XrceSessionNoKey, XrceStreamBestEffort, 1, body)
+	frame[4] = xrceSMData // hub -> endpoint DATA (0x09)
+	tr := &floodTransport{frame: frame}
+
+	r := NewAsyncReader(tr)
+	// Deliberately do NOT read Samples: let the 64-slot buffer fill so the send
+	// goroutine is parked on a blocked send when Close arrives.
+	time.Sleep(50 * time.Millisecond)
+
+	r.Close()
+
+	// A terminating goroutine runs its deferred close(Samples), which ends this
+	// range; a wedged goroutine (the bug) leaves Samples open and times out.
+	drained := make(chan struct{})
+	go func() {
+		for range r.Samples {
+		}
+		close(drained)
+	}()
+	select {
+	case <-drained:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Close did not terminate the send goroutine blocked on a full channel")
+	}
+}
+
 // A live non-blocking UDP transport.
 type udpTransport struct {
 	conn *net.UDPConn

@@ -309,6 +309,8 @@ impl Publisher {
                     reliable,
                     durability: qos.durability.kind,
                     deadline: qos.deadline,
+                    latency_budget: qos.latency_budget,
+                    destination_order: qos.destination_order,
                     lifespan: qos.lifespan,
                     liveliness: qos.liveliness,
                     ownership: qos.ownership.kind,
@@ -326,6 +328,15 @@ impl Publisher {
                 },
                 T::HAS_KEY,
             )?;
+            // Gap 2 (#24): auto-register the local TypeObject (if codegen/impl
+            // provides one) so the runtime's TypeLookup server can answer a
+            // peer's getTypes and the local match sites can resolve this
+            // writer's TYPE_IDENTIFIER structurally against the registry.
+            // Default `type_object()` is `None` (only TYPE_IDENTIFIER emitted
+            // today) → no-op; the object emitter is a follow-up.
+            if let Some(obj) = T::type_object() {
+                let _ = rt.register_type_object(obj);
+            }
             // Spec §2.2.3.17 HISTORY: wire the writer's KeepLast depth onto
             // the runtime writer slot so the TransientLocal retain path caps
             // per-instance retained samples (and the late-join replay respects
@@ -1578,6 +1589,67 @@ mod tests {
             rt.user_writer_retained_len(eid),
             2,
             "KeepLast(2) must cap the retained set at 2 for the default instance"
+        );
+    }
+
+    /// Gap 2 (#24): `create_datawriter` auto-registers the local
+    /// `TypeObject` (when `DdsType::type_object()` provides one) with the
+    /// runtime's TypeLookup server — so peers can `getTypes` it and the
+    /// local match sites can resolve this writer's identifier structurally.
+    #[test]
+    fn create_datawriter_auto_registers_type_object() {
+        use crate::dds_type::{DecodeError, EncodeError};
+
+        struct RegType;
+        impl DdsType for RegType {
+            const TYPE_NAME: &'static str = "gap2::RegType";
+            fn encode(&self, _out: &mut Vec<u8>) -> core::result::Result<(), EncodeError> {
+                Ok(())
+            }
+            fn decode(_b: &[u8]) -> core::result::Result<Self, DecodeError> {
+                Ok(RegType)
+            }
+            fn type_object() -> Option<zerodds_types::type_object::TypeObject> {
+                use zerodds_types::builder::{Extensibility, TypeObjectBuilder};
+                Some(zerodds_types::TypeObject::Minimal(
+                    zerodds_types::MinimalTypeObject::Struct(
+                        TypeObjectBuilder::struct_type("::gap2::RegType")
+                            .extensibility(Extensibility::Appendable)
+                            .member(
+                                "a",
+                                zerodds_types::TypeIdentifier::Primitive(
+                                    zerodds_types::PrimitiveKind::Int32,
+                                ),
+                                |m| m,
+                            )
+                            .build_minimal(),
+                    ),
+                ))
+            }
+        }
+
+        let expected_hash = zerodds_types::compute_hash(
+            &RegType::type_object().expect("RegType provides a type object"),
+        )
+        .expect("hash");
+
+        let participant = DomainParticipantFactory::instance()
+            .create_participant(0, DomainParticipantQos::default())
+            .expect("live participant");
+        let topic = participant
+            .create_topic::<RegType>("Gap2RegTopic", TopicQos::default())
+            .expect("topic");
+        let pubr = participant.create_publisher(PublisherQos::default());
+        let w = pubr
+            .create_datawriter::<RegType>(&topic, DataWriterQos::default())
+            .expect("writer");
+        let (rt, _eid) = w.runtime_handle().expect("live writer");
+
+        let server = rt.type_lookup_server.lock().expect("server lock");
+        assert!(
+            server.registry.get_minimal(&expected_hash).is_some(),
+            "create_datawriter must auto-register the local TypeObject in the \
+             TypeLookup registry"
         );
     }
 

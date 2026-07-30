@@ -133,7 +133,11 @@ pub const Reader = struct {
 pub const XRCE_SESSION_NOKEY: u8 = 0x80;
 pub const XRCE_STREAM_BEST_EFFORT: u8 = 0x01;
 
+// Returns 0 when the sample is larger than the 16-bit submessage_length field
+// can describe (0xFFFF): refuse rather than truncate the length while copying
+// the full payload (the C SDK rejects the same way).
 pub fn xrceWriteFrame(out: []u8, session: u8, stream: u8, seq: u16, sample: []const u8) usize {
+    if (sample.len > 0xFFFF) return 0;
     const n: u16 = @intCast(sample.len);
     out[0] = session;
     out[1] = stream;
@@ -147,9 +151,21 @@ pub fn xrceWriteFrame(out: []u8, session: u8, stream: u8, seq: u16, sample: []co
     return 8 + sample.len;
 }
 
+// Frame layout: [session, stream, seq_lo, seq_hi, sm_id, flags, len_lo, len_hi]
+// then the sample body. The 16-bit little-endian submessage_length (bytes 6..7)
+// bounds the body exactly: the slice is frame[8 .. 8+sm_len], never frame[8..]
+// to the end, so trailing padding or an appended submessage is not folded into
+// the sample.
+//
+// Accepts WRITE_DATA (0x07, endpoint->hub / loopback) and DATA (0x09,
+// hub->endpoint) — the hub pushes samples with DATA. See DDS-XRCE spec 8.3.5.
+// Returns null for a short header, a wrong submessage id, or a declared length
+// that runs past the datagram (truncation / wrong length).
 pub fn xrceReadFrame(frame: []const u8) ?[]const u8 {
-    if (frame.len < 8 or frame[4] != 0x07) return null;
-    return frame[8..];
+    if (frame.len < 8 or (frame[4] != 0x07 and frame[4] != 0x09)) return null;
+    const sm_len: usize = @as(usize, frame[6]) | (@as(usize, frame[7]) << 8);
+    if (8 + sm_len > frame.len) return null;
+    return frame[8 .. 8 + sm_len];
 }
 
 // --- transport (function-pointer vtable, no heap) ---
@@ -328,4 +344,38 @@ test "async loopback (push / callback reactor)" {
     try testing.expectEqual(@as(usize, 5), col.got);
     i = 0;
     while (i < 5) : (i += 1) try testing.expectEqual(@as(u32, 0x1000 + i), col.ids[i]);
+}
+
+test "read frame bounds body to declared length, ignoring appended submessage" {
+    var buf1: [64]u8 = undefined;
+    var buf2: [64]u8 = undefined;
+    const n1 = xrceWriteFrame(&buf1, XRCE_SESSION_NOKEY, XRCE_STREAM_BEST_EFFORT, 1, &[_]u8{ 0xAA, 0xBB, 0xCC });
+    const n2 = xrceWriteFrame(&buf2, XRCE_SESSION_NOKEY, XRCE_STREAM_BEST_EFFORT, 2, &[_]u8{ 0xDD, 0xEE });
+    var concat: [128]u8 = undefined;
+    std.mem.copyForwards(u8, concat[0..n1], buf1[0..n1]);
+    std.mem.copyForwards(u8, concat[n1 .. n1 + n2], buf2[0..n2]);
+    const body = xrceReadFrame(concat[0 .. n1 + n2]).?;
+    try testing.expectEqualSlices(u8, &[_]u8{ 0xAA, 0xBB, 0xCC }, body);
+}
+
+test "read frame rejects over-long length and truncation, writer refuses >0xFFFF" {
+    var buf: [64]u8 = undefined;
+    const n = xrceWriteFrame(&buf, XRCE_SESSION_NOKEY, XRCE_STREAM_BEST_EFFORT, 1, &[_]u8{ 0xAA, 0xBB, 0xCC });
+    var overlong: [64]u8 = undefined;
+    std.mem.copyForwards(u8, overlong[0..n], buf[0..n]);
+    overlong[6] = 0xFF;
+    overlong[7] = 0xFF;
+    try testing.expect(xrceReadFrame(overlong[0..n]) == null);
+    try testing.expect(xrceReadFrame(&[_]u8{ 0x80, 0x01, 0x00, 0x00, 0x07 }) == null);
+    var big: [0x10000]u8 = undefined;
+    var out: [0x10010]u8 = undefined;
+    try testing.expectEqual(@as(usize, 0), xrceWriteFrame(&out, XRCE_SESSION_NOKEY, XRCE_STREAM_BEST_EFFORT, 1, &big));
+}
+
+test {
+    // Gate the reliable-stream unit tests (`reliable.zig`) through the same
+    // `zig test src/zerodds.zig` command CI already runs — it is otherwise only
+    // referenced lazily (`zerodds.zig` never `@import`s it eagerly), so its tests
+    // would go unrun. Includes the AsyncWriter window-overflow regression test.
+    _ = @import("reliable.zig");
 }

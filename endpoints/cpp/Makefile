@@ -23,7 +23,8 @@ CSRC_ASYNC  = ../c/src/zerodds_async.c
 
 all: $(BUILD)/test_byte_identity $(BUILD)/test_endpoint $(BUILD)/test_mutable \
      $(BUILD)/test_nested $(BUILD)/test_reflect \
-     $(BUILD)/test_async_loopback $(BUILD)/test_async_udp
+     $(BUILD)/test_async_loopback $(BUILD)/test_async_udp \
+     $(BUILD)/test_reliable_async_overflow
 
 # --- deep examples (sync: C++98 poll; async: C++17 reactor) ---
 $(BUILD)/example_sync: example_sync.cpp include/zerodds_wire.hpp
@@ -68,6 +69,11 @@ $(BUILD)/test_async_udp: test/test_async_udp.cpp include/zerodds_async.hpp inclu
 	@mkdir -p $(BUILD)
 	$(CXX) $(CXXFLAGS17) $(INCLUDE) test/test_async_udp.cpp $(CSRC_WIRE) $(CSRC_EP) $(CSRC_ASYNC) -o $@
 
+# Reliable async writer regression test (C++17 + pthread).
+$(BUILD)/test_reliable_async_overflow: test/test_reliable_async_overflow.cpp include/zerodds_reliable.hpp
+	@mkdir -p $(BUILD)
+	$(CXX) $(CXXFLAGS17) $(INCLUDE) test/test_reliable_async_overflow.cpp -pthread -o $@
+
 test: all
 	$(RUNNER) $(BUILD)/test_byte_identity $(GOLDEN_DIR)/golden_le.bin $(GOLDEN_DIR)/golden_be.bin
 	$(RUNNER) $(BUILD)/test_endpoint $(GOLDEN_DIR)/golden_xrce_le.bin $(GOLDEN_DIR)/golden_serial_le.bin
@@ -76,6 +82,7 @@ test: all
 	$(RUNNER) $(BUILD)/test_reflect $(GOLDEN_DIR)/golden_mutable_le.bin $(GOLDEN_DIR)/golden_mutable_be.bin
 	$(RUNNER) $(BUILD)/test_async_loopback
 	$(RUNNER) $(BUILD)/test_async_udp
+	$(RUNNER) $(BUILD)/test_reliable_async_overflow
 
 clean:
 	rm -rf $(BUILD)

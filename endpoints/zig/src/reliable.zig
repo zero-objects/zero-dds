@@ -209,6 +209,10 @@ pub const Sender = struct {
         const due = self.last_hb_ms < 0 or (now_ms - self.last_hb_ms) >= HEARTBEAT_PERIOD_MS;
         if (!due) return null;
         self.last_hb_ms = now_ms;
+        // RFC-1982 window base (oldest unacked) + end (newest unacked); NOT the
+        // numeric min/max, which is wrong across a 16-bit wrap: window
+        // 0xFFFE,0xFFFF,0x0000,0x0001 → base 0xFFFE / end 0x0001, not 0x0000 /
+        // 0xFFFF. Mirrors window_base / serial_max_in_flight in crates/xrce.
         var lo: u16 = 0;
         var hi: u16 = 0;
         var seen = false;
@@ -219,8 +223,8 @@ pub const Sender = struct {
                 hi = s.seq;
                 seen = true;
             } else {
-                if (s.seq < lo) lo = s.seq;
-                if (s.seq > hi) hi = s.seq;
+                if (seqLt(s.seq, lo)) lo = s.seq;
+                if (seqGt(s.seq, hi)) hi = s.seq;
             }
         }
         return .{ .first_unacked = lo, .last_unacked = hi, .stream_id = RELIABLE_STREAM_ID };
@@ -401,13 +405,22 @@ pub const AsyncWriter = struct {
         return true;
     }
 
-    fn pop(self: *AsyncWriter, out: []u8) ?usize {
+    /// Copies the ring head into `out` WITHOUT advancing — the slot stays owned
+    /// by the ring until `advance()`. This lets a window-full submit leave the
+    /// sample in place instead of dropping it.
+    fn peek(self: *AsyncWriter, out: []u8) ?usize {
         const head = self.head.load(.monotonic);
         if (head == self.tail.load(.acquire)) return null; // empty
         const l = self.lens[head];
         std.mem.copyForwards(u8, out[0..l], self.ring[head][0..l]);
-        self.head.store((head + 1) % RING_CAP, .release);
         return l;
+    }
+
+    /// Releases the ring head — called only after the head was accepted into the
+    /// send window (or is non-retryable).
+    fn advance(self: *AsyncWriter) void {
+        const head = self.head.load(.monotonic);
+        self.head.store((head + 1) % RING_CAP, .release);
     }
 
     fn drainLoop(self: *AsyncWriter) void {
@@ -420,13 +433,27 @@ pub const AsyncWriter = struct {
         while (self.running.load(.acquire)) {
             var idle = true;
             // 1) pull new samples off the ring → submit + send WRITE_DATA.
-            if (self.pop(&sbuf)) |l| {
-                idle = false;
-                const seq = self.sender.submit(sbuf[0..l]) catch {
-                    // window full: spin until an ACKNACK frees a slot.
-                    _ = self.drainAckNacks(&rbuf);
+            if (self.peek(&sbuf)) |l| {
+                const seq = self.sender.submit(sbuf[0..l]) catch |err| {
+                    switch (err) {
+                        // Window full: leave the sample in the ring (do NOT
+                        // advance head — that was the data-loss bug: the slot
+                        // was consumed yet never sent). Free a slot via ACKNACKs
+                        // and retry next tick; back off if none arrived.
+                        error.WindowFull => if (!self.drainAckNacks(&rbuf))
+                            std.time.sleep(200 * std.time.ns_per_us),
+                        // Non-retryable (too large): drop so it cannot wedge the
+                        // ring head forever.
+                        else => {
+                            self.advance();
+                            idle = false;
+                        },
+                    }
                     continue;
                 };
+                // Accepted into the window: only now release the ring slot.
+                self.advance();
+                idle = false;
                 const n = writeDataFrame(&frame, seq, sbuf[0..l]);
                 self.send_fn(self.send_ctx, frame[0..n]);
             }
@@ -660,4 +687,163 @@ test "end-to-end loss recovery in-process" {
     try rcv.recvData(3, snd.getInFlight(3).?);
     try rcv.drainInto(&out);
     try testing.expectEqual(@as(usize, 5), out.items.len); // all recovered
+}
+
+// RFC-1982 regression: HEARTBEAT window across the 16-bit wrap. Window
+// 0xFFFE,0xFFFF,0x0000,0x0001 → base 0xFFFE / end 0x0001; the old numeric
+// min/max reported 0x0000 / 0xFFFF. Mirrors crates/xrce's wrap regression.
+test "heartbeat window across wrap reports rfc1982 order" {
+    var s = Sender.init(testing.allocator);
+    defer s.deinit();
+    s.next_seq = 0xFFFE;
+    try testing.expectEqual(@as(u16, 0xFFFE), try s.submit(&[_]u8{1}));
+    try testing.expectEqual(@as(u16, 0xFFFF), try s.submit(&[_]u8{2}));
+    try testing.expectEqual(@as(u16, 0x0000), try s.submit(&[_]u8{3}));
+    try testing.expectEqual(@as(u16, 0x0001), try s.submit(&[_]u8{4}));
+    const hb = s.pendingHeartbeat(0) orelse return error.NoHeartbeat;
+    try testing.expectEqual(@as(u16, 0xFFFE), hb.first_unacked);
+    try testing.expectEqual(@as(u16, 0x0001), hb.last_unacked);
+}
+
+// RFC-1982 regression: loss recovery of a sample lost across the wrap. Window
+// 0xFFFE,0xFFFF,0x0000,0x0001 with 0xFFFF lost → ACKNACK NACKs exactly 0xFFFF,
+// sender keeps it retransmittable, all deliver in RFC-1982 order.
+test "acknack retransmit of lost sample across wrap" {
+    var snd = Sender.init(testing.allocator);
+    defer snd.deinit();
+    var rcv = Receiver.init(testing.allocator);
+    defer rcv.deinit();
+    var out = std.ArrayList([]u8).init(testing.allocator);
+    defer {
+        for (out.items) |p| testing.allocator.free(p);
+        out.deinit();
+    }
+    snd.next_seq = 0xFFFE;
+    rcv.expected_seq = 0xFFFE;
+
+    const q0 = try snd.submit(&[_]u8{10}); // 0xFFFE
+    const q1 = try snd.submit(&[_]u8{11}); // 0xFFFF (lost)
+    const q2 = try snd.submit(&[_]u8{12}); // 0x0000
+    const q3 = try snd.submit(&[_]u8{13}); // 0x0001
+
+    try rcv.recvData(q0, &[_]u8{10});
+    try rcv.recvData(q2, &[_]u8{12});
+    try rcv.recvData(q3, &[_]u8{13});
+    try rcv.drainInto(&out);
+    try testing.expectEqual(@as(usize, 1), out.items.len); // only 0xFFFE
+    try testing.expectEqual(@as(u16, 0xFFFF), rcv.expected());
+
+    const an = rcv.pendingAckNack(q3);
+    try testing.expectEqual(@as(u16, 0xFFFF), an.first_unacked);
+    try testing.expect(an.nack_bitmap & 0b1 != 0); // 0xFFFF NACKed
+    try testing.expect(an.nack_bitmap & 0b110 == 0); // 0x0000/0x0001 present
+
+    snd.recvAckNack(an);
+    try testing.expect(snd.getInFlight(q1) != null); // 0xFFFF retransmittable
+    try testing.expect(snd.getInFlight(q0) == null);
+    try testing.expectEqual(@as(usize, 1), snd.inFlightCount());
+
+    try rcv.recvData(q1, snd.getInFlight(q1).?);
+    try rcv.drainInto(&out);
+    try testing.expectEqual(@as(usize, 4), out.items.len); // 0xFFFE + 0xFFFF,0x0000,0x0001
+}
+
+// In-process loopback peer for the AsyncWriter overflow test. Both callbacks run
+// on the writer's drain thread; the main test thread reads counters + flips the
+// gate, so all shared state is mutex-guarded.
+const OverflowPeer = struct {
+    mutex: std.Thread.Mutex = .{},
+    rcv: Receiver,
+    delivered: std.ArrayList(u8),
+    acks: std.ArrayList(AckNack),
+    tmp: std.ArrayList([]u8),
+    alloc: std.mem.Allocator,
+    write_data_seen: usize = 0,
+    gate: bool = false,
+
+    fn onSend(ctx: *anyopaque, frame: []const u8) void {
+        const self: *OverflowPeer = @ptrCast(@alignCast(ctx));
+        const wd = parseWriteData(frame) orelse return; // ignore HEARTBEAT etc.
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        if (seqLt(wd.seq, self.rcv.expected())) return; // retransmit of delivered → ignore
+        self.rcv.recvData(wd.seq, wd.sample) catch return;
+        self.rcv.drainInto(&self.tmp) catch return;
+        while (self.tmp.items.len > 0) {
+            const p = self.tmp.orderedRemove(0);
+            self.delivered.append(p[0]) catch {};
+            self.alloc.free(p);
+        }
+        self.acks.append(self.rcv.pendingAckNack(wd.seq)) catch {};
+        self.write_data_seen += 1;
+    }
+
+    fn onRecv(ctx: *anyopaque, buf: []u8) ?usize {
+        const self: *OverflowPeer = @ptrCast(@alignCast(ctx));
+        self.mutex.lock();
+        defer self.mutex.unlock();
+        if (!self.gate or self.acks.items.len == 0) return null;
+        const an = self.acks.orderedRemove(0);
+        return acknackFrame(buf, an);
+    }
+};
+
+test "async writer window overflow delivers every sample (no drop, no hang)" {
+    const alloc = testing.allocator;
+    const n: u8 = 20; // > SENDER_WINDOW (16)
+
+    var peer = OverflowPeer{
+        .rcv = Receiver.init(alloc),
+        .delivered = std.ArrayList(u8).init(alloc),
+        .acks = std.ArrayList(AckNack).init(alloc),
+        .tmp = std.ArrayList([]u8).init(alloc),
+        .alloc = alloc,
+    };
+    defer {
+        peer.rcv.deinit();
+        peer.delivered.deinit();
+        peer.acks.deinit();
+        for (peer.tmp.items) |p| alloc.free(p);
+        peer.tmp.deinit();
+    }
+
+    const w = try alloc.create(AsyncWriter);
+    defer alloc.destroy(w);
+    w.* = AsyncWriter.init(alloc, &peer, OverflowPeer.onSend, &peer, OverflowPeer.onRecv);
+    try w.start();
+
+    var i: u8 = 0;
+    while (i < n) : (i += 1) try testing.expect(w.write(&[_]u8{i}));
+
+    // Wait until the 16-sample window is full (gate still closed), then give the
+    // drain thread a moment to attempt the extra 4 — the pre-fix code loses them.
+    var waited: usize = 0;
+    while (waited < 5000) : (waited += 1) {
+        peer.mutex.lock();
+        const seen = peer.write_data_seen;
+        peer.mutex.unlock();
+        if (seen >= SENDER_WINDOW) break;
+        std.time.sleep(std.time.ns_per_ms);
+    }
+    std.time.sleep(50 * std.time.ns_per_ms);
+
+    peer.mutex.lock();
+    peer.gate = true;
+    peer.mutex.unlock();
+
+    // Bounded wait for all n; a hang (regression) then fails via the count check.
+    waited = 0;
+    while (waited < 10000) : (waited += 1) {
+        peer.mutex.lock();
+        const d = peer.delivered.items.len;
+        peer.mutex.unlock();
+        if (d >= n) break;
+        std.time.sleep(std.time.ns_per_ms);
+    }
+
+    w.close();
+
+    try testing.expectEqual(@as(usize, n), peer.delivered.items.len);
+    i = 0; // in-order delivery ⇒ delivered[i] == i for every sample
+    while (i < n) : (i += 1) try testing.expectEqual(i, peer.delivered.items[i]);
 }

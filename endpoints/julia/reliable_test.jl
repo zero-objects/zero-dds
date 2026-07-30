@@ -169,6 +169,51 @@ let
           "e2e_delivers_all_after_retransmit")
 end
 
+# --- RFC-1982 regression: HEARTBEAT window + loss recovery across the 16-bit
+#     wrap (mirror crates/xrce's wrap regression tests). Window 0xFFFE,0xFFFF,
+#     0x0000,0x0001 -> old numeric min/max reported first=0/last=0xFFFF; correct
+#     is first=0xFFFE, last=0x0001.
+
+let
+    s = Reliable.Sender()
+    s.next_seq = UInt16(0xFFFE)
+    q0 = Reliable.submit!(s, UInt8[10])[2]  # 0xFFFE
+    q1 = Reliable.submit!(s, UInt8[11])[2]  # 0xFFFF (lost)
+    q2 = Reliable.submit!(s, UInt8[12])[2]  # 0x0000
+    q3 = Reliable.submit!(s, UInt8[13])[2]  # 0x0001
+    check(q0 == UInt16(0xFFFE) && q1 == UInt16(0xFFFF) && q2 == UInt16(0x0000) && q3 == UInt16(0x0001),
+          "wrap_seqs")
+
+    hb = Reliable.pending_heartbeat!(s, 0)
+    check(hb !== nothing && hb.first == UInt16(0xFFFE) && hb.last == UInt16(0x0001),
+          "heartbeat_window_across_wrap_is_rfc1982_not_numeric")
+
+    r = Reliable.Receiver()
+    r.expected = UInt16(0xFFFE)
+    Reliable.recv_data!(r, q0, UInt8[10])  # 0xFFFF lost
+    Reliable.recv_data!(r, q2, UInt8[12])
+    Reliable.recv_data!(r, q3, UInt8[13])
+    d1 = Reliable.drain_in_order!(r)
+    check(length(d1) == 1 && d1[1][1] == UInt16(0xFFFE), "wrap_only_first_delivered")
+    check(Reliable.expected(r) == UInt16(0xFFFF), "wrap_receiver_blocked_at_ffff")
+
+    ack = Reliable.pending_acknack(r, q3)
+    check(ack.first_unacked == UInt16(0xFFFF), "wrap_ack_base_is_ffff")
+    bm = UInt16(ack.nack_lo) | (UInt16(ack.nack_hi) << 8)
+    check((bm & UInt16(0x1)) != 0 && (bm & UInt16(0x6)) == 0, "wrap_only_ffff_nacked")
+
+    Reliable.recv_acknack!(s, ack.first_unacked, ack.nack_lo, ack.nack_hi)
+    check(Reliable.get_in_flight(s, q1) !== nothing, "wrap_ffff_retransmittable")
+    check(Reliable.get_in_flight(s, q0) === nothing && Reliable.in_flight_count(s) == 1,
+          "wrap_others_acked")
+
+    Reliable.recv_data!(r, q1, Reliable.get_in_flight(s, q1))
+    d2 = Reliable.drain_in_order!(r)
+    check(length(d2) == 3 && d2[1][1] == UInt16(0xFFFF) && d2[2][1] == UInt16(0x0000) &&
+          d2[3][1] == UInt16(0x0001),
+          "wrap_deliver_in_rfc1982_order_after_retransmit")
+end
+
 # --- byte-golden ---
 
 if length(ARGS) >= 1

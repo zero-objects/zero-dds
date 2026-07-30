@@ -71,4 +71,29 @@ end
 ZeroDDS.AsyncReader.stop(reader)
 IO.puts("async loopback: 5 samples OK")
 
+# --- negative frame vectors: length bounding + malformed reject ---
+first = ZeroDDS.Endpoint.write_frame(0x80, 0x01, 1, <<0xAA, 0xBB, 0xCC>>)
+second = ZeroDDS.Endpoint.write_frame(0x80, 0x01, 2, <<0xDD, 0xEE>>)
+
+case ZeroDDS.Endpoint.read_frame(first <> second) do
+  {:ok, <<0xAA, 0xBB, 0xCC>>} -> :ok
+  other -> raise("appended submessage leaked: #{inspect(other)}")
+end
+
+<<h::binary-size(6), _::16, tail::binary>> = first
+overlong = h <> <<0xFF, 0xFF>> <> tail
+if ZeroDDS.Endpoint.read_frame(overlong) != :error, do: raise("over-long length must reject")
+if ZeroDDS.Endpoint.read_frame(<<0x80, 0x01, 0x00, 0x00, 0x07>>) != :error, do: raise("truncated header must reject")
+
+refused =
+  try do
+    ZeroDDS.Endpoint.write_frame(0x80, 0x01, 1, :binary.copy(<<0>>, 0x10000))
+    false
+  rescue
+    ArgumentError -> true
+  end
+
+unless refused, do: raise("sample > 0xFFFF must be refused")
+IO.puts("negative frame vectors: OK")
+
 IO.puts("ALL OK")

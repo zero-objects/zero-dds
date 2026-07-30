@@ -14,21 +14,42 @@ set(ZERODDS_LIBRARY_PREFIX "@ZERODDS_LIBRARY_PREFIX@")
 set(ZERODDS_STATIC_LIBRARY_EXTENSION "@ZERODDS_STATIC_LIBRARY_EXTENSION@")
 set(ZERODDS_SHARED_LIBRARY_EXTENSION "@ZERODDS_SHARED_LIBRARY_EXTENSION@")
 set(ZERODDS_WAS_SHARED @BUILD_SHARED_LIBS@)
-set(ZERODDS_HAD_CPP @BUILD_ZERODDS_CPP@)
-set(ZERODDS_HAD_IDLC @BUILD_ZERODDS_IDLC@)
+set(ZERODDS_HAD_CPP @ZERODDS_BUILD_CPP@)
+set(ZERODDS_HAD_IDLC @ZERODDS_BUILD_IDLC@)
 
 set_and_check(ZERODDS_INSTALL_INCLUDEDIR "@PACKAGE_CMAKE_INSTALL_INCLUDEDIR@")
 set_and_check(ZERODDS_INSTALL_LIBDIR "@PACKAGE_CMAKE_INSTALL_LIBDIR@")
 set_and_check(ZERODDS_INSTALL_BINDIR "@PACKAGE_CMAKE_INSTALL_BINDIR@")
 
 if(NOT TARGET zerodds::zerodds-c)
+  # The import library (Windows) and the static library share the same
+  # `.lib` extension; the DLL lives in bin/ (P0-5 install split), the .so/.dylib
+  # and the static .a live in lib/.
   set(_zerodds_c_static "${ZERODDS_INSTALL_LIBDIR}/${ZERODDS_LIBRARY_PREFIX}zerodds.${ZERODDS_STATIC_LIBRARY_EXTENSION}")
-  set(_zerodds_c_shared "${ZERODDS_INSTALL_LIBDIR}/${ZERODDS_LIBRARY_PREFIX}zerodds.${ZERODDS_SHARED_LIBRARY_EXTENSION}")
+  if(WIN32)
+    set(_zerodds_c_shared "${ZERODDS_INSTALL_BINDIR}/${ZERODDS_LIBRARY_PREFIX}zerodds.${ZERODDS_SHARED_LIBRARY_EXTENSION}")
+  else()
+    set(_zerodds_c_shared "${ZERODDS_INSTALL_LIBDIR}/${ZERODDS_LIBRARY_PREFIX}zerodds.${ZERODDS_SHARED_LIBRARY_EXTENSION}")
+  endif()
 
-  if(ZERODDS_WAS_SHARED)
+  # Decide shared vs static from what the staging tree actually contains, so a
+  # package that ships BOTH libs (Unix: libzerodds.so + libzerodds.a) links the
+  # shared one, while a static-only or shared-only tree Just Works. The
+  # build-time choice (ZERODDS_WAS_SHARED) is the tie-breaker when the
+  # file-presence probe is ambiguous (e.g. Windows, where the import lib and a
+  # static lib would collide on the same `zerodds.lib` name).
+  set(_zerodds_use_shared ${ZERODDS_WAS_SHARED})
+  if(EXISTS "${_zerodds_c_shared}" AND NOT EXISTS "${_zerodds_c_static}")
+    set(_zerodds_use_shared TRUE)
+  elseif(EXISTS "${_zerodds_c_static}" AND NOT EXISTS "${_zerodds_c_shared}")
+    set(_zerodds_use_shared FALSE)
+  endif()
+
+  if(_zerodds_use_shared)
     add_library(zerodds::zerodds-c SHARED IMPORTED)
     set_target_properties(zerodds::zerodds-c PROPERTIES IMPORTED_LOCATION "${_zerodds_c_shared}")
     if(WIN32)
+      # Linking a Windows DLL consumer goes through the import library.
       set_target_properties(zerodds::zerodds-c PROPERTIES IMPORTED_IMPLIB "${_zerodds_c_static}")
     endif()
   else()
@@ -38,6 +59,7 @@ if(NOT TARGET zerodds::zerodds-c)
       IMPORTED_IMPLIB "${_zerodds_c_static}"
     )
   endif()
+  unset(_zerodds_use_shared)
   set_target_properties(zerodds::zerodds-c PROPERTIES
     INTERFACE_INCLUDE_DIRECTORIES "${ZERODDS_INSTALL_INCLUDEDIR}"
   )

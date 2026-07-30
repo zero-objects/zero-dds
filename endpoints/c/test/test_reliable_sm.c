@@ -67,6 +67,61 @@ static void t_heartbeat(void)
           "heartbeat fires again after 500ms");
 }
 
+/* RFC-1982 regression: HEARTBEAT window + loss recovery across the 16-bit wrap
+ * (mirrors crates/xrce's wrap regression tests). Window 0xFFFE,0xFFFF,0,1 -> the
+ * old numeric min/max reported first=0/last=0xFFFF; correct is first=0xFFFE,
+ * last=0x0001. */
+static void t_wrap_heartbeat_and_recovery(void)
+{
+    unsigned char out[8];
+    unsigned short seq, q0, q1, q2, q3;
+    size_t len, pl_len;
+    const unsigned char *pl;
+    int first = -1, last = -1;
+    unsigned short bm;
+    long k;
+    unsigned char b;
+
+    /* --- sender HEARTBEAT window across the wrap --- */
+    zdw_reliable_init(&SND, 0x80);
+    SND.next_seq = 0xFFFE; /* seed just below the wrap */
+    b = 10; zdw_reliable_submit(&SND, &b, 1, &q0); /* 0xFFFE */
+    b = 11; zdw_reliable_submit(&SND, &b, 1, &q1); /* 0xFFFF (lost below) */
+    b = 12; zdw_reliable_submit(&SND, &b, 1, &q2); /* 0x0000 */
+    b = 13; zdw_reliable_submit(&SND, &b, 1, &q3); /* 0x0001 */
+    CHECK(q0 == 0xFFFE && q1 == 0xFFFF && q2 == 0x0000 && q3 == 0x0001,
+          "wrap seqs 0xFFFE..0x0001");
+    CHECK(zdw_reliable_pending_heartbeat(&SND, 0, &first, &last) == 1, "wrap heartbeat fires");
+    CHECK((unsigned short)first == 0xFFFE && (unsigned short)last == 0x0001,
+          "heartbeat window across wrap = [0xFFFE,0x0001] (not numeric 0,0xFFFF)");
+
+    /* --- receiver ACKNACK + retransmit across the wrap --- */
+    zdw_reliable_init(&RCV, 0x80);
+    RCV.expected_seq = 0xFFFE; /* seed receiver just below the wrap */
+    b = 10; zdw_reliable_recv_data(&RCV, q0, &b, 1); /* 0xFFFF lost */
+    b = 12; zdw_reliable_recv_data(&RCV, q2, &b, 1);
+    b = 13; zdw_reliable_recv_data(&RCV, q3, &b, 1);
+    k = 0;
+    while (zdw_reliable_drain(&RCV, out, sizeof(out), &seq, &len)) { k++; }
+    CHECK(k == 1, "only 0xFFFE delivered before recovery");
+    CHECK(RCV.expected_seq == 0xFFFF, "receiver blocked at 0xFFFF");
+
+    bm = zdw_reliable_pending_acknack(&RCV); /* base = expected = 0xFFFF */
+    CHECK((bm & 0x1u) != 0u, "0xFFFF NACKed");
+    CHECK((bm & 0x6u) == 0u, "0x0000/0x0001 present");
+
+    zdw_reliable_recv_acknack(&SND, (int)0xFFFF, bm);
+    CHECK(zdw_reliable_get_in_flight(&SND, q1, &pl_len) != 0, "0xFFFF retransmittable");
+    CHECK(zdw_reliable_get_in_flight(&SND, q0, 0) == 0, "0xFFFE acked");
+    CHECK(zdw_reliable_in_flight_count(&SND) == 1, "only 0xFFFF left in-flight");
+
+    pl = zdw_reliable_get_in_flight(&SND, q1, &pl_len);
+    if (pl != 0) { zdw_reliable_recv_data(&RCV, q1, pl, pl_len); }
+    k = 0;
+    while (zdw_reliable_drain(&RCV, out, sizeof(out), &seq, &len)) { k++; }
+    CHECK(k == 3, "0xFFFF,0x0000,0x0001 deliver in RFC-1982 order after retransmit");
+}
+
 static void t_recv_acknack_clears(void)
 {
     unsigned char p = 0;
@@ -273,6 +328,7 @@ int main(int argc, char **argv)
     t_submit_too_large();
     t_submit_window_full();
     t_heartbeat();
+    t_wrap_heartbeat_and_recovery();
     t_recv_acknack_clears();
     t_recv_acknack_full_clear();
     t_recv_in_order();

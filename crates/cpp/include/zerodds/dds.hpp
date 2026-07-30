@@ -211,12 +211,27 @@ class TypedWriter {
 
 public:
     /// 2-arg ctor: type name + keyed flag derived from the type traits.
-    TypedWriter(Runtime &rt, const std::string &topic_name, bool reliable = true)
-        : handle_(zerodds_writer_create_kind(
-              rt.raw(), topic_name.c_str(), traits::type_name(),
-              reliable ? 1 : 0, traits::is_keyed() ? 1 : 0)) {
+    ///
+    /// F-TYPES-3 / #24: when the type carries a serialized COMPLETE
+    /// `TypeObject` (`traits::type_object_len() > 0`, emitted by `idlc cpp`),
+    /// the writer is created via `zerodds_writer_create_typed`, which registers
+    /// the object and derives + installs the `TypeIdentifier` on the endpoint
+    /// slot BEFORE it is published — no discovery window with a `None`
+    /// identifier. Union topics or types whose TypeObject could not be lowered
+    /// at codegen time fall back to the byte-oriented `create_kind`.
+    TypedWriter(Runtime &rt, const std::string &topic_name, bool reliable = true) {
+        const uint8_t *type_object = traits::type_object();
+        uintptr_t type_object_len = traits::type_object_len();
+        handle_ = (type_object && type_object_len > 0)
+            ? zerodds_writer_create_typed(
+                  rt.raw(), topic_name.c_str(), traits::type_name(),
+                  reliable ? 1 : 0, traits::is_keyed() ? 1 : 0,
+                  type_object, type_object_len)
+            : zerodds_writer_create_kind(
+                  rt.raw(), topic_name.c_str(), traits::type_name(),
+                  reliable ? 1 : 0, traits::is_keyed() ? 1 : 0);
         if (!handle_) {
-            throw StatusError(-1, "zerodds_writer_create_kind");
+            throw StatusError(-1, "zerodds_writer_create_typed");
         }
     }
     ~TypedWriter() {
@@ -262,12 +277,22 @@ class TypedReader {
     using traits = ::dds::topic::topic_type_support<T>;
 
 public:
-    TypedReader(Runtime &rt, const std::string &topic_name, bool reliable = true)
-        : handle_(zerodds_reader_create_kind(
-              rt.raw(), topic_name.c_str(), traits::type_name(),
-              reliable ? 1 : 0, traits::is_keyed() ? 1 : 0)) {
+    /// F-TYPES-3 / #24: reader-side mirror of `TypedWriter` — a typed create
+    /// (`zerodds_reader_create_typed`) when the type carries a serialized
+    /// COMPLETE `TypeObject`, else the byte-oriented `create_kind` fallback.
+    TypedReader(Runtime &rt, const std::string &topic_name, bool reliable = true) {
+        const uint8_t *type_object = traits::type_object();
+        uintptr_t type_object_len = traits::type_object_len();
+        handle_ = (type_object && type_object_len > 0)
+            ? zerodds_reader_create_typed(
+                  rt.raw(), topic_name.c_str(), traits::type_name(),
+                  reliable ? 1 : 0, traits::is_keyed() ? 1 : 0,
+                  type_object, type_object_len)
+            : zerodds_reader_create_kind(
+                  rt.raw(), topic_name.c_str(), traits::type_name(),
+                  reliable ? 1 : 0, traits::is_keyed() ? 1 : 0);
         if (!handle_) {
-            throw StatusError(-1, "zerodds_reader_create_kind");
+            throw StatusError(-1, "zerodds_reader_create_typed");
         }
     }
     ~TypedReader() {

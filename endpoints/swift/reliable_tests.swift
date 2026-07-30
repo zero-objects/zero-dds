@@ -210,6 +210,134 @@ run("end_to_end_sender_receiver_with_loss_recovery") {
     )
 }
 
+run("heartbeat_and_recovery_across_wrap") {
+    // RFC-1982 regression: HEARTBEAT window + loss recovery across the 16-bit
+    // wrap (mirrors crates/xrce's wrap regression tests). Seeds sender/receiver
+    // up to the wrap using only the public API (submit + full-ack / recvData +
+    // drain), then straddles 0x0000.
+    let s = ReliableSender()
+    var seq: UInt16 = 0 // walk nextSeq to 0xFFFE: submit one, fully-ack it, repeat.
+    repeat {
+        seq = try s.submit([0])
+        s.recvAckNack(AckNack(firstUnacked: seq &+ 1, nackBitmap: 0, streamId: 0x80))
+    } while seq != 0xFFFD
+    check("wrap/seed_drained", s.inFlightCount == 0)
+
+    let q0 = try s.submit([10]) // 0xFFFE
+    let q1 = try s.submit([11]) // 0xFFFF (lost)
+    let q2 = try s.submit([12]) // 0x0000
+    let q3 = try s.submit([13]) // 0x0001
+    check("wrap/seqs", q0 == 0xFFFE && q1 == 0xFFFF && q2 == 0x0000 && q3 == 0x0001)
+
+    let hb = s.pendingHeartbeat(nowMs: 0)
+    check(
+        "wrap/heartbeat_window",
+        hb?.firstUnacked == 0xFFFE && hb?.lastUnacked == 0x0001,
+        "want [0xFFFE,0x0001], got \(String(describing: hb))"
+    )
+
+    let r = ReliableReceiver() // seed expected to 0xFFFE
+    for k in 0...0xFFFD {
+        try r.recvData(seq: UInt16(k), payload: [0])
+        _ = r.drainInOrder()
+    }
+    check("wrap/receiver_seed", r.expectedSeq == 0xFFFE)
+
+    try r.recvData(seq: q0, payload: [10]) // 0xFFFF lost
+    try r.recvData(seq: q2, payload: [12])
+    try r.recvData(seq: q3, payload: [13])
+    let dw = r.drainInOrder()
+    check("wrap/first_drain", dw.count == 1 && dw[0].payload == [10])
+    check("wrap/blocked_at_ffff", r.expectedSeq == 0xFFFF)
+
+    let ack = r.pendingAckNack(hintLastSeen: q3)
+    check("wrap/ack_base", ack.firstUnacked == 0xFFFF)
+    check("wrap/ack_bits", (ack.nackBitmap & 0b1) != 0 && (ack.nackBitmap & 0b110) == 0)
+
+    s.recvAckNack(ack)
+    check("wrap/retransmittable", s.getInFlight(q1) != nil)
+    check("wrap/acked", s.getInFlight(q0) == nil && s.getInFlight(q2) == nil && s.getInFlight(q3) == nil)
+    check("wrap/inflight_one", s.inFlightCount == 1)
+
+    try r.recvData(seq: q1, payload: s.getInFlight(q1)!)
+    let dw2 = r.drainInOrder()
+    check(
+        "wrap/second_drain",
+        dw2.count == 3 && dw2[0].payload == [11] && dw2[1].payload == [12] && dw2[2].payload == [13]
+    )
+}
+
+// AsyncWriter window-overflow: submit MORE than the 16-sample window before any
+// ACKNACK arrives, then let ACKNACKs flow. The pre-fix drain popped a sample off
+// the queue *before* submit, so on a full window that sample was gone yet never
+// sent — silent data loss. This test keeps the window full while >16 samples are
+// pending, then verifies EVERY sample is delivered (none lost) and the writer
+// terminates (no hang).
+final class LoopPeer {
+    let lock = NSLock()
+    let rcv = ReliableReceiver()
+    var delivered: [UInt8] = []
+    var acks: [AckNack] = []
+    var writeDataSeen = 0 // distinct fresh WRITE_DATA the peer accepted
+    var gateOpen = false
+
+    // Runs on the writer's drain thread (send side). Feeds the receiver, records
+    // in-order deliveries, and queues a cumulative ACKNACK. Retransmits of
+    // already-delivered seqs are ignored (they would otherwise loop forever).
+    func onSend(_ frame: [UInt8]) {
+        guard let wd = parseWriteData(frame) else { return } // ignore HEARTBEAT etc.
+        lock.lock(); defer { lock.unlock() }
+        if seqLt(wd.seq, rcv.expectedSeq) { return } // retransmit of delivered → ignore
+        do { try rcv.recvData(seq: wd.seq, payload: wd.sample) } catch { return }
+        for item in rcv.drainInOrder() { delivered.append(item.payload.first ?? 0) }
+        acks.append(rcv.pendingAckNack(hintLastSeen: wd.seq))
+        writeDataSeen += 1
+    }
+
+    // Runs on the writer's drain thread (recv side). Releases queued ACKNACKs
+    // only once the gate is open, so the window genuinely fills first.
+    func onRecv() -> [UInt8]? {
+        lock.lock(); defer { lock.unlock() }
+        guard gateOpen, !acks.isEmpty else { return nil }
+        return acknackFrame(acks.removeFirst())
+    }
+}
+
+run("async_writer_window_overflow_no_loss") {
+    let n = 20 // > reliableSenderWindow (16)
+    let peer = LoopPeer()
+    let w = AsyncWriter(sendFn: { peer.onSend($0) }, recvFn: { peer.onRecv() })
+    w.start()
+
+    for i in 0..<n { _ = w.write([UInt8(i)]) }
+
+    // Wait until the 16-sample window is full (16 distinct WRITE_DATA sent) while
+    // the gate stays closed, then give the drain thread a moment to try the
+    // remaining 4 — the pre-fix code loses exactly those here.
+    var waited = 0
+    while true {
+        peer.lock.lock(); let seen = peer.writeDataSeen; peer.lock.unlock()
+        if seen >= reliableSenderWindow || waited > 5000 { break }
+        usleep(1000); waited += 1
+    }
+    usleep(50_000)
+
+    peer.lock.lock(); peer.gateOpen = true; peer.lock.unlock()
+
+    // Wait for all n to be delivered, with a hard bound so a hang fails the test.
+    waited = 0
+    while true {
+        peer.lock.lock(); let d = peer.delivered.count; peer.lock.unlock()
+        if d >= n || waited > 10000 { break }
+        usleep(1000); waited += 1
+    }
+    w.close()
+
+    peer.lock.lock(); let got = peer.delivered; peer.lock.unlock()
+    check("async_overflow/no_loss", got.count == n, "delivered \(got.count) of \(n): \(got)")
+    check("async_overflow/all_present", got.sorted() == Array(0..<UInt8(n)), "got \(got.sorted())")
+}
+
 if failures.isEmpty {
     print("UNIT OK")
     exit(0)

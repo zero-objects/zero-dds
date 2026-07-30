@@ -86,6 +86,46 @@ impl Extensibility {
     }
 }
 
+/// TryConstruct behaviour for a member (XTypes 1.3 §7.2.2.4.4.4.4 /
+/// `TryConstructKind`). Controls how a reader treats a member it cannot
+/// construct correctly (a string longer than its bound, a sequence over its
+/// max, an enum value outside `@bit_bound`, an unknown union discriminator).
+///
+/// Encoded in the two member-flag bits `TRY_CONSTRUCT1`/`TRY_CONSTRUCT2`
+/// (§7.3.1.2.1.1, `bits[0..2]`): DISCARD = `01`, USE_DEFAULT = `10`,
+/// TRIM = `11`. `00` is undefined and is read back as DISCARD.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TryConstruct {
+    /// `@try_construct(DISCARD)` — drop the sample (default, §7.2.2.4.4.4.4).
+    Discard,
+    /// `@try_construct(USE_DEFAULT)` — substitute the member default, keep the
+    /// sample.
+    UseDefault,
+    /// `@try_construct(TRIM)` — truncate strings/sequences to the bound, keep
+    /// the sample.
+    Trim,
+}
+
+impl Default for TryConstruct {
+    fn default() -> Self {
+        Self::Discard
+    }
+}
+
+impl TryConstruct {
+    /// The two-bit `TRY_CONSTRUCT1`/`TRY_CONSTRUCT2` pattern (§7.3.1.2.1.1):
+    /// DISCARD = `TRY_CONSTRUCT1` (`01`), USE_DEFAULT = `TRY_CONSTRUCT2` (`10`),
+    /// TRIM = both (`11`). Matches the vendors' TypeObject member_flags
+    /// (byte-verified: Cyclone / FastDDS set `TRY_CONSTRUCT1` for DISCARD).
+    const fn to_member_flag_bits(self) -> u16 {
+        match self {
+            Self::Discard => StructMemberFlag::TRY_CONSTRUCT1,
+            Self::UseDefault => StructMemberFlag::TRY_CONSTRUCT2,
+            Self::Trim => StructMemberFlag::TRY_CONSTRUCT1 | StructMemberFlag::TRY_CONSTRUCT2,
+        }
+    }
+}
+
 /// Einstiegspunkt.
 pub struct TypeObjectBuilder;
 
@@ -110,6 +150,7 @@ impl TypeObjectBuilder {
         EnumBuilder {
             name: name.into(),
             bit_bound: 32,
+            ignore_literal_names: false,
             literals: Vec::new(),
         }
     }
@@ -144,6 +185,7 @@ pub struct StructMemberSpec {
     type_id: TypeIdentifier,
     explicit_id: Option<u32>,
     flags: u16,
+    try_construct: TryConstruct,
     unit: Option<String>,
     min: Option<Vec<u8>>,
     max: Option<Vec<u8>>,
@@ -228,6 +270,15 @@ impl StructMemberBuilder<'_> {
         self.spec.default_value = Some(value.into());
         self
     }
+
+    /// `@try_construct(DISCARD|USE_DEFAULT|TRIM)` — XTypes 1.3 §7.2.2.4.4.4.4.
+    /// Sets the two `TRY_CONSTRUCT1`/`TRY_CONSTRUCT2` member-flag bits. The
+    /// default (unless this is called) is DISCARD.
+    #[must_use]
+    pub fn try_construct(self, kind: TryConstruct) -> Self {
+        self.spec.try_construct = kind;
+        self
+    }
 }
 
 impl StructBuilder {
@@ -272,11 +323,13 @@ impl StructBuilder {
             name: name.into(),
             type_id: ty,
             explicit_id: None,
-            // Default TryConstructKind = DISCARD (XTypes 1.3 §7.2.2.4.4.4.4 /
-            // §7.3.1.2.1.1 bits[0..2]=01): every member carries this unless
-            // overridden. Matches the vendors' TypeObject member_flags; the old
-            // default of 0 (no TryConstruct bits) diverged from all three.
-            flags: StructMemberFlag::TRY_CONSTRUCT1,
+            // Non-TryConstruct flag bits (key/optional/…) accumulate here; the
+            // TryConstruct bits are held separately in `try_construct` and OR'd
+            // in at `member_common`. Default TryConstructKind = DISCARD
+            // (XTypes 1.3 §7.2.2.4.4.4.4 / §7.3.1.2.1.1 bits[0..2]=01), matching
+            // the vendors' TypeObject member_flags.
+            flags: 0,
+            try_construct: TryConstruct::default(),
             unit: None,
             min: None,
             max: None,
@@ -299,10 +352,12 @@ impl StructBuilder {
         StructTypeFlag(bits)
     }
 
-    /// Member-ID assignment:
-    /// - explicit_id, if set
-    /// - otherwise autoid-hash (first 4 bytes SHA-256 over the name — simplified)
-    /// - otherwise sequential from 1
+    /// Member-ID assignment (XTypes 1.3 §7.3.1.2.1), highest precedence first:
+    /// - explicit `@id(n)`, if set
+    /// - `@hashid("hint")` — per-member hash ID from the hint (or, for a bare
+    ///   `@hashid`, the member name), `NameHash::member_id_from_name`
+    /// - struct-level `@autoid(HASH)` — hash ID from the member name
+    /// - otherwise sequential, 0-based
     fn resolve_member_ids(&self) -> Vec<u32> {
         let mut ids = Vec::with_capacity(self.members.len());
         // XTypes 1.3 §7.2.2.4.9: sequential `@autoid` assigns the FIRST member
@@ -314,13 +369,14 @@ impl StructBuilder {
         for spec in &self.members {
             let id = if let Some(explicit) = spec.explicit_id {
                 explicit
+            } else if let Some(hint) = &spec.hash_id {
+                // `@hashid("hint")` (XTypes §7.3.1.2.1.4): the caller stores the
+                // effective hint (an explicit argument, or the member name for a
+                // bare `@hashid`); the ID is the canonical MD5-derived member ID.
+                NameHash::member_id_from_name(hint)
             } else if self.autoid_hash {
-                // XTypes §7.2.2.4.9 + §7.3.1.2.1.1: for `@autoid(HASH)`
-                // the member ID is derived from bits [4..28) (=24 bits) of the
-                // first 4 MD5 bytes of the member name. Bits [0..4)
-                // are reserved (E-flag etc.) and not used.
-                let nh = NameHash::from_name(&spec.name);
-                (u32::from_le_bytes(nh.0) >> 4) & 0x00FF_FFFF
+                // `@autoid(HASH)` (XTypes §7.3.1.2.1.1): hash the member name.
+                NameHash::member_id_from_name(&spec.name)
             } else {
                 let v = next_seq;
                 next_seq += 1;
@@ -334,7 +390,9 @@ impl StructBuilder {
     fn member_common(spec: &StructMemberSpec, id: u32) -> CommonStructMember {
         CommonStructMember {
             member_id: id,
-            member_flags: StructMemberFlag(spec.flags),
+            // Combine the accumulated non-TryConstruct bits with the two
+            // TryConstruct bits (§7.3.1.2.1.1).
+            member_flags: StructMemberFlag(spec.flags | spec.try_construct.to_member_flag_bits()),
             member_type_id: spec.type_id.clone(),
         }
     }
@@ -411,6 +469,7 @@ impl StructBuilder {
 pub struct EnumBuilder {
     name: String,
     bit_bound: u16,
+    ignore_literal_names: bool,
     literals: Vec<EnumLiteralSpec>,
 }
 
@@ -426,6 +485,25 @@ impl EnumBuilder {
     pub fn bit_bound(mut self, bits: u16) -> Self {
         self.bit_bound = bits;
         self
+    }
+
+    /// Sets `EnumTypeFlag::IGNORE_LITERAL_NAMES` (`@ignore_literal_names`,
+    /// XTypes 1.3 §7.2.4.4.7). Applies to both the minimal and complete
+    /// TypeObject.
+    #[must_use]
+    pub fn ignore_literal_names(mut self, on: bool) -> Self {
+        self.ignore_literal_names = on;
+        self
+    }
+
+    /// The enum-type flags for this builder (currently only the
+    /// `IGNORE_LITERAL_NAMES` bit).
+    fn enum_flags(&self) -> EnumTypeFlag {
+        if self.ignore_literal_names {
+            EnumTypeFlag(EnumTypeFlag::IGNORE_LITERAL_NAMES)
+        } else {
+            EnumTypeFlag::default()
+        }
     }
 
     /// Adds a literal.
@@ -454,7 +532,7 @@ impl EnumBuilder {
     #[must_use]
     pub fn build_minimal(&self) -> MinimalEnumeratedType {
         MinimalEnumeratedType {
-            enum_flags: EnumTypeFlag::default(),
+            enum_flags: self.enum_flags(),
             header: MinimalEnumeratedHeader {
                 common: CommonEnumeratedHeader {
                     bit_bound: self.bit_bound,
@@ -482,7 +560,7 @@ impl EnumBuilder {
     #[must_use]
     pub fn build_complete(&self) -> CompleteEnumeratedType {
         CompleteEnumeratedType {
-            enum_flags: EnumTypeFlag::default(),
+            enum_flags: self.enum_flags(),
             header: CompleteEnumeratedHeader {
                 common: CommonEnumeratedHeader {
                     bit_bound: self.bit_bound,
@@ -1148,6 +1226,58 @@ mod tests {
     }
 
     #[test]
+    fn member_default_try_construct_is_discard_bits() {
+        // No @try_construct → DISCARD = TRY_CONSTRUCT1 (0b01), byte-identical to
+        // the previous hard default. Combines with @key (bit 5).
+        let st = TypeObjectBuilder::struct_type("::T")
+            .member("a", TypeIdentifier::String8Small { bound: 4 }, |m| m.key())
+            .build_minimal();
+        let flags = st.member_seq[0].common.member_flags.0;
+        assert_eq!(
+            flags & StructMemberFlag::TRY_CONSTRUCT1,
+            StructMemberFlag::TRY_CONSTRUCT1
+        );
+        assert_eq!(flags & StructMemberFlag::TRY_CONSTRUCT2, 0);
+        assert!(
+            st.member_seq[0]
+                .common
+                .member_flags
+                .has(StructMemberFlag::IS_KEY)
+        );
+    }
+
+    #[test]
+    fn member_use_default_sets_try_construct2_bit() {
+        // @try_construct(USE_DEFAULT) → TRY_CONSTRUCT2 alone (0b10).
+        let st = TypeObjectBuilder::struct_type("::T")
+            .member("a", TypeIdentifier::String8Small { bound: 4 }, |m| {
+                m.try_construct(TryConstruct::UseDefault)
+            })
+            .build_complete();
+        let flags = st.member_seq[0].common.member_flags.0;
+        assert_eq!(flags & StructMemberFlag::TRY_CONSTRUCT1, 0);
+        assert_eq!(
+            flags & StructMemberFlag::TRY_CONSTRUCT2,
+            StructMemberFlag::TRY_CONSTRUCT2
+        );
+    }
+
+    #[test]
+    fn member_trim_sets_both_try_construct_bits() {
+        // @try_construct(TRIM) → TRY_CONSTRUCT1 | TRY_CONSTRUCT2 (0b11).
+        let st = TypeObjectBuilder::struct_type("::T")
+            .member("a", TypeIdentifier::String8Small { bound: 4 }, |m| {
+                m.try_construct(TryConstruct::Trim)
+            })
+            .build_minimal();
+        let flags = st.member_seq[0].common.member_flags.0;
+        assert_eq!(
+            flags & (StructMemberFlag::TRY_CONSTRUCT1 | StructMemberFlag::TRY_CONSTRUCT2),
+            StructMemberFlag::TRY_CONSTRUCT1 | StructMemberFlag::TRY_CONSTRUCT2
+        );
+    }
+
+    #[test]
     fn struct_builder_explicit_ids_respected() {
         let st = TypeObjectBuilder::struct_type("::X")
             .member("a", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| {
@@ -1300,6 +1430,62 @@ mod tests {
             st.member_seq[0].common.member_id,
             st.member_seq[1].common.member_id
         );
+    }
+
+    #[test]
+    fn member_id_from_name_matches_known_md5_vectors() {
+        // XTypes §7.3.1.2.1.1: id = MD5(name)[0..4] as LE u32, & 0x0FFFFFFF.
+        // Independently computed (hashlib): "color" → 0x0FA5DD70,
+        // "my_hint" → 0x026C50E0.
+        assert_eq!(NameHash::member_id_from_name("color"), 0x0FA5_DD70);
+        assert_eq!(NameHash::member_id_from_name("my_hint"), 0x026C_50E0);
+        // Top 4 bits are always clear (28-bit member-ID space).
+        assert_eq!(NameHash::member_id_from_name("anything") & 0xF000_0000, 0);
+    }
+
+    #[test]
+    fn autoid_hash_member_id_uses_central_derivation() {
+        // @autoid(HASH) member "color" → member_id_from_name("color").
+        let st = TypeObjectBuilder::struct_type("::H")
+            .autoid_hash()
+            .member(
+                "color",
+                TypeIdentifier::Primitive(PrimitiveKind::Int32),
+                |m| m,
+            )
+            .build_minimal();
+        assert_eq!(
+            st.member_seq[0].common.member_id,
+            NameHash::member_id_from_name("color")
+        );
+    }
+
+    #[test]
+    fn hashid_hint_overrides_positional_member_id() {
+        // A per-member @hashid("my_hint") derives its id from the hint, taking
+        // precedence over the sequential 0-based default.
+        let st = TypeObjectBuilder::struct_type("::H")
+            .member("a", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| m)
+            .member("v", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| {
+                m.hash_id("my_hint")
+            })
+            .build_minimal();
+        assert_eq!(st.member_seq[0].common.member_id, 0); // sequential
+        assert_eq!(
+            st.member_seq[1].common.member_id,
+            NameHash::member_id_from_name("my_hint")
+        );
+    }
+
+    #[test]
+    fn explicit_id_wins_over_hashid() {
+        // @id(9) beats @hashid on the same member (highest precedence).
+        let st = TypeObjectBuilder::struct_type("::H")
+            .member("v", TypeIdentifier::Primitive(PrimitiveKind::Int32), |m| {
+                m.hash_id("my_hint").id(9)
+            })
+            .build_minimal();
+        assert_eq!(st.member_seq[0].common.member_id, 9);
     }
 
     #[test]

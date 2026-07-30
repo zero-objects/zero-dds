@@ -97,6 +97,15 @@ internal static class Native
     [DllImport(LibName, EntryPoint = "zerodds_pub_create_datawriter")]
     public static extern IntPtr PubCreateDatawriter(IntPtr pub, IntPtr topic, IntPtr qos);
 
+    // F-TYPES-3 / #24: typed create carrying the generated TypeSupport's
+    // serialized COMPLETE TypeObject. The runtime registers it and derives +
+    // advertises the cross-binding TypeIdentifier before the writer is
+    // published (no None-window). Callers use PubCreateDatawriter for the
+    // byte-oriented (None) path.
+    [DllImport(LibName, EntryPoint = "zerodds_pub_create_datawriter_typed")]
+    public static extern IntPtr PubCreateDatawriterTyped(IntPtr pub, IntPtr topic, IntPtr qos,
+        IntPtr typeObject, UIntPtr len);
+
     [DllImport(LibName, EntryPoint = "zerodds_pub_delete_datawriter")]
     public static extern int PubDeleteDatawriter(IntPtr pub, IntPtr dw);
 
@@ -172,6 +181,12 @@ internal static class Native
     // ====== Subscriber / DataReader ======
     [DllImport(LibName, EntryPoint = "zerodds_sub_create_datareader")]
     public static extern IntPtr SubCreateDatareader(IntPtr sub, IntPtr topic, IntPtr qos);
+
+    // F-TYPES-3 / #24: reader-side typed create — mirror of
+    // PubCreateDatawriterTyped.
+    [DllImport(LibName, EntryPoint = "zerodds_sub_create_datareader_typed")]
+    public static extern IntPtr SubCreateDatareaderTyped(IntPtr sub, IntPtr topic, IntPtr qos,
+        IntPtr typeObject, UIntPtr len);
 
     [DllImport(LibName, EntryPoint = "zerodds_sub_delete_datareader")]
     public static extern int SubDeleteDatareader(IntPtr sub, IntPtr dr);

@@ -55,6 +55,18 @@ pub enum Error {
     /// The input path has no usable file stem (e.g. it is a directory or
     /// ends in `/..`).
     NoFileStem(PathBuf),
+    /// Two input `.idl` files share the same file stem and would both be
+    /// written to `<out_dir>/<stem>.rs`, so the second would silently
+    /// clobber the first. Rejected loudly — rename one input or split the
+    /// batch across separate `out_dir`s.
+    DuplicateStem {
+        /// The shared file stem (the `<stem>.rs` both inputs map to).
+        stem: String,
+        /// The input seen first.
+        first: PathBuf,
+        /// The colliding input seen later.
+        second: PathBuf,
+    },
     /// Preprocessing/parsing/key-pragma/default-extensibility composition
     /// failed for `path`. See [`zerodds_idl_compose::ComposeError`] for
     /// the wrapped cause.
@@ -96,6 +108,20 @@ impl core::fmt::Display for Error {
                     p.display()
                 )
             }
+            Self::DuplicateStem {
+                stem,
+                first,
+                second,
+            } => {
+                write!(
+                    f,
+                    "zerodds-build: inputs {} and {} both map to '{stem}.rs' \
+                     — the second would silently overwrite the first; \
+                     rename one input or compile them into separate out_dirs",
+                    first.display(),
+                    second.display()
+                )
+            }
             Self::Compose { path, source } => {
                 write!(f, "zerodds-build: composing {}: {source}", path.display())
             }
@@ -119,7 +145,7 @@ impl std::error::Error for Error {
             Self::Compose { source, .. } => Some(source),
             Self::Codegen { source, .. } => Some(source),
             Self::Io { source, .. } => Some(source),
-            Self::NoOutDir | Self::NoFileStem(_) => None,
+            Self::NoOutDir | Self::NoFileStem(_) | Self::DuplicateStem { .. } => None,
         }
     }
 }
@@ -139,6 +165,7 @@ pub struct Config {
     header_comment: Option<String>,
     emit_cargo_directives: bool,
     strip_inner_attrs_for_include: bool,
+    flatten_shared_includes: bool,
 }
 
 impl Default for Config {
@@ -154,6 +181,7 @@ impl Default for Config {
             header_comment: None,
             emit_cargo_directives: true,
             strip_inner_attrs_for_include: false,
+            flatten_shared_includes: false,
         }
     }
 }
@@ -255,6 +283,26 @@ impl Config {
         self
     }
 
+    /// Composes the whole `idls` set as one **project** and emits each shared
+    /// `#include`d top-level module only once across the set (default: off).
+    ///
+    /// Off (the default), every input is composed on its own, so two inputs
+    /// that both `#include "common.idl"` each carry a full copy of `module
+    /// common` — correct when each output is wrapped in its own module at the
+    /// `include!` site (`mod a { include!("a.rs") }`), where the copies are
+    /// isolated. Enable this when the outputs are `include!`d **flat into one
+    /// namespace**: the copies would then collide (Rust E0428, "`common`
+    /// defined multiple times"), so the shared module is emitted by the first
+    /// input that pulls it in and stripped from the rest, their
+    /// `super::common::…` references resolving to that single copy. Two inputs
+    /// that pull in a *contradictory* same-named module (different body) are
+    /// rejected (`Error::Compose` wrapping `ComposeError::Conflict`) rather
+    /// than silently resolved.
+    pub fn flatten_shared_includes(&mut self, enabled: bool) -> &mut Self {
+        self.flatten_shared_includes = enabled;
+        self
+    }
+
     /// Composes + generates Rust for every `.idl` file in `idls`, writing
     /// `<out_dir>/<stem>.rs` per input. Each output module is
     /// self-contained (its own `#![allow(...)]` header) — a caller
@@ -276,10 +324,124 @@ impl Config {
             source,
         })?;
 
+        // Preflight: two inputs with the same file stem both write
+        // `<out_dir>/<stem>.rs`, so the second would silently overwrite the
+        // first. Reject the whole batch before writing anything.
+        let mut seen: std::collections::HashMap<String, PathBuf> = std::collections::HashMap::new();
+        for idl in idls {
+            let path = idl.as_ref();
+            let stem = path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .ok_or_else(|| Error::NoFileStem(path.to_path_buf()))?;
+            if let Some(first) = seen.insert(stem.to_string(), path.to_path_buf()) {
+                return Err(Error::DuplicateStem {
+                    stem: stem.to_string(),
+                    first,
+                    second: path.to_path_buf(),
+                });
+            }
+        }
+
+        if self.flatten_shared_includes {
+            return self.compile_project(idls, &out_dir);
+        }
+
         for idl in idls {
             self.compile_one(idl.as_ref(), &out_dir)?;
         }
         Ok(())
+    }
+
+    /// Project path: compose every input together so a top-level module pulled
+    /// in through a shared `#include` is emitted once across the set (see
+    /// [`Config::flatten_shared_includes`]).
+    fn compile_project(&self, idls: &[impl AsRef<Path>], out_dir: &Path) -> Result<(), Error> {
+        let opts = self.compose_options();
+        let paths: Vec<&Path> = idls.iter().map(AsRef::as_ref).collect();
+        let comps = zerodds_idl_compose::compose_project(&paths, &opts).map_err(|source| {
+            // Attribute the failure to the first input; the message names the
+            // offending definition and both inputs.
+            Error::Compose {
+                path: paths.first().map_or_else(PathBuf::new, |p| p.to_path_buf()),
+                source,
+            }
+        })?;
+
+        for (idl, comp) in paths.iter().zip(comps) {
+            if self.emit_cargo_directives {
+                println!("cargo:rerun-if-changed={}", idl.display());
+                for dep in comp.output.dependency_files.iter().skip(1) {
+                    println!("cargo:rerun-if-changed={dep}");
+                }
+                if let Some(warning) = &comp.output.type_object_warning {
+                    println!("cargo:warning=zerodds-build: {} — {warning}", idl.display());
+                }
+            }
+            let mut code = self.render(idl, &comp.output)?;
+            // Strip the shared modules an earlier input already emits, leaving
+            // one copy across the flat-included project.
+            code = zerodds_idl_compose::strip_top_level_modules_rust(&code, &comp.shared_modules);
+            self.write_module(idl, out_dir, code)?;
+        }
+        Ok(())
+    }
+
+    /// The [`ComposeOptions`] this config maps to.
+    fn compose_options(&self) -> ComposeOptions {
+        ComposeOptions {
+            include_dirs: self.include_dirs.clone(),
+            defines: self.defines.clone(),
+            default_extensibility: self.default_extensibility,
+            default_nested: self.default_nested,
+            emit_typeobject: self.typeobject,
+        }
+    }
+
+    /// Renders the Rust module (types + TypeObject holder) for one composed
+    /// input, applying `strip_inner_attrs_for_include`. Does not yet strip
+    /// shared modules — the caller does that where it applies.
+    fn render(
+        &self,
+        idl: &Path,
+        composed: &zerodds_idl_compose::ComposeOutput,
+    ) -> Result<String, Error> {
+        let rust_opts = RustGenOptions {
+            header_comment: self.header_comment.clone(),
+            cdr_only: self.cdr_only,
+        };
+        let mut code =
+            generate_rust_module(&composed.ast, &rust_opts).map_err(|source| Error::Codegen {
+                path: idl.to_path_buf(),
+                source,
+            })?;
+        let type_objects_base = idl.file_stem().and_then(|s| s.to_str()).unwrap_or("types");
+        code.push_str(&zerodds_idl_compose::typeobject::render_rust(
+            &composed.type_objects,
+            &composed.ast,
+            type_objects_base,
+        ));
+        if self.strip_inner_attrs_for_include {
+            code = code
+                .lines()
+                .filter(|l| !l.trim_start().starts_with("#!["))
+                .collect::<Vec<_>>()
+                .join("\n");
+        }
+        Ok(code)
+    }
+
+    /// Writes `code` to `<out_dir>/<stem>.rs`.
+    fn write_module(&self, idl: &Path, out_dir: &Path, code: String) -> Result<(), Error> {
+        let stem = idl
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .ok_or_else(|| Error::NoFileStem(idl.to_path_buf()))?;
+        let out_path = out_dir.join(format!("{stem}.rs"));
+        std::fs::write(&out_path, code).map_err(|source| Error::Io {
+            path: out_path,
+            source,
+        })
     }
 
     fn compile_one(&self, idl: &Path, out_dir: &Path) -> Result<(), Error> {
@@ -287,14 +449,7 @@ impl Config {
             println!("cargo:rerun-if-changed={}", idl.display());
         }
 
-        let opts = ComposeOptions {
-            include_dirs: self.include_dirs.clone(),
-            defines: self.defines.clone(),
-            default_extensibility: self.default_extensibility,
-            default_nested: self.default_nested,
-            emit_typeobject: self.typeobject,
-        };
-        let composed = compose(idl, &opts).map_err(|source| Error::Compose {
+        let composed = compose(idl, &self.compose_options()).map_err(|source| Error::Compose {
             path: idl.to_path_buf(),
             source,
         })?;
@@ -311,35 +466,8 @@ impl Config {
             }
         }
 
-        let rust_opts = RustGenOptions {
-            header_comment: self.header_comment.clone(),
-            cdr_only: self.cdr_only,
-        };
-        let mut code =
-            generate_rust_module(&composed.ast, &rust_opts).map_err(|source| Error::Codegen {
-                path: idl.to_path_buf(),
-                source,
-            })?;
-        code.push_str(&zerodds_idl_compose::typeobject::render_rust(
-            &composed.type_objects,
-        ));
-        if self.strip_inner_attrs_for_include {
-            code = code
-                .lines()
-                .filter(|l| !l.trim_start().starts_with("#!["))
-                .collect::<Vec<_>>()
-                .join("\n");
-        }
-
-        let stem = idl
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .ok_or_else(|| Error::NoFileStem(idl.to_path_buf()))?;
-        let out_path = out_dir.join(format!("{stem}.rs"));
-        std::fs::write(&out_path, code).map_err(|source| Error::Io {
-            path: out_path,
-            source,
-        })
+        let code = self.render(idl, &composed)?;
+        self.write_module(idl, out_dir, code)
     }
 }
 

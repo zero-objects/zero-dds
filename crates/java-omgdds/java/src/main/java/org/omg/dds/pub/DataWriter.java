@@ -53,6 +53,9 @@ public final class DataWriter<T> implements Entity, InProcessBus.WriterPresence 
     private boolean closed = false;
     private boolean enabled = false;
 
+    // Optional pure-Java RTPS wire path (cross-process), alongside InProcessBus.
+    private org.zerodds.rtps.RtpsParticipant.WireWriter wire;
+
     public DataWriter(int domainId, Topic<T> topic, TopicTypeSupport<T> typeSupport, QosProfile qos) {
         this.domainId = domainId;
         this.topic = topic;
@@ -123,6 +126,9 @@ public final class DataWriter<T> implements Entity, InProcessBus.WriterPresence 
         instances.putIfAbsent(key, InstanceKey.toHandle(key));
         retainCapped(key, payload);
         publish(message(payload, key.bytes(), InProcessBus.ChangeKind.WRITE, ts));
+        if (wire != null) {
+            wire.write(payload); // cross-process RTPS/UDP delivery
+        }
         return ReturnCode.OK;
     }
 
@@ -268,6 +274,15 @@ public final class DataWriter<T> implements Entity, InProcessBus.WriterPresence 
         if (!enabled) {
             enabled = true;
             InProcessBus.instance().registerWriter(domainId, topic.getName(), this);
+            if (org.zerodds.rtps.DdsWireBridge.enabled()) {
+                byte[] typeId = new byte[0];
+                if (typeSupport instanceof org.zerodds.cdr.TopicTypeSupport) {
+                    typeId = ((org.zerodds.cdr.TopicTypeSupport<T>) typeSupport).typeIdentifier();
+                }
+                wire = org.zerodds.rtps.DdsWireBridge.writer(domainId, topic.getName(),
+                        typeSupport.getTypeName(), org.zerodds.rtps.DdsWireBridge.encapFor(typeSupport),
+                        typeId, typeSupport.isKeyed());
+            }
         }
         return ReturnCode.OK;
     }

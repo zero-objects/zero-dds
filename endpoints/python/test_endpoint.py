@@ -57,8 +57,35 @@ def main():
         print("ACKNACK mismatch"); rc = 1
     else:
         print("ACKNACK byte-identical (%d bytes)" % len(an))
+    rc |= negative_frame_vectors()
     if rc == 0:
         print("ALL OK")
+    return rc
+
+
+def negative_frame_vectors():
+    """Self-contained (no goldens): reader bounds the body to the declared
+    submessage_length and rejects malformed frames; writer refuses oversize."""
+    rc = 0
+    first = ze.xrce_write_frame(0x80, 0x01, 1, bytearray([0xAA, 0xBB, 0xCC]))
+    second = ze.xrce_write_frame(0x80, 0x01, 2, bytearray([0xDD, 0xEE]))
+    if ze.xrce_read_frame(bytes(first) + bytes(second)) != bytes(bytearray([0xAA, 0xBB, 0xCC])):
+        print("appended-submessage leak"); rc = 1
+    else:
+        print("appended submessage bounded out")
+    overlong = bytearray(first); overlong[6] = 0xFF; overlong[7] = 0xFF
+    try:
+        ze.xrce_read_frame(bytes(overlong)); print("over-long not rejected"); rc = 1
+    except ValueError:
+        print("over-long length rejected")
+    try:
+        ze.xrce_read_frame(b"\x80\x01\x00\x00\x07"); print("truncated not rejected"); rc = 1
+    except ValueError:
+        print("truncated header rejected")
+    try:
+        ze.xrce_write_frame(0x80, 0x01, 1, bytearray(0x10000)); print("writer >0xFFFF not refused"); rc = 1
+    except ValueError:
+        print("writer >0xFFFF refused")
     return rc
 
 

@@ -48,6 +48,8 @@ fn first_publisher_snippet() {
         reliable: true,
         durability: DurabilityKind::Volatile,
         deadline: DeadlineQosPolicy::default(),
+        latency_budget: Default::default(),
+        destination_order: Default::default(),
         lifespan: LifespanQosPolicy::default(),
         liveliness: LivelinessQosPolicy::default(),
         ownership: OwnershipKind::Shared,
@@ -71,6 +73,8 @@ fn first_publisher_snippet() {
         reliable: true,
         durability: DurabilityKind::Volatile,
         deadline: DeadlineQosPolicy::default(),
+        latency_budget: Default::default(),
+        destination_order: Default::default(),
         liveliness: LivelinessQosPolicy::default(),
         ownership: OwnershipKind::Shared,
         presentation: Default::default(),
@@ -172,6 +176,8 @@ fn qos_policies_full_writer_snippet() {
         deadline: DeadlineQosPolicy {
             period: Duration::from_millis(50),
         },
+        latency_budget: Default::default(),
+        destination_order: Default::default(),
         lifespan: LifespanQosPolicy {
             duration: Duration::from_secs(5),
         },

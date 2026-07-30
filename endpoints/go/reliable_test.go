@@ -271,6 +271,85 @@ func TestConfigSubmessagesDeliveredInOrderViaReliableStream(t *testing.T) {
 	}
 }
 
+// RFC-1982 regression: HEARTBEAT window across the 16-bit wrap. Window
+// 0xFFFE,0xFFFF,0x0000,0x0001 → correct base=0xFFFE / end=0x0001; the old
+// numeric map min/max reported base=0x0000 / end=0xFFFF. Mirrors
+// heartbeat_window_across_wrap_reports_rfc1982_order in crates/xrce.
+func TestHeartbeatWindowAcrossWrap(t *testing.T) {
+	s := rs()
+	s.nextSeq = 0xFFFE
+	if q, _ := s.Submit(pl(1)); q != 0xFFFE {
+		t.Fatalf("seq0 = %#x, want 0xFFFE", q)
+	}
+	s.Submit(pl(2)) // 0xFFFF
+	s.Submit(pl(3)) // 0x0000
+	s.Submit(pl(4)) // 0x0001
+	hb, ok := s.PendingHeartbeat(time.Unix(0, 0))
+	if !ok {
+		t.Fatal("expected a heartbeat")
+	}
+	if hb.First != 0xFFFE || hb.Last != 0x0001 {
+		t.Fatalf("hb window = {first:%#x last:%#x}, want {0xFFFE 0x0001}", hb.First, hb.Last)
+	}
+}
+
+// RFC-1982 regression: loss recovery of a sample lost across the wrap. Window
+// 0xFFFE,0xFFFF,0x0000,0x0001 with 0xFFFF lost → ACKNACK NACKs exactly 0xFFFF,
+// sender keeps it retransmittable, and all samples deliver in RFC-1982 order.
+func TestAckNackRetransmitAcrossWrap(t *testing.T) {
+	sender := rs()
+	receiver := rr()
+	sender.nextSeq = 0xFFFE
+	receiver.expected = 0xFFFE
+
+	q0, _ := sender.Submit(pl(10)) // 0xFFFE
+	q1, _ := sender.Submit(pl(11)) // 0xFFFF (lost)
+	q2, _ := sender.Submit(pl(12)) // 0x0000
+	q3, _ := sender.Submit(pl(13)) // 0x0001
+
+	receiver.RecvData(q0, pl(10))
+	receiver.RecvData(q2, pl(12))
+	receiver.RecvData(q3, pl(13))
+
+	d1 := receiver.DrainInOrder()
+	if len(d1) != 1 || d1[0].Seq != 0xFFFE {
+		t.Fatalf("d1 = %+v, want only 0xFFFE", d1)
+	}
+	if receiver.Expected() != 0xFFFF {
+		t.Fatalf("expected = %#x, want 0xFFFF", receiver.Expected())
+	}
+
+	ack := receiver.PendingAcknack(&q3)
+	if ack.FirstUnacked != 0xFFFF {
+		t.Fatalf("ack.FirstUnacked = %#x, want 0xFFFF", ack.FirstUnacked)
+	}
+	bitmap := uint16(ack.NackLo) | uint16(ack.NackHi)<<8
+	if bitmap&0b1 == 0 {
+		t.Error("0xFFFF must be NACKed")
+	}
+	if bitmap&0b110 != 0 {
+		t.Error("0x0000/0x0001 must not be NACKed")
+	}
+
+	sender.RecvAcknack(ack)
+	if _, ok := sender.GetInFlight(q1); !ok {
+		t.Fatal("0xFFFF must stay retransmittable")
+	}
+	if _, ok := sender.GetInFlight(q0); ok {
+		t.Error("0xFFFE must be acked")
+	}
+	if sender.InFlightCount() != 1 {
+		t.Fatalf("in-flight = %d, want 1", sender.InFlightCount())
+	}
+
+	retx, _ := sender.GetInFlight(q1)
+	receiver.RecvData(q1, retx)
+	d2 := receiver.DrainInOrder()
+	if len(d2) != 3 || d2[0].Seq != 0xFFFF || d2[1].Seq != 0x0000 || d2[2].Seq != 0x0001 {
+		t.Fatalf("d2 = %+v, want 0xFFFF,0x0000,0x0001 in order", d2)
+	}
+}
+
 func TestSeqLtGtRfc1982Wraparound(t *testing.T) {
 	if !SeqLt(0xFFFF, 0) {
 		t.Error("0xFFFF < 0 must hold across the RFC-1982 wraparound")

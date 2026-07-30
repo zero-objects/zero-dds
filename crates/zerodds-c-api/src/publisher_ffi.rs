@@ -193,6 +193,8 @@ pub unsafe extern "C" fn zerodds_pub_create_datawriter(
             reliable: matches!(qos.reliability.kind, ReliabilityKind::Reliable),
             durability: qos.durability.kind,
             deadline: qos.deadline.clone(),
+            latency_budget: Default::default(),
+            destination_order: Default::default(),
             lifespan: qos.lifespan.clone(),
             liveliness: qos.liveliness.clone(),
             ownership: qos.ownership.kind,
@@ -216,6 +218,123 @@ pub unsafe extern "C" fn zerodds_pub_create_datawriter(
         // QB-cluster: wire HISTORY keep-last DEPTH onto the runtime writer slot
         // (DDS 1.4 §2.2.3.18) so the TransientLocal retain path caps per-instance
         // retained samples. KeepAll → unbounded.
+        {
+            use zerodds_qos::HistoryKind;
+            let depth = match qos.history.kind {
+                HistoryKind::KeepLast => qos.history.depth.max(1) as usize,
+                HistoryKind::KeepAll => usize::MAX,
+            };
+            let _ = rt.set_user_writer_history_depth(eid, depth);
+        }
+
+        let dw = Box::new(ZeroDdsDataWriter {
+            publisher: pub_,
+            topic,
+            rt,
+            eid,
+            qos: Mutex::new(qos),
+            partition_out: Mutex::new(Default::default()),
+        });
+        let dw_ptr = Box::into_raw(dw);
+        if let Ok(mut list) = pp.datawriters.lock() {
+            list.push(dw_ptr);
+        }
+        dw_ptr
+    }
+}
+
+/// Creates a DataWriter over the topic that advertises its type via a
+/// serialized COMPLETE `TypeObject` (F-TYPES-3 / #24).
+///
+/// Topic-path mirror of the flat [`crate::zerodds_writer_create_typed`]: this is
+/// the variant the C#/Java bindings' generated TypeSupport calls, carrying the
+/// `byte[]` TypeObject constant `idlc csharp`/`idlc java` emit. Unlike
+/// [`zerodds_pub_create_datawriter`] — which advertises
+/// `TypeIdentifier::default()` (== None) — it deserializes `type_object_bytes`,
+/// registers the object into the shared TypeLookup registry via
+/// [`crate::register_type_object_from_bytes`], derives the strongly-hashed
+/// `TypeIdentifier` and sets the writer slot's `type_identifier` from it
+/// **before the endpoint is published** (via `register_user_writer`). There is
+/// therefore no discovery window in which the endpoint is matchable while still
+/// carrying `None`.
+///
+/// The derived identifier is byte-identical to the flat create's and to Path A's
+/// `T::TYPE_IDENTIFIER` for the same TypeObject. `qos` is honored exactly as in
+/// [`zerodds_pub_create_datawriter`] (PARTITION / HISTORY etc.). Returns NULL on
+/// invalid arguments, a malformed TypeObject, or registration failure.
+///
+/// # Safety
+/// Like [`zerodds_pub_create_datawriter`], plus: `type_object_bytes` must point
+/// to `len` readable bytes (NULL / `len == 0` is rejected with NULL).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zerodds_pub_create_datawriter_typed(
+    pub_: *mut ZeroDdsPublisher,
+    topic: *mut ZeroDdsTopic,
+    qos: *const ZeroDdsDataWriterQos,
+    type_object_bytes: *const u8,
+    len: usize,
+) -> *mut ZeroDdsDataWriter {
+    if pub_.is_null() || topic.is_null() || type_object_bytes.is_null() || len == 0 {
+        return ptr::null_mut();
+    }
+    // SAFETY: see fn # Safety doc — pub_+topic+type_object_bytes NULL-checked
+    // above; participant from dp_create_publisher; qos NULL-tolerant;
+    // type_object_bytes points to `len` readable bytes (caller pledge).
+    unsafe {
+        let pp = &*pub_;
+        let tt = &*topic;
+
+        let dp_handle = pp.participant;
+        if dp_handle.is_null() {
+            return ptr::null_mut();
+        }
+        let dp = &*dp_handle;
+        let rt = match dp.rt.as_ref() {
+            Some(r) => r.clone(),
+            None => return ptr::null_mut(),
+        };
+
+        // Register + derive BEFORE publish — no None-window (F-TYPES-3 / #24).
+        let bytes = slice::from_raw_parts(type_object_bytes, len);
+        let type_identifier = match crate::register_type_object_from_bytes(&rt, bytes) {
+            Some(id) => id,
+            None => return ptr::null_mut(),
+        };
+
+        let qos: DataWriterQos = if qos.is_null() {
+            pp.default_dw_qos
+                .lock()
+                .map(|g| g.clone())
+                .unwrap_or_default()
+        } else {
+            dw_qos_from_c(qos)
+        };
+
+        let cfg = UserWriterConfig {
+            topic_name: tt.name.to_string(),
+            type_name: tt.type_name.to_string(),
+            reliable: matches!(qos.reliability.kind, ReliabilityKind::Reliable),
+            durability: qos.durability.kind,
+            deadline: qos.deadline.clone(),
+            latency_budget: Default::default(),
+            destination_order: Default::default(),
+            lifespan: qos.lifespan.clone(),
+            liveliness: qos.liveliness.clone(),
+            ownership: qos.ownership.kind,
+            ownership_strength: qos.ownership_strength.value,
+            presentation: Default::default(),
+            partition: qos.partition.names.clone(),
+            user_data: qos.user_data.value.clone(),
+            topic_data: qos.topic_data.value.clone(),
+            group_data: qos.group_data.value.clone(),
+            // F-TYPES-3 / #24: derived from the registered TypeObject (not None).
+            type_identifier,
+            data_representation_offer: qos.data_representation.clone(),
+        };
+        let eid = match rt.register_user_writer(cfg) {
+            Ok(e) => e,
+            Err(_) => return ptr::null_mut(),
+        };
         {
             use zerodds_qos::HistoryKind;
             let depth = match qos.history.kind {
@@ -791,6 +910,96 @@ mod tests {
                 zerodds_pub_resume_publications(pubh),
                 ZeroDdsStatus::Ok as c_int
             );
+        }
+        cleanup(p);
+    }
+
+    /// F-TYPES-3 / #24: the topic-based typed create
+    /// (`zerodds_pub_create_datawriter_typed` /
+    /// `zerodds_sub_create_datareader_typed` — the path the C#/Java bindings
+    /// use) deserializes the emitted COMPLETE TypeObject bytes, registers the
+    /// object BEFORE the endpoint is published, and derives the identifier
+    /// byte-identical to `StructBuilder::build_complete`. Proven by the object
+    /// landing in the runtime registry under the hash computed from the
+    /// builder's own COMPLETE TypeObject.
+    #[test]
+    fn pub_sub_create_typed_registers_before_publish() {
+        use zerodds_types::builder::{Extensibility, TypeObjectBuilder};
+        use zerodds_types::type_object::{CompleteTypeObject, TypeObject};
+        use zerodds_types::{PrimitiveKind, TypeIdentifier, compute_complete_hash};
+
+        // Path A: the SAME builder the flat typed-create test uses.
+        let cs = TypeObjectBuilder::struct_type("Sensor")
+            .extensibility(Extensibility::Appendable)
+            .member("id", TypeIdentifier::Primitive(PrimitiveKind::Int64), |m| {
+                m.key()
+            })
+            .member(
+                "value",
+                TypeIdentifier::Primitive(PrimitiveKind::Float64),
+                |m| m,
+            )
+            .build_complete();
+        let to = TypeObject::Complete(CompleteTypeObject::Struct(cs));
+        let TypeObject::Complete(cto) = &to else {
+            panic!("built a Complete TypeObject")
+        };
+        let expected_hash = compute_complete_hash(cto).unwrap();
+        let bytes = to.to_bytes_le().unwrap();
+
+        let (p, pubh, t) = mk_pub_topic(48);
+        // SAFETY: p/pubh/t from mk; bytes is a valid slice.
+        unsafe {
+            let subh = crate::participant_ffi::zerodds_dp_create_subscriber(p, ptr::null());
+            assert!(!subh.is_null());
+
+            let dw = zerodds_pub_create_datawriter_typed(
+                pubh,
+                t,
+                ptr::null(),
+                bytes.as_ptr(),
+                bytes.len(),
+            );
+            assert!(!dw.is_null(), "pub_create_datawriter_typed returned NULL");
+
+            let dr = crate::subscriber_ffi::zerodds_sub_create_datareader_typed(
+                subh,
+                t,
+                ptr::null(),
+                bytes.as_ptr(),
+                bytes.len(),
+            );
+            assert!(!dr.is_null(), "sub_create_datareader_typed returned NULL");
+
+            // The COMPLETE TypeObject is in the runtime registry, keyed by the
+            // hash the StructBuilder computes — deserialize+register+derive is
+            // byte-identical to build_complete.
+            {
+                let rt = (*dw).rt.clone();
+                let server = rt.type_lookup_server.lock().unwrap();
+                assert!(
+                    server.registry.get_complete(&expected_hash).is_some(),
+                    "typed pub/sub create did not register the TypeObject under its build_complete hash"
+                );
+            }
+
+            // A malformed TypeObject is rejected — never a None-identifier slot.
+            let garbage: [u8; 3] = [0, 1, 2];
+            assert!(
+                zerodds_pub_create_datawriter_typed(
+                    pubh,
+                    t,
+                    ptr::null(),
+                    garbage.as_ptr(),
+                    garbage.len(),
+                )
+                .is_null()
+            );
+            assert!(
+                zerodds_pub_create_datawriter_typed(pubh, t, ptr::null(), ptr::null(), 0).is_null()
+            );
+
+            let _ = zerodds_pub_delete_datawriter(pubh, dw);
         }
         cleanup(p);
     }

@@ -759,6 +759,8 @@ mod tests {
             ownership_strength: 0,
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
+            destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
             lifespan: zerodds_qos::LifespanQosPolicy::default(),
             presentation: zerodds_qos::PresentationQosPolicy::default(),
             partition: alloc::vec::Vec::new(),

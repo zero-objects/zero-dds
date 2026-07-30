@@ -46,9 +46,15 @@ type Writer(endian: Endian) =
 
     member _.PutBytes(b: byte[]) = buf.AddRange(b)
 
+    // Wire rule (docs/specs/zerodds-xcdr2-fsharp-1.0.md §"string"): uint32 (UTF-8
+    // byte count incl. NUL) + UTF-8 bytes + NUL. The length prefix is the BYTE
+    // count of the UTF-8 encoding, not the .NET string length (UTF-16 code units)
+    // — multibyte characters occupy more than one byte. Byte-identical to the
+    // C/Rust core.
     member this.PutString(s: string) =
-        this.PutU32(uint32 (s.Length + 1))
-        buf.AddRange(Text.Encoding.ASCII.GetBytes(s))
+        let raw = Text.Encoding.UTF8.GetBytes(s)
+        this.PutU32(uint32 (raw.Length + 1))
+        buf.AddRange(raw)
         this.PutU8(0)
 
     member this.PutSeqU8(b: byte[]) =
@@ -99,9 +105,11 @@ type Reader(data: byte[], endian: Endian) =
         let hb = if BitConverter.IsLittleEndian then le else Array.rev le
         BitConverter.ToSingle(hb, 0)
 
+    // Inverse of PutString: read n bytes (n incl. the NUL), decode the first
+    // n-1 as UTF-8.
     member this.GetString() =
         let n = int (this.GetU32())
-        let s = Text.Encoding.ASCII.GetString(data, pos, n - 1)
+        let s = Text.Encoding.UTF8.GetString(data, pos, n - 1)
         pos <- pos + n
         s
 
@@ -116,7 +124,14 @@ type Reader(data: byte[], endian: Endian) =
 let SessionNoKey = 0x80uy
 let StreamBestEffort = 0x01uy
 
+// The 16-bit submessage_length field cannot describe a sample larger than
+// 0xFFFF; refuse (empty frame) rather than truncate the length while appending
+// the full payload (mirrors the C SDK's rejection).
 let writeFrame (session: byte) (stream: byte) (seq: int) (sample: byte[]) =
+    if sample.Length > 0xFFFF then
+        Array.empty
+    else
+
     let n = sample.Length
 
     let hdr =
@@ -131,9 +146,17 @@ let writeFrame (session: byte) (stream: byte) (seq: int) (sample: byte[]) =
 
     Array.append hdr sample
 
+// Frame layout: [session, stream, seq_lo, seq_hi, sm_id, flags, len_lo, len_hi]
+// then the sample body. The 16-bit little-endian submessage_length (bytes 6..7)
+// bounds the body exactly: Array.sub frame 8 smLen, never (frame.Length - 8) to
+// the end, so trailing padding or an appended submessage is not folded into the
+// sample. Returns None for a short header, a wrong submessage id, or a declared
+// length that runs past the datagram (truncation / wrong length).
 let readFrame (frame: byte[]) =
     if frame.Length >= 8 && frame.[4] = 0x07uy then
-        Some(Array.sub frame 8 (frame.Length - 8))
+        let smLen = int frame.[6] ||| (int frame.[7] <<< 8)
+        if 8 + smLen > frame.Length then None
+        else Some(Array.sub frame 8 smLen)
     else
         None
 

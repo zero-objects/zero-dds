@@ -11,9 +11,18 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
-option(BUILD_SHARED_LIBS "Build static or shared library" OFF)
-option(BUILD_EXAMPLES "Build examples" ON)
-option(BUILD_TESTS "Build tests" ON)
+# BUILD_SHARED_LIBS is intentionally NOT (re)declared here: this is a
+# header-only INTERFACE target, so the flag is meaningless, and an option()
+# for it would clobber a parent project's value under add_subdirectory().
+#
+# ZERODDS_BUILD_EXAMPLES / ZERODDS_BUILD_TESTS are normally already defined by
+# the root CMakeLists.txt (with defaults tied to whether *zerodds* is
+# top-level). When crates/cpp is configured standalone the option() calls below
+# take effect, defaulting to whether THIS project is top-level. The previous
+# generic BUILD_EXAMPLES / BUILD_TESTS names collided with parent-project
+# options and defaulted ON for consumers; they are dropped, not aliased.
+option(ZERODDS_BUILD_EXAMPLES "Build zerodds C++ examples" ${PROJECT_IS_TOP_LEVEL})
+option(ZERODDS_BUILD_TESTS "Build zerodds C++ tests" ${PROJECT_IS_TOP_LEVEL})
 
 # Interface library being header-only
 set(ZERODDS_CXX_HEADERS
@@ -72,7 +81,7 @@ if(DEFINED ZERODDS_SANITIZER AND NOT ZERODDS_SANITIZER STREQUAL "none" AND NOT M
 endif()
 
 # Examples
-if(BUILD_EXAMPLES)
+if(ZERODDS_BUILD_EXAMPLES)
     add_executable(cpp_smoke ${CMAKE_CURRENT_SOURCE_DIR}/examples/cpp_smoke.cpp)
     target_link_libraries(cpp_smoke PRIVATE zerodds::zerodds-cpp)
 endif()
@@ -80,7 +89,7 @@ endif()
 # Tests — registered with CTest (root CMakeLists.txt `include(CTest)`), so
 # `ctest` / `cmake --build . --target test` run them, not just `BUILD_TESTS`
 # producing an executable nobody invokes.
-if(BUILD_TESTS)
+if(ZERODDS_BUILD_TESTS)
     add_executable(smoke_dds_psm ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_dds_psm.cpp)
     target_link_libraries(smoke_dds_psm PRIVATE zerodds::zerodds-cpp)
     if(BUILD_TESTING)

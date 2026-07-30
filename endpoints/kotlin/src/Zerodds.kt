@@ -33,9 +33,14 @@ class Writer(private val endian: Endian) {
     fun putU64(v: Long) = putLE(4, ByteArray(8) { i -> (v ushr (8 * i)).toByte() })
     fun putF32(v: Float) = putU32(java.lang.Float.floatToRawIntBits(v).toLong() and 0xFFFFFFFFL)
     fun putBytes(b: ByteArray) { for (x in b) buf.add(x) }
+    // Wire rule (docs/specs/zerodds-xcdr2-kotlin-1.0.md §"string"): uint32
+    // (UTF-8 byte count incl. NUL) + UTF-8 bytes + NUL. The length prefix is the
+    // BYTE count of the UTF-8 encoding, not the Kotlin char count — multibyte
+    // characters occupy more than one byte. Byte-identical to the C/Rust core.
     fun putString(s: String) {
-        putU32((s.length + 1).toLong())
-        putBytes(s.toByteArray(Charsets.US_ASCII))
+        val raw = s.toByteArray(Charsets.UTF_8)
+        putU32((raw.size + 1).toLong())
+        putBytes(raw)
         putU8(0)
     }
     fun putSeqU8(b: ByteArray) { putU32(b.size.toLong()); putBytes(b) }
@@ -73,9 +78,11 @@ class Reader(private val buf: ByteArray, private val endian: Endian) {
         return v
     }
     fun getF32(): Float = java.lang.Float.intBitsToFloat(getU32().toInt())
+    // Inverse of putString: read n bytes (n incl. the NUL), decode the first
+    // n-1 as UTF-8.
     fun getString(): String {
         val n = getU32().toInt()
-        val s = String(buf, pos, n - 1, Charsets.US_ASCII)
+        val s = String(buf, pos, n - 1, Charsets.UTF_8)
         pos += n
         return s
     }
@@ -92,7 +99,11 @@ class Reader(private val buf: ByteArray, private val endian: Endian) {
 const val XRCE_SESSION_NOKEY = 0x80
 const val XRCE_STREAM_BEST_EFFORT = 0x01
 
+// The 16-bit submessage_length field cannot describe a sample larger than
+// 0xFFFF; refuse rather than truncate the length while copying the full payload
+// (the C SDK rejects the same way).
 fun xrceWriteFrame(session: Int, stream: Int, seq: Int, sample: ByteArray): ByteArray {
+    require(sample.size <= 0xFFFF) { "sample exceeds 16-bit submessage_length" }
     val out = ByteArray(8 + sample.size)
     out[0] = session.toByte(); out[1] = stream.toByte()
     out[2] = seq.toByte(); out[3] = (seq ushr 8).toByte()
@@ -102,9 +113,20 @@ fun xrceWriteFrame(session: Int, stream: Int, seq: Int, sample: ByteArray): Byte
     return out
 }
 
+// Direction (DDS-XRCE spec §8.3.5): WRITE_DATA (0x07) is client->agent — what
+// this endpoint SENDS (xrceWriteFrame); DATA (0x09) is agent->client — what it
+// RECEIVES from the hub. The reader accepts both (parity with the C/Python
+// SDKs): 0x09 for real hub traffic, 0x07 for loopback. It returns null — never
+// throws, never a bogus sample — on a short header, an unknown submessage id, or
+// a declared length that runs past the datagram (truncated / wrong length); the
+// body is bounded by the declared length so trailing bytes never leak in.
 fun xrceReadFrame(frame: ByteArray): ByteArray? {
-    if (frame.size < 8 || (frame[4].toInt() and 0xFF) != 0x07) return null
-    return frame.copyOfRange(8, frame.size)
+    if (frame.size < 8) return null
+    val id = frame[4].toInt() and 0xFF
+    if (id != 0x09 && id != 0x07) return null
+    val smLen = (frame[6].toInt() and 0xFF) or ((frame[7].toInt() and 0xFF) shl 8)
+    if (8 + smLen > frame.size) return null
+    return frame.copyOfRange(8, 8 + smLen)
 }
 
 // --- transport ---

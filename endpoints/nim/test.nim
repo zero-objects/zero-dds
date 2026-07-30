@@ -63,4 +63,21 @@ for i in 0 .. 4:
   doAssert rd.getU32() == 0x1000'u32 + uint32(i), "async: id mismatch"
 echo "async loopback: 5 samples OK"
 
+# negative frame vectors: length bounding + malformed reject
+block:
+  let first = writeFrame(0x80'u8, 0x01'u8, 1, @[0xAA'u8, 0xBB'u8, 0xCC'u8])
+  let second = writeFrame(0x80'u8, 0x01'u8, 2, @[0xDD'u8, 0xEE'u8])
+  let bounded = readFrame(first & second)
+  doAssert bounded.isSome and bounded.get == @[0xAA'u8, 0xBB'u8, 0xCC'u8],
+    "appended submessage must not leak into sample"
+  var overlong = first
+  overlong[6] = 0xFF'u8
+  overlong[7] = 0xFF'u8
+  doAssert readFrame(overlong).isNone, "over-long length must reject"
+  doAssert readFrame(@[0x80'u8, 0x01'u8, 0x00'u8, 0x00'u8, 0x07'u8]).isNone,
+    "truncated header must reject"
+  doAssert writeFrame(0x80'u8, 0x01'u8, 1, newSeq[byte](0x10000)).len == 0,
+    "sample > 0xFFFF must be refused"
+echo "negative frame vectors: OK"
+
 echo "ALL OK"

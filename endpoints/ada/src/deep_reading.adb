@@ -82,16 +82,32 @@ package body Deep_Reading is
       return FS;
    end Frame;
 
+   --  Frame layout: [session, stream, seq_lo, seq_hi, sm_id, flags, len_lo,
+   --  len_hi] then the sample body. The 16-bit little-endian submessage_length
+   --  (bytes 6..7) bounds the body exactly: bytes 8 .. 8 + Sm_Len - 1, never
+   --  8 .. F.Len - 1, so trailing padding or an appended submessage is not
+   --  folded into the sample.
+   --
+   --  Accept WRITE_DATA (16#07#, endpoint->hub / loopback) and DATA
+   --  (16#09#, hub->endpoint) — the pong the hub sends is DATA. See
+   --  DDS-XRCE spec section 8.3.5. Len=0 (reject) for a short header, a wrong
+   --  submessage id, or a declared length that runs past the datagram
+   --  (truncation / wrong length).
    function Deframe (F : Frame_Store) return Frame_Store is
-      FS : Frame_Store;
+      FS     : Frame_Store;
+      Sm_Len : Natural;
    begin
-      if F.Len >= 8 and then F.Data (4) = 16#07# then
-         for I in 0 .. F.Len - 8 - 1 loop
-            FS.Data (I) := F.Data (8 + I);
-         end loop;
-         FS.Len := F.Len - 8;
-      else
-         FS.Len := 0;
+      FS.Len := 0;
+      if F.Len >= 8
+        and then (F.Data (4) = 16#07# or else F.Data (4) = 16#09#)
+      then
+         Sm_Len := Natural (F.Data (6)) + Natural (F.Data (7)) * 256;
+         if 8 + Sm_Len <= F.Len then
+            for I in 0 .. Sm_Len - 1 loop
+               FS.Data (I) := F.Data (8 + I);
+            end loop;
+            FS.Len := Sm_Len;
+         end if;
       end if;
       return FS;
    end Deframe;

@@ -83,6 +83,46 @@ do
   check(s:inFlightCount() == 0, "acknack_full_clear_when_no_bits_set")
 end
 
+-- RFC-1982 regression: HEARTBEAT window + loss recovery across the 16-bit wrap
+-- (mirrors crates/xrce's wrap regression tests). Window 0xFFFE,0xFFFF,0,1 ->
+-- the old numeric min/max reported first=0/last=0xFFFF; correct is
+-- first=0xFFFE, last=0x0001.
+do
+  local s = rel.Sender.new()
+  s.nextSeq = 0xFFFE
+  local q0 = s:submit("\10") -- 0xFFFE
+  local q1 = s:submit("\11") -- 0xFFFF (lost)
+  local q2 = s:submit("\12") -- 0x0000
+  local q3 = s:submit("\13") -- 0x0001
+  check(q0 == 0xFFFE and q1 == 0xFFFF and q2 == 0x0000 and q3 == 0x0001, "wrap_seqs")
+  local hb = s:pendingHeartbeat(0)
+  check(hb ~= nil and hb.first == 0xFFFE and hb.last == 0x0001,
+    "heartbeat_window_across_wrap_is_rfc1982_not_numeric")
+
+  local r = rel.Receiver.new()
+  r.expected = 0xFFFE
+  r:recvData(q0, "\10") -- 0xFFFF lost
+  r:recvData(q2, "\12")
+  r:recvData(q3, "\13")
+  local d1 = r:drainInOrder()
+  check(#d1 == 1 and d1[1].seq == 0xFFFE, "wrap_only_first_delivered")
+  check(r.expected == 0xFFFF, "wrap_receiver_blocked_at_ffff")
+
+  local ack = r:pendingAcknack(q3)
+  check(ack.firstUnacked == 0xFFFF, "wrap_ack_base_is_ffff")
+  local bitmap = ack.nackLo | (ack.nackHi << 8)
+  check((bitmap & 0x1) ~= 0 and (bitmap & 0x6) == 0, "wrap_only_ffff_nacked")
+
+  s:recvAcknack(ack.firstUnacked, ack.nackLo, ack.nackHi)
+  check(s:getInFlight(q1) ~= nil, "wrap_ffff_retransmittable")
+  check(s:getInFlight(q0) == nil and s:inFlightCount() == 1, "wrap_others_acked")
+
+  r:recvData(q1, s:getInFlight(q1))
+  local d2 = r:drainInOrder()
+  check(#d2 == 3 and d2[1].seq == 0xFFFF and d2[2].seq == 0x0000 and d2[3].seq == 0x0001,
+    "wrap_deliver_in_rfc1982_order_after_retransmit")
+end
+
 -- --- receiver ---
 
 do

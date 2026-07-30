@@ -31,18 +31,20 @@ fn gen_module() -> String {
 }
 
 /// Lays out a build dir: `gen.zig` (generated types) and, when the app uses the
-/// endpoint SDK, a copy of `endpoints/zig/src/zerodds.zig` next to it so the
-/// app's relative `@import` resolves under a plain `zig run`.
+/// endpoint SDK, copies of `endpoints/zig/src/zerodds.zig` AND `reliable.zig`
+/// next to it so the app's relative `@import`s resolve under a plain `zig run`.
+/// `zerodds.zig` references `reliable.zig` from a `test {}` block, and zig
+/// resolves that file path even for `zig run`, so both must be present.
 fn scaffold(dir: &Path, main_src: &str, need_sdk: bool) {
     std::fs::create_dir_all(dir).expect("mkdir");
     std::fs::write(dir.join("gen.zig"), gen_module()).expect("gen.zig");
     std::fs::write(dir.join("main.zig"), main_src).expect("main.zig");
     if need_sdk {
-        let sdk = format!(
-            "{}/../../endpoints/zig/src/zerodds.zig",
-            env!("CARGO_MANIFEST_DIR")
-        );
-        std::fs::copy(&sdk, dir.join("zerodds.zig")).expect("copy sdk");
+        let src = format!("{}/../../endpoints/zig/src", env!("CARGO_MANIFEST_DIR"));
+        for f in ["zerodds.zig", "reliable.zig"] {
+            std::fs::copy(format!("{src}/{f}"), dir.join(f))
+                .unwrap_or_else(|e| panic!("copy sdk {f}: {e}"));
+        }
     }
 }
 

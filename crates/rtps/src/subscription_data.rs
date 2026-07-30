@@ -20,9 +20,9 @@ use crate::error::WireError;
 use crate::parameter_list::{Parameter, ParameterList, pid};
 use crate::participant_data::{Duration, ENCAPSULATION_PL_CDR_LE};
 use crate::publication_data::{
-    DurabilityKind, PresentationQosPolicy, ReliabilityKind, ReliabilityQos,
-    collect_locator_params, decode_cdr_string, decode_duration, decode_i32, decode_liveliness,
-    decode_partition, decode_u32, encode_cdr_string_le, encode_duration_le, encode_liveliness_le,
+    DurabilityKind, PresentationQosPolicy, ReliabilityKind, ReliabilityQos, collect_locator_params,
+    decode_cdr_string, decode_duration, decode_i32, decode_liveliness, decode_partition,
+    decode_u32, encode_cdr_string_le, encode_duration_le, encode_liveliness_le,
     encode_locator_params, encode_partition_le, encode_u32_le, guid_from_param,
 };
 use crate::wire_types::{Guid, Locator};
@@ -53,6 +53,12 @@ pub struct SubscriptionBuiltinTopicData {
     pub liveliness: zerodds_qos::LivelinessQosPolicy,
     /// Deadline-QoS (Spec §2.2.3.7).
     pub deadline: zerodds_qos::DeadlineQosPolicy,
+    /// LatencyBudget-QoS (Spec §2.2.3.10, PID 0x0027) — requested duration.
+    /// RxO-matched: `offered.duration <= requested.duration`.
+    pub latency_budget: zerodds_qos::LatencyBudgetQosPolicy,
+    /// DestinationOrder-QoS (Spec §2.2.3.18, PID 0x0025) — requested kind.
+    /// RxO-matched: `offered.kind >= requested.kind`.
+    pub destination_order: zerodds_qos::DestinationOrderQosPolicy,
     /// Presentation-QoS (Spec §2.2.3.6, PID 0x0021). See
     /// [`crate::publication_data::PublicationBuiltinTopicData::presentation`].
     pub presentation: crate::publication_data::PresentationQosPolicy,
@@ -240,6 +246,18 @@ impl SubscriptionBuiltinTopicData {
         params.push(Parameter::new(
             pid::DEADLINE,
             encode_duration_le(self.deadline.period).to_vec(),
+        ));
+
+        // LATENCY_BUDGET — requested duration (spec §2.2.3.10 / PID 0x0027).
+        params.push(Parameter::new(
+            pid::LATENCY_BUDGET,
+            encode_duration_le(self.latency_budget.duration).to_vec(),
+        ));
+
+        // DESTINATION_ORDER — requested kind (spec §2.2.3.18 / PID 0x0025).
+        params.push(Parameter::new(
+            pid::DESTINATION_ORDER,
+            encode_u32_le(self.destination_order.kind as u32).to_vec(),
         ));
 
         // PRESENTATION — requested access_scope/coherent/ordered (spec
@@ -483,6 +501,20 @@ impl SubscriptionBuiltinTopicData {
             .map(|period| zerodds_qos::DeadlineQosPolicy { period })
             .unwrap_or_default();
 
+        let latency_budget = pl
+            .find(pid::LATENCY_BUDGET)
+            .and_then(|p| decode_duration(&p.value, little_endian))
+            .map(|duration| zerodds_qos::LatencyBudgetQosPolicy { duration })
+            .unwrap_or_default();
+
+        let destination_order = pl
+            .find(pid::DESTINATION_ORDER)
+            .and_then(|p| decode_u32(&p.value, little_endian))
+            .map(|v| zerodds_qos::DestinationOrderQosPolicy {
+                kind: zerodds_qos::DestinationOrderKind::from_u32(v),
+            })
+            .unwrap_or_default();
+
         // PRESENTATION (PID 0x0021) — see `publication_data::decode_from`.
         let presentation = pl
             .find(pid::PRESENTATION)
@@ -587,6 +619,8 @@ impl SubscriptionBuiltinTopicData {
             ownership,
             liveliness,
             deadline,
+            latency_budget,
+            destination_order,
             presentation,
             partition,
             user_data,
@@ -632,6 +666,8 @@ mod tests {
             ownership: zerodds_qos::OwnershipKind::Shared,
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
+            destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
             presentation: PresentationQosPolicy::default(),
             partition: alloc::vec::Vec::new(),
             user_data: alloc::vec::Vec::new(),
@@ -669,6 +705,8 @@ mod tests {
             ownership: zerodds_qos::OwnershipKind::Shared,
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
+            destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
             presentation: PresentationQosPolicy::default(),
             partition: alloc::vec::Vec::new(),
             user_data: alloc::vec::Vec::new(),
@@ -730,6 +768,8 @@ mod tests {
             ownership: zerodds_qos::OwnershipKind::Shared,
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
+            destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
             presentation: PresentationQosPolicy::default(),
             partition: alloc::vec::Vec::new(),
             user_data: alloc::vec::Vec::new(),
@@ -765,6 +805,8 @@ mod tests {
             ownership: zerodds_qos::OwnershipKind::Shared,
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
+            destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
             presentation: PresentationQosPolicy::default(),
             partition: alloc::vec::Vec::new(),
             user_data: alloc::vec::Vec::new(),

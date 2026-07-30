@@ -174,6 +174,73 @@ fn include_directive_pulls_in_the_included_type() {
 }
 
 #[test]
+fn flatten_shared_includes_emits_shared_module_once() {
+    // `a.idl` and `b.idl` both `#include "common.idl"`. Off, each output
+    // carries its own `pub mod common` (fine when wrapped per file). On, the
+    // shared module is emitted once across the flat-included project.
+    let dir = tempfile::tempdir().expect("tempdir");
+    fs::write(
+        dir.path().join("common.idl"),
+        "module common { struct Shared { long x; }; };",
+    )
+    .expect("write common.idl");
+    let a = dir.path().join("a.idl");
+    let b = dir.path().join("b.idl");
+    fs::write(
+        &a,
+        "#include \"common.idl\"\nmodule app_a { struct UsesA { common::Shared s; }; };",
+    )
+    .expect("write a.idl");
+    fs::write(
+        &b,
+        "#include \"common.idl\"\nmodule app_b { struct UsesB { common::Shared s; }; };",
+    )
+    .expect("write b.idl");
+
+    // Default (per-file) path: every output redeclares `pub mod common`.
+    let plain = dir.path().join("plain");
+    Config::new()
+        .out_dir(&plain)
+        .emit_cargo_directives(false)
+        .compile(&[&a, &b])
+        .expect("compile plain");
+    let plain_total = fs::read_to_string(plain.join("a.rs"))
+        .unwrap()
+        .matches("pub mod common {")
+        .count()
+        + fs::read_to_string(plain.join("b.rs"))
+            .unwrap()
+            .matches("pub mod common {")
+            .count();
+    assert_eq!(
+        plain_total, 2,
+        "per-file path keeps a copy of `common` per input"
+    );
+
+    // Project path: exactly one `pub mod common` across the two outputs, and
+    // the non-owning output keeps its `super::common::Shared` reference.
+    let flat = dir.path().join("flat");
+    Config::new()
+        .out_dir(&flat)
+        .flatten_shared_includes(true)
+        .emit_cargo_directives(false)
+        .compile(&[&a, &b])
+        .expect("compile flat");
+    let flat_a = fs::read_to_string(flat.join("a.rs")).expect("read a.rs");
+    let flat_b = fs::read_to_string(flat.join("b.rs")).expect("read b.rs");
+    let flat_total =
+        flat_a.matches("pub mod common {").count() + flat_b.matches("pub mod common {").count();
+    assert_eq!(
+        flat_total, 1,
+        "project path emits `common` once across the set"
+    );
+    assert!(
+        flat_b.contains("super::common::Shared"),
+        "stripped output must keep its reference into the single shared module"
+    );
+}
+
+#[test]
 fn missing_out_dir_and_no_env_errors_cleanly() {
     // SAFETY: single-threaded test process is not guaranteed here (the
     // test harness runs tests concurrently), so only assert on the error
@@ -191,6 +258,59 @@ fn missing_out_dir_and_no_env_errors_cleanly() {
         .compile(&[&idl])
         .expect_err("no out_dir and no OUT_DIR env must error");
     assert!(matches!(err, zerodds_build::Error::NoOutDir));
+}
+
+#[test]
+fn duplicate_basename_inputs_are_rejected_not_silently_overwritten() {
+    // Two inputs in different directories with the same file stem both map
+    // to `<out_dir>/types.rs`; without the preflight the second silently
+    // clobbers the first. It must error instead.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let a_dir = dir.path().join("a");
+    let b_dir = dir.path().join("b");
+    fs::create_dir_all(&a_dir).expect("mkdir a");
+    fs::create_dir_all(&b_dir).expect("mkdir b");
+    let a_types = a_dir.join("types.idl");
+    let b_types = b_dir.join("types.idl");
+    fs::write(&a_types, "struct AThing { long a; };").expect("write a/types.idl");
+    fs::write(&b_types, "struct BThing { long b; };").expect("write b/types.idl");
+    let out_dir = dir.path().join("out");
+
+    let err = Config::new()
+        .out_dir(&out_dir)
+        .emit_cargo_directives(false)
+        .compile(&[&a_types, &b_types])
+        .expect_err("duplicate basenames must be rejected");
+    match err {
+        zerodds_build::Error::DuplicateStem {
+            stem,
+            first,
+            second,
+        } => {
+            assert_eq!(stem, "types");
+            assert_eq!(first, a_types);
+            assert_eq!(second, b_types);
+        }
+        other => panic!("expected DuplicateStem error, got {other}"),
+    }
+
+    // Preflight runs before any codegen: nothing was written.
+    assert!(
+        !out_dir.join("types.rs").exists(),
+        "no output must be written when the batch is rejected"
+    );
+
+    // Distinct stems still compile fine (regression guard for the preflight).
+    let ok_out = dir.path().join("ok_out");
+    let b_other = b_dir.join("other.idl");
+    fs::write(&b_other, "struct BThing { long b; };").expect("write b/other.idl");
+    Config::new()
+        .out_dir(&ok_out)
+        .emit_cargo_directives(false)
+        .compile(&[&a_types, &b_other])
+        .expect("distinct stems compile");
+    assert!(ok_out.join("types.rs").exists());
+    assert!(ok_out.join("other.rs").exists());
 }
 
 #[test]

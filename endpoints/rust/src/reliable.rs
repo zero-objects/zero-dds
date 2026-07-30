@@ -259,8 +259,22 @@ impl ReliableSender {
             return None;
         }
         self.last_heartbeat = Some(now);
-        let first = *self.in_flight.keys().next()?;
-        let last = *self.in_flight.keys().next_back()?;
+        // RFC-1982 window base (oldest unacked) + end (newest unacked); NOT the
+        // numeric BTreeMap next()/next_back(), which are wrong across a 16-bit
+        // wrap: window 0xFFFE,0xFFFF,0x0000,0x0001 → base 0xFFFE / end 0x0001,
+        // not 0x0000 / 0xFFFF. Mirrors window_base / serial_max_in_flight in
+        // crates/xrce/src/reliable.rs.
+        let mut it = self.in_flight.keys().copied();
+        let mut first = it.next()?;
+        let mut last = first;
+        for k in it {
+            if seq_lt(k, first) {
+                first = k;
+            }
+            if seq_lt(last, k) {
+                last = k;
+            }
+        }
         Some(Heartbeat {
             first: first as i16,
             last: last as i16,
@@ -740,6 +754,64 @@ mod tests {
         let p = sender.get_in_flight(s1).unwrap().to_vec();
         receiver.recv_data(s1, p).unwrap();
         assert_eq!(receiver.drain_in_order().len(), 2); // s1+s2
+    }
+
+    // RFC-1982 regression: HEARTBEAT window across the 16-bit wrap. Window
+    // 0xFFFE,0xFFFF,0x0000,0x0001 → base 0xFFFE / end 0x0001; the old numeric
+    // next()/next_back() reported 0x0000 / 0xFFFF. Mirrors crates/xrce.
+    #[test]
+    fn heartbeat_window_across_wrap_reports_rfc1982_order() {
+        let mut s = ReliableSender::new();
+        s.next_seq = 0xFFFE;
+        assert_eq!(s.submit(vec![1]).unwrap(), 0xFFFE);
+        assert_eq!(s.submit(vec![2]).unwrap(), 0xFFFF);
+        assert_eq!(s.submit(vec![3]).unwrap(), 0x0000);
+        assert_eq!(s.submit(vec![4]).unwrap(), 0x0001);
+        let hb = s.pending_heartbeat(Instant::now()).unwrap();
+        assert_eq!(hb.first as u16, 0xFFFE);
+        assert_eq!(hb.last as u16, 0x0001);
+    }
+
+    // RFC-1982 regression: loss recovery of a sample lost across the wrap.
+    // Window 0xFFFE,0xFFFF,0x0000,0x0001 with 0xFFFF lost → ACKNACK NACKs
+    // exactly 0xFFFF, sender keeps it retransmittable, all deliver in order.
+    #[test]
+    fn acknack_retransmit_of_lost_sample_across_wrap() {
+        let mut sender = ReliableSender::new();
+        let mut receiver = ReliableReceiver::new();
+        sender.next_seq = 0xFFFE;
+        receiver.expected = 0xFFFE;
+
+        let q0 = sender.submit(vec![10]).unwrap(); // 0xFFFE
+        let q1 = sender.submit(vec![11]).unwrap(); // 0xFFFF (lost)
+        let q2 = sender.submit(vec![12]).unwrap(); // 0x0000
+        let q3 = sender.submit(vec![13]).unwrap(); // 0x0001
+
+        receiver.recv_data(q0, vec![10]).unwrap();
+        receiver.recv_data(q2, vec![12]).unwrap();
+        receiver.recv_data(q3, vec![13]).unwrap();
+        let d1 = receiver.drain_in_order();
+        assert_eq!(d1.len(), 1);
+        assert_eq!(d1[0].0, 0xFFFE);
+        assert_eq!(receiver.expected(), 0xFFFF);
+
+        let ack = receiver.pending_acknack();
+        assert_eq!(ack.first_unacked as u16, 0xFFFF);
+        let bitmap = u16::from_le_bytes(ack.nack_bitmap);
+        assert_eq!(bitmap & 0b1, 0b1, "0xFFFF NACKed");
+
+        sender.recv_acknack(ack);
+        assert!(sender.get_in_flight(q1).is_some(), "0xFFFF retransmittable");
+        assert!(sender.get_in_flight(q0).is_none());
+        assert_eq!(sender.in_flight_count(), 1);
+
+        let p = sender.get_in_flight(q1).unwrap().to_vec();
+        receiver.recv_data(q1, p).unwrap();
+        let d2 = receiver.drain_in_order();
+        assert_eq!(d2.len(), 3);
+        assert_eq!(d2[0].0, 0xFFFF);
+        assert_eq!(d2[1].0, 0x0000);
+        assert_eq!(d2[2].0, 0x0001);
     }
 
     // ---- byte-golden: identical to golden_heartbeat_le.bin / golden_acknack_le.bin ----

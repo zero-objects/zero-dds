@@ -132,11 +132,19 @@ proc pendingHeartbeat*(s: var Sender, nowMs: int): Option[HeartbeatBody] =
   if not due:
     return none(HeartbeatBody)
   s.lastHeartbeatMs = nowMs
-  var mn = high(uint16)
+  # RFC-1982 window base (oldest unacked) + end (newest unacked); NOT numeric
+  # min/max, which is wrong across a 16-bit wrap: window
+  # 0xFFFE,0xFFFF,0x0000,0x0001 -> base 0xFFFE / end 0x0001, not 0x0000 /
+  # 0xFFFF. Mirrors window_base / serial_max_in_flight in crates/xrce.
+  var mn = 0'u16
   var mx = 0'u16
+  var seen = false
   for k in s.inFlight.keys:
-    if k < mn: mn = k
-    if k > mx: mx = k
+    if not seen:
+      mn = k; mx = k; seen = true
+    else:
+      if seqLt(k, mn): mn = k
+      if seqGt(k, mx): mx = k
   some(HeartbeatBody(first: mn, last: mx, streamId: ReliableStreamId))
 
 proc recvAcknack*(s: var Sender, a: AckNackBody) =

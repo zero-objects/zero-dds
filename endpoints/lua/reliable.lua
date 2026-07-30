@@ -132,15 +132,20 @@ function Sender:inFlightPairs()
 end
 
 -- `some(HEARTBEAT)` when in-flight samples exist and the period elapsed
--- (fires on the first call, then every HEARTBEAT_PERIOD_MS). first/last are
--- the plain numeric min/max in-flight seq (mirrors the reference's BTreeMap
--- `.keys().next()` / `.next_back()` -- not RFC-1982-aware, by design, to
--- stay byte-for-byte behaviorally identical to `reliable.rs`).
+-- (fires on the first call, then every HEARTBEAT_PERIOD_MS). first = RFC-1982
+-- window base (oldest unacked), last = RFC-1982 newest unacked -- computed via
+-- seqLt/seqGt, NOT numeric min/max, which is wrong across a 16-bit wrap: window
+-- 0xFFFE,0xFFFF,0x0000,0x0001 -> base 0xFFFE / end 0x0001, not 0x0000 / 0xFFFF.
+-- Mirrors window_base / serial_max_in_flight in crates/xrce/src/reliable.rs.
 function Sender:pendingHeartbeat(nowMs)
   local first, last
   for k in pairs(self.inFlight) do
-    if first == nil or k < first then first = k end
-    if last == nil or k > last then last = k end
+    if first == nil then
+      first = k; last = k
+    else
+      if seqLt(k, first) then first = k end
+      if seqGt(k, last) then last = k end
+    end
   end
   if first == nil then return nil end
   local due = self.lastHeartbeatMs == nil or (nowMs - self.lastHeartbeatMs) >= M.HEARTBEAT_PERIOD_MS

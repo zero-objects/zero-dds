@@ -48,6 +48,8 @@ fn writer_cfg(topic: &str) -> UserWriterConfig {
         reliable: false, // best-effort, like /clock
         durability: DurabilityKind::Volatile,
         deadline: DeadlineQosPolicy::default(),
+        latency_budget: Default::default(),
+        destination_order: Default::default(),
         lifespan: LifespanQosPolicy::default(),
         liveliness: LivelinessQosPolicy::default(),
         ownership: OwnershipKind::Shared,
@@ -69,6 +71,8 @@ fn reader_cfg(topic: &str) -> UserReaderConfig {
         reliable: false,
         durability: DurabilityKind::Volatile,
         deadline: DeadlineQosPolicy::default(),
+        latency_budget: Default::default(),
+        destination_order: Default::default(),
         liveliness: LivelinessQosPolicy::default(),
         ownership: OwnershipKind::Shared,
         presentation: Default::default(),

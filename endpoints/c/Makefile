@@ -31,12 +31,15 @@ SRC_ASYNC   = src/zerodds_wire.c src/zerodds_endpoint.c src/zerodds_async.c test
 SRC_ASYNC_UDP = src/zerodds_wire.c src/zerodds_endpoint.c src/zerodds_async.c test/sample_sensor.c test/test_async_udp.c
 # Async-decoupled reliable writer + latency bench (C11 + pthread).
 SRC_BENCH_REL = src/zerodds_endpoint.c src/zerodds_reliable_async.c test/bench_reliable_async.c
+# Async reliable writer window-overflow + no-self-ack test (C11 + pthread).
+SRC_REL_OVF = src/zerodds_endpoint.c src/zerodds_reliable_async.c test/test_reliable_async_overflow.c
 CFLAGS11    = -std=c11 -pedantic -Wall -Wextra -O2
 BIN_ASYNC   = $(BUILD)/test_async_loopback
 BIN_ASYNC_UDP = $(BUILD)/test_async_udp
 BIN_REL_SM  = $(BUILD)/test_reliable_sm
 BIN_EX_REL  = $(BUILD)/example_reliable
 BIN_BENCH_REL = $(BUILD)/bench_reliable_async
+BIN_REL_OVF = $(BUILD)/test_reliable_async_overflow
 BIN_FINAL   = $(BUILD)/test_byte_identity
 BIN_NESTED  = $(BUILD)/test_nested
 BIN_MUTABLE = $(BUILD)/test_mutable
@@ -56,7 +59,7 @@ SRC_EX_ASYNC = src/zerodds_wire.c src/zerodds_endpoint.c src/zerodds_async.c exa
 BIN_EX_SYNC  = $(BUILD)/example_sync
 BIN_EX_ASYNC = $(BUILD)/example_async
 
-all: $(BIN_FINAL) $(BIN_NESTED) $(BIN_MUTABLE) $(BIN_LOOP) $(BIN_XRCE) $(BIN_SERIAL) $(BIN_RECV) $(BIN_REL) $(BIN_REL_SM) $(BIN_EX_REL) $(BIN_BENCH_REL) $(BIN_REFL) $(BIN_REFN) $(BIN_ASYNC) $(BIN_ASYNC_UDP)
+all: $(BIN_FINAL) $(BIN_NESTED) $(BIN_MUTABLE) $(BIN_LOOP) $(BIN_XRCE) $(BIN_SERIAL) $(BIN_RECV) $(BIN_REL) $(BIN_REL_SM) $(BIN_EX_REL) $(BIN_BENCH_REL) $(BIN_REL_OVF) $(BIN_REFL) $(BIN_REFN) $(BIN_ASYNC) $(BIN_ASYNC_UDP)
 
 $(BIN_EX_SYNC): $(SRC_EX_SYNC) include/zerodds_wire.h include/zerodds_endpoint.h
 	@mkdir -p $(BUILD)
@@ -111,6 +114,10 @@ $(BIN_BENCH_REL): $(SRC_BENCH_REL) include/zerodds_endpoint.h include/zerodds_re
 	@mkdir -p $(BUILD)
 	$(CC) $(CFLAGS11) $(INCLUDE) $(SRC_BENCH_REL) -o $(BIN_BENCH_REL) -lpthread
 
+$(BIN_REL_OVF): $(SRC_REL_OVF) include/zerodds_endpoint.h include/zerodds_reliable_async.h
+	@mkdir -p $(BUILD)
+	$(CC) $(CFLAGS11) $(INCLUDE) $(SRC_REL_OVF) -o $(BIN_REL_OVF) -lpthread
+
 $(BIN_REFL): $(SRC_REFL) include/zerodds_wire.h include/zerodds_reflect.h
 	@mkdir -p $(BUILD)
 	$(CC) $(CFLAGS) $(INCLUDE) $(SRC_REFL) -o $(BIN_REFL)
@@ -143,6 +150,7 @@ test: all
 	$(RUNNER) $(BIN_REL_SM) $(GOLDEN_DIR)/golden_heartbeat_le.bin $(GOLDEN_DIR)/golden_acknack_le.bin
 	$(RUNNER) $(BIN_EX_REL)
 	$(RUNNER) $(BIN_BENCH_REL)
+	$(RUNNER) $(BIN_REL_OVF)
 	$(RUNNER) $(BIN_REFL) $(GOLDEN_DIR)/golden_le.bin $(GOLDEN_DIR)/golden_be.bin $(GOLDEN_DIR)/golden_mutable_le.bin $(GOLDEN_DIR)/golden_mutable_be.bin
 	$(RUNNER) $(BIN_REFN) $(GOLDEN_DIR)/golden_nested_le.bin $(GOLDEN_DIR)/golden_nested_be.bin
 	$(RUNNER) $(BIN_ASYNC)

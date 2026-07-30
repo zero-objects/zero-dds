@@ -200,9 +200,23 @@ module Sender = struct
       else begin
         s.have_heartbeat <- true;
         s.last_heartbeat <- now;
-        let seqs = in_flight_seqs s in
-        let first = List.hd seqs in
-        let last = List.nth seqs (List.length seqs - 1) in
+        (* RFC-1982 window base (oldest unacked) + end (newest unacked); NOT the
+           numeric-sorted head/last of [in_flight_seqs], which is wrong across a
+           16-bit wrap: window 0xFFFE,0xFFFF,0x0000,0x0001 -> base 0xFFFE / end
+           0x0001, not 0x0000 / 0xFFFF. Mirrors window_base /
+           serial_max_in_flight in crates/xrce/src/reliable.rs. *)
+        let first, last =
+          Hashtbl.fold
+            (fun k _ acc ->
+              match acc with
+              | None -> Some (k, k)
+              | Some (mn, mx) ->
+                let mn = if seq_lt k mn then k else mn in
+                let mx = if seq_gt k mx then k else mx in
+                Some (mn, mx))
+            s.in_flight None
+          |> Option.get
+        in
         Some { hb_first = first; hb_last = last; hb_stream = s.stream }
       end
 

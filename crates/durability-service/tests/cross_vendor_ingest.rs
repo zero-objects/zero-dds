@@ -51,6 +51,8 @@ fn foreign_writer_cfg(topic: &str) -> UserWriterConfig {
         reliable: true,
         durability: DurabilityKind::TransientLocal,
         deadline: DeadlineQosPolicy::default(),
+        latency_budget: Default::default(),
+        destination_order: Default::default(),
         lifespan: LifespanQosPolicy::default(),
         liveliness: LivelinessQosPolicy {
             kind: LivelinessKind::Automatic,
@@ -77,6 +79,8 @@ fn foreign_reader_cfg(topic: &str) -> UserReaderConfig {
         reliable: true,
         durability: DurabilityKind::TransientLocal,
         deadline: DeadlineQosPolicy::default(),
+        latency_budget: Default::default(),
+        destination_order: Default::default(),
         liveliness: LivelinessQosPolicy {
             kind: LivelinessKind::Automatic,
             ..Default::default()

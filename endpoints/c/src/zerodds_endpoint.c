@@ -339,6 +339,10 @@ int zdw_reliable_pending_heartbeat(zdw_reliable *r, unsigned long now_ms,
 {
     int i, any = 0, due;
     unsigned short mn = 0, mx = 0;
+    /* RFC-1982 window base (oldest unacked) + end (newest unacked); NOT the
+     * numeric min/max, which is wrong across a 16-bit wrap: window
+     * 0xFFFE,0xFFFF,0x0000,0x0001 -> base 0xFFFE / end 0x0001, not 0x0000 /
+     * 0xFFFF. Mirrors window_base / serial_max_in_flight in crates/xrce. */
     for (i = 0; i < ZDW_REL_WINDOW; i++) {
         if (r->in_flight[i].used) {
             unsigned short s = r->in_flight[i].seq;
@@ -347,8 +351,8 @@ int zdw_reliable_pending_heartbeat(zdw_reliable *r, unsigned long now_ms,
                 mx = s;
                 any = 1;
             } else {
-                if (s < mn) { mn = s; }  /* raw ordering, matches BTreeMap keys */
-                if (s > mx) { mx = s; }
+                if (zdw_rel_seq_lt(s, mn)) { mn = s; }
+                if (zdw_rel_seq_lt(mx, s)) { mx = s; }
             }
         }
     }

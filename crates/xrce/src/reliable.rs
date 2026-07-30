@@ -76,9 +76,17 @@ pub struct ReliableStreamState {
     // -------- Sender state -----------
     /// Next seqnr to emit (monotonic, RFC-1982).
     next_seq: SerialNumber16,
-    /// In-flight samples: seq → payload. BTreeMap so that the
-    /// first/last pair via `keys()` is simple.
+    /// In-flight samples: seq → payload. The BTreeMap orders keys
+    /// *numerically*, which is NOT the RFC-1982 order across a 16-bit
+    /// wrap. The heartbeat window is therefore derived from
+    /// `window_base` and a serial-number scan, never from `keys()`.
     in_flight: BTreeMap<u16, Vec<u8>>,
+    /// Oldest unacknowledged sequence number (RFC-1982 order). This is
+    /// the explicit base of the sender window and drives the HEARTBEAT
+    /// `first_unacked_seq_nr`. Maintained on submit/recv_acknack so it
+    /// never falls back to the numeric BTreeMap minimum, which would be
+    /// wrong across a wrap (e.g. window `0xFFFE,0xFFFF,0,1`).
+    window_base: SerialNumber16,
     /// Last sent heartbeat (`uptime`-relative).
     last_heartbeat: Option<Duration>,
 
@@ -105,6 +113,7 @@ impl ReliableStreamState {
             config,
             next_seq: SerialNumber16::new(0),
             in_flight: BTreeMap::new(),
+            window_base: SerialNumber16::new(0),
             last_heartbeat: None,
             expected_seq: SerialNumber16::new(0),
             received: BTreeMap::new(),
@@ -157,8 +166,15 @@ impl ReliableStreamState {
                 message: "reliable sender window full",
             });
         }
+        let was_empty = self.in_flight.is_empty();
         let seq = self.next_seq;
         self.in_flight.insert(seq.raw(), payload);
+        // A fresh sample is always the RFC-1982 newest, so it never moves
+        // the window base — except when the window was empty, in which
+        // case it becomes the new base.
+        if was_empty {
+            self.window_base = seq;
+        }
         self.next_seq = self.next_seq.next();
         Ok(seq)
     }
@@ -167,6 +183,30 @@ impl ReliableStreamState {
     #[must_use]
     pub fn get_in_flight(&self, seq: SerialNumber16) -> Option<&[u8]> {
         self.in_flight.get(&seq.raw()).map(Vec::as_slice)
+    }
+
+    /// RFC-1982 smallest in-flight sequence number (oldest unacked), or
+    /// `None` when the window is empty. Unlike `keys().next()` this uses
+    /// serial-number comparison, so it is correct across a 16-bit wrap.
+    #[must_use]
+    fn serial_min_in_flight(&self) -> Option<SerialNumber16> {
+        self.in_flight
+            .keys()
+            .copied()
+            .map(SerialNumber16::new)
+            .reduce(|a, b| if b.wrapping_lt(a) { b } else { a })
+    }
+
+    /// RFC-1982 largest in-flight sequence number (newest unacked), or
+    /// `None` when the window is empty. Unlike `keys().next_back()` this
+    /// uses serial-number comparison, so it is correct across a wrap.
+    #[must_use]
+    fn serial_max_in_flight(&self) -> Option<SerialNumber16> {
+        self.in_flight
+            .keys()
+            .copied()
+            .map(SerialNumber16::new)
+            .reduce(|a, b| if b.wrapping_gt(a) { b } else { a })
     }
 
     /// Tick: returns `Some(HEARTBEAT)` if the heartbeat period
@@ -183,13 +223,22 @@ impl ReliableStreamState {
             return None;
         }
         self.last_heartbeat = Some(now);
-        let first = *self.in_flight.keys().next()?;
-        let last = *self.in_flight.keys().next_back()?;
+        // Window base = oldest unacked (RFC-1982), maintained explicitly.
+        // Last = RFC-1982 newest unacked via serial-number scan. Neither
+        // is the numeric BTreeMap min/max, so the reported window is
+        // correct across a 16-bit wrap (e.g. `0xFFFE..=0x0001`).
+        let first = self.window_base;
+        let last = self.serial_max_in_flight()?;
+        debug_assert_eq!(
+            Some(self.window_base.raw()),
+            self.serial_min_in_flight().map(SerialNumber16::raw),
+            "window_base must track the RFC-1982 oldest unacked sequence"
+        );
         Some(HeartbeatPayload {
             // i16 reinterpret cast — RFC-1982 comparison happens on the
             // receiver side via `wrapping_*`.
-            first_unacked_seq_nr: first as i16,
-            last_unacked_seq_nr: last as i16,
+            first_unacked_seq_nr: first.raw() as i16,
+            last_unacked_seq_nr: last.raw() as i16,
             stream_id: self.stream_id.0,
         })
     }
@@ -230,6 +279,13 @@ impl ReliableStreamState {
                 // acknowledged
                 self.in_flight.remove(&seq);
             }
+        }
+
+        // Recompute the window base from the remaining samples in
+        // RFC-1982 order. Selective ACKs can leave holes, so the base is
+        // the serial-number minimum of what is left, not a numeric min.
+        if let Some(min) = self.serial_min_in_flight() {
+            self.window_base = min;
         }
     }
 
@@ -312,6 +368,7 @@ impl ReliableStreamState {
     pub fn reset(&mut self) {
         self.next_seq = SerialNumber16::new(0);
         self.in_flight.clear();
+        self.window_base = SerialNumber16::new(0);
         self.last_heartbeat = None;
         self.expected_seq = SerialNumber16::new(0);
         self.received.clear();
@@ -565,6 +622,129 @@ mod tests {
         assert_eq!(drained2.len(), 2);
         assert_eq!(drained2[0].1, alloc::vec![11]);
         assert_eq!(drained2[1].1, alloc::vec![12]);
+    }
+
+    /// Regression: HEARTBEAT window across a 16-bit wrap.
+    ///
+    /// Sender window `0xFFFE, 0xFFFF, 0x0000, 0x0001`. RFC-1982 order is
+    /// `0xFFFE < 0xFFFF < 0x0000 < 0x0001`, so the correct HEARTBEAT is
+    /// `first=0xFFFE, last=0x0001`. The old numeric BTreeMap min/max path
+    /// reported `first=0x0000, last=0xFFFF` (asserted here as the *wrong*
+    /// reference values, so the regression stays visible).
+    #[test]
+    fn heartbeat_window_across_wrap_reports_rfc1982_order() {
+        let mut s = rs();
+        // Seed the sender just below the wrap.
+        s.next_seq = SerialNumber16::new(0xFFFE);
+
+        let a = s.submit(alloc::vec![1]).unwrap(); // 0xFFFE
+        let b = s.submit(alloc::vec![2]).unwrap(); // 0xFFFF
+        let c = s.submit(alloc::vec![3]).unwrap(); // 0x0000
+        let d = s.submit(alloc::vec![4]).unwrap(); // 0x0001
+        assert_eq!(a.raw(), 0xFFFE);
+        assert_eq!(b.raw(), 0xFFFF);
+        assert_eq!(c.raw(), 0x0000);
+        assert_eq!(d.raw(), 0x0001);
+        assert_eq!(s.in_flight_count(), 4);
+
+        // The buggy numeric path would derive these (kept as a guard).
+        let numeric_min = *s.in_flight.keys().next().unwrap();
+        let numeric_max = *s.in_flight.keys().next_back().unwrap();
+        assert_eq!(numeric_min, 0x0000, "numeric min is the wrong window base");
+        assert_eq!(numeric_max, 0xFFFF, "numeric max is the wrong window end");
+
+        let hb = s.pending_heartbeat(Duration::from_secs(0)).unwrap();
+        // Correct RFC-1982 window base and end.
+        assert_eq!(hb.first_unacked_seq_nr as u16, 0xFFFE);
+        assert_eq!(hb.last_unacked_seq_nr as u16, 0x0001);
+        // And explicitly *not* the numeric min/max.
+        assert_ne!(hb.first_unacked_seq_nr as u16, numeric_min);
+        assert_ne!(hb.last_unacked_seq_nr as u16, numeric_max);
+    }
+
+    /// Regression: end-to-end loss recovery of a sample lost across the
+    /// 16-bit wrap. Window `0xFFFE, 0xFFFF, 0x0000, 0x0001`, `0xFFFF`
+    /// lost → ACKNACK must NACK exactly `0xFFFF`, sender must keep it
+    /// retransmittable, and after retransmit all samples deliver in
+    /// RFC-1982 order.
+    #[test]
+    fn acknack_retransmit_of_lost_sample_across_wrap() {
+        let mut sender = ReliableStreamState::new(StreamId(0x80), ReliableConfig::default());
+        let mut receiver = ReliableStreamState::new(StreamId(0x80), ReliableConfig::default());
+        // Seed both just below the wrap.
+        sender.next_seq = SerialNumber16::new(0xFFFE);
+        receiver.expected_seq = SerialNumber16::new(0xFFFE);
+
+        let q0 = sender.submit(alloc::vec![10]).unwrap(); // 0xFFFE
+        let q1 = sender.submit(alloc::vec![11]).unwrap(); // 0xFFFF (lost)
+        let q2 = sender.submit(alloc::vec![12]).unwrap(); // 0x0000
+        let q3 = sender.submit(alloc::vec![13]).unwrap(); // 0x0001
+
+        // Receiver sees all but q1 (0xFFFF).
+        receiver.recv_data(q0, alloc::vec![10]).unwrap();
+        receiver.recv_data(q2, alloc::vec![12]).unwrap();
+        receiver.recv_data(q3, alloc::vec![13]).unwrap();
+
+        // Only 0xFFFE delivers; 0xFFFF blocks the rest.
+        let d1 = receiver.drain_in_order();
+        assert_eq!(d1.len(), 1);
+        assert_eq!(d1[0].0.raw(), 0xFFFE);
+        assert_eq!(receiver.expected().raw(), 0xFFFF);
+
+        // ACKNACK: base=0xFFFF, only 0xFFFF marked missing.
+        let acknack = receiver.pending_acknack(Some(q3));
+        assert_eq!(acknack.first_unacked_seq_num as u16, 0xFFFF);
+        let bitmap = u16::from_le_bytes(acknack.nack_bitmap);
+        assert_eq!(bitmap & 0b1, 0b1, "0xFFFF must be NACKed");
+        assert_eq!(bitmap & 0b10, 0, "0x0000 present");
+        assert_eq!(bitmap & 0b100, 0, "0x0001 present");
+
+        // Sender processes the ACKNACK across the wrap.
+        sender.recv_acknack(acknack);
+        assert!(sender.get_in_flight(q1).is_some(), "0xFFFF retransmittable");
+        assert!(sender.get_in_flight(q0).is_none(), "0xFFFE acked");
+        assert!(sender.get_in_flight(q2).is_none(), "0x0000 acked");
+        assert!(sender.get_in_flight(q3).is_none(), "0x0001 acked");
+        assert_eq!(sender.in_flight_count(), 1);
+
+        // Retransmit the lost sample.
+        let retx = sender.get_in_flight(q1).unwrap().to_vec();
+        receiver.recv_data(q1, retx).unwrap();
+
+        // Now 0xFFFF, 0x0000, 0x0001 deliver in RFC-1982 order.
+        let d2 = receiver.drain_in_order();
+        assert_eq!(d2.len(), 3);
+        assert_eq!(d2[0].0.raw(), 0xFFFF);
+        assert_eq!(d2[1].0.raw(), 0x0000);
+        assert_eq!(d2[2].0.raw(), 0x0001);
+        assert_eq!(d2[0].1, alloc::vec![11]);
+    }
+
+    /// Regression: with a selective-ACK hole the window end must be the
+    /// RFC-1982 maximum, not `window_base + (count-1)`. Window `0,2,3`
+    /// (seq 1 acked in the middle) → HEARTBEAT `first=0, last=3`, while
+    /// `base + count-1 = 2` would be wrong.
+    #[test]
+    fn heartbeat_window_end_with_hole_is_serial_max_not_count() {
+        let mut s = rs();
+        for _ in 0..4 {
+            s.submit(alloc::vec![0]).unwrap(); // 0,1,2,3
+        }
+        // ACKNACK base=0: keep 0,2,3; ack the middle seq 1.
+        let ack = AckNackPayload {
+            first_unacked_seq_num: 0,
+            nack_bitmap: (0b1101u16).to_le_bytes(), // bits 0,2,3 set (missing)
+            stream_id: StreamId::BUILTIN_RELIABLE.0,
+        };
+        s.recv_acknack(ack);
+        assert_eq!(s.in_flight_count(), 3);
+        assert!(s.get_in_flight(SerialNumber16::new(1)).is_none());
+
+        let hb = s.pending_heartbeat(Duration::from_secs(0)).unwrap();
+        assert_eq!(hb.first_unacked_seq_nr as u16, 0);
+        assert_eq!(hb.last_unacked_seq_nr as u16, 3);
+        // base + (count-1) = 0 + 2 = 2 would be the wrong end.
+        assert_ne!(hb.last_unacked_seq_nr as u16, 2);
     }
 
     /// Spec §9.2 — Remote configuration via CREATE/DELETE/UPDATE

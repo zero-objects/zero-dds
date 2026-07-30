@@ -6,11 +6,15 @@
 // submitted samples until acknowledged, fires HEARTBEAT on a period gate,
 // and prunes/retains in-flight samples per an incoming ACKNACK bitmap.
 //
-// Sequence numbers are plain `int` in [0,65535] (RFC-1982 16-bit space);
-// `TreeMap` gives natural ascending order for the window bounds and iterates
-// the same way `BTreeMap<u16,_>` does in the Rust reference (both share the
-// same non-circular first/last caveat right at the 65536 wraparound, which
-// never occurs within one window of WINDOW=16 in-flight samples).
+// Sequence numbers are plain `int` in [0,65535] (RFC-1982 16-bit space). The
+// `TreeMap` stores in-flight samples in numeric key order, which is NOT the
+// RFC-1982 order across a 16-bit wrap. The HEARTBEAT window bounds must
+// therefore be derived from an RFC-1982 (`ReliableWire.seqLt`/`seqGt`) scan of
+// the keys, never from `firstKey()`/`lastKey()`: a window that straddles the
+// wrap (e.g. 0xFFFE,0xFFFF,0x0000,0x0001) has RFC-1982 base 0xFFFE / end
+// 0x0001, while the numeric min/max would wrongly report 0x0000 / 0xFFFF. The
+// wrap DOES occur within a WINDOW=16 span whenever `nextSeq` crosses 0x0000.
+// Mirrors window_base / serial_max_in_flight in crates/xrce/src/reliable.rs.
 
 package org.zerodds.endpoint;
 
@@ -92,7 +96,25 @@ public final class ReliableSender {
         }
         haveHeartbeat = true;
         lastHeartbeatMs = nowMs;
-        return new ReliableWire.Heartbeat(inFlight.firstKey(), inFlight.lastKey(), stream);
+        // RFC-1982 window base (oldest unacked) and end (newest unacked), NOT the
+        // numeric firstKey()/lastKey() — those are wrong across a 16-bit wrap.
+        int first = 0, last = 0;
+        boolean seen = false;
+        for (int k : inFlight.keySet()) {
+            if (!seen) {
+                first = k;
+                last = k;
+                seen = true;
+            } else {
+                if (ReliableWire.seqLt(k, first)) {
+                    first = k;
+                }
+                if (ReliableWire.seqGt(k, last)) {
+                    last = k;
+                }
+            }
+        }
+        return new ReliableWire.Heartbeat(first, last, stream);
     }
 
     /**

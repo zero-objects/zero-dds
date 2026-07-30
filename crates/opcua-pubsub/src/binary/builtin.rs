@@ -883,9 +883,9 @@ mod tests {
         // Buffer-cap hardening regression (builtin.rs:553): the
         // ArrayDimensions count must be bounds-checked before
         // `Vec::with_capacity`.
-        let mut bytes =
-            alloc::vec![VARIANT_ARRAY_FLAG | VARIANT_DIMENSIONS_FLAG | BuiltinTypeKind::Byte
-                .value()];
+        let mut bytes = alloc::vec![
+            VARIANT_ARRAY_FLAG | VARIANT_DIMENSIONS_FLAG | BuiltinTypeKind::Byte.value()
+        ];
         // One-element array (so the array-length + element decode
         // succeeds) …
         bytes.extend_from_slice(&1i32.to_le_bytes());

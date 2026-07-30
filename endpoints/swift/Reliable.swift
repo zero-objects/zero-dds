@@ -181,8 +181,20 @@ public final class ReliableSender {
         let due = lastHeartbeatMs < 0 || (nowMs - lastHeartbeatMs) >= reliableHeartbeatPeriodMs
         guard due else { return nil }
         lastHeartbeatMs = nowMs
-        let keys = inFlight.keys
-        guard let first = keys.min(), let last = keys.max() else { return nil }
+        // RFC-1982 window base (oldest unacked) + end (newest unacked); NOT the
+        // numeric keys.min()/max(), which are wrong across a 16-bit wrap: window
+        // 0xFFFE,0xFFFF,0x0000,0x0001 → base 0xFFFE / end 0x0001, not 0x0000 /
+        // 0xFFFF. Mirrors window_base / serial_max_in_flight in crates/xrce.
+        var first: UInt16 = 0, last: UInt16 = 0, seen = false
+        for k in inFlight.keys {
+            if !seen {
+                first = k; last = k; seen = true
+            } else {
+                if seqLt(k, first) { first = k }
+                if seqGt(k, last) { last = k }
+            }
+        }
+        guard seen else { return nil }
         return Heartbeat(firstUnacked: first, lastUnacked: last, streamId: reliableStreamId)
     }
 
@@ -304,24 +316,41 @@ public final class AsyncWriter {
         return true
     }
 
-    private func pop() -> [UInt8]? {
+    /// Returns the queue head WITHOUT removing it. The sample stays owned by the
+    /// queue until `submit` succeeds, so a window-full submit never loses it.
+    private func peek() -> [UInt8]? {
         lock.lock()
         defer { lock.unlock() }
-        return queue.isEmpty ? nil : queue.removeFirst()
+        return queue.first
+    }
+
+    /// Drops the queue head — called only after the head was successfully
+    /// submitted (accepted into the send window) or is non-retryable.
+    private func dropFirst() {
+        lock.lock()
+        defer { lock.unlock() }
+        if !queue.isEmpty { queue.removeFirst() }
     }
 
     private func drainLoop() {
         while !Thread.current.isCancelled {
             var idle = true
-            if let sample = pop() {
-                idle = false
+            if let sample = peek() {
                 do {
                     let seq = try sender.submit(sample)
+                    // Accepted into the window: only now remove it from the queue.
+                    dropFirst()
+                    idle = false
                     sendFn(writeDataFrame(seq: seq, sample: sample))
+                } catch ReliableError.windowFull {
+                    // Window full: leave the sample queued (do NOT drop it) so it
+                    // is retried once an ACKNACK frees a slot below. Dropping here
+                    // was the data-loss bug: the sample was gone yet never sent.
                 } catch {
-                    // Window full: drain pending ACKNACKs to free a slot, retry next tick.
-                    _ = drainAckNacks()
-                    continue
+                    // payloadTooLarge / non-retryable: drop it so an unsendable
+                    // sample cannot wedge the queue head forever.
+                    dropFirst()
+                    idle = false
                 }
             }
             if drainAckNacks() { idle = false }

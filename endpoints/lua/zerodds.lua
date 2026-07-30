@@ -124,6 +124,10 @@ M.SESSION_NOKEY = 0x80
 M.STREAM_BEST_EFFORT = 0x01
 
 function M.writeFrame(session, stream, seqNo, sample)
+  -- The 16-bit submessage_length field cannot describe a sample larger than
+  -- 0xFFFF; refuse rather than truncate the length while appending the full
+  -- payload (the C SDK rejects the same way).
+  if #sample > 0xFFFF then return nil end
   local hdr = string.pack("BB", session, stream)
     .. string.pack("<I2", seqNo)
     .. string.pack("BB", 0x07, 0x03)
@@ -131,11 +135,23 @@ function M.writeFrame(session, stream, seqNo, sample)
   return hdr .. sample
 end
 
+-- Frame layout: [session, stream, seq_lo, seq_hi, sm_id, flags, len_lo, len_hi]
+-- then the sample body. The 16-bit little-endian submessage_length (bytes 7..8,
+-- 1-based) bounds the body exactly: the returned string is frame[9 .. 8+smLen],
+-- never frame:sub(9) to the end, so trailing padding or an appended submessage
+-- is not folded into the sample.
+--
+-- Accepts WRITE_DATA (0x07, endpoint->hub / loopback) and DATA (0x09,
+-- hub->endpoint) — the hub pushes samples with DATA. See DDS-XRCE spec 8.3.5.
+-- Returns nil for a short header, a wrong submessage id, or a declared length
+-- that runs past the datagram (truncation / wrong length).
 function M.readFrame(frame)
-  if #frame >= 8 and frame:byte(5) == 0x07 then
-    return frame:sub(9)
-  end
-  return nil
+  if #frame < 8 then return nil end
+  local id = frame:byte(5)
+  if id ~= 0x07 and id ~= 0x09 then return nil end
+  local smLen = frame:byte(7) | (frame:byte(8) << 8)
+  if 8 + smLen > #frame then return nil end
+  return frame:sub(9, 8 + smLen)
 end
 
 -- --- sync client ---

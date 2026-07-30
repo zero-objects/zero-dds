@@ -115,14 +115,31 @@ defmodule ZeroDDS.Endpoint do
   def session_nokey, do: @session_nokey
   def stream_best_effort, do: @stream_best_effort
 
+  # The 16-bit submessage_length field cannot describe a sample larger than
+  # 0xFFFF; raise rather than truncate the length while appending the full
+  # payload (mirrors the C SDK's rejection).
+  def write_frame(_session, _stream, _seq, sample) when byte_size(sample) > 0xFFFF do
+    raise ArgumentError, "sample exceeds 16-bit submessage_length"
+  end
+
   def write_frame(session, stream, seq, sample) do
     n = byte_size(sample)
     <<session::8, stream::8, seq::little-16, 0x07::8, 0x03::8, n::little-16>> <> sample
   end
 
-  def read_frame(frame)
-      when byte_size(frame) >= 8 and binary_part(frame, 4, 1) == <<0x07>> do
-    {:ok, binary_part(frame, 8, byte_size(frame) - 8)}
+  # Frame layout: [session, stream, seq_lo, seq_hi, sm_id, flags, len_lo,
+  # len_hi] then the sample body. The 16-bit little-endian submessage_length
+  # (bytes 6..7) bounds the body exactly: binary_part(frame, 8, sm_len), never
+  # byte_size(frame) - 8, so trailing padding or an appended submessage is not
+  # folded into the sample.
+  #
+  # Accepts WRITE_DATA (0x07, endpoint->hub / loopback) and DATA (0x09,
+  # hub->endpoint) — the hub pushes samples with DATA. See DDS-XRCE spec 8.3.5.
+  # Returns :error for a short header, a wrong submessage id, or a declared
+  # length that runs past the datagram (truncation / wrong length).
+  def read_frame(<<_::binary-size(4), id, _flags, sm_len::little-16, rest::binary>> = frame)
+      when byte_size(frame) >= 8 and (id == 0x07 or id == 0x09) and byte_size(rest) >= sm_len do
+    {:ok, binary_part(rest, 0, sm_len)}
   end
 
   def read_frame(_), do: :error

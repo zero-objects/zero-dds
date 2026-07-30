@@ -293,6 +293,8 @@ impl Subscriber {
                     reliable,
                     durability: qos.durability.kind,
                     deadline: qos.deadline,
+                    latency_budget: qos.latency_budget,
+                    destination_order: qos.destination_order,
                     liveliness: qos.liveliness,
                     ownership: qos.ownership.kind,
                     presentation: qos.presentation,
@@ -309,6 +311,15 @@ impl Subscriber {
                 },
                 T::HAS_KEY,
             )?;
+            // Gap 2 (#24): auto-register the local TypeObject (if codegen/impl
+            // provides one) so the runtime's TypeLookup server can answer a
+            // peer's getTypes and the local match sites can resolve this
+            // reader's TYPE_IDENTIFIER structurally against the registry.
+            // Default `type_object()` is `None` → no-op; object emitter is a
+            // follow-up.
+            if let Some(obj) = T::type_object() {
+                let _ = rt.register_type_object(obj);
+            }
             let dr = DataReader::new_live(
                 topic.clone(),
                 qos,

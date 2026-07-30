@@ -12,14 +12,22 @@
 //! The generated `include/zerodds.h` (via the cbindgen build script) is
 //! the contract document for all consumers.
 //!
-//! # Type model — deliberately untyped
+//! # Type model — byte-oriented, with an optional typed-create path
 //!
-//! The C-FFI is **byte-oriented**: a `Topic` carries a
+//! The C-FFI is **byte-oriented** for samples: a `Topic` carries a
 //! `topic_name` + `type_name` string, a `write` takes a
 //! `(*const u8, len)` buffer with the already-CDR-encoded sample bytes,
 //! a `take` returns the raw wire bytes. The CDR encode/decode logic
 //! lives in the language bindings (idl-cpp emits a C++ encoder, idl-csharp
-//! a C# encoder, etc.) — the C-FFI is neutral.
+//! a C# encoder, etc.) — the C-FFI is neutral for sample payloads.
+//!
+//! Type identity can still cross the FFI: the typed-create variants
+//! (`zerodds_writer_create_typed` / `zerodds_reader_create_typed`, and the
+//! topic-based PSM-Cxx creates) take a serialized COMPLETE `TypeObject`,
+//! register it in the runtime's TypeLookup registry and advertise the
+//! derived strongly-hashed `TypeIdentifier` (F-TYPES-3 / #24). The plain
+//! `zerodds_writer_create` / `zerodds_reader_create` take no `TypeObject`
+//! and advertise `TypeIdentifier::None`.
 //!
 //! Advantages:
 //! * No generic-type acrobatics through FFI.
@@ -655,6 +663,8 @@ pub unsafe extern "C" fn zerodds_writer_create(
         reliable: reliable != 0,
         durability: DurabilityKind::Volatile,
         deadline: DeadlineQosPolicy::default(),
+        latency_budget: Default::default(),
+        destination_order: Default::default(),
         lifespan: LifespanQosPolicy::default(),
         liveliness: LivelinessQosPolicy {
             kind: LivelinessKind::Automatic,
@@ -667,8 +677,9 @@ pub unsafe extern "C" fn zerodds_writer_create(
         user_data: Vec::new(),
         topic_data: Vec::new(),
         group_data: Vec::new(),
-        // F-TYPES-3: the C-FFI is byte-oriented (no typed topic type),
-        // so no TypeIdentifier is available.
+        // F-TYPES-3: this untyped create takes no TypeObject, so it
+        // advertises None. The typed variant (`zerodds_writer_create_typed`)
+        // carries a TypeObject and derives a TypeIdentifier.
         type_identifier: zerodds_types::TypeIdentifier::None,
         data_representation_offer: None,
     };
@@ -720,6 +731,8 @@ pub unsafe extern "C" fn zerodds_writer_create_kind(
         reliable: reliable != 0,
         durability: DurabilityKind::Volatile,
         deadline: DeadlineQosPolicy::default(),
+        latency_budget: Default::default(),
+        destination_order: Default::default(),
         lifespan: LifespanQosPolicy::default(),
         liveliness: LivelinessQosPolicy {
             kind: LivelinessKind::Automatic,
@@ -740,6 +753,137 @@ pub unsafe extern "C" fn zerodds_writer_create_kind(
         Err(e) => {
             eprintln!(
                 "zerodds_writer_create_kind(topic={topic_name:?}, is_keyed={is_keyed}) failed: {e:?}"
+            );
+            return ptr::null_mut();
+        }
+    };
+    Box::into_raw(Box::new(ZeroDdsWriter { rt: rt_clone, eid }))
+}
+
+/// F-TYPES-3 / #24: deserializes a serialized `TypeObject` (the XCDR-LE
+/// `zerodds_types::TypeObject::to_bytes_le` form the IDL codegen emits),
+/// registers it in the runtime's TypeLookup registry (so peers can resolve
+/// it via `getTypes` and the runtime can match it structurally — XTypes 1.3
+/// §7.6.3) and returns the derived strongly-hashed `TypeIdentifier`.
+///
+/// The returned identifier is byte-identical to
+/// `zerodds_types::to_hashed_type_identifier(&obj)` — the SAME value Path A's
+/// `T::TYPE_IDENTIFIER` carries for the same TypeObject — because
+/// `register_type_object` hashes with the identical `compute_hash` routine.
+/// Returns `None` if the bytes are not a valid `TypeObject` or registration
+/// fails (lock poisoning / hash error).
+///
+/// `pub(crate)` so the topic-based PSM-Cxx create paths
+/// (`publisher_ffi::zerodds_pub_create_datawriter_typed` /
+/// `subscriber_ffi::zerodds_sub_create_datareader_typed`, used by the C#/Java
+/// bindings) share the identical register-and-derive routine as the flat
+/// writer/reader typed creates (used by cpp/python).
+pub(crate) fn register_type_object_from_bytes(
+    rt: &DcpsRuntime,
+    bytes: &[u8],
+) -> Option<zerodds_types::TypeIdentifier> {
+    let obj = zerodds_types::type_object::TypeObject::from_bytes_le(bytes).ok()?;
+    let is_complete = matches!(obj, zerodds_types::type_object::TypeObject::Complete(_));
+    let hash = rt.register_type_object(obj).ok()?;
+    Some(if is_complete {
+        zerodds_types::TypeIdentifier::EquivalenceHashComplete(hash)
+    } else {
+        zerodds_types::TypeIdentifier::EquivalenceHashMinimal(hash)
+    })
+}
+
+/// Creates a DataWriter that advertises its type via a serialized COMPLETE
+/// `TypeObject` (F-TYPES-3 / #24).
+///
+/// Unlike [`zerodds_writer_create`]/[`zerodds_writer_create_kind`] — which are
+/// byte-oriented and advertise `TypeIdentifier::None` — this typed variant
+/// deserializes `type_object_bytes`, derives the strongly-hashed
+/// `TypeIdentifier`, registers the object into the shared TypeLookup registry
+/// and sets the writer slot's `type_identifier` from it **before the endpoint
+/// is published** (via `register_user_writer_kind`). There is therefore no
+/// discovery window in which the endpoint is matchable while still carrying
+/// `None` — the reason for a typed create instead of a post-create setter,
+/// which would race SEDP.
+///
+/// `type_object_bytes` is the `zerodds_types::TypeObject::to_bytes_le` form the
+/// IDL codegen emits (see `idlc cpp`'s generated `type_object()`). `is_keyed`
+/// mirrors [`zerodds_writer_create_kind`] and must match the type's `@key`
+/// presence (Spec §9.3.1.2 Table 9.1). Returns NULL on invalid arguments, a
+/// malformed TypeObject, or registration failure.
+///
+/// # Safety
+/// Like [`zerodds_writer_create_kind`], plus: `type_object_bytes` must point to
+/// `len` readable bytes (NULL / `len == 0` is rejected with NULL).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zerodds_writer_create_typed(
+    runtime: *mut ZeroDdsRuntime,
+    topic_name: *const c_char,
+    type_name: *const c_char,
+    reliable: c_int,
+    is_keyed: c_int,
+    type_object_bytes: *const u8,
+    len: usize,
+) -> *mut ZeroDdsWriter {
+    if runtime.is_null()
+        || topic_name.is_null()
+        || type_name.is_null()
+        || type_object_bytes.is_null()
+        || len == 0
+    {
+        return ptr::null_mut();
+    }
+    // SAFETY: runtime/topic_name/type_name/type_object_bytes NULL-checked above;
+    // both C strings are NUL-terminated and `type_object_bytes` points to `len`
+    // readable bytes (caller pledge per the # Safety doc). `runtime` comes from
+    // `zerodds_runtime_create`.
+    let (rt_clone, topic, typ, obj_id) = unsafe {
+        let topic = match CStr::from_ptr(topic_name).to_str() {
+            Ok(s) => s.to_string(),
+            Err(_) => return ptr::null_mut(),
+        };
+        let typ = match CStr::from_ptr(type_name).to_str() {
+            Ok(s) => s.to_string(),
+            Err(_) => return ptr::null_mut(),
+        };
+        let rt = (*runtime).rt.clone();
+        let bytes = core::slice::from_raw_parts(type_object_bytes, len);
+        // Register + derive BEFORE publish — no None-window.
+        let obj_id = match register_type_object_from_bytes(&rt, bytes) {
+            Some(id) => id,
+            None => return ptr::null_mut(),
+        };
+        (rt, topic, typ, obj_id)
+    };
+
+    let cfg = UserWriterConfig {
+        topic_name: topic,
+        type_name: typ,
+        reliable: reliable != 0,
+        durability: DurabilityKind::Volatile,
+        deadline: DeadlineQosPolicy::default(),
+        latency_budget: Default::default(),
+        destination_order: Default::default(),
+        lifespan: LifespanQosPolicy::default(),
+        liveliness: LivelinessQosPolicy {
+            kind: LivelinessKind::Automatic,
+            ..Default::default()
+        },
+        ownership: OwnershipKind::Shared,
+        ownership_strength: 0,
+        presentation: Default::default(),
+        partition: Vec::new(),
+        user_data: Vec::new(),
+        topic_data: Vec::new(),
+        group_data: Vec::new(),
+        // F-TYPES-3 / #24: derived from the registered TypeObject (not None).
+        type_identifier: obj_id,
+        data_representation_offer: None,
+    };
+    let eid = match rt_clone.register_user_writer_kind(cfg, is_keyed != 0) {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!(
+                "zerodds_writer_create_typed(topic={topic_name:?}, is_keyed={is_keyed}) failed: {e:?}"
             );
             return ptr::null_mut();
         }
@@ -1033,6 +1177,8 @@ pub unsafe extern "C" fn zerodds_reader_create(
         reliable: reliable != 0,
         durability: DurabilityKind::Volatile,
         deadline: DeadlineQosPolicy::default(),
+        latency_budget: Default::default(),
+        destination_order: Default::default(),
         liveliness: LivelinessQosPolicy {
             kind: LivelinessKind::Automatic,
             ..Default::default()
@@ -1043,7 +1189,9 @@ pub unsafe extern "C" fn zerodds_reader_create(
         user_data: Vec::new(),
         topic_data: Vec::new(),
         group_data: Vec::new(),
-        // F-TYPES-3: the C-FFI is byte-oriented.
+        // F-TYPES-3: this untyped create takes no TypeObject, so it
+        // advertises None. The typed variant (`zerodds_reader_create_typed`)
+        // carries a TypeObject and derives a TypeIdentifier.
         type_identifier: zerodds_types::TypeIdentifier::None,
         type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
         data_representation_offer: None,
@@ -1096,6 +1244,8 @@ pub unsafe extern "C" fn zerodds_reader_create_kind(
         reliable: reliable != 0,
         durability: DurabilityKind::Volatile,
         deadline: DeadlineQosPolicy::default(),
+        latency_budget: Default::default(),
+        destination_order: Default::default(),
         liveliness: LivelinessQosPolicy {
             kind: LivelinessKind::Automatic,
             ..Default::default()
@@ -1115,6 +1265,94 @@ pub unsafe extern "C" fn zerodds_reader_create_kind(
         Err(e) => {
             eprintln!(
                 "zerodds_reader_create_kind(topic={topic_name:?}, is_keyed={is_keyed}) failed: {e:?}"
+            );
+            return ptr::null_mut();
+        }
+    };
+    Box::into_raw(Box::new(ZeroDdsReader {
+        rt: rt_clone,
+        eid,
+        rx: Mutex::new(rx),
+    }))
+}
+
+/// Creates a DataReader that advertises its type via a serialized COMPLETE
+/// `TypeObject` (F-TYPES-3 / #24). Reader-side mirror of
+/// [`zerodds_writer_create_typed`]: deserializes `type_object_bytes`, registers
+/// the object into the shared TypeLookup registry, derives the strongly-hashed
+/// `TypeIdentifier` and sets the reader slot's `type_identifier` from it before
+/// the endpoint is published — no `None`-window against discovery.
+///
+/// # Safety
+/// Like [`zerodds_reader_create_kind`], plus: `type_object_bytes` must point to
+/// `len` readable bytes (NULL / `len == 0` is rejected with NULL).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn zerodds_reader_create_typed(
+    runtime: *mut ZeroDdsRuntime,
+    topic_name: *const c_char,
+    type_name: *const c_char,
+    reliable: c_int,
+    is_keyed: c_int,
+    type_object_bytes: *const u8,
+    len: usize,
+) -> *mut ZeroDdsReader {
+    if runtime.is_null()
+        || topic_name.is_null()
+        || type_name.is_null()
+        || type_object_bytes.is_null()
+        || len == 0
+    {
+        return ptr::null_mut();
+    }
+    // SAFETY: runtime/topic_name/type_name/type_object_bytes NULL-checked above;
+    // both C strings are NUL-terminated and `type_object_bytes` points to `len`
+    // readable bytes (caller pledge). `runtime` comes from
+    // `zerodds_runtime_create`.
+    let (rt_clone, topic, typ, obj_id) = unsafe {
+        let topic = match CStr::from_ptr(topic_name).to_str() {
+            Ok(s) => s.to_string(),
+            Err(_) => return ptr::null_mut(),
+        };
+        let typ = match CStr::from_ptr(type_name).to_str() {
+            Ok(s) => s.to_string(),
+            Err(_) => return ptr::null_mut(),
+        };
+        let rt = (*runtime).rt.clone();
+        let bytes = core::slice::from_raw_parts(type_object_bytes, len);
+        let obj_id = match register_type_object_from_bytes(&rt, bytes) {
+            Some(id) => id,
+            None => return ptr::null_mut(),
+        };
+        (rt, topic, typ, obj_id)
+    };
+    let cfg = UserReaderConfig {
+        topic_name: topic,
+        type_name: typ,
+        reliable: reliable != 0,
+        durability: DurabilityKind::Volatile,
+        deadline: DeadlineQosPolicy::default(),
+        latency_budget: Default::default(),
+        destination_order: Default::default(),
+        liveliness: LivelinessQosPolicy {
+            kind: LivelinessKind::Automatic,
+            ..Default::default()
+        },
+        ownership: OwnershipKind::Shared,
+        presentation: Default::default(),
+        partition: Vec::new(),
+        user_data: Vec::new(),
+        topic_data: Vec::new(),
+        group_data: Vec::new(),
+        // F-TYPES-3 / #24: derived from the registered TypeObject (not None).
+        type_identifier: obj_id,
+        type_consistency: zerodds_types::qos::TypeConsistencyEnforcement::default(),
+        data_representation_offer: None,
+    };
+    let (eid, rx) = match rt_clone.register_user_reader_kind(cfg, is_keyed != 0) {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!(
+                "zerodds_reader_create_typed(topic={topic_name:?}, is_keyed={is_keyed}) failed: {e:?}"
             );
             return ptr::null_mut();
         }
@@ -1969,4 +2207,183 @@ pub unsafe extern "C" fn zerodds_reader_enable_iceoryx(
 pub extern "C" fn zerodds_version() -> *const c_char {
     static VERSION: &str = concat!(env!("CARGO_PKG_VERSION"), "\0");
     VERSION.as_ptr() as *const c_char
+}
+
+// ============================================================================
+// Tests — F-TYPES-3 / #24 typed-create TypeObject path
+// ============================================================================
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod typed_create_tests {
+    use super::*;
+    use std::ffi::CString;
+
+    use zerodds_types::builder::{Extensibility, TypeObjectBuilder};
+    use zerodds_types::type_object::{CompleteTypeObject, TypeObject};
+    use zerodds_types::{PrimitiveKind, TypeIdentifier, compute_complete_hash};
+
+    /// A known struct's COMPLETE `TypeObject`, built via the `StructBuilder`
+    /// "Path A" uses. Returns `(TypeObject, expected_identifier)`.
+    fn sample_typeobject() -> (TypeObject, TypeIdentifier) {
+        let cs = TypeObjectBuilder::struct_type("Sensor")
+            .extensibility(Extensibility::Appendable)
+            .member("id", TypeIdentifier::Primitive(PrimitiveKind::Int64), |m| {
+                m.key()
+            })
+            .member(
+                "value",
+                TypeIdentifier::Primitive(PrimitiveKind::Float64),
+                |m| m,
+            )
+            .build_complete();
+        let to = TypeObject::Complete(CompleteTypeObject::Struct(cs));
+        let expected = zerodds_types::to_hashed_type_identifier(&to).unwrap();
+        (to, expected)
+    }
+
+    /// Core assertion: the identifier the typed-create path derives from the
+    /// serialized TypeObject bytes is BYTE-IDENTICAL to the one Path A's
+    /// `StructBuilder::build_complete()` produces — and the object lands in the
+    /// runtime's TypeLookup registry.
+    #[test]
+    fn typed_derive_is_byte_identical_to_path_a_and_registers() {
+        let (to, expected) = sample_typeobject();
+        let bytes = to.to_bytes_le().unwrap();
+        let TypeObject::Complete(cto) = &to else {
+            panic!("sample_typeobject builds a Complete TypeObject");
+        };
+        let expected_hash = compute_complete_hash(cto).unwrap();
+
+        let domain: u32 = 60 + (std::process::id() % 30);
+        // SAFETY: valid domain; handle deref within the crate.
+        let handle = unsafe { zerodds_runtime_create(domain) };
+        assert!(!handle.is_null());
+        // SAFETY: non-null handle from create; deref within the crate.
+        let rt = unsafe { (*handle).rt.clone() };
+
+        let derived =
+            register_type_object_from_bytes(&rt, &bytes).expect("deserialize+register+derive");
+
+        // BYTE-IDENTICAL to Path A (compare the serialized identifier bytes,
+        // not only structural equality).
+        assert_eq!(derived, expected, "derived identifier != Path A identifier");
+        assert_eq!(
+            derived.to_bytes_le().unwrap(),
+            expected.to_bytes_le().unwrap(),
+            "derived identifier bytes != Path A identifier bytes"
+        );
+
+        // The COMPLETE TypeObject is now in the runtime's registry.
+        {
+            let server = rt.type_lookup_server.lock().unwrap();
+            assert!(
+                server.registry.get_complete(&expected_hash).is_some(),
+                "TypeObject not registered under its complete hash"
+            );
+        }
+
+        // SAFETY: handle from create, not yet destroyed; consumed once here.
+        unsafe { zerodds_runtime_destroy(handle) };
+    }
+
+    /// Full FFI: `zerodds_writer_create_typed` succeeds and has registered the
+    /// TypeObject before returning (i.e. before the slot is published).
+    #[test]
+    fn writer_and_reader_create_typed_register_before_publish() {
+        let (to, _expected) = sample_typeobject();
+        let bytes = to.to_bytes_le().unwrap();
+        let TypeObject::Complete(cto) = &to else {
+            panic!("sample_typeobject builds a Complete TypeObject");
+        };
+        let expected_hash = compute_complete_hash(cto).unwrap();
+
+        let domain: u32 = 100 + (std::process::id() % 30);
+        let topic = CString::new("TypedTopic").unwrap();
+        let typ = CString::new("Sensor").unwrap();
+
+        // SAFETY: valid C strings + valid byte slice for the typed create.
+        unsafe {
+            let handle = zerodds_runtime_create(domain);
+            assert!(!handle.is_null());
+
+            let w = zerodds_writer_create_typed(
+                handle,
+                topic.as_ptr(),
+                typ.as_ptr(),
+                1,
+                1,
+                bytes.as_ptr(),
+                bytes.len(),
+            );
+            assert!(!w.is_null(), "writer_create_typed returned NULL");
+
+            let r = zerodds_reader_create_typed(
+                handle,
+                topic.as_ptr(),
+                typ.as_ptr(),
+                1,
+                1,
+                bytes.as_ptr(),
+                bytes.len(),
+            );
+            assert!(!r.is_null(), "reader_create_typed returned NULL");
+
+            // Registered by both create paths.
+            {
+                let rt = (*handle).rt.clone();
+                let server = rt.type_lookup_server.lock().unwrap();
+                assert!(server.registry.get_complete(&expected_hash).is_some());
+            }
+
+            zerodds_writer_destroy(w);
+            zerodds_reader_destroy(r);
+            zerodds_runtime_destroy(handle);
+        }
+    }
+
+    /// A NULL / zero-length / malformed TypeObject is rejected with NULL — the
+    /// typed path never falls back to a `None`-identifier endpoint.
+    #[test]
+    fn typed_create_rejects_invalid_type_object() {
+        let domain: u32 = 140 + (std::process::id() % 30);
+        let topic = CString::new("TypedBad").unwrap();
+        let typ = CString::new("Sensor").unwrap();
+        let garbage: [u8; 3] = [0x00, 0x01, 0x02];
+
+        // SAFETY: valid strings; deliberately NULL / bad byte pointers.
+        unsafe {
+            let handle = zerodds_runtime_create(domain);
+            assert!(!handle.is_null());
+
+            // NULL bytes.
+            assert!(
+                zerodds_writer_create_typed(
+                    handle,
+                    topic.as_ptr(),
+                    typ.as_ptr(),
+                    1,
+                    1,
+                    ptr::null(),
+                    0,
+                )
+                .is_null()
+            );
+            // Malformed (non-empty but not a valid TypeObject) bytes.
+            assert!(
+                zerodds_reader_create_typed(
+                    handle,
+                    topic.as_ptr(),
+                    typ.as_ptr(),
+                    1,
+                    1,
+                    garbage.as_ptr(),
+                    garbage.len(),
+                )
+                .is_null()
+            );
+
+            zerodds_runtime_destroy(handle);
+        }
+    }
 }

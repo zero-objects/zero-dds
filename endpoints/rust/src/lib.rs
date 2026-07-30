@@ -74,14 +74,31 @@ pub fn xrce_write_frame(seq: u16, sample: &[u8]) -> Vec<u8> {
     out
 }
 
-/// Returns the sample body of a WRITE_DATA frame, or `None` if it is not one.
+/// Returns the sample body of a data frame, or `None` if it is not one.
+///
+/// Frame layout: `[session, stream, seq_lo, seq_hi, sm_id, flags, len_lo,
+/// len_hi]` followed by the sample body. The 16-bit little-endian
+/// `submessage_length` (bytes 6..8) bounds the body exactly — the returned
+/// slice is `frame[8..8+len]`, never `frame[8..]`. Trailing bytes (padding or
+/// an appended submessage) are therefore never folded into the sample.
+///
+/// Accepts both WRITE_DATA (`0x07`, endpoint->hub / loopback) and DATA (`0x09`,
+/// hub->endpoint) — a hub pushes samples to a client with DATA. See DDS-XRCE
+/// spec §8.3.5.
+///
+/// Returns `None` (never panics) when the frame is shorter than the 8-byte
+/// header, carries some other submessage id, or declares a length that runs
+/// past the datagram (truncation / wrong length).
 #[must_use]
 pub fn xrce_read_frame(frame: &[u8]) -> Option<&[u8]> {
-    if frame.len() >= 8 && frame[4] == 0x07 {
-        Some(&frame[8..])
-    } else {
-        None
+    if frame.len() < 8 || (frame[4] != 0x07 && frame[4] != 0x09) {
+        return None;
     }
+    let sm_len = usize::from(u16::from_le_bytes([frame[6], frame[7]]));
+    if 8 + sm_len > frame.len() {
+        return None;
+    }
+    Some(&frame[8..8 + sm_len])
 }
 
 /// In-memory FIFO transport for tests + examples. Cheap to clone (shared queue).
@@ -176,5 +193,43 @@ impl AsyncReader {
     /// Signals the reader thread to stop.
     pub fn stop(&self) {
         self.running.store(false, Ordering::Relaxed);
+    }
+}
+
+#[cfg(test)]
+mod frame_tests {
+    use super::{xrce_read_frame, xrce_write_frame};
+
+    #[test]
+    fn read_frame_bounds_body_to_declared_length_ignoring_appended_submessage() {
+        // A well-formed WRITE_DATA carrying a 3-byte sample, with a second
+        // submessage appended after it. The reader must return only the first
+        // sample, never the trailing bytes.
+        let first = xrce_write_frame(1, &[0xAA, 0xBB, 0xCC]);
+        let second = xrce_write_frame(2, &[0xDD, 0xEE]);
+        let mut frame = first.clone();
+        frame.extend_from_slice(&second);
+        assert_eq!(xrce_read_frame(&frame), Some(&[0xAA, 0xBB, 0xCC][..]));
+    }
+
+    #[test]
+    fn read_frame_rejects_length_running_past_datagram() {
+        // Declared submessage_length = 0xFFFF but only 3 payload bytes present.
+        let mut frame = xrce_write_frame(1, &[0xAA, 0xBB, 0xCC]);
+        frame[6] = 0xFF;
+        frame[7] = 0xFF;
+        assert_eq!(xrce_read_frame(&frame), None);
+    }
+
+    #[test]
+    fn read_frame_rejects_truncated_header() {
+        assert_eq!(xrce_read_frame(&[0x80, 0x01, 0x00, 0x00, 0x07]), None);
+    }
+
+    #[test]
+    fn read_frame_rejects_wrong_submessage_id() {
+        let mut frame = xrce_write_frame(1, &[0xAA]);
+        frame[4] = 0x08; // neither WRITE_DATA (0x07) nor DATA (0x09)
+        assert_eq!(xrce_read_frame(&frame), None);
     }
 }

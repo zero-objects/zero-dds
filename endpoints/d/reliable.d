@@ -192,8 +192,29 @@ struct Sender
             return false;
         haveHeartbeat = true;
         lastHeartbeat = now;
-        auto seqs = inFlightSeqs();
-        hb = Heartbeat(cast(short) seqs[0], cast(short) seqs[$ - 1], stream);
+        // RFC-1982 window base (oldest unacked) + end (newest unacked); NOT the
+        // numeric-sorted min/max, which is wrong across a 16-bit wrap: window
+        // 0xFFFE,0xFFFF,0x0000,0x0001 -> base 0xFFFE / end 0x0001, not 0x0000 /
+        // 0xFFFF. Mirrors window_base / serial_max_in_flight in crates/xrce.
+        ushort first = 0, last = 0;
+        bool seen = false;
+        foreach (k; inFlight.keys)
+        {
+            if (!seen)
+            {
+                first = k;
+                last = k;
+                seen = true;
+            }
+            else
+            {
+                if (seqLt(k, first))
+                    first = k;
+                if (seqGt(k, last))
+                    last = k;
+            }
+        }
+        hb = Heartbeat(cast(short) first, cast(short) last, stream);
         return true;
     }
 

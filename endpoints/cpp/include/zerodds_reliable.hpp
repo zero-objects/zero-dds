@@ -170,9 +170,26 @@ public:
         bool due = !last_hb_.has_value() || (now_ms - *last_hb_) >= HEARTBEAT_PERIOD_MS;
         if (!due) return std::nullopt;
         last_hb_ = now_ms;
-        return Heartbeat{static_cast<std::int16_t>(in_flight_.begin()->first),
-                         static_cast<std::int16_t>(in_flight_.rbegin()->first),
-                         STREAM_RELIABLE};
+        // RFC-1982 window base (oldest unacked) + end (newest unacked); NOT the
+        // numeric map begin()/rbegin(), which are wrong across a 16-bit wrap
+        // (window 0xFFFE,0xFFFF,0x0000,0x0001 → base 0xFFFE / end 0x0001, not
+        // 0x0000 / 0xFFFF). Mirrors window_base / serial_max_in_flight in
+        // crates/xrce/src/reliable.rs.
+        std::uint16_t first = 0, last = 0;
+        bool seen = false;
+        for (const auto& kv : in_flight_) {
+            std::uint16_t k = kv.first;
+            if (!seen) {
+                first = k;
+                last = k;
+                seen = true;
+            } else {
+                if (seq_lt(k, first)) first = k;
+                if (seq_gt(k, last)) last = k;
+            }
+        }
+        return Heartbeat{static_cast<std::int16_t>(first),
+                         static_cast<std::int16_t>(last), STREAM_RELIABLE};
     }
 
     void recv_acknack(std::uint16_t base, std::uint16_t bitmap) {
@@ -262,15 +279,20 @@ public:
     using PollAck   = std::function<int(std::uint8_t*, std::size_t)>;  // >=0 len, -1 none
 
     AsyncWriter(SendBatch send_batch, SendOne send_one, PollAck poll_ack,
-                std::size_t ring_cap = 512)
+                std::size_t ring_cap = 512,
+                std::chrono::milliseconds drain_deadline = std::chrono::milliseconds(2000))
         : send_batch_(std::move(send_batch)),
           send_one_(std::move(send_one)),
           poll_ack_(std::move(poll_ack)),
           cap_(ring_cap),
-          ring_(ring_cap) {
+          ring_(ring_cap),
+          drain_deadline_(drain_deadline) {
         drain_ = std::thread([this] { drain_loop(); });
     }
 
+    // Destruction is bounded: finish() enters the drain phase and the drain
+    // thread self-terminates once the window+ring drain OR `drain_deadline_`
+    // elapses — an unacked window (dead peer) can no longer wedge the join.
     ~AsyncWriter() {
         finish();
         if (drain_.joinable()) drain_.join();
@@ -301,6 +323,10 @@ public:
         send_one_(write_frame(seq, data, n));
     }
 
+    // Samples dropped because they exceed MAX_PAYLOAD (skipped, never sent —
+    // they must not wedge the ring head waiting for a slot they can never use).
+    std::size_t dropped() const { return dropped_.load(std::memory_order_relaxed); }
+
 private:
     static std::uint64_t now_ms() {
         return static_cast<std::uint64_t>(
@@ -311,6 +337,8 @@ private:
 
     void drain_loop() {
         std::uint8_t rx[256];
+        std::chrono::steady_clock::time_point deadline{};
+        bool have_deadline = false;
         for (;;) {
             if (abort_.load(std::memory_order_acquire)) return;
             // 1) pull ready samples from the ring into the sender window.
@@ -319,7 +347,18 @@ private:
             while (h != tail_.load(std::memory_order_acquire) &&
                    sender_.in_flight_count() < SENDER_WINDOW) {
                 std::uint16_t seq = 0;
-                if (sender_.submit(ring_[h], seq) != SubmitErr::Ok) break;
+                SubmitErr e = sender_.submit(ring_[h], seq);
+                if (e == SubmitErr::WindowFull) {
+                    break;  // leave the sample in the ring; an ACKNACK frees a slot
+                }
+                if (e == SubmitErr::PayloadTooLarge) {
+                    // Unsendable: skip it (advance the head) so an oversized sample
+                    // at the queue head cannot block every sample behind it forever.
+                    dropped_.fetch_add(1, std::memory_order_relaxed);
+                    h = (h + 1) % cap_;
+                    head_.store(h, std::memory_order_release);
+                    continue;
+                }
                 batch.push_back(write_frame(seq, ring_[h].data(), ring_[h].size()));
                 h = (h + 1) % cap_;
                 head_.store(h, std::memory_order_release);
@@ -351,12 +390,20 @@ private:
                 }
             }
 
-            // 4) termination: producer done, window drained, ring empty.
-            if (finished_.load(std::memory_order_acquire) &&
-                sender_.in_flight_count() == 0 &&
-                head_.load(std::memory_order_relaxed) ==
-                    tail_.load(std::memory_order_acquire)) {
-                return;
+            // 4) termination. Once the producer is done, exit when the window +
+            //    ring are fully drained — but never wait longer than the bounded
+            //    drain deadline, so an unacked window (dead peer) cannot hang the
+            //    destructor's join.
+            if (finished_.load(std::memory_order_acquire)) {
+                bool empty = sender_.in_flight_count() == 0 &&
+                             head_.load(std::memory_order_relaxed) ==
+                                 tail_.load(std::memory_order_acquire);
+                if (empty) return;
+                if (!have_deadline) {
+                    deadline = std::chrono::steady_clock::now() + drain_deadline_;
+                    have_deadline = true;
+                }
+                if (std::chrono::steady_clock::now() >= deadline) return;
             }
             std::this_thread::sleep_for(std::chrono::microseconds(200));
         }
@@ -371,6 +418,8 @@ private:
     std::atomic<std::size_t> tail_{0};
     std::atomic<bool> finished_{false};
     std::atomic<bool> abort_{false};
+    std::atomic<std::size_t> dropped_{0};
+    std::chrono::milliseconds drain_deadline_;
     std::thread drain_;
     Sender sender_;  // owned by the drain thread only
 };

@@ -41,9 +41,15 @@ class Writer {
     this._putLE(4, [b[0], b[1], b[2], b[3]]);
   }
   putBytes(b) { for (const x of b) this.buf.push(x & 0xff); }
+  // Wire rule (docs/specs/zerodds-xcdr2-node-1.0.md §"string"): uint32 (UTF-8
+  // byte count incl. NUL) + UTF-8 bytes + NUL. The length prefix is the BYTE
+  // count of the UTF-8 encoding, not the JS string length (UTF-16 code units) —
+  // multibyte characters occupy more than one byte. Byte-identical to the C/Rust
+  // core.
   putString(s) {
-    this.putU32(s.length + 1);
-    this.putBytes(Buffer.from(s, 'ascii'));
+    const raw = Buffer.from(s, 'utf8');
+    this.putU32(raw.length + 1);
+    this.putBytes(raw);
     this.putU8(0);
   }
   putSeqU8(b) { this.putU32(b.length); this.putBytes(b); }
@@ -89,9 +95,11 @@ class Reader {
     const le = this._getLE(4, 4);
     return Buffer.from(le).readFloatLE(0);
   }
+  // Inverse of putString: read n bytes (n incl. the NUL), decode the first n-1
+  // as UTF-8.
   getString() {
     const n = this.getU32();
-    const s = this.buf.subarray(this.pos, this.pos + n - 1).toString('ascii');
+    const s = this.buf.subarray(this.pos, this.pos + n - 1).toString('utf8');
     this.pos += n;
     return s;
   }
@@ -108,7 +116,11 @@ class Reader {
 const XRCE_SESSION_NOKEY = 0x80;
 const XRCE_STREAM_BEST_EFFORT = 0x01;
 
+// Returns null when the sample is larger than the 16-bit submessage_length
+// field can describe (0xFFFF): refuse rather than truncate the length while
+// copying the full payload (the C SDK rejects the same way).
 function xrceWriteFrame(session, stream, seq, sample) {
+  if (sample.length > 0xffff) return null;
   const out = Buffer.alloc(8 + sample.length);
   out[0] = session; out[1] = stream;
   out[2] = seq & 0xff; out[3] = (seq >>> 8) & 0xff;
@@ -118,9 +130,19 @@ function xrceWriteFrame(session, stream, seq, sample) {
   return out;
 }
 
+// Direction (DDS-XRCE spec §8.3.5): WRITE_DATA (0x07) is client->agent — what
+// this endpoint SENDS (xrceWriteFrame); DATA (0x09) is agent->client — what it
+// RECEIVES from the hub. The reader accepts both (parity with the C/Python
+// SDKs): 0x09 for real hub traffic, 0x07 for loopback. Returns null — never
+// throws, never a bogus sample — on a short header, an unknown submessage id, or
+// a declared length that runs past the datagram (truncated / wrong length); the
+// body is bounded by the declared length so trailing bytes never leak in.
 function xrceReadFrame(frame) {
-  if (frame.length < 8 || frame[4] !== 0x07) return null;
-  return frame.subarray(8);
+  if (frame.length < 8) return null;
+  if (frame[4] !== 0x09 && frame[4] !== 0x07) return null;
+  const smLen = frame[6] | (frame[7] << 8);
+  if (8 + smLen > frame.length) return null;
+  return frame.subarray(8, 8 + smLen);
 }
 
 // --- sync client ---

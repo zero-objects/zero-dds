@@ -228,6 +228,8 @@ fn writer_cfg(topic: &str) -> UserWriterConfig {
         reliable: true,
         durability: zerodds_qos::DurabilityKind::Volatile,
         deadline: zerodds_qos::DeadlineQosPolicy::default(),
+        latency_budget: Default::default(),
+        destination_order: Default::default(),
         lifespan: zerodds_qos::LifespanQosPolicy::default(),
         liveliness: zerodds_qos::LivelinessQosPolicy::default(),
         ownership: zerodds_qos::OwnershipKind::Shared,

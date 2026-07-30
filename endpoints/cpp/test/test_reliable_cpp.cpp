@@ -68,6 +68,60 @@ static void test_heartbeat() {
     CHECK(!s.pending_heartbeat(100).has_value());  // < 500ms
     CHECK(s.pending_heartbeat(600).has_value());   // >= 500ms
 }
+// RFC-1982 regression: HEARTBEAT window + loss recovery across the 16-bit wrap
+// (mirrors crates/xrce's wrap regression tests). Seeds the sender/receiver up
+// to the wrap using only the public API (submit + full-ack / recv + drain).
+static void test_wrap_heartbeat_and_recovery() {
+    Sender s;
+    std::uint16_t seq = 0; // walk next_seq to 0xFFFE via submit + full-ack.
+    do {
+        s.submit(Bytes{0}, seq);
+        s.recv_acknack(static_cast<std::uint16_t>(seq + 1), 0x0000);
+    } while (seq != 0xFFFD);
+    CHECK(s.in_flight_count() == 0);
+
+    std::uint16_t q0, q1, q2, q3;
+    s.submit(Bytes{10}, q0); // 0xFFFE
+    s.submit(Bytes{11}, q1); // 0xFFFF (lost)
+    s.submit(Bytes{12}, q2); // 0x0000
+    s.submit(Bytes{13}, q3); // 0x0001
+    CHECK(q0 == 0xFFFE && q1 == 0xFFFF && q2 == 0x0000 && q3 == 0x0001);
+
+    auto hb = s.pending_heartbeat(0);
+    // Wrap-correct window base/end, NOT the numeric 0x0000 / 0xFFFF.
+    CHECK(hb && static_cast<std::uint16_t>(hb->first_unacked) == 0xFFFE
+             && static_cast<std::uint16_t>(hb->last_unacked) == 0x0001);
+
+    Receiver r; // seed expected to 0xFFFE (deliver 0..0xFFFD in order).
+    for (std::uint32_t k = 0; k <= 0xFFFD; ++k) {
+        r.recv_data(static_cast<std::uint16_t>(k), Bytes{0});
+        r.drain_in_order();
+    }
+    CHECK(r.expected() == 0xFFFE);
+
+    r.recv_data(q0, Bytes{10}); // 0xFFFF lost
+    r.recv_data(q2, Bytes{12});
+    r.recv_data(q3, Bytes{13});
+    auto d1 = r.drain_in_order();
+    CHECK(d1.size() == 1 && d1[0].first == 0xFFFE);
+    CHECK(r.expected() == 0xFFFF);
+
+    auto ack = r.pending_acknack(q3);
+    CHECK(static_cast<std::uint16_t>(ack.first_unacked) == 0xFFFF);
+    CHECK((ack.bitmap & 0b1) != 0);    // 0xFFFF NACKed
+    CHECK((ack.bitmap & 0b110) == 0);  // 0x0000/0x0001 present
+
+    s.recv_acknack(static_cast<std::uint16_t>(ack.first_unacked), ack.bitmap);
+    CHECK(s.get_in_flight(q1) != nullptr);
+    CHECK(s.get_in_flight(q0) == nullptr && s.get_in_flight(q2) == nullptr
+          && s.get_in_flight(q3) == nullptr);
+    CHECK(s.in_flight_count() == 1);
+
+    r.recv_data(q1, Bytes{11});
+    auto d2 = r.drain_in_order();
+    CHECK(d2.size() == 3 && d2[0].first == 0xFFFF && d2[1].first == 0x0000
+          && d2[2].first == 0x0001);
+}
 static void test_recv_acknack_clears() {
     Sender s;
     std::uint16_t seq = 0;
@@ -206,6 +260,7 @@ int main(int argc, char** argv) {
     test_submit_payload_too_large();
     test_submit_window_full();
     test_heartbeat();
+    test_wrap_heartbeat_and_recovery();
     test_recv_acknack_clears();
     test_recv_acknack_full_clear();
     test_recv_in_order();

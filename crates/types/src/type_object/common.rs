@@ -37,6 +37,23 @@ impl NameHash {
         Self(out)
     }
 
+    /// Hash-derived member ID for `@autoid(HASH)` / `@hashid("hint")`
+    /// (XTypes 1.3 §7.3.1.2.1.1 + §7.3.1.2.1.4).
+    ///
+    /// The member ID is the first 4 octets of `MD5(name)` interpreted as a
+    /// little-endian `u32`, masked to the 28-bit member-ID space
+    /// (`& 0x0FFFFFFF`). The top 4 bits are outside the member-ID range
+    /// (the EMHEADER reserves them for the length-code on the wire), so the
+    /// mask — not a shift — yields the canonical ID. `@autoid(HASH)` hashes
+    /// the member name; `@hashid("hint")` hashes the given hint string.
+    ///
+    /// This is the single, central derivation the TypeObject builder and the
+    /// codegen backends consume — never a per-backend re-implementation.
+    #[must_use]
+    pub fn member_id_from_name(name: &str) -> u32 {
+        u32::from_le_bytes(Self::from_name(name).0) & 0x0FFF_FFFF
+    }
+
     /// Encoded as `octet[4]` (4 bytes, no length, no padding).
     ///
     /// # Errors

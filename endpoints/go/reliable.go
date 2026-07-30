@@ -202,8 +202,32 @@ func (s *ReliableSender) GetInFlight(seq uint16) ([]byte, bool) {
 	return p, ok
 }
 
-// InFlightSeqs returns the currently in-flight sequence numbers, ascending
-// (RFC-1982 raw order — safe for the ≤16-sample window this cap enforces).
+// serialWindow returns the RFC-1982 oldest (window base) and newest in-flight
+// sequence numbers. Unlike the numeric map min/max, these are correct across a
+// 16-bit wrap: for the window 0xFFFE,0xFFFF,0x0000,0x0001 the RFC-1982 order is
+// 0xFFFE < 0xFFFF < 0x0000 < 0x0001, so base=0xFFFE / end=0x0001 (the numeric
+// path would report base=0x0000 / end=0xFFFF). Mirrors window_base /
+// serial_max_in_flight in crates/xrce/src/reliable.rs.
+func (s *ReliableSender) serialWindow() (first, last uint16) {
+	seen := false
+	for k := range s.inFlight {
+		if !seen {
+			first, last, seen = k, k, true
+			continue
+		}
+		if SeqLt(k, first) {
+			first = k
+		}
+		if SeqGt(k, last) {
+			last = k
+		}
+	}
+	return first, last
+}
+
+// InFlightSeqs returns the currently in-flight sequence numbers in numeric
+// (map key) order — a deterministic retransmit order. NOT the HEARTBEAT window:
+// the window base/end come from serialWindow (RFC-1982), which is wrap-correct.
 func (s *ReliableSender) InFlightSeqs() []uint16 {
 	out := make([]uint16, 0, len(s.inFlight))
 	for k := range s.inFlight {
@@ -230,8 +254,10 @@ func (s *ReliableSender) PendingHeartbeat(now time.Time) (HeartbeatBody, bool) {
 	}
 	s.hbStarted = true
 	s.lastHeartbeat = now
-	seqs := s.InFlightSeqs()
-	return HeartbeatBody{First: seqs[0], Last: seqs[len(seqs)-1], StreamID: ReliableStreamID}, true
+	// Window base = RFC-1982 oldest unacked, end = RFC-1982 newest unacked
+	// (wrap-correct); never the numeric map min/max.
+	first, last := s.serialWindow()
+	return HeartbeatBody{First: first, Last: last, StreamID: ReliableStreamID}, true
 }
 
 // RecvAcknack processes an incoming ACKNACK on the sender side: everything

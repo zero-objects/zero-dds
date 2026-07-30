@@ -373,7 +373,13 @@ mod tests {
         let mut r = RecordReader::new(&buf);
         let res = r.parse_header();
         assert!(
-            matches!(res, Err(ReadError::Truncated { what: "participant_count", .. })),
+            matches!(
+                res,
+                Err(ReadError::Truncated {
+                    what: "participant_count",
+                    ..
+                })
+            ),
             "expected clean Truncated rejection, got {res:?}"
         );
     }
@@ -389,7 +395,13 @@ mod tests {
         let mut r = RecordReader::new(&buf);
         let res = r.parse_header();
         assert!(
-            matches!(res, Err(ReadError::Truncated { what: "topic_count", .. })),
+            matches!(
+                res,
+                Err(ReadError::Truncated {
+                    what: "topic_count",
+                    ..
+                })
+            ),
             "expected clean Truncated rejection, got {res:?}"
         );
     }

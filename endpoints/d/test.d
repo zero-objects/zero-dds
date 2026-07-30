@@ -68,5 +68,22 @@ void main() {
     r.stop();
     writeln("async loopback: 5 samples OK");
 
+    // negative frame vectors: length bounding + malformed reject
+    {
+        auto first = writeFrame(SessionNoKey, StreamBestEffort, 1, [cast(ubyte)0xAA, 0xBB, 0xCC]);
+        auto second = writeFrame(SessionNoKey, StreamBestEffort, 2, [cast(ubyte)0xDD, 0xEE]);
+        assert(readFrame(first ~ second) == [cast(ubyte)0xAA, 0xBB, 0xCC],
+            "appended submessage must not leak into sample");
+        auto overlong = first.dup;
+        overlong[6] = 0xFF;
+        overlong[7] = 0xFF;
+        assert(readFrame(overlong) is null, "over-long length must reject");
+        assert(readFrame([cast(ubyte)0x80, 0x01, 0x00, 0x00, 0x07]) is null,
+            "truncated header must reject");
+        assert(writeFrame(SessionNoKey, StreamBestEffort, 1, new ubyte[0x10000]) is null,
+            "sample > 0xFFFF must be refused");
+        writeln("negative frame vectors: OK");
+    }
+
     writeln("ALL OK");
 }

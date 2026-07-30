@@ -33,7 +33,11 @@
 //! +------------------------------------------------------+
 //! ```
 //!
-//! Multi-JVM via a gRPC bridge is a v1.1 stretch (see vendor spec §5).
+//! Cross-process / multi-JVM works today via a pure-Java RTPS wire stack
+//! (`org.zerodds.rtps`: SPDP/SEDP/DATA over UDP `DatagramChannel`, no JNI),
+//! opt-in with `-Dzerodds.rtps.enable=true` or `ZERODDS_RTPS=1`, and it is
+//! byte-compatible on the wire with the Rust stack (DDSI-RTPS 2.5). A gRPC
+//! bridge (`org.zerodds.bridge`) is a separate optional path.
 //!
 //! ## Test
 //!

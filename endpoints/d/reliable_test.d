@@ -78,6 +78,62 @@ void main(string[] args)
         s.recvAcknack(AckNack(5, [0, 0], 0x80)); // full clear
         check(s.inFlightCount() == 0, "acknack full clear");
     }
+    // --- RFC-1982 regression: HEARTBEAT window + loss recovery across the
+    //     16-bit wrap (mirrors crates/xrce's wrap regression tests). Seeds
+    //     sender/receiver up to the wrap via the public API only (submit +
+    //     full-ack / recvData + drain), then straddles 0x0000.
+    {
+        Sender s;
+        ushort seq;
+        do // walk nextSeq to 0xFFFE: submit one, fully-ack it, repeat.
+        {
+            s.submit([0], seq);
+            s.recvAcknack(AckNack(cast(short)((seq + 1) & 0xFFFF), [0, 0], 0x80));
+        }
+        while (seq != 0xFFFD);
+        check(s.inFlightCount() == 0, "wrap seed: sender window drained");
+
+        ushort q0, q1, q2, q3;
+        s.submit([10], q0); // 0xFFFE
+        s.submit([11], q1); // 0xFFFF (lost)
+        s.submit([12], q2); // 0x0000
+        s.submit([13], q3); // 0x0001
+        check(q0 == 0xFFFE && q1 == 0xFFFF && q2 == 0x0000 && q3 == 0x0001, "wrap seqs");
+
+        Heartbeat hb;
+        check(s.pendingHeartbeat(MonoTime.currTime, hb), "wrap heartbeat fires");
+        check(cast(ushort) hb.first == 0xFFFE && cast(ushort) hb.last == 0x0001,
+            "heartbeat window across wrap = [0xFFFE,0x0001] (not numeric 0,0xFFFF)");
+
+        Receiver r; // seed expected to 0xFFFE
+        foreach (k; 0 .. 0xFFFE)
+        {
+            r.recvData(cast(ushort) k, [0]);
+            r.drainInOrder();
+        }
+        check(r.expected() == 0xFFFE, "wrap seed: receiver expects 0xFFFE");
+
+        r.recvData(q0, [10]); // 0xFFFF lost
+        r.recvData(q2, [12]);
+        r.recvData(q3, [13]);
+        auto d1 = r.drainInOrder();
+        check(d1.length == 1 && d1[0][0] == 10, "only 0xFFFE before recovery");
+        check(r.expected() == 0xFFFF, "receiver blocked at 0xFFFF");
+
+        auto ack = r.pendingAcknack(true, q3);
+        check(cast(ushort) ack.firstUnacked == 0xFFFF, "acknack base = 0xFFFF across wrap");
+        ushort bm = cast(ushort)(ack.nack[0] | (ack.nack[1] << 8));
+        check((bm & 0b1) != 0 && (bm & 0b110) == 0, "only 0xFFFF NACKed");
+
+        s.recvAcknack(ack);
+        check(s.getInFlight(q1) !is null, "0xFFFF retransmittable");
+        check(s.getInFlight(q0) is null && s.inFlightCount() == 1, "others acked");
+
+        r.recvData(q1, s.getInFlight(q1));
+        auto d2 = r.drainInOrder();
+        check(d2.length == 3 && d2[0][0] == 11 && d2[1][0] == 12 && d2[2][0] == 13,
+            "0xFFFF,0x0000,0x0001 deliver in RFC-1982 order");
+    }
     // --- Receiver ---
     {
         Receiver r;

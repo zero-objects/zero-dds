@@ -134,8 +134,13 @@ module Endpoint = struct
   let session_nokey = 0x80
   let stream_best_effort = 0x01
 
+  (* The 16-bit submessage_length field cannot describe a sample larger than
+     0xFFFF; refuse (empty bytes) rather than truncate the length while
+     appending the full payload (mirrors the C SDK's rejection). *)
   let write_frame session stream seq (sample : bytes) =
     let n = Bytes.length sample in
+    if n > 0xFFFF then Bytes.create 0
+    else
     let hdr = Bytes.create 8 in
     Bytes.set hdr 0 (Char.chr session);
     Bytes.set hdr 1 (Char.chr stream);
@@ -147,10 +152,27 @@ module Endpoint = struct
     Bytes.set hdr 7 (Char.chr ((n lsr 8) land 0xff));
     Bytes.cat hdr sample
 
+  (* Frame layout: [session, stream, seq_lo, seq_hi, sm_id, flags, len_lo,
+     len_hi] then the sample body. The 16-bit little-endian submessage_length
+     (bytes 6..7) bounds the body exactly: Bytes.sub frame 8 sm_len, never
+     (Bytes.length frame - 8), so trailing padding or an appended submessage is
+     not folded into the sample.
+
+     Accepts WRITE_DATA (0x07, endpoint->hub / loopback) and DATA (0x09,
+     hub->endpoint) — the hub pushes samples with DATA. See DDS-XRCE spec 8.3.5.
+     Returns None for a short header, a wrong submessage id, or a declared
+     length that runs past the datagram (truncation / wrong length). *)
   let read_frame (frame : bytes) =
-    if Bytes.length frame >= 8 && Char.code (Bytes.get frame 4) = 0x07 then
-      Some (Bytes.sub frame 8 (Bytes.length frame - 8))
-    else None
+    if Bytes.length frame < 8 then None
+    else
+      let id = Char.code (Bytes.get frame 4) in
+      if id <> 0x07 && id <> 0x09 then None
+      else
+        let sm_len =
+          Char.code (Bytes.get frame 6) lor (Char.code (Bytes.get frame 7) lsl 8)
+        in
+        if 8 + sm_len > Bytes.length frame then None
+        else Some (Bytes.sub frame 8 sm_len)
 end
 
 (* transport: deliver a frame, receive a frame (or None). *)

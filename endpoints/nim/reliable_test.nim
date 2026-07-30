@@ -155,6 +155,60 @@ block:
   check(d2.len == 2 and d2[0].payload == @[11'u8] and d2[1].payload == @[12'u8],
         "e2e_delivers_all_after_retransmit")
 
+# --- RFC-1982 regression: HEARTBEAT window + loss recovery across the 16-bit
+#     wrap (mirror crates/xrce's wrap regression tests). Seeds sender/receiver
+#     up to the wrap via the public API only (submit + full-ack / recvData +
+#     drain), then straddles 0x0000.
+
+block:
+  var s = newSender()
+  var seq: uint16 = 0'u16 # walk nextSeq to 0xFFFE: submit one, fully-ack it, repeat.
+  while true:
+    seq = s.submit(@[0'u8]).seq
+    s.recvAcknack(AckNackBody(firstUnacked: seq + 1'u16, nackLo: 0'u8, nackHi: 0'u8, streamId: 0x80'u8))
+    if seq == 0xFFFD'u16: break
+  check(s.inFlightCount == 0, "wrap_seed_sender_drained")
+
+  let q0 = s.submit(@[10'u8]).seq  # 0xFFFE
+  let q1 = s.submit(@[11'u8]).seq  # 0xFFFF (lost)
+  let q2 = s.submit(@[12'u8]).seq  # 0x0000
+  let q3 = s.submit(@[13'u8]).seq  # 0x0001
+  check(q0 == 0xFFFE'u16 and q1 == 0xFFFF'u16 and q2 == 0x0000'u16 and q3 == 0x0001'u16, "wrap_seqs")
+
+  let hb = s.pendingHeartbeat(0)
+  check(hb.isSome and hb.get.first == 0xFFFE'u16 and hb.get.last == 0x0001'u16,
+        "heartbeat_window_across_wrap_is_rfc1982_not_numeric")
+
+  var r = newReceiver()
+  var k: uint16 = 0'u16 # seed expected to 0xFFFE
+  while true:
+    discard r.recvData(k, @[0'u8])
+    discard r.drainInOrder()
+    if k == 0xFFFD'u16: break
+    k = k + 1'u16
+  check(r.expected == 0xFFFE'u16, "wrap_seed_receiver_expects_fffe")
+
+  discard r.recvData(q0, @[10'u8])  # 0xFFFF lost
+  discard r.recvData(q2, @[12'u8])
+  discard r.recvData(q3, @[13'u8])
+  let d1 = r.drainInOrder()
+  check(d1.len == 1 and d1[0].seq == 0xFFFE'u16, "wrap_only_first_delivered")
+  check(r.expected == 0xFFFF'u16, "wrap_receiver_blocked_at_ffff")
+
+  let ack = r.pendingAcknack(some(q3))
+  check(ack.firstUnacked == 0xFFFF'u16, "wrap_ack_base_is_ffff")
+  let bm = uint16(ack.nackLo) or (uint16(ack.nackHi) shl 8)
+  check((bm and 0x1'u16) != 0 and (bm and 0x6'u16) == 0, "wrap_only_ffff_nacked")
+
+  s.recvAcknack(ack)
+  check(s.getInFlight(q1).isSome, "wrap_ffff_retransmittable")
+  check(s.getInFlight(q0).isNone and s.inFlightCount == 1, "wrap_others_acked")
+
+  discard r.recvData(q1, s.getInFlight(q1).get)
+  let d2 = r.drainInOrder()
+  check(d2.len == 3 and d2[0].seq == 0xFFFF'u16 and d2[1].seq == 0x0000'u16 and d2[2].seq == 0x0001'u16,
+        "wrap_deliver_in_rfc1982_order_after_retransmit")
+
 # --- byte-golden ---
 
 if paramCount() >= 1:

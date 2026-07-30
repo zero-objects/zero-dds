@@ -371,7 +371,12 @@ fn decode_field_data(
                 // `Vec::with_capacity` (mirrors
                 // `crates/cdr/src/composite.rs`'s
                 // `len > reader.remaining()` guard).
-                check_array_len(r, count, 3, "DeltaVariant field count exceeds remaining bytes")?;
+                check_array_len(
+                    r,
+                    count,
+                    3,
+                    "DeltaVariant field count exceeds remaining bytes",
+                )?;
                 let mut fields = Vec::with_capacity(count);
                 for _ in 0..count {
                     let idx = r.read_u16()?;

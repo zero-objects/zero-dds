@@ -24,10 +24,37 @@
 
 static zdw_async_ring ring;
 
+/* In-process ACKNACK responder for the delivery-correctness pass: a lossless
+ * loopback peer. `deliver` sends the frame AND tracks in-order reception;
+ * `poll_ack` returns a cumulative ACKNACK whenever new samples arrived. Both run
+ * on the drain thread, so `peer_expected`/`last_acked` need no synchronisation. */
+typedef struct bench_ctx {
+    int fd;
+    unsigned short peer_expected; /* next in-order seq the peer wants */
+    unsigned short last_acked;    /* highest base already ACKNACKed */
+} bench_ctx;
+
 static int deliver_udp(void *ctx, const unsigned char *frame, size_t len)
 {
-    int fd = *(int *)ctx;
-    return (int)send(fd, frame, len, 0);
+    bench_ctx *b = (bench_ctx *)ctx;
+    if (len >= 8u && frame[4] == 0x07) { /* WRITE_DATA: advance in-order cursor */
+        unsigned short seq = (unsigned short)(frame[2] | (frame[3] << 8));
+        if (seq == b->peer_expected) {
+            b->peer_expected = (unsigned short)(b->peer_expected + 1);
+        }
+    }
+    return (int)send(b->fd, frame, len, 0);
+}
+
+static int poll_ack(void *ctx, unsigned char *buf, size_t cap)
+{
+    bench_ctx *b = (bench_ctx *)ctx;
+    if (b->peer_expected == b->last_acked) {
+        return 0; /* nothing new to acknowledge */
+    }
+    b->last_acked = b->peer_expected;
+    return (int)zdw_xrce_acknack_frame(buf, cap, 0x80, 0x80, 1u,
+                                       (int)b->peer_expected, 0, 0, 0x80);
 }
 
 static unsigned long long now_ns(void)
@@ -77,10 +104,17 @@ int main(void)
     }
     enq_ns = (now_ns() - t0) / (unsigned long long)BURST;
 
-    /* correctness: the drain thread must deliver every enqueued sample. */
+    /* correctness: the drain thread must deliver every enqueued sample -- now
+     * ACKNACK-driven (the loopback peer acks), not self-acked. */
     memset(&ring, 0, sizeof(ring));
-    if (zdw_async_ring_start(&ring, 0x80, deliver_udp, &s_fd) != 0) {
-        fprintf(stderr, "ring start failed\n"); return 1;
+    {
+        static bench_ctx bctx;
+        bctx.fd = s_fd;
+        bctx.peer_expected = 0;
+        bctx.last_acked = 0;
+        if (zdw_async_ring_start(&ring, 0x80, deliver_udp, poll_ack, &bctx) != 0) {
+            fprintf(stderr, "ring start failed\n"); return 1;
+        }
     }
     for (i = 0; i < DELIVER; i++) {
         while (zdw_async_ring_enqueue(&ring, sample, 4) != 0) {

@@ -533,6 +533,8 @@ fn user_reader_cfg(topic_name: &str, type_name: &str) -> UserReaderConfig {
         reliable: true,
         durability: DurabilityKind::Volatile,
         deadline: DeadlineQosPolicy::default(),
+        latency_budget: Default::default(),
+        destination_order: Default::default(),
         liveliness: LivelinessQosPolicy {
             kind: LivelinessKind::Automatic,
             ..Default::default()
@@ -565,6 +567,8 @@ fn user_writer_cfg(topic_name: &str, type_name: &str) -> UserWriterConfig {
         reliable: true,
         durability: DurabilityKind::TransientLocal,
         deadline: DeadlineQosPolicy::default(),
+        latency_budget: Default::default(),
+        destination_order: Default::default(),
         lifespan: LifespanQosPolicy::default(),
         liveliness: LivelinessQosPolicy {
             kind: LivelinessKind::Automatic,

@@ -52,7 +52,15 @@ func (r *AsyncReader) loop(t Transport) {
 		if body, ok := XrceReadFrame(buf[:n]); ok {
 			cp := make([]byte, len(body))
 			copy(cp, body)
-			r.Samples <- cp
+			// The send must race against Close: a slow (or absent) consumer
+			// fills the 64-slot buffer, and a bare `r.Samples <- cp` would then
+			// block forever, so close(r.done) never reaches this goroutine and
+			// it leaks. Selecting on r.done lets Close win over a full channel.
+			select {
+			case r.Samples <- cp:
+			case <-r.done:
+				return
+			}
 		}
 	}
 }

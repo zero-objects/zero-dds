@@ -29,6 +29,20 @@ public interface IDdsTopicType<T> where T : notnull
     ExtensibilityKind Extensibility { get; }
 
     /// <summary>
+    /// The serialized COMPLETE <c>TypeObject</c> (XTypes 1.3 §7.3.4) of this
+    /// type — the exact XCDR-LE bytes `idlc csharp` emits from the shared
+    /// `zerodds_idl::semantics` source (F-TYPES-3 / #24). The DDS layer hands
+    /// these to <c>zerodds_pub_create_datawriter_typed</c> /
+    /// <c>zerodds_sub_create_datareader_typed</c>, which register the object and
+    /// derive + advertise the strongly-hashed <c>TypeIdentifier</c> — identical
+    /// across all bindings for the same IDL. Defaults to empty; a generated
+    /// TypeSupport for a type without a lowerable TypeObject (union / fixed /
+    /// any member) leaves it empty and the runtime falls back to the
+    /// byte-oriented create.
+    /// </summary>
+    byte[] TypeObject => System.Array.Empty<byte>();
+
+    /// <summary>
     /// Encodes `sample` as an XCDR2 little-endian byte array (default encoding).
     /// </summary>
     byte[] Encode(T sample);

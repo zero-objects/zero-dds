@@ -124,6 +124,11 @@ const SessionNoKey* = 0x80'u8
 const StreamBestEffort* = 0x01'u8
 
 proc writeFrame*(session, stream: uint8, seqNo: int, sample: seq[byte]): seq[byte] =
+  # The 16-bit submessage_length field cannot describe a sample larger than
+  # 0xFFFF; refuse (empty seq) rather than truncate the length while appending
+  # the full payload (mirrors the C SDK's rejection).
+  if sample.len > 0xFFFF:
+    return @[]
   let n = sample.len
   result = @[session, stream,
              byte(seqNo and 0xff), byte((seqNo shr 8) and 0xff),
@@ -132,11 +137,22 @@ proc writeFrame*(session, stream: uint8, seqNo: int, sample: seq[byte]): seq[byt
   for x in sample:
     result.add(x)
 
+## Frame layout: [session, stream, seq_lo, seq_hi, sm_id, flags, len_lo, len_hi]
+## then the sample body. The 16-bit little-endian submessage_length (bytes 6..7)
+## bounds the body exactly: frame[8 ..< 8+smLen], never frame[8 ..< frame.len],
+## so trailing padding or an appended submessage is not folded into the sample.
+##
+## Accepts WRITE_DATA (0x07, endpoint->hub / loopback) and DATA (0x09,
+## hub->endpoint) — the hub pushes samples with DATA. See DDS-XRCE spec 8.3.5.
+## Returns none for a short header, a wrong submessage id, or a declared length
+## that runs past the datagram (truncation / wrong length).
 proc readFrame*(frame: seq[byte]): Option[seq[byte]] =
-  if frame.len >= 8 and frame[4] == 0x07'u8:
-    some(frame[8 ..< frame.len])
-  else:
-    none(seq[byte])
+  if frame.len < 8 or (frame[4] != 0x07'u8 and frame[4] != 0x09'u8):
+    return none(seq[byte])
+  let smLen = int(frame[6]) or (int(frame[7]) shl 8)
+  if 8 + smLen > frame.len:
+    return none(seq[byte])
+  some(frame[8 ..< 8 + smLen])
 
 # --- transport ---
 

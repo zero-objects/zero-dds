@@ -170,11 +170,21 @@ defmodule ZeroDDS.Reliable do
             now_ms - s.last_heartbeat_ms >= ZeroDDS.Reliable.heartbeat_period_ms()
 
         if due do
-          seqs = Map.keys(s.in_flight)
+          [k0 | rest] = Map.keys(s.in_flight)
+          # RFC-1982 window base (oldest unacked) + end (newest unacked); NOT the
+          # numeric Enum.min/max, which is wrong across a 16-bit wrap: window
+          # 0xFFFE,0xFFFF,0x0000,0x0001 -> base 0xFFFE / end 0x0001, not 0x0000 /
+          # 0xFFFF. Mirrors window_base / serial_max_in_flight in crates/xrce.
+          {first, last} =
+            Enum.reduce(rest, {k0, k0}, fn k, {mn, mx} ->
+              mn = if ZeroDDS.Reliable.seq_lt(k, mn), do: k, else: mn
+              mx = if ZeroDDS.Reliable.seq_gt(k, mx), do: k, else: mx
+              {mn, mx}
+            end)
 
           hb = %{
-            first: Enum.min(seqs),
-            last: Enum.max(seqs),
+            first: first,
+            last: last,
             stream_id: ZeroDDS.Reliable.reliable_stream_id()
           }
 

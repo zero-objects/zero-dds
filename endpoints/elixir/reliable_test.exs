@@ -189,6 +189,48 @@ check.(
   "e2e_delivers_all_after_retransmit"
 )
 
+# --- RFC-1982 regression: HEARTBEAT window + loss recovery across the 16-bit
+#     wrap (mirrors crates/xrce's wrap regression tests). Window 0xFFFE,0xFFFF,
+#     0x0000,0x0001 -> old numeric min/max reported first=0/last=0xFFFF; correct
+#     is first=0xFFFE, last=0x0001.
+
+wsender = %{Sender.new() | next_seq: 0xFFFE}
+{:ok, q0, wsender} = Sender.submit(wsender, <<10>>)
+{:ok, q1, wsender} = Sender.submit(wsender, <<11>>)
+{:ok, q2, wsender} = Sender.submit(wsender, <<12>>)
+{:ok, q3, wsender} = Sender.submit(wsender, <<13>>)
+check.(q0 == 0xFFFE and q1 == 0xFFFF and q2 == 0x0000 and q3 == 0x0001, "wrap_seqs")
+
+{whb, wsender} = Sender.pending_heartbeat(wsender, 0)
+check.(whb != nil and whb.first == 0xFFFE and whb.last == 0x0001,
+  "heartbeat_window_across_wrap_is_rfc1982_not_numeric")
+
+wr = %{Receiver.new() | expected: 0xFFFE}
+{:ok, wr} = Receiver.recv_data(wr, q0, <<10>>)
+{:ok, wr} = Receiver.recv_data(wr, q2, <<12>>)
+{:ok, wr} = Receiver.recv_data(wr, q3, <<13>>)
+{wd1, wr} = Receiver.drain_in_order(wr)
+check.(length(wd1) == 1 and elem(Enum.at(wd1, 0), 0) == 0xFFFE, "wrap_only_first_delivered")
+check.(Receiver.expected(wr) == 0xFFFF, "wrap_receiver_blocked_at_ffff")
+
+wack = Receiver.pending_acknack(wr, q3)
+check.(wack.first_unacked == 0xFFFF, "wrap_ack_base_is_ffff")
+check.((wack.nack_bitmap &&& 0x1) != 0 and (wack.nack_bitmap &&& 0x6) == 0, "wrap_only_ffff_nacked")
+
+wsender = Sender.recv_acknack(wsender, wack)
+check.(Sender.get_in_flight(wsender, q1) != nil, "wrap_ffff_retransmittable")
+check.(Sender.get_in_flight(wsender, q0) == nil and Sender.in_flight_count(wsender) == 1,
+  "wrap_others_acked")
+
+{:ok, wr} = Receiver.recv_data(wr, q1, Sender.get_in_flight(wsender, q1))
+{wd2, _wr} = Receiver.drain_in_order(wr)
+
+check.(
+  length(wd2) == 3 and elem(Enum.at(wd2, 0), 0) == 0xFFFF and
+    elem(Enum.at(wd2, 1), 0) == 0x0000 and elem(Enum.at(wd2, 2), 0) == 0x0001,
+  "wrap_deliver_in_rfc1982_order_after_retransmit"
+)
+
 # --- byte-golden ---
 
 case System.argv() do

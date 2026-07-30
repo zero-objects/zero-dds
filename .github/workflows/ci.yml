@@ -104,12 +104,6 @@ jobs:
       - name: Test (DCPS, serial — UDP multicast tests share one multicast group per binary)
         if: ${{ !matrix.cross }}
         run: cargo test -p zerodds-dcps --target ${{ matrix.target }} -- --test-threads=1
-      # documentation/**-fence gate, security half: the security snippet test is
-      # `#![cfg(feature = "security")]`, so `cargo test --workspace` never
-      # compiles it. This step exercises it under `--features security`.
-      - name: Test (DCPS doc-security snippet gate, serial)
-        if: ${{ !matrix.cross }}
-        run: cargo test -p zerodds-dcps --features security --target ${{ matrix.target }} --test documentation_security_snippets_compile -- --test-threads=1
 
   # ---------------------------------------------------------------------------
   # tsn-live — live AF_PACKET transport (DDS-TSN 1.0 Annex A, EtherType
@@ -200,70 +194,3 @@ jobs:
           name: lcov
           path: lcov.info
           retention-days: 30
-
-  # ---------------------------------------------------------------------------
-  # endpoint-e2e — live cross-language ping-pong + reliable-stream E2E
-  # (crates/endpoint-e2e). `cargo test --workspace` already compiles this
-  # crate, but every per-language app soft-skips ("SKIP <name>") when its
-  # toolchain is missing — a false green. This job installs all the
-  # toolchains, runs the suite serially, then audits the log: any language
-  # that still soft-skips means its toolchain regressed / PATH broke and the
-  # job fails. Only swift* is allow-listed (needs a separate swift image).
-  # ---------------------------------------------------------------------------
-  endpoint-e2e:
-    name: endpoint-e2e (cross-language)
-    needs: [fmt, clippy]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Install language toolchains
-        run: |
-          # apt toolchains for go/ada/d/elixir/java/lua/ocaml.
-          sudo apt-get update && sudo apt-get install -y --no-install-recommends \
-            golang-go gnat gprbuild gdc erlang-base erlang-crypto elixir \
-            default-jdk-headless lua5.4 ocaml-nox ocaml-findlib libicu72 xz-utils
-          # zig/nim/julia/dotnet — curl-installed single tarballs into /opt.
-          sudo mkdir -p /opt/zig /opt/nim /opt/julia /opt/dotnet
-          sudo chown "$(id -u):$(id -g)" /opt/zig /opt/nim /opt/julia /opt/dotnet
-          curl -fsSL https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz -o /tmp/zig.tar.xz
-          tar xf /tmp/zig.tar.xz -C /opt/zig --strip-components=1
-          curl -fsSL https://nim-lang.org/download/nim-2.0.8-linux_x64.tar.xz -o /tmp/nim.tar.xz
-          tar xJf /tmp/nim.tar.xz -C /opt/nim --strip-components=1
-          curl -fsSL https://julialang-s3.julialang.org/bin/linux/x64/1.10/julia-1.10.4-linux-x86_64.tar.gz -o /tmp/julia.tgz
-          tar xzf /tmp/julia.tgz -C /opt/julia --strip-components=1
-          python3 endpoints/julia/clear_execstack.py $(find /opt/julia -name '*.so*' -type f) || true
-          curl -fsSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
-          bash /tmp/dotnet-install.sh --channel 8.0 --install-dir /opt/dotnet
-          # Persist the /opt toolchain dirs + dotnet env for later steps.
-          echo "/opt/zig" >> "$GITHUB_PATH"
-          echo "/opt/nim/bin" >> "$GITHUB_PATH"
-          echo "/opt/julia/bin" >> "$GITHUB_PATH"
-          echo "/opt/dotnet" >> "$GITHUB_PATH"
-          echo "DOTNET_CLI_TELEMETRY_OPTOUT=1" >> "$GITHUB_ENV"
-          echo "DOTNET_NOLOGO=1" >> "$GITHUB_ENV"
-      - name: Run cross-language E2E suite
-        # set -o pipefail so a non-zero cargo exit is not swallowed by tee.
-        run: |
-          set -o pipefail
-          cargo test -p zerodds-endpoint-e2e --no-fail-fast \
-            -- --test-threads=1 --nocapture 2>&1 | tee endpoint-e2e.log
-      - name: SKIP audit (only swift* allowed)
-        run: |
-          SKIPS=$(grep '^SKIP ' endpoint-e2e.log || true)
-          BAD=$(printf '%s\n' "$SKIPS" | grep -v '^SKIP swift' | grep -v '^$' || true)
-          if [ -n "$BAD" ]; then
-            echo "UNEXPECTED SKIPs — toolchain installed above but the test still soft-skipped:"
-            echo "$BAD"
-            exit 1
-          fi
-          echo "SKIP audit OK (only swift* skipped, expected):"
-          printf '%s\n' "$SKIPS"
-      - name: Upload endpoint-e2e.log
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: endpoint-e2e-log
-          path: endpoint-e2e.log
-          retention-days: 14

@@ -190,6 +190,13 @@ pub struct PublicationBuiltinTopicData {
     pub liveliness: zerodds_qos::LivelinessQosPolicy,
     /// Deadline QoS (spec §2.2.3.7).
     pub deadline: zerodds_qos::DeadlineQosPolicy,
+    /// LatencyBudget QoS (spec §2.2.3.10, PID 0x0027) — offered duration.
+    /// RxO-matched: `offered.duration <= requested.duration`.
+    pub latency_budget: zerodds_qos::LatencyBudgetQosPolicy,
+    /// DestinationOrder QoS (spec §2.2.3.18, PID 0x0025) — offered kind.
+    /// RxO-matched: `offered.kind >= requested.kind`
+    /// (BY_SOURCE_TIMESTAMP > BY_RECEPTION_TIMESTAMP).
+    pub destination_order: zerodds_qos::DestinationOrderQosPolicy,
     /// Lifespan QoS (spec §2.2.3.16) — writer-only.
     pub lifespan: zerodds_qos::LifespanQosPolicy,
     /// Presentation QoS (spec §2.2.3.6, PID 0x0021). Publisher/Subscriber-group
@@ -352,6 +359,19 @@ impl PublicationBuiltinTopicData {
         params.push(Parameter::new(
             pid::DEADLINE,
             encode_duration_le(self.deadline.period).to_vec(),
+        ));
+
+        // LATENCY_BUDGET: 8 Byte Duration_t (spec §2.2.3.10 / PID 0x0027).
+        // Always emitted so a strict peer can RxO-match on it.
+        params.push(Parameter::new(
+            pid::LATENCY_BUDGET,
+            encode_duration_le(self.latency_budget.duration).to_vec(),
+        ));
+
+        // DESTINATION_ORDER: 4 Byte u32 kind (spec §2.2.3.18 / PID 0x0025).
+        params.push(Parameter::new(
+            pid::DESTINATION_ORDER,
+            encode_u32_le(self.destination_order.kind as u32).to_vec(),
         ));
 
         // LIFESPAN: 8 Byte Duration_t
@@ -616,6 +636,20 @@ impl PublicationBuiltinTopicData {
             .map(|period| zerodds_qos::DeadlineQosPolicy { period })
             .unwrap_or_default();
 
+        let latency_budget = pl
+            .find(pid::LATENCY_BUDGET)
+            .and_then(|p| decode_duration(&p.value, little_endian))
+            .map(|duration| zerodds_qos::LatencyBudgetQosPolicy { duration })
+            .unwrap_or_default();
+
+        let destination_order = pl
+            .find(pid::DESTINATION_ORDER)
+            .and_then(|p| decode_u32(&p.value, little_endian))
+            .map(|v| zerodds_qos::DestinationOrderQosPolicy {
+                kind: zerodds_qos::DestinationOrderKind::from_u32(v),
+            })
+            .unwrap_or_default();
+
         let lifespan = pl
             .find(pid::LIFESPAN)
             .and_then(|p| decode_duration(&p.value, little_endian))
@@ -730,6 +764,8 @@ impl PublicationBuiltinTopicData {
             ownership_strength,
             liveliness,
             deadline,
+            latency_budget,
+            destination_order,
             lifespan,
             presentation,
             partition,
@@ -1088,6 +1124,8 @@ mod tests {
             ownership_strength: 0,
             liveliness: zerodds_qos::LivelinessQosPolicy::default(),
             deadline: zerodds_qos::DeadlineQosPolicy::default(),
+            latency_budget: zerodds_qos::LatencyBudgetQosPolicy::default(),
+            destination_order: zerodds_qos::DestinationOrderQosPolicy::default(),
             lifespan: zerodds_qos::LifespanQosPolicy::default(),
             presentation: PresentationQosPolicy::default(),
             partition: alloc::vec::Vec::new(),

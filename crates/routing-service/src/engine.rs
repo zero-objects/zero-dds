@@ -232,6 +232,8 @@ fn user_reader_cfg(ep: &Endpoint, type_name: &str) -> UserReaderConfig {
         reliable: ep.qos.reliable,
         durability: ep.qos.durability.into(),
         deadline: DeadlineQosPolicy::default(),
+        latency_budget: Default::default(),
+        destination_order: Default::default(),
         liveliness: LivelinessQosPolicy {
             kind: LivelinessKind::Automatic,
             ..Default::default()
@@ -260,6 +262,8 @@ fn user_writer_cfg(ep: &Endpoint, type_name: &str) -> UserWriterConfig {
         reliable: ep.qos.reliable,
         durability: ep.qos.durability.into(),
         deadline: DeadlineQosPolicy::default(),
+        latency_budget: Default::default(),
+        destination_order: Default::default(),
         lifespan: LifespanQosPolicy::default(),
         liveliness: LivelinessQosPolicy {
             kind: LivelinessKind::Automatic,

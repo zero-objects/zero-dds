@@ -114,7 +114,12 @@ public struct Reader {
 public let xrceSessionNoKey: UInt8 = 0x80
 public let xrceStreamBestEffort: UInt8 = 0x01
 
+// The 16-bit submessage_length field cannot describe a sample larger than
+// 0xFFFF. Rather than silently truncate the length while appending the full
+// payload (which the C SDK rejects), return an empty frame so the caller sees
+// the refusal.
 public func xrceWriteFrame(session: UInt8, stream: UInt8, seq: UInt16, sample: [UInt8]) -> [UInt8] {
+    guard sample.count <= 0xFFFF else { return [] }
     var out: [UInt8] = [
         session, stream,
         UInt8(seq & 0xff), UInt8((seq >> 8) & 0xff),
@@ -125,9 +130,21 @@ public func xrceWriteFrame(session: UInt8, stream: UInt8, seq: UInt16, sample: [
     return out
 }
 
+// Frame layout: [session, stream, seq_lo, seq_hi, sm_id, flags, len_lo, len_hi]
+// then the sample body. The 16-bit little-endian submessage_length (bytes 6..7)
+// bounds the body exactly: the returned slice is frame[8 ..< 8+len], never
+// frame[8...] to the end, so trailing padding or an appended submessage is not
+// folded into the sample.
+//
+// Accepts WRITE_DATA (0x07, endpoint->hub / loopback) and DATA (0x09,
+// hub->endpoint) — the hub pushes samples with DATA. See DDS-XRCE spec 8.3.5.
+// Returns nil (never a crash) for a short header, a wrong submessage id, or a
+// declared length that runs past the datagram (truncation / wrong length).
 public func xrceReadFrame(_ frame: [UInt8]) -> [UInt8]? {
-    guard frame.count >= 8, frame[4] == 0x07 else { return nil }
-    return Array(frame[8...])
+    guard frame.count >= 8, frame[4] == 0x07 || frame[4] == 0x09 else { return nil }
+    let smLen = Int(frame[6]) | (Int(frame[7]) << 8)
+    guard 8 + smLen <= frame.count else { return nil }
+    return Array(frame[8 ..< 8 + smLen])
 }
 
 // --- transport ---

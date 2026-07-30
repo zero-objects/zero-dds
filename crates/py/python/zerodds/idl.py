@@ -1302,3 +1302,18 @@ def type_name_of(cls_or_obj: Any) -> str:
     if name is None:
         raise TypeError(f"{cls.__name__} hat keinen @idl_struct(typename=...)-Decorator")
     return name  # type: ignore[return-value]
+
+
+def type_object_of(cls_or_obj: Any) -> bytes:
+    """Returns the serialized COMPLETE ``TypeObject`` (XTypes 1.3 §7.3.4) of a
+    generated IDL type — the ``<Class>.TYPE_OBJECT`` byte constant ``idlc
+    python`` emits from the shared ``zerodds_idl::semantics`` source
+    (F-TYPES-3 / #24). Byte-identical to every other ZeroDDS binding's
+    TypeObject for the same IDL, so its MD5-14 hash is the cross-binding
+    ``TypeIdentifier``. Returns ``b""`` for a type without an emitted TypeObject
+    (union / fixed / any member) — callers then use the byte-oriented create.
+
+    Handed to ``zerodds_writer_create_typed`` / ``zerodds_reader_create_typed``
+    (see :mod:`zerodds.loader`) so the endpoint advertises the identifier."""
+    cls: Any = cls_or_obj if isinstance(cls_or_obj, type) else type(cls_or_obj)
+    return bytes(getattr(cls, "TYPE_OBJECT", b""))

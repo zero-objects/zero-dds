@@ -252,6 +252,8 @@ mod bridge_dds {
             reliable: true,
             durability: DurabilityKind::Volatile,
             deadline: DeadlineQosPolicy::default(),
+            latency_budget: Default::default(),
+            destination_order: Default::default(),
             lifespan: LifespanQosPolicy::default(),
             liveliness: LivelinessQosPolicy {
                 kind: LivelinessKind::Automatic,
@@ -276,6 +278,8 @@ mod bridge_dds {
             reliable: true,
             durability: DurabilityKind::Volatile,
             deadline: DeadlineQosPolicy::default(),
+            latency_budget: Default::default(),
+            destination_order: Default::default(),
             liveliness: LivelinessQosPolicy {
                 kind: LivelinessKind::Automatic,
                 ..Default::default()

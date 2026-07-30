@@ -217,7 +217,7 @@ fn encode_mutable(endian: Endianness) -> Vec<u8> {
 fn encode_xrce_frame() -> Vec<u8> {
     use zerodds_xrce::SerialNumber16;
     use zerodds_xrce::header::{MessageHeader, SessionId, StreamId};
-    use zerodds_xrce::submessages::{DataFormat, Message, WriteDataPayload};
+    use zerodds_xrce::submessages::{Message, Submessage, SubmessageId};
 
     let sample = encode_final(Endianness::Little);
     let header = MessageHeader::without_client_key(
@@ -226,12 +226,14 @@ fn encode_xrce_frame() -> Vec<u8> {
         SerialNumber16(1),
     )
     .expect("header");
-    let sm = WriteDataPayload {
-        representation: sample,
-        data_format: DataFormat::Sample,
-    }
-    .into_submessage()
-    .expect("submessage");
+    // These goldens pin the *ZeroDDS Endpoint Profile* frame that the native
+    // language ports currently speak (WRITE_DATA body = the raw sample, no
+    // BaseObjectRequest). Building the submessage by hand keeps the golden
+    // bytes stable while `crates/xrce`'s WRITE_DATA codec moves to the
+    // conformant DDS-XRCE form (BaseObjectRequest first). Migrating the ports
+    // to conformant frames is Phase 2. Flags 0x03 = E-flag LE + the ports'
+    // data-present bit.
+    let sm = Submessage::new(SubmessageId::WriteData, 0x03, sample).expect("submessage");
     Message::new(header, std::vec![sm])
         .expect("message")
         .encode()
@@ -243,7 +245,7 @@ fn encode_xrce_frame() -> Vec<u8> {
 fn encode_data_frame() -> Vec<u8> {
     use zerodds_xrce::SerialNumber16;
     use zerodds_xrce::header::{MessageHeader, SessionId, StreamId};
-    use zerodds_xrce::submessages::{DataFormat, DataPayload, Message};
+    use zerodds_xrce::submessages::{Message, Submessage, SubmessageId};
 
     let sample = encode_final(Endianness::Little);
     let header = MessageHeader::without_client_key(
@@ -252,12 +254,10 @@ fn encode_data_frame() -> Vec<u8> {
         SerialNumber16(1),
     )
     .expect("header");
-    let sm = DataPayload {
-        representation: sample,
-        data_format: DataFormat::Sample,
-    }
-    .into_submessage()
-    .expect("submessage");
+    // ZeroDDS Endpoint Profile DATA frame (id=9), byte-stable for the language
+    // ports' receive path; see `encode_xrce_frame` for the Phase-1/Phase-2
+    // split. Flags 0x03 = E-flag LE + data-present.
+    let sm = Submessage::new(SubmessageId::Data, 0x03, sample).expect("submessage");
     Message::new(header, std::vec![sm])
         .expect("message")
         .encode()

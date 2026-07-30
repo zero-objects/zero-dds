@@ -25,6 +25,12 @@ public final class ZdwEndpoint {
     private ZdwEndpoint() {}
 
     public static byte[] xrceWriteFrame(int session, int stream, int seq, byte[] sample) {
+        // The 16-bit submessage_length field cannot describe a sample larger
+        // than 0xFFFF; refuse rather than truncate the length while writing the
+        // full payload (mirrors the C SDK's rejection).
+        if (sample.length > 0xFFFF) {
+            throw new IllegalArgumentException("sample exceeds 16-bit submessage_length");
+        }
         ByteArrayOutputStream o = new ByteArrayOutputStream();
         o.write(session & 0xFF);
         o.write(stream & 0xFF);
@@ -38,6 +44,12 @@ public final class ZdwEndpoint {
         return o.toByteArray();
     }
 
+    // Frame layout: [session, stream, seq_lo, seq_hi, sm_id, flags, len_lo,
+    // len_hi] then the sample body. The 16-bit little-endian submessage_length
+    // (bytes 6..7) bounds the body exactly: it is copied out as frame[8 ..
+    // 8+smLen], so trailing padding or an appended submessage is never folded
+    // into the sample. A frame whose declared length runs past the datagram
+    // (truncation / wrong length) is rejected, not read out of bounds.
     public static byte[] xrceReadBody(byte[] frame) {
         if (frame.length < 8 || (frame[0] & 0xFF) < 0x80) {
             throw new IllegalArgumentException("not a data frame");
@@ -47,6 +59,9 @@ public final class ZdwEndpoint {
             throw new IllegalArgumentException("not WRITE_DATA/DATA");
         }
         int smLen = (frame[6] & 0xFF) | ((frame[7] & 0xFF) << 8);
+        if (8 + smLen > frame.length) {
+            throw new IllegalArgumentException("submessage_length runs past frame");
+        }
         byte[] body = new byte[smLen];
         System.arraycopy(frame, 8, body, 0, smLen);
         return body;

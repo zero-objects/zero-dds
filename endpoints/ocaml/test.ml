@@ -76,4 +76,21 @@ let () =
   done;
   Zerodds.AsyncReader.stop r;
   print_string "async loopback: 5 samples OK\n";
+
+  (* negative frame vectors: length bounding + malformed reject *)
+  let first = Zerodds.Endpoint.write_frame 0x80 0x01 1 (Bytes.of_string "\xAA\xBB\xCC") in
+  let second = Zerodds.Endpoint.write_frame 0x80 0x01 2 (Bytes.of_string "\xDD\xEE") in
+  (match Zerodds.Endpoint.read_frame (Bytes.cat first second) with
+   | Some b when Bytes.to_string b = "\xAA\xBB\xCC" -> ()
+   | _ -> failwith "appended submessage must not leak into sample");
+  let overlong = Bytes.copy first in
+  Bytes.set overlong 6 '\xFF';
+  Bytes.set overlong 7 '\xFF';
+  (match Zerodds.Endpoint.read_frame overlong with
+   | None -> () | Some _ -> failwith "over-long length must reject");
+  (match Zerodds.Endpoint.read_frame (Bytes.of_string "\x80\x01\x00\x00\x07") with
+   | None -> () | Some _ -> failwith "truncated header must reject");
+  if Bytes.length (Zerodds.Endpoint.write_frame 0x80 0x01 1 (Bytes.create 0x10000)) <> 0 then
+    failwith "sample > 0xFFFF must be refused";
+  print_string "negative frame vectors: OK\n";
   print_string "ALL OK\n"

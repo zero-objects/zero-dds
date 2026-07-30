@@ -19,13 +19,13 @@
 
 use zerodds_xrce::submessages::{
     AckNackPayload, CreateClientPayload, CreatePayload, DataFormat, DataPayload, DeletePayload,
-    FragmentPayload, GetInfoPayload, HeartbeatPayload, InfoPayload, ReadDataPayload, ResetPayload,
-    StatusAgentPayload, StatusPayload, TimePoint, TimestampPayload, TimestampReplyPayload,
-    WriteDataPayload,
+    FragmentPayload, GetInfoPayload, HeartbeatPayload, InfoPayload, ReadDataPayload,
+    ReadSpecification, ResetPayload, StatusAgentPayload, StatusPayload, TimePoint,
+    TimestampPayload, TimestampReplyPayload, WriteDataPayload,
 };
 use zerodds_xrce::{
-    Message, MessageHeader, SESSION_ID_NONE_WITHOUT_CLIENT_KEY, SerialNumber16, SessionId,
-    StreamId, Submessage,
+    BaseObjectRequest, Message, MessageHeader, ObjectId, SESSION_ID_NONE_WITHOUT_CLIENT_KEY,
+    SerialNumber16, SessionId, StreamId, Submessage,
 };
 
 fn build_all_16_submessages() -> Vec<Submessage> {
@@ -68,19 +68,34 @@ fn build_all_16_submessages() -> Vec<Submessage> {
         .into_submessage()
         .unwrap(),
         WriteDataPayload {
-            representation: vec![7; 4],
-            data_format: DataFormat::Data,
+            base: BaseObjectRequest {
+                request_id: [0x00, 0x07],
+                object_id: ObjectId::from_raw(0x00D5),
+            },
+            serialized_data: vec![7; 4],
         }
         .into_submessage()
         .unwrap(),
         ReadDataPayload {
-            representation: vec![8; 4],
+            base: BaseObjectRequest {
+                request_id: [0x00, 0x08],
+                object_id: ObjectId::from_raw(0x00D6),
+            },
+            read_specification: ReadSpecification {
+                preferred_stream_id: 0x01,
+                data_format: DataFormat::Data,
+                content_filter_expression: None,
+                delivery_control: None,
+            },
         }
         .into_submessage()
         .unwrap(),
         DataPayload {
-            representation: vec![9; 4],
-            data_format: DataFormat::PackedSamples,
+            base: BaseObjectRequest {
+                request_id: [0x00, 0x08],
+                object_id: ObjectId::from_raw(0x00D6),
+            },
+            serialized_data: vec![9; 4],
         }
         .into_submessage()
         .unwrap(),

@@ -64,6 +64,11 @@ public final class DataReader<T> implements Entity, InProcessBus.Endpoint {
     private boolean closed = false;
     private boolean enabled = false;
 
+    // Optional pure-Java RTPS wire path (cross-process), alongside InProcessBus.
+    private org.zerodds.rtps.RtpsParticipant.WireReader wire;
+    // Synthetic identity for samples arriving over the wire (best-effort path).
+    private static final long WIRE_WRITER_ID = -7_000_000_001L;
+
     private static final class Instance {
         final Deque<Sample<Object>> samples = new ArrayDeque<>();
         Sample.InstanceState state = Sample.InstanceState.ALIVE;
@@ -197,6 +202,23 @@ public final class DataReader<T> implements Entity, InProcessBus.Endpoint {
         inst.samples.addLast(s);
     }
 
+    /** Deliver a sample body received over the RTPS wire into the reader path. */
+    private void deliverWire(byte[] body) {
+        byte[] keyHash = new byte[0];
+        if (typeSupport.isKeyed()) {
+            try {
+                T value = typeSupport.deserialize(Xcdr2Codec.decoder(body.clone()));
+                keyHash = typeSupport.keyHash(value);
+            } catch (RuntimeException ignore) {
+                keyHash = new byte[0];
+            }
+        }
+        InProcessBus.Message m = new InProcessBus.Message(body, keyHash,
+                InProcessBus.ChangeKind.WRITE, WIRE_WRITER_ID, 0, false,
+                java.util.Collections.emptyList(), System.currentTimeMillis());
+        onMessage(m);
+    }
+
     private boolean partitionOverlaps(List<String> writerPartitions) {
         Partition mine = qos.partition();
         Partition theirs = new Partition(writerPartitions);
@@ -313,6 +335,10 @@ public final class DataReader<T> implements Entity, InProcessBus.Endpoint {
             List<InProcessBus.WriterPresence> present =
                     InProcessBus.instance().registerReader(domainId, topic.getName(), this);
             enabled = true;
+            if (org.zerodds.rtps.DdsWireBridge.enabled()) {
+                wire = org.zerodds.rtps.DdsWireBridge.reader(domainId, topic.getName(),
+                        typeSupport.getTypeName(), typeSupport.isKeyed(), this::deliverWire);
+            }
             // TRANSIENT_LOCAL late-join replay (§2.2.3.4): pull retained samples
             // from already-present, partition-matching writers.
             for (InProcessBus.WriterPresence w : present) {

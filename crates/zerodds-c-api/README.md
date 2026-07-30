@@ -60,7 +60,7 @@ clang -std=c11 -lzerodds main.c -o demo
 ./demo
 ```
 
-## Type model — deliberately byte-oriented
+## Type model — byte-oriented samples, optional typed create
 
 The FFI takes **raw CDR bytes** for all samples:
 
@@ -71,7 +71,13 @@ zerodds_reader_take(reader, &out_buf, &out_len, ...);  // out_buf via _free()
 
 The CDR encode/decode logic lives in the language bindings:
 `idl-cpp` emits a C++ encoder, `idl-csharp` a C# encoder, etc. The
-C-FFI is neutral — wire-drift tests pass byte-exactly.
+C-FFI is neutral for sample payloads — wire-drift tests pass byte-exactly.
+
+Type identity can still cross the FFI: the typed-create variants
+(`zerodds_writer_create_typed` / `zerodds_reader_create_typed`) take a
+serialized COMPLETE `TypeObject`, register it in the runtime's TypeLookup
+registry and advertise the derived `TypeIdentifier` (F-TYPES-3). The plain
+`*_create` functions take no `TypeObject` and advertise `TypeIdentifier::None`.
 
 Advantages:
 * No generic-type acrobatics across the FFI boundary.

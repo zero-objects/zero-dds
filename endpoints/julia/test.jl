@@ -65,4 +65,18 @@ for i in 0:4
 end
 ZeroDDS.stop!(r)
 println("async loopback: 5 samples OK")
+
+# --- negative frame vectors: length bounding + malformed reject ---
+let
+    first = ZeroDDS.write_frame(0x80, 0x01, 1, UInt8[0xAA, 0xBB, 0xCC])
+    second = ZeroDDS.write_frame(0x80, 0x01, 2, UInt8[0xDD, 0xEE])
+    @assert ZeroDDS.read_frame(vcat(first, second)) == UInt8[0xAA, 0xBB, 0xCC] "appended submessage must not leak"
+    overlong = copy(first)
+    overlong[7] = 0xFF
+    overlong[8] = 0xFF
+    @assert ZeroDDS.read_frame(overlong) === nothing "over-long length must reject"
+    @assert ZeroDDS.read_frame(UInt8[0x80, 0x01, 0x00, 0x00, 0x07]) === nothing "truncated header must reject"
+    @assert ZeroDDS.write_frame(0x80, 0x01, 1, zeros(UInt8, 0x10000)) == UInt8[] "sample > 0xFFFF must be refused"
+end
+println("negative frame vectors: OK")
 println("ALL OK")

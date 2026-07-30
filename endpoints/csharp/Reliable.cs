@@ -238,6 +238,11 @@ namespace ZeroDDS.Endpoint
             bool due = _lastHeartbeat is null || (now - _lastHeartbeat.Value) >= ReliableWire.HeartbeatPeriod;
             if (!due) return null;
             _lastHeartbeat = now;
+            // RFC-1982 window base (oldest unacked) + end (newest unacked); NOT the
+            // numeric SortedDictionary first/last key, which is wrong across a
+            // 16-bit wrap (window 0xFFFE,0xFFFF,0x0000,0x0001 -> base 0xFFFE / end
+            // 0x0001, not 0x0000 / 0xFFFF). Mirrors window_base /
+            // serial_max_in_flight in crates/xrce/src/reliable.rs.
             ushort first = 0, last = 0;
             bool any = false;
             foreach (var k in _inFlight.Keys)
@@ -245,9 +250,14 @@ namespace ZeroDDS.Endpoint
                 if (!any)
                 {
                     first = k;
+                    last = k;
                     any = true;
                 }
-                last = k;
+                else
+                {
+                    if (ReliableWire.SeqLt(k, first)) first = k;
+                    if (ReliableWire.SeqGt(k, last)) last = k;
+                }
             }
             return new Heartbeat((short)first, (short)last, ReliableWire.StreamReliable);
         }

@@ -52,6 +52,9 @@ public sealed class DdsTopicTypeTraits<T> : ITopicTraits<T>, IKeyHashProvider wh
     public string TypeName => _ts.TypeName;
 
     /// <inheritdoc/>
+    public byte[] TypeObject => _ts.TypeObject;
+
+    /// <inheritdoc/>
     public byte[] Encode(T value) => _ts.Encode(value);
 
     /// <inheritdoc/>

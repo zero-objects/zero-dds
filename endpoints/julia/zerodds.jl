@@ -121,6 +121,10 @@ const STREAM_BEST_EFFORT = 0x01
 
 function write_frame(session, stream, seq, sample::Vector{UInt8})
     n = length(sample)
+    # The 16-bit submessage_length field cannot describe a sample larger than
+    # 0xFFFF; refuse (empty vector) rather than truncate the length while
+    # appending the full payload (mirrors the C SDK's rejection).
+    n > 0xFFFF && return UInt8[]
     hdr = UInt8[
         UInt8(session), UInt8(stream),
         UInt8(seq & 0xff), UInt8((seq >> 8) & 0xff),
@@ -130,8 +134,21 @@ function write_frame(session, stream, seq, sample::Vector{UInt8})
     vcat(hdr, sample)
 end
 
+# Frame layout (1-based): [session, stream, seq_lo, seq_hi, sm_id, flags, len_lo,
+# len_hi] at indices 1..8, then the sample body from index 9. The 16-bit
+# little-endian submessage_length (indices 7..8) bounds the body exactly:
+# frame[9 : 8+smLen], never frame[9:end], so trailing padding or an appended
+# submessage is not folded into the sample.
+#
+# Accepts WRITE_DATA (0x07, endpoint->hub / loopback) and DATA (0x09,
+# hub->endpoint) — the hub pushes samples with DATA. See DDS-XRCE spec 8.3.5.
+# Returns nothing for a short header, a wrong submessage id, or a declared
+# length that runs past the datagram (truncation / wrong length).
 function read_frame(frame::Vector{UInt8})
-    (length(frame) >= 8 && frame[5] == 0x07) ? frame[9:end] : nothing
+    (length(frame) >= 8 && (frame[5] == 0x07 || frame[5] == 0x09)) || return nothing
+    sm_len = Int(frame[7]) | (Int(frame[8]) << 8)
+    8 + sm_len > length(frame) && return nothing
+    frame[9 : 8 + sm_len]
 end
 
 # --- transport ---

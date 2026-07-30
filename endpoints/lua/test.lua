@@ -67,4 +67,16 @@ for i = 0, 4 do
 end
 print("async loopback: 5 samples OK")
 
+-- negative frame vectors: length bounding + malformed reject
+local first = z.writeFrame(0x80, 0x01, 1, "\xAA\xBB\xCC")
+local second = z.writeFrame(0x80, 0x01, 2, "\xDD\xEE")
+assert(z.readFrame(first .. second) == "\xAA\xBB\xCC",
+  "appended submessage must not leak into sample")
+local overlong = first:sub(1, 6) .. "\xFF\xFF" .. first:sub(9)
+assert(z.readFrame(overlong) == nil, "over-long length must reject")
+assert(z.readFrame("\x80\x01\x00\x00\x07") == nil, "truncated header must reject")
+assert(z.writeFrame(0x80, 0x01, 1, string.rep("x", 0x10000)) == nil,
+  "sample > 0xFFFF must be refused")
+print("negative frame vectors: OK")
+
 print("ALL OK")

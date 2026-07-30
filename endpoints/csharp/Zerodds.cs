@@ -59,9 +59,14 @@ namespace ZeroDDS
             PutLE(4, b);
         }
 
+        // Wire rule (docs/specs/zerodds-xcdr2-csharp-1.0.md §"string"): uint32
+        // (UTF-8 byte count incl. NUL) + UTF-8 bytes + NUL. The length prefix is
+        // the BYTE count of the UTF-8 encoding — multibyte characters occupy more
+        // than one byte, and ASCII silently corrupts non-ASCII input. Byte-
+        // identical to the C/Rust core.
         public void PutString(string s)
         {
-            var raw = Encoding.ASCII.GetBytes(s);
+            var raw = Encoding.UTF8.GetBytes(s);
             PutU32((uint)(raw.Length + 1));
             _buf.AddRange(raw);
             PutU8(0);
@@ -115,10 +120,12 @@ namespace ZeroDDS
             return BitConverter.ToSingle(b, 0);
         }
 
+        // Inverse of PutString: read n bytes (n incl. the NUL), decode the first
+        // n-1 as UTF-8.
         public string GetString()
         {
             int n = (int)GetU32();
-            var s = Encoding.ASCII.GetString(_data, _pos, n - 1);
+            var s = Encoding.UTF8.GetString(_data, _pos, n - 1);
             _pos += n;
             return s;
         }
@@ -139,8 +146,13 @@ namespace ZeroDDS
         public const byte SessionNoKey = 0x80;
         public const byte StreamBestEffort = 0x01;
 
+        // The 16-bit submessage_length field cannot describe a sample larger
+        // than 0xFFFF; refuse rather than truncate the length while copying the
+        // full payload (the C SDK rejects the same way).
         public static byte[] WriteFrame(ushort seq, byte[] sample)
         {
+            if (sample.Length > 0xFFFF)
+                throw new ArgumentException("sample exceeds 16-bit submessage_length", nameof(sample));
             var o = new byte[8 + sample.Length];
             o[0] = SessionNoKey;
             o[1] = StreamBestEffort;
@@ -154,11 +166,21 @@ namespace ZeroDDS
             return o;
         }
 
+        // Direction (DDS-XRCE spec §8.3.5): WRITE_DATA (0x07) is client->agent —
+        // what this endpoint SENDS (WriteFrame); DATA (0x09) is agent->client —
+        // what it RECEIVES from the hub. ReadFrame accepts both (parity with the
+        // C/Python SDKs): 0x09 for real hub traffic, 0x07 for loopback. It
+        // returns null — never throws, never a bogus sample — on a short header,
+        // an unknown submessage id, or a declared length that runs past the
+        // datagram (truncated / wrong length); the body is bounded by the
+        // declared length so trailing bytes never leak in.
         public static byte[]? ReadFrame(byte[] frame)
         {
-            if (frame.Length < 8 || frame[4] != 0x07) return null;
-            var body = new byte[frame.Length - 8];
-            Array.Copy(frame, 8, body, 0, body.Length);
+            if (frame.Length < 8 || (frame[4] != 0x09 && frame[4] != 0x07)) return null;
+            int smLen = frame[6] | (frame[7] << 8);
+            if (8 + smLen > frame.Length) return null;
+            var body = new byte[smLen];
+            Array.Copy(frame, 8, body, 0, smLen);
             return body;
         }
     }

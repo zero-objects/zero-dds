@@ -168,6 +168,62 @@ namespace ZeroDDS.Tests
                 Check(d2.Count == 2, "seq1+2 after recovery");
             }
 
+            // ---- RFC-1982 regression: HEARTBEAT window + loss recovery across
+            //      the 16-bit wrap (mirrors crates/xrce's wrap regression tests).
+            //      Seeds sender/receiver up to the wrap via the public API only
+            //      (Submit + full-ack / RecvData + drain), then straddles 0x0000.
+            {
+                var s = new ReliableSender();
+                ushort seq; // walk nextSeq to 0xFFFE: submit one, fully-ack it, repeat.
+                do
+                {
+                    s.Submit(new byte[] { 0 }, out seq);
+                    s.RecvAckNack(new AckNack((short)(seq + 1), 0, 0, 0x80));
+                } while (seq != 0xFFFD);
+                Check(s.InFlightCount == 0, "wrap seed: sender window drained");
+
+                s.Submit(new byte[] { 10 }, out var q0); // 0xFFFE
+                s.Submit(new byte[] { 11 }, out var q1); // 0xFFFF (lost)
+                s.Submit(new byte[] { 12 }, out var q2); // 0x0000
+                s.Submit(new byte[] { 13 }, out var q3); // 0x0001
+                Check(q0 == 0xFFFE && q1 == 0xFFFF && q2 == 0x0000 && q3 == 0x0001, "wrap seqs");
+
+                var hbw = s.PendingHeartbeat(DateTime.UtcNow);
+                Check(hbw.HasValue && (ushort)hbw!.Value.First == 0xFFFE && (ushort)hbw.Value.Last == 0x0001,
+                    "heartbeat window across wrap = [0xFFFE,0x0001] (not numeric 0x0000,0xFFFF)");
+
+                var r = new ReliableReceiver(); // seed expected to 0xFFFE.
+                for (int k = 0; k <= 0xFFFD; k++)
+                {
+                    r.RecvData((ushort)k, new byte[] { 0 });
+                    r.DrainInOrder();
+                }
+                Check(r.Expected == 0xFFFE, "wrap seed: receiver expects 0xFFFE");
+
+                r.RecvData(q0, new byte[] { 10 }); // 0xFFFF lost
+                r.RecvData(q2, new byte[] { 12 });
+                r.RecvData(q3, new byte[] { 13 });
+                var dw = r.DrainInOrder();
+                Check(dw.Count == 1 && dw[0].Payload[0] == 10, "only 0xFFFE before recovery");
+                Check(r.Expected == 0xFFFF, "receiver blocked at 0xFFFF");
+
+                var ackw = r.PendingAckNack(q3);
+                Check((ushort)ackw.FirstUnacked == 0xFFFF, "acknack base = 0xFFFF across wrap");
+                Check((ackw.Bitmap & 0b1) != 0, "0xFFFF NACKed");
+                Check((ackw.Bitmap & 0b110) == 0, "0x0000/0x0001 present");
+
+                s.RecvAckNack(ackw);
+                Check(s.GetInFlight(q1) != null, "0xFFFF retransmittable");
+                Check(s.GetInFlight(q0) == null && s.GetInFlight(q2) == null && s.GetInFlight(q3) == null,
+                    "0xFFFE/0x0000/0x0001 acked");
+                Check(s.InFlightCount == 1, "only 0xFFFF left in-flight");
+
+                r.RecvData(q1, new byte[] { 11 });
+                var dw2 = r.DrainInOrder();
+                Check(dw2.Count == 3 && dw2[0].Payload[0] == 11 && dw2[1].Payload[0] == 12 && dw2[2].Payload[0] == 13,
+                    "0xFFFF,0x0000,0x0001 deliver in RFC-1982 order");
+            }
+
             // ---- byte-golden ----
             var hbFrame = ReliableWire.HeartbeatFrame(new Heartbeat(1, 3, 0x80), 1);
             byte[] hbExpect = { 0x80, 0x00, 0x01, 0x00, 0x0b, 0x01, 0x05, 0x00, 0x01, 0x00, 0x03, 0x00, 0x80 };

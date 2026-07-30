@@ -40,6 +40,7 @@ public final class AsyncReliableWriter implements AutoCloseable {
     private final DatagramSocket socket;
     private final InetAddress peerHost;
     private final int peerPort;
+    private final long drainDeadlineMs;
     private final Thread drainThread;
     private final AtomicBoolean producerDone = new AtomicBoolean(false);
     private final AtomicBoolean stopped = new AtomicBoolean(false);
@@ -48,8 +49,20 @@ public final class AsyncReliableWriter implements AutoCloseable {
     private volatile Exception drainError;
 
     public AsyncReliableWriter(InetAddress peerHost, int peerPort) throws IOException {
+        this(peerHost, peerPort, DRAIN_DEADLINE_MS);
+    }
+
+    /**
+     * @param drainDeadlineMs how long the drain thread keeps flushing AFTER
+     *     {@link #finish(long)}/{@link #close()} signals no more input, before it
+     *     gives up on an unacknowledged window. It bounds the drain phase only --
+     *     it never terminates a live, still-producing writer.
+     */
+    public AsyncReliableWriter(InetAddress peerHost, int peerPort, long drainDeadlineMs)
+            throws IOException {
         this.peerHost = peerHost;
         this.peerPort = peerPort;
+        this.drainDeadlineMs = drainDeadlineMs;
         this.socket = new DatagramSocket();
         this.socket.setSoTimeout(SOCKET_POLL_MS);
         this.drainThread = new Thread(new Runnable() {
@@ -105,9 +118,12 @@ public final class AsyncReliableWriter implements AutoCloseable {
 
     private void drainLoop() {
         byte[] buf = new byte[8192];
-        long deadline = System.currentTimeMillis() + DRAIN_DEADLINE_MS;
+        // Set only once the producer signals done (finish/close); a still-live
+        // writer must never be bounded by a global lifetime deadline -- that was
+        // the bug: a long-lived writer got killed after 20s without finish().
+        long drainDeadline = -1L;
         try {
-            while (!stopped.get() && System.currentTimeMillis() < deadline) {
+            while (!stopped.get()) {
                 // 1) Move queued samples into the sender's window: submit -> history
                 //    (in-flight map) -> frame -> send WRITE_DATA.
                 while (sender.inFlightCount() < ReliableWire.WINDOW) {
@@ -151,11 +167,20 @@ public final class AsyncReliableWriter implements AutoCloseable {
                     }
                 }
 
-                // 4) Done once the producer signaled no more input and both the
-                //    queue and the send window (history) are empty.
-                if (producerDone.get() && queue.isEmpty() && sender.inFlightCount() == 0) {
-                    drained = true;
-                    break;
+                // 4) Only after the producer signals done: drain the queue + send
+                //    window, but no longer than drainDeadlineMs so an unacked
+                //    window (dead peer) cannot hang the thread forever.
+                if (producerDone.get()) {
+                    if (queue.isEmpty() && sender.inFlightCount() == 0) {
+                        drained = true;
+                        break;
+                    }
+                    if (drainDeadline < 0) {
+                        drainDeadline = System.currentTimeMillis() + drainDeadlineMs;
+                    }
+                    if (System.currentTimeMillis() >= drainDeadline) {
+                        break;
+                    }
                 }
             }
         } catch (IOException e) {

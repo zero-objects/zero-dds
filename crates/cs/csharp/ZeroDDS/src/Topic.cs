@@ -20,6 +20,15 @@ namespace ZeroDDS.Topic;
 public interface ITopicTraits<T>
 {
     string TypeName { get; }
+
+    /// <summary>
+    /// The serialized COMPLETE <c>TypeObject</c> (XTypes 1.3 §7.3.4), forwarded
+    /// from the generated TypeSupport (F-TYPES-3 / #24). Empty for the raw-byte
+    /// / string traits and any type without a lowerable TypeObject; the
+    /// DataWriter/DataReader then use the byte-oriented (None) create.
+    /// </summary>
+    byte[] TypeObject => System.Array.Empty<byte>();
+
     byte[] Encode(T value);
     T Decode(ReadOnlySpan<byte> bytes);
 

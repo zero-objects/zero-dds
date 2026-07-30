@@ -143,8 +143,20 @@ function pending_heartbeat!(s::Sender, now_ms::Integer)
     due = s.last_heartbeat_ms < 0 || (now_ms - s.last_heartbeat_ms) >= HEARTBEAT_PERIOD_MS
     due || return nothing
     s.last_heartbeat_ms = now_ms
-    ks = keys(s.in_flight)
-    (first = minimum(ks), last = maximum(ks), stream_id = RELIABLE_STREAM_ID)
+    # RFC-1982 window base (oldest unacked) + end (newest unacked); NOT numeric
+    # minimum/maximum, which is wrong across a 16-bit wrap: window
+    # 0xFFFE,0xFFFF,0x0000,0x0001 -> base 0xFFFE / end 0x0001, not 0x0000 /
+    # 0xFFFF. Mirrors window_base / serial_max_in_flight in crates/xrce.
+    mn = mx = nothing
+    for k in keys(s.in_flight)
+        if mn === nothing
+            mn = k; mx = k
+        else
+            seq_lt(k, mn) && (mn = k)
+            seq_gt(k, mx) && (mx = k)
+        end
+    end
+    (first = mn, last = mx, stream_id = RELIABLE_STREAM_ID)
 end
 
 "`base = first_unacked`; everything `< base` (RFC-1982) is acknowledged and

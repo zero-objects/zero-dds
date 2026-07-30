@@ -23,7 +23,14 @@ _STUFF = 0x20
 
 
 def xrce_write_frame(session, stream, seq, sample):
-    """Wrap an XCDR sample body in an XRCE WRITE_DATA (Sample) message."""
+    """Wrap an XCDR sample body in an XRCE WRITE_DATA (Sample) message.
+
+    The 16-bit submessage_length field cannot describe a sample larger than
+    0xFFFF; raise rather than truncate the length while appending the full
+    payload (mirrors the C SDK's rejection).
+    """
+    if len(sample) > 0xFFFF:
+        raise ValueError("sample exceeds 16-bit submessage_length")
     out = bytearray()
     out.append(session & 0xFF)
     out.append(stream & 0xFF)

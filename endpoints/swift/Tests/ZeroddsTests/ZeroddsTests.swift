@@ -66,4 +66,25 @@ final class ZeroddsTests: XCTestCase {
         }
         XCTAssertEqual(got, 5)
     }
+
+    func testReadFrameBoundsBodyIgnoringAppendedSubmessage() {
+        let first = xrceWriteFrame(session: xrceSessionNoKey, stream: xrceStreamBestEffort,
+                                   seq: 1, sample: [0xAA, 0xBB, 0xCC])
+        let second = xrceWriteFrame(session: xrceSessionNoKey, stream: xrceStreamBestEffort,
+                                    seq: 2, sample: [0xDD, 0xEE])
+        let body = xrceReadFrame(first + second)
+        XCTAssertEqual(body, [0xAA, 0xBB, 0xCC])
+    }
+
+    func testReadFrameRejectsOverlongLength() {
+        var frame = xrceWriteFrame(session: xrceSessionNoKey, stream: xrceStreamBestEffort,
+                                   seq: 1, sample: [0xAA, 0xBB, 0xCC])
+        frame[6] = 0xFF
+        frame[7] = 0xFF
+        XCTAssertNil(xrceReadFrame(frame))
+    }
+
+    func testReadFrameRejectsTruncatedHeader() {
+        XCTAssertNil(xrceReadFrame([0x80, 0x01, 0x00, 0x00, 0x07]))
+    }
 }

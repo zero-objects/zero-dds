@@ -120,11 +120,11 @@ public sealed class DataReader<T> : IDisposable
             qos.Partition.Names.AddRange(sub.PartitionNames);
             using var scope = new ZeroDDS.QosBridge.NativeQosScope();
             var native = ZeroDDS.QosBridge.QosBridge.ToNative(qos, scope);
-            unsafe { _handle = Native.SubCreateDatareader(_subscriber, topic.Handle, (IntPtr)(&native)); }
+            unsafe { _handle = CreateHandle(_subscriber, topic, (IntPtr)(&native)); }
         }
         else
         {
-            _handle = Native.SubCreateDatareader(_subscriber, topic.Handle, IntPtr.Zero);
+            _handle = CreateHandle(_subscriber, topic, IntPtr.Zero);
         }
         if (_handle == IntPtr.Zero) throw new DdsError("DataReader::create failed");
         _traits = topic.Traits;
@@ -138,9 +138,33 @@ public sealed class DataReader<T> : IDisposable
             qos.Partition.Names.AddRange(sub.PartitionNames);
         using var scope = new ZeroDDS.QosBridge.NativeQosScope();
         var native = ZeroDDS.QosBridge.QosBridge.ToNative(qos, scope);
-        unsafe { _handle = Native.SubCreateDatareader(_subscriber, topic.Handle, (IntPtr)(&native)); }
+        unsafe { _handle = CreateHandle(_subscriber, topic, (IntPtr)(&native)); }
         if (_handle == IntPtr.Zero) throw new DdsError("DataReader::create with QoS failed");
         _traits = topic.Traits;
+    }
+
+    /// <summary>
+    /// F-TYPES-3 / #24: reader-side twin of <c>DataWriter.CreateHandle</c> —
+    /// uses the typed create (<c>zerodds_sub_create_datareader_typed</c>) when
+    /// the topic's TypeSupport carries a serialized COMPLETE TypeObject, so the
+    /// reader advertises the cross-binding <c>TypeIdentifier</c> before it is
+    /// published. Falls back to the byte-oriented create for an empty TypeObject.
+    /// </summary>
+    private static IntPtr CreateHandle(IntPtr subscriber, Topic<T> topic, IntPtr qos)
+    {
+        var typeObject = topic.Traits.TypeObject;
+        if (typeObject is { Length: > 0 })
+        {
+            unsafe
+            {
+                fixed (byte* p = typeObject)
+                {
+                    return Native.SubCreateDatareaderTyped(subscriber, topic.Handle, qos,
+                        (IntPtr)p, (UIntPtr)typeObject.Length);
+                }
+            }
+        }
+        return Native.SubCreateDatareader(subscriber, topic.Handle, qos);
     }
 
     /// <summary>
