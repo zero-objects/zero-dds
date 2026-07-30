@@ -34,6 +34,9 @@ fn gen_swift() -> String {
 // (async stream). Sends a typed `Ping` via the generated `marshalXCDR`, decodes
 // the `Pong` the Rust peer sends back, prints the exact line the harness checks.
 const APP_MAIN: &str = r#"import Foundation
+#if canImport(Glibc)
+import Glibc
+#endif
 import Zerodds
 
 // A real loopback UDP transport implementing the SDK's `Transport` protocol:
@@ -44,7 +47,12 @@ final class UDPTransport: Transport, @unchecked Sendable {
     init?(port: UInt16) {
         // Work on the local `s` so no closure captures `self` before both
         // stored properties are assigned (Swift init rule).
+        // SOCK_DGRAM is Int32 on Darwin but a `__socket_type` enum on Glibc.
+        #if canImport(Glibc)
+        let s = socket(AF_INET, Int32(SOCK_DGRAM.rawValue), 0)
+        #else
         let s = socket(AF_INET, SOCK_DGRAM, 0)
+        #endif
         if s < 0 { return nil }
         var local = sockaddr_in()
         local.sin_family = sa_family_t(AF_INET)
