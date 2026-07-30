@@ -60,6 +60,124 @@ thread_local! {
     /// narrows to 1/2 bytes instead of the former fixed 4.
     static ENUM_WIDTHS: std::cell::RefCell<HashMap<String, u32>> =
         std::cell::RefCell::new(HashMap::new());
+
+    /// Every `const` value expression, keyed by simple name, so a named
+    /// collection bound (`sequence<octet, MAX>`, `long a[LEN]`) or a named
+    /// `case` label resolves to its folded integer (IDL 4.2 §7.4.1.4.4
+    /// const_expr). Populated once per run by [`register_const_values`].
+    static CONST_VALUES: std::cell::RefCell<HashMap<String, ConstExpr>> =
+        std::cell::RefCell::new(HashMap::new());
+
+    /// Every enumerator's integer value, keyed by simple name, so a named bound
+    /// or `case` label that references an enumerator folds to its discriminant.
+    static ENUM_LITERAL_VALUES: std::cell::RefCell<HashMap<String, i64>> =
+        std::cell::RefCell::new(HashMap::new());
+}
+
+/// Registers every `const` value expression and every enumerator value in the
+/// spec into [`CONST_VALUES`] / [`ENUM_LITERAL_VALUES`] (keyed by simple name),
+/// so [`eval_const_int`] can resolve a named collection bound or a named union
+/// `case` label. Recurses into modules and interface bodies. Mirrors idl-zig's
+/// `register_const_values`.
+/// zerodds-lint: recursion-depth 16 (module/interface nesting; bounded by grammar).
+fn register_const_values(defs: &[Definition]) {
+    for def in defs {
+        match def {
+            Definition::Const(c) => {
+                CONST_VALUES.with(|m| {
+                    m.borrow_mut().insert(c.name.text.clone(), c.value.clone());
+                });
+            }
+            Definition::Type(TypeDecl::Constr(ConstrTypeDecl::Enum(e))) => {
+                for (en, val) in e.enumerators.iter().zip(enumerator_values(e)) {
+                    ENUM_LITERAL_VALUES.with(|m| {
+                        m.borrow_mut().insert(en.name.text.clone(), i64::from(val));
+                    });
+                }
+            }
+            Definition::Module(m) => register_const_values(&m.definitions),
+            Definition::Interface(InterfaceDcl::Def(iface)) => {
+                for ex in &iface.exports {
+                    match ex {
+                        Export::Const(c) => {
+                            CONST_VALUES.with(|m| {
+                                m.borrow_mut().insert(c.name.text.clone(), c.value.clone());
+                            });
+                        }
+                        Export::Type(TypeDecl::Constr(ConstrTypeDecl::Enum(e))) => {
+                            for (en, val) in e.enumerators.iter().zip(enumerator_values(e)) {
+                                ENUM_LITERAL_VALUES.with(|m| {
+                                    m.borrow_mut().insert(en.name.text.clone(), i64::from(val));
+                                });
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Evaluates a constant expression to a signed integer, resolving named
+/// constants (via [`CONST_VALUES`]), enumerator names (via
+/// [`ENUM_LITERAL_VALUES`] or `locals`) and folding IDL arithmetic/bitwise
+/// operators (IDL 4.2 §7.4.1.4.4). Mirrors idl-rust's `eval_const_i128` /
+/// idl-zig's `eval_const_int` so a bound or `case` label evaluates to the SAME
+/// integer in every backend. `locals` supplies the switch enum's enumerators
+/// (union path); `depth` bounds const-reference chains.
+/// zerodds-lint: recursion-depth 32 (const-reference chain; explicitly bounded).
+fn eval_const_int(e: &ConstExpr, locals: &HashMap<String, i64>, depth: u32) -> Option<i64> {
+    if depth > 32 {
+        return None;
+    }
+    match e {
+        ConstExpr::Literal(Literal { kind, raw, .. }) => match kind {
+            LiteralKind::Integer => parse_int(raw),
+            LiteralKind::Char | LiteralKind::WideChar => char_literal_value(raw),
+            LiteralKind::Boolean => Some(i64::from(raw.trim().eq_ignore_ascii_case("true"))),
+            _ => None,
+        },
+        // A named enumerator or constant, resolved by its simple (last) segment:
+        // the switch enum's enumerators first (union `case` path), then the
+        // spec-wide enumerator set, then a named `const` (recursively evaluated).
+        ConstExpr::Scoped(sn) => {
+            let last = sn.parts.last()?.text.clone();
+            if let Some(v) = locals.get(&last) {
+                return Some(*v);
+            }
+            if let Some(v) = ENUM_LITERAL_VALUES.with(|m| m.borrow().get(&last).copied()) {
+                return Some(v);
+            }
+            let value = CONST_VALUES.with(|m| m.borrow().get(&last).cloned())?;
+            eval_const_int(&value, locals, depth + 1)
+        }
+        ConstExpr::Unary { op, operand, .. } => {
+            let v = eval_const_int(operand, locals, depth + 1)?;
+            match op {
+                UnaryOp::Plus => Some(v),
+                UnaryOp::Minus => v.checked_neg(),
+                UnaryOp::BitNot => Some(!v),
+            }
+        }
+        ConstExpr::Binary { op, lhs, rhs, .. } => {
+            let a = eval_const_int(lhs, locals, depth + 1)?;
+            let b = eval_const_int(rhs, locals, depth + 1)?;
+            match op {
+                BinaryOp::Or => Some(a | b),
+                BinaryOp::Xor => Some(a ^ b),
+                BinaryOp::And => Some(a & b),
+                BinaryOp::Shl => u32::try_from(b).ok().map(|s| a << s),
+                BinaryOp::Shr => u32::try_from(b).ok().map(|s| a >> s),
+                BinaryOp::Add => a.checked_add(b),
+                BinaryOp::Sub => a.checked_sub(b),
+                BinaryOp::Mul => a.checked_mul(b),
+                BinaryOp::Div => a.checked_div(b),
+                BinaryOp::Mod => a.checked_rem(b),
+            }
+        }
+    }
 }
 
 /// Signed wire holder width in octets (1/2/4) an enum named `name` serializes
@@ -314,10 +432,17 @@ impl Default for ElixirGenOptions {
 /// `__PKG__` is replaced with the package module name.
 const WIRE_MODULE: &str = r#"defmodule __PKG__.Wire do
   @moduledoc false
-  def writer(endian), do: %{buf: <<>>, endian: endian}
+  # Wire representation: xcdr1=false → XCDR2 (max alignment 4, DHEADER-framed
+  # appendable/mutable); xcdr1=true → XCDR1 / classic CDR (max alignment 8, no
+  # DHEADER, PL_CDR1 @mutable). `subwriter/1` inherits the mode so a body /
+  # member sub-writer stays in the same representation as its parent.
+  def writer(endian), do: %{buf: <<>>, endian: endian, xcdr1: false}
+  def writer1(endian), do: %{buf: <<>>, endian: endian, xcdr1: true}
+  def subwriter(w), do: %{buf: <<>>, endian: w.endian, xcdr1: w.xcdr1}
 
   defp align(w, a) do
-    cap = min(a, 4)
+    m = if w.xcdr1, do: 8, else: 4
+    cap = min(a, m)
     pad = rem(cap - rem(byte_size(w.buf), cap), cap)
     %{w | buf: w.buf <> :binary.copy(<<0>>, pad)}
   end
@@ -334,10 +459,33 @@ const WIRE_MODULE: &str = r#"defmodule __PKG__.Wire do
   def put_bool(w, v), do: put_u8(w, if(v, do: 1, else: 0))
   def put_u16(w, v), do: put(w, 2, <<v::little-16>>)
   def put_u32(w, v), do: put(w, 4, <<v::little-32>>)
-  def put_u64(w, v), do: put(w, 4, <<v::little-64>>)
+  # 8-byte primitives request their NATURAL alignment 8; `align/2` caps it at 4
+  # under XCDR2 (byte-identical to before) and keeps 8 under XCDR1.
+  def put_u64(w, v), do: put(w, 8, <<v::little-64>>)
   def put_f32(w, v), do: put(w, 4, <<v::float-little-32>>)
-  def put_f64(w, v), do: put(w, 4, <<v::float-little-64>>)
+  def put_f64(w, v), do: put(w, 8, <<v::float-little-64>>)
   def put_bytes(w, b), do: %{w | buf: w.buf <> b}
+
+  # PL_CDR1 (@mutable, XCDR1) member: `[PID][len][body][pad-to-4]`. The PID
+  # length carries the UNPADDED body length; member ids >= 0x3F00 or bodies over
+  # 0xFFFF use the extended header (PID_EXTENDED, 32-bit id + length). Matches
+  # `zerodds_cdr::xcdr1::encode_pl_cdr1_member`.
+  def put_pl_cdr1_member(w, id, mbody) do
+    bl = byte_size(mbody)
+    w =
+      if id >= 0x3F00 or bl > 0xFFFF do
+        w |> put_u16(0x3F01) |> put_u16(8) |> put_u32(id) |> put_u32(bl)
+      else
+        w |> put_u16(id) |> put_u16(bl)
+      end
+
+    w = put_bytes(w, mbody)
+    pad = rem(4 - rem(bl, 4), 4)
+    put_bytes(w, :binary.copy(<<0>>, pad))
+  end
+
+  # PL_CDR1 sentinel terminator (PID_LIST_END = 0x3F02, length 0).
+  def put_pl_cdr1_sentinel(w), do: w |> put_u16(0x3F02) |> put_u16(0)
 
   def put_string(w, s) do
     w = put_u32(w, byte_size(s) + 1)
@@ -361,17 +509,19 @@ const WIRE_MODULE: &str = r#"defmodule __PKG__.Wire do
     <<sign::1, exp::11, mant::52>> = <<v::float-64>>
     {exp128, mant128} = if exp == 0 and mant == 0, do: {0, 0}, else: {exp - 1023 + 16383, mant}
     be = <<sign::1, exp128::15, mant128::52, 0::60>>
-    put(w, 4, rev(be))
+    put(w, 8, rev(be))
   end
 
   def bytes(w), do: w.buf
 
   # Reader: {bin, pos, endian}; each get returns {value, reader}. Alignment is
   # stream-relative (tracked via pos), inverse of the Writer's byte_size(buf).
-  def reader(bin, endian), do: %{bin: bin, pos: 0, endian: endian}
+  def reader(bin, endian), do: %{bin: bin, pos: 0, endian: endian, xcdr1: false}
+  def reader1(bin, endian), do: %{bin: bin, pos: 0, endian: endian, xcdr1: true}
 
   defp ralign(r, a) do
-    cap = min(a, 4)
+    m = if r.xcdr1, do: 8, else: 4
+    cap = min(a, m)
     pad = rem(cap - rem(r.pos, cap), cap)
     %{r | pos: r.pos + pad}
   end
@@ -394,7 +544,7 @@ const WIRE_MODULE: &str = r#"defmodule __PKG__.Wire do
   end
 
   def get_u64(r) do
-    r = ralign(r, 4)
+    r = ralign(r, 8)
     {:binary.decode_unsigned(:binary.part(r.bin, r.pos, 8), r.endian), %{r | pos: r.pos + 8}}
   end
 
@@ -436,13 +586,53 @@ const WIRE_MODULE: &str = r#"defmodule __PKG__.Wire do
   end
 
   def get_long_double(r) do
-    r = ralign(r, 4)
+    r = ralign(r, 8)
     bin = :binary.part(r.bin, r.pos, 16)
     be = if r.endian == :big, do: bin, else: rev(bin)
     <<sign::1, exp128::15, mant::52, _::60>> = be
     exp = if exp128 == 0 and mant == 0, do: 0, else: exp128 - 16383 + 1023
     <<v::float-64>> = <<sign::1, exp::11, mant::52>>
     {v, %{r | pos: r.pos + 16}}
+  end
+
+  # Reads one PL_CDR1 (@mutable, XCDR1) member. Returns `{:pl_end, r}` at the
+  # sentinel (PID_LIST_END), else `{{member_id, body}, r}`. The RTPS
+  # MUST_UNDERSTAND / impl-specific flag bits (top two of the 16-bit PID) are
+  # stripped before comparing against the reserved PIDs. Mirrors
+  # `zerodds_cdr::xcdr1::read_pl_cdr1_member`.
+  def read_pl_cdr1_member(r) do
+    {pid_raw, r} = get_u16(r)
+    pid = Bitwise.band(pid_raw, 0x3FFF)
+    {len, r} = get_u16(r)
+
+    if pid == 0x3F02 do
+      {:pl_end, r}
+    else
+      {mid, blen, r} =
+        if pid == 0x3F01 do
+          {m, r} = get_u32(r)
+          {bl, r} = get_u32(r)
+          {m, bl, r}
+        else
+          {pid, len, r}
+        end
+
+      {body, r} = get_bytes_n(r, blen)
+      pad = rem(4 - rem(blen, 4), 4)
+      skip = min(pad, byte_size(r.bin) - r.pos)
+      {{mid, body}, %{r | pos: r.pos + skip}}
+    end
+  end
+
+  # Reads a whole PL_CDR1 parameter list into a `%{member_id => body}` map, up to
+  # (and consuming) the sentinel. Later duplicate ids overwrite earlier ones.
+  def read_pl_cdr1_all(r), do: read_pl_cdr1_all(r, %{})
+
+  defp read_pl_cdr1_all(r, acc) do
+    case read_pl_cdr1_member(r) do
+      {:pl_end, r} -> {acc, r}
+      {{id, body}, r} -> read_pl_cdr1_all(r, Map.put(acc, id, body))
+    end
   end
 end
 "#;
@@ -468,6 +658,14 @@ pub fn generate_elixir_module(spec: &Specification, opts: &ElixirGenOptions) -> 
     TYPE_PATHS.with(|t| t.borrow_mut().clear());
     register_type_paths(&spec.definitions, &mut Vec::new());
     USED_FIXED.with(|f| f.set(false));
+
+    // Named-constant / enumerator registries so a named or arithmetic collection
+    // bound and a named union `case` label resolve to a folded integer
+    // (`eval_const_int`, IDL 4.2 §7.4.1.4.4). Cleared first — thread-locals
+    // persist across `generate_elixir_module` calls on the same thread.
+    CONST_VALUES.with(|m| m.borrow_mut().clear());
+    ENUM_LITERAL_VALUES.with(|m| m.borrow_mut().clear());
+    register_const_values(&spec.definitions);
 
     // §7.2.2.4.8 — `@verbatim(placement=BEGIN_FILE)` from all top-level defs
     // (source order), emitted after the wire module, before any type.
@@ -788,25 +986,14 @@ fn normalize_elixir_float(raw: &str) -> String {
     }
 }
 
-/// Evaluates a fixed-array bound to its integer size (literal + unary sign).
-/// zerodds-lint: recursion-depth 32
+/// Evaluates a collection bound / array dimension / bitfield width / `fixed`
+/// P/S to its integer value. Delegates to [`eval_const_int`] so a named `const`
+/// (`long a[LEN]`, `sequence<octet, MAX>`), an enumerator, and folded
+/// arithmetic all resolve — idl-rust/idl-zig `const_expr` parity (§7.4.1.4.4),
+/// not just a bare integer literal + unary sign.
+/// zerodds-lint: recursion-depth 1 (delegates to `eval_const_int`).
 fn array_size(e: &ConstExpr) -> Option<i64> {
-    match e {
-        ConstExpr::Literal(Literal {
-            kind: LiteralKind::Integer,
-            raw,
-            ..
-        }) => parse_int(raw),
-        ConstExpr::Unary { op, operand, .. } => {
-            let v = array_size(operand)?;
-            match op {
-                UnaryOp::Plus => Some(v),
-                UnaryOp::Minus => Some(-v),
-                UnaryOp::BitNot => Some(!v),
-            }
-        }
-        _ => None,
-    }
+    eval_const_int(e, &HashMap::new(), 0)
 }
 
 /// Builds a pipe segment that marshals a fixed array via nested `Enum.reduce`
@@ -844,6 +1031,16 @@ fn switch_typespec(s: &SwitchTypeSpec) -> TypeSpec {
         SwitchTypeSpec::Octet => TypeSpec::Primitive(PrimitiveType::Octet),
         SwitchTypeSpec::Scoped(sn) => TypeSpec::Scoped(sn.clone()),
     }
+}
+
+/// One generated union case: its integer labels, whether it is the `default`,
+/// the Elixir field name, and the encode (`seg`) / decode (`get`) fragments.
+struct ElixirCase {
+    labels: Vec<i64>,
+    is_default: bool,
+    field: String,
+    seg: String,
+    get: String,
 }
 
 /// Emits an IDL `union` as an Elixir struct (discriminator + one field per case
@@ -895,13 +1092,6 @@ fn emit_union(
     // A boolean discriminator switches on Elixir `true`/`false`, not integers.
     let disc_is_bool = matches!(u.switch_type, SwitchTypeSpec::Boolean);
 
-    struct ElixirCase {
-        labels: Vec<i64>,
-        is_default: bool,
-        field: String,
-        seg: String,
-        get: String,
-    }
     let mut cases: Vec<ElixirCase> = Vec::new();
     for c in &u.cases {
         let field = escape_elixir_ident(&c.element.declarator.name().text);
@@ -978,9 +1168,40 @@ fn emit_union(
 
     let _ = writeln!(out, "\n  def marshal_into(w, %__MODULE__{{}} = v) do");
     if ext == ExtensibilityKind::Mutable {
-        // #A16: EMHEADER-framed member list — discriminator is member id 0, each
-        // branch its 1-based id, the whole wrapped in the union's DHEADER (LC4;
-        // #A19 compact codes are a separate coordinated change).
+        // XCDR1 classic CDR: PL_CDR1 — discriminator is member id 0, each case its
+        // 1-based id (body member-relative in an XCDR1 sub-writer), sentinel; no
+        // outer DHEADER (XTypes 1.3 §7.4.1.2 / §7.4.2).
+        let _ = writeln!(out, "    if w.xcdr1 do");
+        let _ = writeln!(out, "      w");
+        let _ = writeln!(out, "      |> then(fn zw ->");
+        let _ = writeln!(
+            out,
+            "        zdm = {wire}.subwriter(zw) |> {disc_seg} |> {wire}.bytes()"
+        );
+        let _ = writeln!(out, "        {wire}.put_pl_cdr1_member(zw, 0, zdm)");
+        let _ = writeln!(out, "      end)");
+        let _ = writeln!(out, "      |> then(fn zw ->");
+        let _ = writeln!(out, "        case v.disc do");
+        for (i, c) in cases.iter().enumerate() {
+            let id = u32::try_from(i + 1).unwrap_or(0);
+            let _ = writeln!(out, "          {} ->", pat(c));
+            let _ = writeln!(
+                out,
+                "            zdm = {wire}.subwriter(zw) |> {} |> {wire}.bytes()",
+                c.seg
+            );
+            let _ = writeln!(out, "            {wire}.put_pl_cdr1_member(zw, {id}, zdm)");
+        }
+        if !has_default {
+            let _ = writeln!(out, "          _ -> zw");
+        }
+        let _ = writeln!(out, "        end");
+        let _ = writeln!(out, "      end)");
+        let _ = writeln!(out, "      |> {wire}.put_pl_cdr1_sentinel()");
+        let _ = writeln!(out, "    else");
+        // #A16: XCDR2 EMHEADER-framed member list — discriminator is member id 0,
+        // each branch its 1-based id, the whole wrapped in the union's DHEADER
+        // (LC4; #A19 compact codes are a separate coordinated change).
         let _ = writeln!(out, "    body = {wire}.writer(w.endian)");
         let emh0 = 0x4000_0000_u32;
         let _ = writeln!(out, "    body = body |> {wire}.put_u32(0x{emh0:08x})");
@@ -1017,7 +1238,9 @@ fn emit_union(
             out,
             "    w |> {wire}.put_u32(byte_size(body_bytes)) |> {wire}.put_bytes(body_bytes)"
         );
+        let _ = writeln!(out, "    end");
     } else if ext == ExtensibilityKind::Final {
+        // @final: disc + selected member inline for both representations.
         let _ = writeln!(out, "    w = w |> {disc_seg}");
         let _ = writeln!(out, "    case v.disc do");
         for c in &cases {
@@ -1028,7 +1251,19 @@ fn emit_union(
         }
         let _ = writeln!(out, "    end");
     } else {
-        let _ = writeln!(out, "    body_w = {wire}.writer(w.endian) |> {disc_seg}");
+        // @appendable: XCDR1 inline (disc + member, no DHEADER) / XCDR2 body.
+        let _ = writeln!(out, "    if w.xcdr1 do");
+        let _ = writeln!(out, "      w = w |> {disc_seg}");
+        let _ = writeln!(out, "      case v.disc do");
+        for c in &cases {
+            let _ = writeln!(out, "        {} -> w |> {}", pat(c), c.seg);
+        }
+        if !has_default {
+            let _ = writeln!(out, "        _ -> w");
+        }
+        let _ = writeln!(out, "      end");
+        let _ = writeln!(out, "    else");
+        let _ = writeln!(out, "    body_w = {wire}.subwriter(w) |> {disc_seg}");
         let _ = writeln!(out, "    body_w =");
         let _ = writeln!(out, "      case v.disc do");
         for c in &cases {
@@ -1043,6 +1278,7 @@ fn emit_union(
             out,
             "    w |> {wire}.put_u32(byte_size(body)) |> {wire}.put_bytes(body)"
         );
+        let _ = writeln!(out, "    end");
     }
     let _ = writeln!(out, "  end");
 
@@ -1053,26 +1289,104 @@ fn emit_union(
     );
     let _ = writeln!(out, "  end");
 
+    // XCDR1 / classic-CDR entry point (`writer1` sets the rep flag).
+    let _ = writeln!(out, "\n  def marshal_xcdr1(%__MODULE__{{}} = v, endian) do");
+    let _ = writeln!(
+        out,
+        "    {wire}.writer1(endian) |> marshal_into(v) |> {wire}.bytes()"
+    );
+    let _ = writeln!(out, "  end");
+
     // Decode: read the discriminator, then a `case` reads only the selected
     // member and builds the struct (@appendable skips the leading DHEADER;
     // @mutable skips the DHEADER then reads each member's EMHEADER + NEXTINT —
     // positional, so a fully-present union round-trips).
     let _ = writeln!(out, "\n  def read(r) do");
-    if ext == ExtensibilityKind::Appendable {
-        let _ = writeln!(out, "    {{_, r}} = {wire}.get_u32(r)");
-    }
     if ext == ExtensibilityKind::Mutable {
+        // XCDR1: PL_CDR1 member map — discriminator is id 0, selected member its
+        // 1-based id; each decoded from its own member-relative XCDR1 reader.
+        let _ = writeln!(out, "    if r.xcdr1 do");
+        let _ = writeln!(out, "      ze = r.endian");
+        let _ = writeln!(out, "      {{zdpl, r}} = {wire}.read_pl_cdr1_all(r)");
+        let _ = writeln!(
+            out,
+            "      {{disc, _zdr}} = {}",
+            disc_get.replace("$r", &format!("{wire}.reader1(Map.get(zdpl, 0), ze)"))
+        );
+        let _ = writeln!(out, "      v =");
+        let _ = writeln!(out, "        case disc do");
+        for (i, c) in cases.iter().enumerate() {
+            let id = u32::try_from(i + 1).unwrap_or(0);
+            let g = c.get.replace("$r", &format!("{wire}.reader1(zdbody, ze)"));
+            let _ = writeln!(out, "          {} ->", pat(c));
+            let _ = writeln!(out, "            case Map.get(zdpl, {id}) do");
+            let _ = writeln!(out, "              nil -> %__MODULE__{{disc: disc}}");
+            let _ = writeln!(
+                out,
+                "              zdbody -> {{{}, _zdr}} = {g}; %__MODULE__{{disc: disc, {n}: {n}}}",
+                c.field,
+                n = c.field
+            );
+            let _ = writeln!(out, "            end");
+        }
+        if !has_default {
+            let _ = writeln!(out, "          _ -> %__MODULE__{{disc: disc}}");
+        }
+        let _ = writeln!(out, "        end");
+        let _ = writeln!(out, "      {{v, r}}");
+        let _ = writeln!(out, "    else");
+        // XCDR2: skip the union DHEADER, then the discriminator's EMHEADER +
+        // NEXTINT, then (positional) the selected member's EMHEADER + NEXTINT.
         let _ = writeln!(out, "    {{_, r}} = {wire}.get_u32(r)");
         let _ = writeln!(out, "    {{_, r}} = {wire}.get_u32(r)");
         let _ = writeln!(out, "    {{_, r}} = {wire}.get_u32(r)");
+        emit_union_disc_case_read(out, &wire, &disc_get, &cases, has_default, &pat, true);
+        let _ = writeln!(out, "    end");
+    } else {
+        if ext == ExtensibilityKind::Appendable {
+            // XCDR2 frames the appendable body with a DHEADER; XCDR1 has none.
+            let _ = writeln!(
+                out,
+                "    {{_, r}} = if r.xcdr1, do: {{0, r}}, else: {wire}.get_u32(r)"
+            );
+        }
+        emit_union_disc_case_read(out, &wire, &disc_get, &cases, has_default, &pat, false);
     }
+    let _ = writeln!(out, "  end");
+    let _ = writeln!(out, "\n  def unmarshal(bin, endian) do");
+    let _ = writeln!(out, "    {{v, _r}} = read({wire}.reader(bin, endian))");
+    let _ = writeln!(out, "    v");
+    let _ = writeln!(out, "  end");
+    let _ = writeln!(out, "\n  def unmarshal_xcdr1(bin, endian) do");
+    let _ = writeln!(out, "    {{v, _r}} = read({wire}.reader1(bin, endian))");
+    let _ = writeln!(out, "    v");
+    let _ = writeln!(out, "  end");
+    // §7.2.2.4.8 — text as the last element inside the declaration.
+    emit_verbatim_at(out, "  ", &u.annotations, PlacementKind::EndDeclaration);
+    let _ = writeln!(out, "end");
+    Ok(())
+}
+
+/// Emits the shared "read discriminator, then a `case` reads the selected
+/// member" tail of a union decode (the XCDR2/PLAIN_CDR path, used by @final,
+/// @appendable, and the XCDR2 arm of @mutable). `mutable_headers` inserts the
+/// per-member EMHEADER + NEXTINT skips (@mutable positional decode).
+fn emit_union_disc_case_read(
+    out: &mut String,
+    wire: &str,
+    disc_get: &str,
+    cases: &[ElixirCase],
+    has_default: bool,
+    pat: &dyn Fn(&ElixirCase) -> String,
+    mutable_headers: bool,
+) {
     let _ = writeln!(out, "    {{disc, r}} = {}", disc_get.replace("$r", "r"));
     let _ = writeln!(out, "    {{v, r}} =");
     let _ = writeln!(out, "      case disc do");
-    for c in &cases {
+    for c in cases {
         let g = c.get.replace("$r", "r");
         let _ = writeln!(out, "        {} ->", pat(c));
-        if ext == ExtensibilityKind::Mutable {
+        if mutable_headers {
             let _ = writeln!(out, "          {{_, r}} = {wire}.get_u32(r)");
             let _ = writeln!(out, "          {{_, r}} = {wire}.get_u32(r)");
         }
@@ -1088,15 +1402,6 @@ fn emit_union(
     }
     let _ = writeln!(out, "      end");
     let _ = writeln!(out, "    {{v, r}}");
-    let _ = writeln!(out, "  end");
-    let _ = writeln!(out, "\n  def unmarshal(bin, endian) do");
-    let _ = writeln!(out, "    {{v, _r}} = read({wire}.reader(bin, endian))");
-    let _ = writeln!(out, "    v");
-    let _ = writeln!(out, "  end");
-    // §7.2.2.4.8 — text as the last element inside the declaration.
-    emit_verbatim_at(out, "  ", &u.annotations, PlacementKind::EndDeclaration);
-    let _ = writeln!(out, "end");
-    Ok(())
 }
 
 /// Evaluates a union case label (`case RED:`, `case 'A':`, `case TRUE:`,
@@ -1106,29 +1411,11 @@ fn emit_union(
 /// points, and the `boolean` keywords `TRUE`/`FALSE`.
 /// zerodds-lint: recursion-depth 32 (label expression; bounded by the grammar).
 fn eval_union_label(e: &ConstExpr, enum_vals: &HashMap<String, i64>) -> Option<i64> {
-    match e {
-        ConstExpr::Literal(Literal { kind, raw, .. }) => match kind {
-            LiteralKind::Integer => parse_int(raw),
-            LiteralKind::Char | LiteralKind::WideChar => char_literal_value(raw),
-            LiteralKind::Boolean => Some(i64::from(raw.trim().eq_ignore_ascii_case("true"))),
-            _ => None,
-        },
-        // `case ENUMERATOR:` — the label names an enumerator of the switch enum
-        // (resolved by its simple, i.e. last, segment).
-        ConstExpr::Scoped(sn) => {
-            let last = sn.parts.last()?.text.clone();
-            enum_vals.get(&last).copied()
-        }
-        ConstExpr::Unary { op, operand, .. } => {
-            let v = eval_union_label(operand, enum_vals)?;
-            match op {
-                UnaryOp::Plus => Some(v),
-                UnaryOp::Minus => Some(-v),
-                UnaryOp::BitNot => Some(!v),
-            }
-        }
-        ConstExpr::Binary { .. } => None,
-    }
+    // The switch enum's enumerators take priority (passed as `locals`), then the
+    // spec-wide enumerator/const registries and folded arithmetic — so a
+    // `case ENUMERATOR:`, `case NAMED_CONST:`, or `case 1 + 1:` all resolve
+    // (idl-rust/idl-zig parity), not only a plain integer / switch-enum name.
+    eval_const_int(e, enum_vals, 0)
 }
 
 /// Evaluates a `char`/`wchar` literal (`'A'`, `L'x'`, `'\n'`) to its code point,
@@ -1264,12 +1551,25 @@ fn emit_bit_holder_tail(out: &mut String, pkg: &str, put: &str, get: &str) {
         "    {wire}.writer(endian) |> marshal_into(v) |> {wire}.bytes()"
     );
     let _ = writeln!(out, "  end");
+    // XCDR1 / classic-CDR entry points. The backing integer marshals identically
+    // in both representations; only the max alignment differs (a u64-backed
+    // holder aligns to 8 under XCDR1, 4 under XCDR2), driven by the rep flag.
+    let _ = writeln!(out, "\n  def marshal_xcdr1(%__MODULE__{{}} = v, endian) do");
+    let _ = writeln!(
+        out,
+        "    {wire}.writer1(endian) |> marshal_into(v) |> {wire}.bytes()"
+    );
+    let _ = writeln!(out, "  end");
     let _ = writeln!(out, "\n  def read(r) do");
     let _ = writeln!(out, "    {{s, r}} = {wire}.{get}(r)");
     let _ = writeln!(out, "    {{%__MODULE__{{storage: s}}, r}}");
     let _ = writeln!(out, "  end");
     let _ = writeln!(out, "\n  def unmarshal(bin, endian) do");
     let _ = writeln!(out, "    {{v, _r}} = read({wire}.reader(bin, endian))");
+    let _ = writeln!(out, "    v");
+    let _ = writeln!(out, "  end");
+    let _ = writeln!(out, "\n  def unmarshal_xcdr1(bin, endian) do");
+    let _ = writeln!(out, "    {{v, _r}} = read({wire}.reader1(bin, endian))");
     let _ = writeln!(out, "    v");
     let _ = writeln!(out, "  end");
     let _ = writeln!(out, "end");
@@ -1595,6 +1895,17 @@ fn emit_struct(
         non_serialized: bool,
     }
     let mut fields: Vec<FieldGen> = Vec::new();
+    // Container-level `@autoid(HASH)` (XTypes 1.3 §7.3.1.2.1.1): when set, every
+    // member with no explicit `@id`/`@hashid` takes a name-hashed member id
+    // instead of a sequential one. Resolved through the shared frontend
+    // (`semantics::member_id`) so the EMHEADER/PL_CDR1/key-order ids match
+    // idl-rust/idl-cpp and the TypeObject (findings A31/A32), byte-identical to
+    // `NameHash::member_id_from_name` = MD5(name)[0..4] LE & 0x0FFFFFFF.
+    let autoid_hash = zerodds_idl::semantics::member_id::container_autoid_hash(&s.annotations);
+    // Sequential fallback counter (`@autoid(SEQUENTIAL)`): advances ONLY for a
+    // member that takes the positional default — an explicit `@id`, `@hashid`,
+    // or `@autoid(HASH)` id does NOT consume a slot, matching the canonical
+    // `resolve_member_ids` in `zerodds-types` and idl-nim's fix.
     let mut next_id: u32 = 0;
     // #A10/P3: base-class members precede the struct's own, in both the Elixir
     // `defstruct` and the wire encode/decode/key order.
@@ -1604,7 +1915,6 @@ fn emit_struct(
     for m in &resolved_members {
         let resolved = resolve_typedef(&m.type_spec, typedefs);
         let lowered = lower_annotations(&m.annotations).ok();
-        let explicit_id = lowered.as_ref().and_then(|l| l.explicit_id());
         let key = lowered.as_ref().is_some_and(|l| l.has_key());
         let optional = lowered.as_ref().is_some_and(|l| {
             l.builtins
@@ -1621,13 +1931,25 @@ fn emit_struct(
         let non_serialized =
             zerodds_idl::semantics::annotations::member_is_non_serialized(&m.annotations);
         for d in &m.declarators {
-            let name = escape_elixir_ident(&d.name().text);
+            // Raw IDL member name (never the escaped Elixir identifier): the wire
+            // member-id hash is over the source spelling (XTypes §7.3.1.2.1.4).
+            let raw = d.name().text.clone();
+            let name = escape_elixir_ident(&raw);
             let id = if non_serialized {
                 0
             } else {
-                let assigned = explicit_id.unwrap_or(next_id);
-                next_id = assigned + 1;
-                assigned
+                match zerodds_idl::semantics::member_id::fixed_member_id(
+                    autoid_hash,
+                    &m.annotations,
+                    &raw,
+                ) {
+                    Some(fixed) => fixed,
+                    None => {
+                        let seq = next_id;
+                        next_id += 1;
+                        seq
+                    }
+                }
             };
             let (seg, get, key_type) = match d {
                 Declarator::Simple(_) => {
@@ -1704,10 +2026,50 @@ fn emit_struct(
 
     // marshal_into writes the struct into an existing writer (pipe-compatible:
     // takes the writer first, returns it) so nested composites keep stream-
-    // relative alignment. @final: fields inline; @appendable: DHEADER body.
+    // relative alignment. The writer's `xcdr1` flag selects the framing at
+    // runtime — one generated type serves both representations. @final: fields
+    // inline (both). @appendable: DHEADER body (XCDR2) / inline (XCDR1).
+    // @mutable: PL_CDR2 EMHEADER list (XCDR2) / PL_CDR1 PID list (XCDR1).
     let _ = writeln!(out, "\n  def marshal_into(w, %__MODULE__{{}} = v) do");
     if ext == ExtensibilityKind::Mutable {
-        // @mutable: DHEADER-framed member list; each member = EMHEADER (LC4 =
+        // XCDR1 classic CDR: PL_CDR1 — [PID][len] members (body built
+        // member-relative in an XCDR1 sub-writer), terminated by the 0x3F02
+        // sentinel; NO outer DHEADER (XTypes 1.3 §7.4.1.2 / §7.4.2).
+        let _ = writeln!(out, "    if w.xcdr1 do");
+        let _ = writeln!(out, "      w");
+        for f in &fields {
+            if f.non_serialized {
+                continue;
+            }
+            let _ = writeln!(out, "      |> then(fn zw ->");
+            if f.optional {
+                let _ = writeln!(out, "        if v.{}_present do", f.name);
+                let _ = writeln!(
+                    out,
+                    "          zdm = {wire}.subwriter(zw) |> {} |> {wire}.bytes()",
+                    f.seg
+                );
+                let _ = writeln!(
+                    out,
+                    "          {wire}.put_pl_cdr1_member(zw, {}, zdm)",
+                    f.id
+                );
+                let _ = writeln!(out, "        else");
+                let _ = writeln!(out, "          zw");
+                let _ = writeln!(out, "        end");
+            } else {
+                let _ = writeln!(
+                    out,
+                    "        zdm = {wire}.subwriter(zw) |> {} |> {wire}.bytes()",
+                    f.seg
+                );
+                let _ = writeln!(out, "        {wire}.put_pl_cdr1_member(zw, {}, zdm)", f.id);
+            }
+            let _ = writeln!(out, "      end)");
+        }
+        let _ = writeln!(out, "      |> {wire}.put_pl_cdr1_sentinel()");
+        let _ = writeln!(out, "    else");
+        // XCDR2: DHEADER-framed member list; each member = EMHEADER (LC4 =
         // member id, plus must-understand bit 31 when @must_understand — #A17) +
         // NEXTINT (body length) + body (XTypes §7.4.3.4.2). LC4 is kept as the
         // universal length code (compact per-width codes — #A19 — are a separate
@@ -1759,7 +2121,10 @@ fn emit_struct(
             out,
             "    w |> {wire}.put_u32(byte_size(body_bytes)) |> {wire}.put_bytes(body_bytes)"
         );
+        let _ = writeln!(out, "    end");
     } else if ext == ExtensibilityKind::Final {
+        // @final: inline for BOTH representations; the writer's rep flag decides
+        // max alignment (4 XCDR2 / 8 XCDR1). No DHEADER either way.
         let _ = writeln!(out, "    w");
         for f in &fields {
             if f.non_serialized {
@@ -1768,8 +2133,18 @@ fn emit_struct(
             let _ = writeln!(out, "    |> {}", field_step(f));
         }
     } else {
+        // @appendable: XCDR1 inline (no DHEADER) / XCDR2 length-prefixed body.
+        let _ = writeln!(out, "    if w.xcdr1 do");
+        let _ = writeln!(out, "      w");
+        for f in &fields {
+            if f.non_serialized {
+                continue;
+            }
+            let _ = writeln!(out, "      |> {}", field_step(f));
+        }
+        let _ = writeln!(out, "    else");
         let _ = writeln!(out, "    body =");
-        let _ = writeln!(out, "      {wire}.writer(w.endian)");
+        let _ = writeln!(out, "      {wire}.subwriter(w)");
         for f in &fields {
             if f.non_serialized {
                 continue;
@@ -1780,11 +2155,20 @@ fn emit_struct(
         let _ = writeln!(out, "    w");
         let _ = writeln!(out, "    |> {wire}.put_u32(byte_size(body))");
         let _ = writeln!(out, "    |> {wire}.put_bytes(body)");
+        let _ = writeln!(out, "    end");
     }
     let _ = writeln!(out, "  end");
 
     let _ = writeln!(out, "\n  def marshal_xcdr(%__MODULE__{{}} = v, endian) do");
     let _ = writeln!(out, "    {wire}.writer(endian)");
+    let _ = writeln!(out, "    |> marshal_into(v)");
+    let _ = writeln!(out, "    |> {wire}.bytes()");
+    let _ = writeln!(out, "  end");
+
+    // XCDR1 / classic-CDR entry point: same member logic, max-alignment-8
+    // writer, no DHEADER, PL_CDR1 @mutable framing (`writer1` sets the flag).
+    let _ = writeln!(out, "\n  def marshal_xcdr1(%__MODULE__{{}} = v, endian) do");
+    let _ = writeln!(out, "    {wire}.writer1(endian)");
     let _ = writeln!(out, "    |> marshal_into(v)");
     let _ = writeln!(out, "    |> {wire}.bytes()");
     let _ = writeln!(out, "  end");
@@ -1851,8 +2235,54 @@ fn emit_struct(
     // member), so it round-trips a *present* optional only; a member absent on
     // the wire would misalign this decoder — same limitation the sibling
     // backends carry for @mutable decode.
+    let struct_fields = fields
+        .iter()
+        .filter(|f| !f.non_serialized)
+        .flat_map(|f| {
+            if f.optional {
+                vec![
+                    format!("{n}_present: {n}_present", n = f.name),
+                    format!("{n}: {n}", n = f.name),
+                ]
+            } else {
+                vec![format!("{n}: {n}", n = f.name)]
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
     let _ = writeln!(out, "\n  def read(r) do");
     if ext == ExtensibilityKind::Mutable {
+        // XCDR1: read the whole PL_CDR1 member list into an id→body map, then
+        // decode each field from its own member-relative XCDR1 reader. An absent
+        // id leaves the field nil (and clears its @optional presence flag) — the
+        // correct omitted-member behaviour (better than the XCDR2 positional
+        // path below, which cannot skip an omitted member).
+        let _ = writeln!(out, "    if r.xcdr1 do");
+        let _ = writeln!(out, "      ze = r.endian");
+        let _ = writeln!(out, "      {{zdpl, r}} = {wire}.read_pl_cdr1_all(r)");
+        for f in &fields {
+            if f.non_serialized {
+                continue;
+            }
+            let g = f.get.replace("$r", &format!("{wire}.reader1(zdbody, ze)"));
+            let _ = writeln!(out, "      {n} =", n = f.name);
+            let _ = writeln!(out, "        case Map.get(zdpl, {}) do", f.id);
+            let _ = writeln!(out, "          nil -> nil");
+            let _ = writeln!(out, "          zdbody -> {{zdv, _zdr}} = ({g}); zdv");
+            let _ = writeln!(out, "        end");
+            if f.optional {
+                let _ = writeln!(
+                    out,
+                    "      {n}_present = Map.has_key?(zdpl, {})",
+                    f.id,
+                    n = f.name
+                );
+            }
+        }
+        let _ = writeln!(out, "      {{%__MODULE__{{{struct_fields}}}, r}}");
+        let _ = writeln!(out, "    else");
+        // XCDR2: skip the DHEADER, then per member skip EMHEADER + NEXTINT and
+        // read (members in declaration order).
         let _ = writeln!(out, "    {{_, r}} = {wire}.get_u32(r)");
         for f in &fields {
             if f.non_serialized {
@@ -1865,9 +2295,16 @@ fn emit_struct(
                 let _ = writeln!(out, "    {}_present = true", f.name);
             }
         }
+        let _ = writeln!(out, "    {{%__MODULE__{{{struct_fields}}}, r}}");
+        let _ = writeln!(out, "    end");
     } else {
         if ext == ExtensibilityKind::Appendable {
-            let _ = writeln!(out, "    {{_, r}} = {wire}.get_u32(r)");
+            // XCDR2 frames the appendable member block with a DHEADER; XCDR1
+            // classic CDR has none.
+            let _ = writeln!(
+                out,
+                "    {{_, r}} = if r.xcdr1, do: {{0, r}}, else: {wire}.get_u32(r)"
+            );
         }
         for f in &fields {
             if f.non_serialized {
@@ -1885,26 +2322,15 @@ fn emit_struct(
                 let _ = writeln!(out, "    {{{}, r}} = {}", f.name, f.get.replace("$r", "r"));
             }
         }
+        let _ = writeln!(out, "    {{%__MODULE__{{{struct_fields}}}, r}}");
     }
-    let struct_fields = fields
-        .iter()
-        .filter(|f| !f.non_serialized)
-        .flat_map(|f| {
-            if f.optional {
-                vec![
-                    format!("{n}_present: {n}_present", n = f.name),
-                    format!("{n}: {n}", n = f.name),
-                ]
-            } else {
-                vec![format!("{n}: {n}", n = f.name)]
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(", ");
-    let _ = writeln!(out, "    {{%__MODULE__{{{struct_fields}}}, r}}");
     let _ = writeln!(out, "  end");
     let _ = writeln!(out, "\n  def unmarshal(bin, endian) do");
     let _ = writeln!(out, "    {{v, _r}} = read({wire}.reader(bin, endian))");
+    let _ = writeln!(out, "    v");
+    let _ = writeln!(out, "  end");
+    let _ = writeln!(out, "\n  def unmarshal_xcdr1(bin, endian) do");
+    let _ = writeln!(out, "    {{v, _r}} = read({wire}.reader1(bin, endian))");
     let _ = writeln!(out, "    v");
     let _ = writeln!(out, "  end");
     // §7.2.2.4.8 — text as the last element inside the declaration.
@@ -1964,7 +2390,7 @@ fn build_map_seg(
     } else {
         let body = reduce.replace("%REPL%", "zdBody");
         format!(
-            "then(fn w ->\n      {bound_check}zdBody = {wire}.writer(w.endian) |> {wire}.put_u32(map_size({expr}))\n      zdBody = {body}\n      zdBB = {wire}.bytes(zdBody)\n      w |> {wire}.put_u32(byte_size(zdBB)) |> {wire}.put_bytes(zdBB)\n    end)"
+            "then(fn w ->\n      {bound_check}zdBody = {wire}.subwriter(w) |> {wire}.put_u32(map_size({expr}))\n      zdBody = {body}\n      zdBB = {wire}.bytes(zdBody)\n      w |> {wire}.put_u32(byte_size(zdBB)) |> {wire}.put_bytes(zdBB)\n    end)"
         )
     }
 }
@@ -2096,14 +2522,27 @@ fn map_key_type(
             } else {
                 nested_keys
             };
+            // A nested-key struct's own members order by their resolved wire id
+            // (XTypes §7.6.8 step 3) — honoring `@id`/`@hashid`/`@autoid(HASH)`
+            // via the shared resolver, not just explicit `@id`, so the KeyHash
+            // body ordering matches idl-rust/the TypeObject.
+            let nested_autoid =
+                zerodds_idl::semantics::member_id::container_autoid_hash(&sd.annotations);
             let mut ordered: Vec<(u32, &Member)> = effective
                 .iter()
                 .enumerate()
                 .map(|(idx, m)| {
-                    let id = lower_annotations(&m.annotations)
-                        .ok()
-                        .and_then(|l| l.explicit_id())
-                        .unwrap_or(idx as u32);
+                    let raw = m
+                        .declarators
+                        .first()
+                        .map(|d| d.name().text.clone())
+                        .unwrap_or_default();
+                    let id = zerodds_idl::semantics::member_id::fixed_member_id(
+                        nested_autoid,
+                        &m.annotations,
+                        &raw,
+                    )
+                    .unwrap_or(idx as u32);
                     (id, *m)
                 })
                 .collect();
@@ -2208,7 +2647,7 @@ fn map_sequence(
         if struct_names.contains(&name) {
             let esc = escape_elixir_ident(&name);
             let seg = format!(
-                "then(fn w -> {bound_check}sub = {pkg}.Wire.writer(w.endian) |> {pkg}.Wire.put_u32(length({expr}));                  sub = Enum.reduce({expr}, sub, fn e, acc -> {pkg}.{esc}.marshal_into(acc, e) end);                  body = {pkg}.Wire.bytes(sub);                  w |> {pkg}.Wire.put_u32(byte_size(body)) |> {pkg}.Wire.put_bytes(body) end)"
+                "then(fn w -> {bound_check}sub = {pkg}.Wire.subwriter(w) |> {pkg}.Wire.put_u32(length({expr}));                  sub = Enum.reduce({expr}, sub, fn e, acc -> {pkg}.{esc}.marshal_into(acc, e) end);                  body = {pkg}.Wire.bytes(sub);                  w |> {pkg}.Wire.put_u32(byte_size(body)) |> {pkg}.Wire.put_bytes(body) end)"
             );
             return Ok(seg);
         }
