@@ -211,6 +211,72 @@ fn wire_union_classic_cdr_roundtrip() {
 
 #[test]
 #[ignore = "requires cargo offline + path-deps"]
+fn wire_non_serialized_absent_from_wire_p0_5() {
+    // Broad-audit P0-5 (#2): a `@non_serialized` member keeps its in-memory
+    // field but is written to NO wire form and read from none — on decode it is
+    // left at its default. Byte-proof: the wire of `S{a, secret, b}` is exactly
+    // `a` then `b` (no `secret`), independent of `secret`'s value; decode leaves
+    // `secret` at 0. Covered for @final (plain), @appendable (DHEADER) and
+    // @mutable (EMHEADER) so no wire path leaks the member.
+    run_wire_test(
+        "non_serialized",
+        r#"
+            @final     struct SFinal  { long a; @non_serialized long secret; long b; };
+            @appendable struct SApp   { long a; @non_serialized long secret; long b; };
+            @mutable    struct SMut   { long a; @non_serialized long secret; long b; };
+        "#,
+        r#"
+            // ---- @final: plain sequential, secret NOT on the wire ----------
+            let s = SFinal { a: 1, secret: 999, b: 2 };
+            let mut buf = Vec::new();
+            s.encode(&mut buf).expect("encode");
+            // @final: a(4) + b(4) = 8 bytes; secret (would be +4) is absent.
+            assert_eq!(buf.len(), 8, "@final: only a+b on the wire, not secret");
+            assert_eq!(&buf[0..4], &1i32.to_le_bytes());
+            assert_eq!(&buf[4..8], &2i32.to_le_bytes());
+
+            // Changing `secret` must not change a single wire byte.
+            let s2 = SFinal { a: 1, secret: -424242, b: 2 };
+            let mut buf2 = Vec::new();
+            s2.encode(&mut buf2).expect("encode");
+            assert_eq!(buf, buf2, "secret must not influence the wire");
+
+            // Decode leaves secret at its default (0); a and b round-trip.
+            let d = SFinal::decode(&buf).expect("decode");
+            assert_eq!(d.a, 1);
+            assert_eq!(d.b, 2);
+            assert_eq!(d.secret, 0, "@non_serialized decodes to the default");
+
+            // ---- @appendable: DHEADER + body(a,b), secret absent -----------
+            let sa = SApp { a: 7, secret: 555, b: 9 };
+            let mut ba = Vec::new();
+            sa.encode(&mut ba).expect("encode");
+            // 4 (DHEADER) + a(4) + b(4) = 12; DHEADER body length = 8.
+            assert_eq!(ba.len(), 12, "@appendable: DHEADER + a + b only");
+            assert_eq!(&ba[0..4], &8u32.to_le_bytes(), "DHEADER = body length (a+b)");
+            let da = SApp::decode(&ba).expect("decode");
+            assert_eq!((da.a, da.b, da.secret), (7, 9, 0));
+
+            // ---- @mutable: EMHEADER-framed a(id 0) + b(id 1), secret absent -
+            let sm = SMut { a: 3, secret: 111, b: 4 };
+            let mut bm = Vec::new();
+            sm.encode(&mut bm).expect("encode");
+            // The @mutable member ids must compact to 0 and 1 (NOT 0 and 2):
+            // secret does not consume an id slot. The EMHEADERs carry the ids in
+            // the low 28 bits; assert both are present and 2 does NOT appear.
+            let ids: std::collections::BTreeSet<u32> = bm
+                .chunks_exact(4)
+                .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]) & 0x0FFF_FFFF)
+                .collect();
+            assert!(ids.contains(&0) && ids.contains(&1), "member ids compact to 0,1");
+            let dm = SMut::decode(&bm).expect("decode");
+            assert_eq!((dm.a, dm.b, dm.secret), (3, 4, 0));
+        "#,
+    );
+}
+
+#[test]
+#[ignore = "requires cargo offline + path-deps"]
 fn wire_field_value_filter_paths() {
     run_wire_test(
         "fieldval",

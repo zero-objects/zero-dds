@@ -1337,6 +1337,8 @@ fn emit_struct(
         // `@must_understand`: sets EMHEADER bit 31 in the `@mutable` encoder
         // (#A17); wire-neutral for final/appendable.
         must_understand: bool,
+        // `@non_serialized`: stays in the Lua table (dynamic field), off the wire.
+        non_serialized: bool,
     }
     let mut fields: Vec<FieldGen> = Vec::new();
     let mut next_id: u32 = 0;
@@ -1355,9 +1357,18 @@ fn emit_struct(
                 .iter()
                 .any(|a| matches!(a, BuiltinAnnotation::MustUnderstand))
         });
+        // P0-5 (#2): a `@non_serialized` member stays in the Lua table but is off
+        // the wire and does NOT consume a sequential id slot (ids compact).
+        let non_serialized =
+            zerodds_idl::semantics::annotations::member_is_non_serialized(&m.annotations);
         for d in &m.declarators {
-            let id = explicit_id.unwrap_or(next_id);
-            next_id = id + 1;
+            let id = if non_serialized {
+                0
+            } else {
+                let assigned = explicit_id.unwrap_or(next_id);
+                next_id = assigned + 1;
+                assigned
+            };
             let name = escape_lua_ident(&d.name().text);
             let (put, get, key_type) = match d {
                 Declarator::Simple(_) => {
@@ -1398,6 +1409,7 @@ fn emit_struct(
                 optional,
                 key_type,
                 must_understand,
+                non_serialized,
             });
         }
     }
@@ -1417,6 +1429,9 @@ fn emit_struct(
         // member id) + NEXTINT (body length) + body (XTypes §7.4.3.4.2).
         let _ = writeln!(out, "  local body = Writer.new(w.endian)");
         for f in &fields {
+            if f.non_serialized {
+                continue;
+            }
             // An `@optional` member is omitted from the member list when absent
             // (XTypes 1.3 §7.4.3.4.2): gate its EMHEADER+body on the flag. The
             // presence is signaled by the EMHEADER's existence, so no companion
@@ -1456,6 +1471,9 @@ fn emit_struct(
             "body"
         };
         for f in &fields {
+            if f.non_serialized {
+                continue;
+            }
             let put = f.put.replace("$w", wv);
             if f.optional {
                 // uint8 presence flag then the value if present (§7.4.5.1.4).
@@ -1478,7 +1496,10 @@ fn emit_struct(
     let _ = writeln!(out, "  marshalInto_{ty}(w, v)");
     let _ = writeln!(out, "  return w:bytes()");
     let _ = writeln!(out, "end");
-    let mut zdkeys: Vec<&FieldGen> = fields.iter().filter(|f| f.key).collect();
+    let mut zdkeys: Vec<&FieldGen> = fields
+        .iter()
+        .filter(|f| f.key && !f.non_serialized)
+        .collect();
     zdkeys.sort_by_key(|f| f.id);
     if !zdkeys.is_empty() {
         let key_members: Vec<&Member> = all_members
@@ -1540,6 +1561,9 @@ fn emit_struct(
         // absent-optional case is NOT claimed (matches idl-d / idl-nim).
         let _ = writeln!(out, "  r:getU32()");
         for f in &fields {
+            if f.non_serialized {
+                continue;
+            }
             let _ = writeln!(out, "  r:getU32()");
             let _ = writeln!(out, "  r:getU32()");
             let _ = writeln!(out, "  {}", f.get.replace("$r", "r"));
@@ -1549,6 +1573,9 @@ fn emit_struct(
             let _ = writeln!(out, "  r:getU32()");
         }
         for f in &fields {
+            if f.non_serialized {
+                continue;
+            }
             let get = f.get.replace("$r", "r");
             if f.optional {
                 // uint8 presence flag then the value only if present (§7.4.5.1.4).

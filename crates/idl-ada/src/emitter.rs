@@ -1566,6 +1566,8 @@ struct FieldGen {
     /// `Some((P, S))` when this member's (dealiased) type is `fixed<P,S>`, so
     /// the enclosing spec knows to emit the `Fixed_<P>_<S>` subtype + BCD prelude.
     fixed_layout: Option<(u32, u32)>,
+    /// `@non_serialized`: kept as an Ada record component, off every wire form.
+    non_serialized: bool,
 }
 
 struct StructGen {
@@ -1896,10 +1898,19 @@ fn build_struct(
         let explicit_id = lowered.as_ref().and_then(|l| l.explicit_id());
         let key = lowered.as_ref().is_some_and(|l| l.has_key());
         let optional = member_is_optional(&m.annotations);
+        // P0-5 (#2): a `@non_serialized` member keeps its Ada record component
+        // but is off the wire and does NOT consume a sequential id slot.
+        let non_serialized =
+            zerodds_idl::semantics::annotations::member_is_non_serialized(&m.annotations);
         for d in &m.declarators {
             let name = dedup.unique(&escape_ada_ident(&d.name().text));
-            let id = explicit_id.unwrap_or(next_id);
-            next_id = id + 1;
+            let id = if non_serialized {
+                0
+            } else {
+                let assigned = explicit_id.unwrap_or(next_id);
+                next_id = assigned + 1;
+                assigned
+            };
             let simple = matches!(d, Declarator::Simple(_));
             let fixed_layout = match &resolved {
                 TypeSpec::Fixed(f) => Some(fixed_ps(f)?),
@@ -1939,6 +1950,7 @@ fn build_struct(
                     resolved: resolved.clone(),
                     simple,
                     fixed_layout,
+                    non_serialized,
                 });
                 continue;
             }
@@ -2065,6 +2077,7 @@ fn build_struct(
                 resolved: resolved.clone(),
                 simple,
                 fixed_layout,
+                non_serialized,
             });
         }
     }
@@ -2085,7 +2098,10 @@ fn build_struct(
     // mapper, which is correct for normal (non-key) struct encoding but
     // always encodes the FULL member set, so it must not be used here for a
     // nested-struct key.
-    let mut zdkeys: Vec<&FieldGen> = fields.iter().filter(|f| f.key).collect();
+    let mut zdkeys: Vec<&FieldGen> = fields
+        .iter()
+        .filter(|f| f.key && !f.non_serialized)
+        .collect();
     zdkeys.sort_by_key(|f| f.id);
     let mut key_puts: Vec<String> = Vec::new();
     for f in &zdkeys {
@@ -2238,6 +2254,9 @@ fn emit_marshal(out: &mut String, sg: &StructGen) {
         // member id) + NEXTINT (body length) + body (XTypes §7.4.3.4.2).
         let _ = writeln!(out, "      B.Endian := W.Endian;");
         for f in &sg.fields {
+            if f.non_serialized {
+                continue;
+            }
             let emh = 0x4000_0000_u32 | f.id;
             let _ = writeln!(out, "      Put_U32 (B, 16#{emh:08X}#);");
             let _ = writeln!(out, "      declare");
@@ -2259,6 +2278,9 @@ fn emit_marshal(out: &mut String, sg: &StructGen) {
             "W"
         };
         for f in &sg.fields {
+            if f.non_serialized {
+                continue;
+            }
             let _ = writeln!(out, "      {}", f.put.replace("$w", wv));
         }
         if sg.appendable {
@@ -2356,6 +2378,9 @@ fn emit_marshal(out: &mut String, sg: &StructGen) {
     if sg.mutable {
         let _ = writeln!(out, "      Skip_U32 (Data, Pos, Endian);");
         for f in &sg.fields {
+            if f.non_serialized {
+                continue;
+            }
             let _ = writeln!(out, "      Skip_U32 (Data, Pos, Endian);");
             let _ = writeln!(out, "      Skip_U32 (Data, Pos, Endian);");
             let _ = writeln!(out, "      {}", f.get);
@@ -2365,6 +2390,9 @@ fn emit_marshal(out: &mut String, sg: &StructGen) {
             let _ = writeln!(out, "      Skip_U32 (Data, Pos, Endian);");
         }
         for f in &sg.fields {
+            if f.non_serialized {
+                continue;
+            }
             let _ = writeln!(out, "      {}", f.get);
         }
     }

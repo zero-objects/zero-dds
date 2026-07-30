@@ -354,6 +354,24 @@ fn name_tail(a: &Annotation) -> &str {
         .unwrap_or_default()
 }
 
+/// Central `@non_serialized` predicate (broad-audit P0-5, #2).
+///
+/// `true` if the member carries `@non_serialized` (XTypes 1.3 §7.2.4.4.2). Such
+/// a member is program-internal storage: it stays in the in-memory generated
+/// type (the field still exists) but MUST be omitted from EVERY wire form
+/// (encode + decode, XCDR1 + XCDR2, plain + `@mutable`) AND from BOTH the
+/// Minimal and Complete TypeObject — so the emitted TypeIdentifier no longer
+/// covers it (the changed hash is the intended rc correction, decision #2 (a)).
+/// On decode the field is left at its default value.
+///
+/// Every codegen backend MUST gate its wire member loops on this one function
+/// so all 17 emitters agree instead of each re-scanning the annotation (or, as
+/// before, ignoring it and serializing the member).
+#[must_use]
+pub fn member_is_non_serialized(annotations: &[Annotation]) -> bool {
+    annotations.iter().any(|a| name_tail(a) == "non_serialized")
+}
+
 /// Central extensibility normalization (broad-audit P0-4).
 ///
 /// Reads the effective [`ExtensibilityKind`] from a raw annotation list,

@@ -47,6 +47,21 @@ fn member_wire_id(autoid_hash: bool, member: &Member, idx: usize) -> u32 {
     )
 }
 
+/// The struct's WIRE members — every member except `@non_serialized` ones
+/// (broad-audit P0-5, #2) — paired with a COMPACTED positional index (0,1,2,…
+/// over the serialized members only). Every wire loop that assigns a positional
+/// member id (sequential-autoid EMHEADER/PL_CDR1 ids) iterates THIS so the ids
+/// stay gap-free and agree with the TypeObject builder (`resolve_member_ids`),
+/// which likewise counts only the emitted members. Filtering before enumerating
+/// is what keeps a dropped `@non_serialized` member from shifting the survivors
+/// into a wrong/gapped id.
+fn serialized_members(s: &StructDef) -> impl Iterator<Item = (usize, &Member)> {
+    s.members
+        .iter()
+        .filter(|m| !crate::annotations::member_is_non_serialized(&m.annotations))
+        .enumerate()
+}
+
 /// Flattens a struct's base-type inheritance chain into a single member list
 /// (finding A10): the oldest ancestor's members first, then each descendant's,
 /// then the struct's own members — the XTypes 1.3 §7.2.2.4.4 derived-type wire
@@ -173,7 +188,7 @@ fn emit_plain_field_encodes(
     indent: &str,
     writer_expr: &str,
 ) -> Result<()> {
-    for member in &s.members {
+    for (_, member) in serialized_members(s) {
         emit_member_encode_with_writer(out, member, indent, writer_expr)?;
     }
     Ok(())
@@ -233,7 +248,7 @@ fn emit_cdr_encode_impl(
             out.push_str(&format!(
                 "                let mut enc = zerodds_cdr::struct_enc::MutableStructEncoder::new(w, ::std::vec![{required_list}]);\n"
             ));
-            for (idx, member) in s.members.iter().enumerate() {
+            for (idx, member) in serialized_members(s) {
                 emit_mutable_member_encode(out, member, idx, autoid, "                ")?;
             }
             out.push_str("                enc.finish()?;\n");
@@ -247,7 +262,7 @@ fn emit_cdr_encode_impl(
             // §7.4.2). Previously this emitted plain positional fields (no PID
             // framing, no sentinel) — FastDDS emits proper PL_CDR (36B vs our
             // 23B). Each member's body is its plain field encoding.
-            for (idx, member) in s.members.iter().enumerate() {
+            for (idx, member) in serialized_members(s) {
                 emit_pl_cdr1_member_encode(out, member, idx, autoid, "            ")?;
             }
             out.push_str("            zerodds_cdr::xcdr1::write_pl_cdr1_sentinel(writer)?;\n");
@@ -295,9 +310,7 @@ fn emit_pl_cdr1_member_encode(
 /// Collects the member IDs of all non-optional members (mutable framing).
 fn required_member_ids(s: &StructDef) -> Vec<u32> {
     let autoid = crate::annotations::struct_autoid_hash(&s.annotations);
-    s.members
-        .iter()
-        .enumerate()
+    serialized_members(s)
         .filter(|(_, m)| !crate::annotations::member_is_optional(&m.annotations))
         .map(|(idx, m)| member_wire_id(autoid, m, idx))
         .collect()
@@ -371,20 +384,36 @@ fn emit_cdr_decode_plain(
     indent: &str,
     reader_expr: &str,
 ) -> Result<()> {
-    for member in &s.members {
+    for (_, member) in serialized_members(s) {
         emit_member_decode_let_with_reader(out, member, indent, reader_expr)?;
     }
     out.push_str(indent);
     out.push_str("::core::result::Result::Ok(Self {\n");
-    for member in &s.members {
-        for declarator in &member.declarators {
-            let field = declarator_ident(declarator);
-            out.push_str(&format!("{indent}    {field},\n"));
-        }
-    }
+    emit_plain_self_fields(out, s, &format!("{indent}    "));
     out.push_str(indent);
     out.push_str("})\n");
     Ok(())
+}
+
+/// Emits the field list inside a plain (positional) decode's `Ok(Self { .. })`:
+/// a serialized member takes the like-named `let` binding produced by the
+/// decode-let loop, a `@non_serialized` member takes `Default::default()` since
+/// it has no wire slot — its in-memory field stays at the default
+/// (broad-audit P0-5, #2).
+fn emit_plain_self_fields(out: &mut String, s: &StructDef, indent: &str) {
+    for member in &s.members {
+        let non_serialized = crate::annotations::member_is_non_serialized(&member.annotations);
+        for declarator in &member.declarators {
+            let field = declarator_ident(declarator);
+            if non_serialized {
+                out.push_str(&format!(
+                    "{indent}{field}: ::core::default::Default::default(),\n"
+                ));
+            } else {
+                out.push_str(&format!("{indent}{field},\n"));
+            }
+        }
+    }
 }
 
 /// Total element count of an array declarator (product of its dimensions),
@@ -1090,14 +1119,14 @@ fn emit_encode_body(
 ) -> Result<()> {
     match extensibility {
         StructExtensibility::Final => {
-            for member in &s.members {
+            for (_, member) in serialized_members(s) {
                 emit_member_encode(out, member, "        ")?;
             }
         }
         StructExtensibility::Appendable => {
             // Phase C: zerodds_cdr::struct_enc::encode_appendable
             out.push_str("        zerodds_cdr::struct_enc::encode_appendable(&mut writer, |w| {\n");
-            for member in &s.members {
+            for (_, member) in serialized_members(s) {
                 emit_member_encode_with_writer(out, member, "            ", "w")?;
             }
             out.push_str("            Ok(())\n");
@@ -1112,10 +1141,7 @@ fn emit_encode_body(
             // Spec anchor: zerodds-xcdr2-bindings-conformance §6 V-10
             // (`14 00 00 00` DHEADER + member list).
             let autoid = crate::annotations::struct_autoid_hash(&s.annotations);
-            let required_ids: Vec<u32> = s
-                .members
-                .iter()
-                .enumerate()
+            let required_ids: Vec<u32> = serialized_members(s)
                 .filter(|(_, m)| !crate::annotations::member_is_optional(&m.annotations))
                 .map(|(idx, m)| member_wire_id(autoid, m, idx))
                 .collect();
@@ -1128,7 +1154,7 @@ fn emit_encode_body(
             out.push_str(&format!(
                 "            let mut enc = zerodds_cdr::struct_enc::MutableStructEncoder::new(w, ::std::vec![{required_list}]);\n"
             ));
-            for (idx, member) in s.members.iter().enumerate() {
+            for (idx, member) in serialized_members(s) {
                 emit_mutable_member_encode(out, member, idx, autoid, "            ")?;
             }
             out.push_str("            enc.finish()?;\n");
@@ -1632,30 +1658,20 @@ fn emit_decode_body(
     match extensibility {
         StructExtensibility::Final => {
             // Decode in declaration order.
-            for member in &s.members {
+            for (_, member) in serialized_members(s) {
                 emit_member_decode_let(out, member, "        ")?;
             }
             out.push_str("        Ok(Self {\n");
-            for member in &s.members {
-                for declarator in &member.declarators {
-                    let name = declarator_ident(declarator);
-                    out.push_str(&format!("            {name},\n"));
-                }
-            }
+            emit_plain_self_fields(out, s, "            ");
             out.push_str("        })\n");
         }
         StructExtensibility::Appendable => {
             out.push_str("        zerodds_cdr::struct_enc::decode_appendable(&mut reader, |r| {\n");
-            for member in &s.members {
+            for (_, member) in serialized_members(s) {
                 emit_member_decode_let_with_reader(out, member, "            ", "r")?;
             }
             out.push_str("            Ok(Self {\n");
-            for member in &s.members {
-                for declarator in &member.declarators {
-                    let name = declarator_ident(declarator);
-                    out.push_str(&format!("                {name},\n"));
-                }
-            }
+            emit_plain_self_fields(out, s, "                ");
             out.push_str("            })\n");
             out.push_str("        }).map_err(::core::convert::Into::into)\n");
         }
@@ -1697,8 +1713,9 @@ fn emit_mutable_decode_body(out: &mut String, s: &StructDef, reader_expr: &str) 
     out.push_str(&format!(
         "        zerodds_cdr::struct_enc::decode_appendable({reader_expr}, |r| {{\n"
     ));
-    // Pre-init all member slots as Option<T>::None.
-    for (idx, member) in s.members.iter().enumerate() {
+    // Pre-init all serialized member slots as Option<T>::None. @non_serialized
+    // members have no wire slot; they are defaulted directly in Self below.
+    for (idx, member) in serialized_members(s) {
         let id = member_wire_id(autoid, member, idx);
         let optional = crate::annotations::member_is_optional(&member.annotations);
         for declarator in &member.declarators {
@@ -1726,7 +1743,7 @@ fn emit_mutable_decode_body(out: &mut String, s: &StructDef, reader_expr: &str) 
     // BE stream (e.g. an LC5 string length read as 0x03000000 instead of 3).
     out.push_str("                        let mut body_reader = zerodds_cdr::BufferReader::new(member.body, zerodds_cdr::BufferReader::endianness(r)).xcdr2();\n");
     out.push_str("                        match member.member_id {\n");
-    for (idx, member) in s.members.iter().enumerate() {
+    for (idx, member) in serialized_members(s) {
         let id = member_wire_id(autoid, member, idx);
         let optional = crate::annotations::member_is_optional(&member.annotations);
         for declarator in &member.declarators {
@@ -1763,25 +1780,41 @@ fn emit_mutable_decode_body(out: &mut String, s: &StructDef, reader_expr: &str) 
     // member absent on the wire takes its `@default(v)` value if it has one
     // (A33), else fails the decode with `MissingNonOptionalMember`.
     out.push_str("            ::core::result::Result::Ok(Self {\n");
-    for (idx, member) in s.members.iter().enumerate() {
-        let id = member_wire_id(autoid, member, idx);
-        let optional = crate::annotations::member_is_optional(&member.annotations);
-        for declarator in &member.declarators {
-            let name = declarator_ident(declarator);
-            emit_member_slot_finalize(
-                out,
-                member,
-                declarator,
-                &name,
-                id,
-                optional,
-                "                ",
-            );
-        }
-    }
+    emit_slot_self_fields(out, s, autoid, "                ");
     out.push_str("            })\n");
     out.push_str("        })");
     Ok(())
+}
+
+/// Emits the `Ok(Self { .. })` field list for the slot-based decode paths
+/// (`@mutable` EMHEADER + PL_CDR1): a serialized member finalizes its decoded
+/// `Option<T>` slot via [`emit_member_slot_finalize`]; a `@non_serialized`
+/// member (which has no slot) is set to `Default::default()` so its in-memory
+/// field is present but wire-absent (broad-audit P0-5, #2). Serialized members
+/// carry the SAME compacted positional index used by the slot/match loops, so
+/// the member ids agree with the TypeObject.
+fn emit_slot_self_fields(out: &mut String, s: &StructDef, autoid: bool, indent: &str) {
+    // Compacted index over serialized members only (see `serialized_members`);
+    // advanced manually here because this loop also visits the skipped members.
+    let mut sidx = 0usize;
+    for member in &s.members {
+        if crate::annotations::member_is_non_serialized(&member.annotations) {
+            for declarator in &member.declarators {
+                let name = declarator_ident(declarator);
+                out.push_str(&format!(
+                    "{indent}{name}: ::core::default::Default::default(),\n"
+                ));
+            }
+            continue;
+        }
+        let id = member_wire_id(autoid, member, sidx);
+        sidx += 1;
+        let optional = crate::annotations::member_is_optional(&member.annotations);
+        for declarator in &member.declarators {
+            let name = declarator_ident(declarator);
+            emit_member_slot_finalize(out, member, declarator, &name, id, optional, indent);
+        }
+    }
 }
 
 /// Emits the `Ok(Self { .. })` field initializer for one decoded member slot
@@ -1883,8 +1916,8 @@ fn string_literal_rust(expr: &ConstExpr) -> Option<String> {
 /// (PL_CDR1 forward-compat). `reader` (the fn param) is the source.
 fn emit_pl_cdr1_decode_body(out: &mut String, s: &StructDef, indent: &str) -> Result<()> {
     let autoid = crate::annotations::struct_autoid_hash(&s.annotations);
-    // Pre-init member slots.
-    for (idx, member) in s.members.iter().enumerate() {
+    // Pre-init serialized member slots (@non_serialized carries no wire slot).
+    for (idx, member) in serialized_members(s) {
         let id = member_wire_id(autoid, member, idx);
         let optional = crate::annotations::member_is_optional(&member.annotations);
         for declarator in &member.declarators {
@@ -1914,7 +1947,7 @@ fn emit_pl_cdr1_decode_body(out: &mut String, s: &StructDef, indent: &str) -> Re
         "{indent}            let mut body_reader = zerodds_cdr::BufferReader::new(&member.body, __endian);\n"
     ));
     out.push_str(&format!("{indent}            match member.member_id {{\n"));
-    for (idx, member) in s.members.iter().enumerate() {
+    for (idx, member) in serialized_members(s) {
         let id = member_wire_id(autoid, member, idx);
         let optional = crate::annotations::member_is_optional(&member.annotations);
         for declarator in &member.declarators {
@@ -1946,14 +1979,7 @@ fn emit_pl_cdr1_decode_body(out: &mut String, s: &StructDef, indent: &str) -> Re
     out.push_str(&format!("{indent}}}\n"));
     out.push_str(&format!("{indent}::core::result::Result::Ok(Self {{\n"));
     let field_indent = format!("{indent}    ");
-    for (idx, member) in s.members.iter().enumerate() {
-        let id = member_wire_id(autoid, member, idx);
-        let optional = crate::annotations::member_is_optional(&member.annotations);
-        for declarator in &member.declarators {
-            let name = declarator_ident(declarator);
-            emit_member_slot_finalize(out, member, declarator, &name, id, optional, &field_indent);
-        }
-    }
+    emit_slot_self_fields(out, s, autoid, &field_indent);
     out.push_str(&format!("{indent}}})\n"));
     Ok(())
 }

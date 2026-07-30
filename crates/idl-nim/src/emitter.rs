@@ -1398,6 +1398,8 @@ fn emit_struct(
         // `@must_understand`: sets EMHEADER bit 31 in the `@mutable` framing
         // (#A17). Wire-neutral for `@final`/`@appendable`.
         must_understand: bool,
+        // `@non_serialized`: kept in the Nim object, off every wire form.
+        non_serialized: bool,
     }
     // #A10/P3: base-first effective member list — inherited members precede the
     // struct's own, so both the Nim `object` and its wire carry them.
@@ -1423,10 +1425,19 @@ fn emit_struct(
                 .iter()
                 .any(|a| matches!(a, BuiltinAnnotation::MustUnderstand))
         });
+        // P0-5 (#2): a `@non_serialized` member keeps its Nim field but is off
+        // the wire and does NOT consume a sequential id slot (ids compact).
+        let non_serialized =
+            zerodds_idl::semantics::annotations::member_is_non_serialized(&m.annotations);
         for d in &m.declarators {
             let nim_name = escape_nim_ident(&dedup_nim_ident(&mut used_names, &d.name().text));
-            let id = explicit_id.unwrap_or(next_id);
-            next_id = id + 1;
+            let id = if non_serialized {
+                0
+            } else {
+                let assigned = explicit_id.unwrap_or(next_id);
+                next_id = assigned + 1;
+                assigned
+            };
             let (nim_type, put, get, key_type) = match d {
                 Declarator::Simple(_) => {
                     let expr = format!("self.{nim_name}");
@@ -1479,6 +1490,7 @@ fn emit_struct(
                 key_type,
                 optional,
                 must_understand,
+                non_serialized,
             });
         }
     }
@@ -1514,6 +1526,9 @@ fn emit_struct(
         // NEXTINT (body length) + body (XTypes §7.4.3.4.2).
         let _ = writeln!(out, "  var body = initWriter(w.endian)");
         for f in &fields {
+            if f.non_serialized {
+                continue;
+            }
             // An `@optional` member is omitted from the member list when absent
             // (XTypes 1.3 §7.4.3.4.2): guard its EMHEADER+body on the flag. The
             // decode side below rides the naive per-member decoder (it does not
@@ -1537,6 +1552,9 @@ fn emit_struct(
             "body"
         };
         for f in &fields {
+            if f.non_serialized {
+                continue;
+            }
             if f.optional {
                 // uint8 presence flag then the value if present (§7.4.5.1.4).
                 let _ = writeln!(
@@ -1567,7 +1585,10 @@ fn emit_struct(
     let _ = writeln!(out, "  var w = initWriter(endian)");
     let _ = writeln!(out, "  self.marshalInto(w)");
     let _ = writeln!(out, "  w.bytes()");
-    let mut zdkeys: Vec<&FieldGen> = fields.iter().filter(|f| f.key).collect();
+    let mut zdkeys: Vec<&FieldGen> = fields
+        .iter()
+        .filter(|f| f.key && !f.non_serialized)
+        .collect();
     zdkeys.sort_by_key(|f| f.id);
     if !zdkeys.is_empty() {
         // #A10: key detection spans the base-first effective member list.
@@ -1624,6 +1645,9 @@ fn emit_struct(
     if ext == ExtensibilityKind::Mutable {
         let _ = writeln!(out, "  discard r.getU32()");
         for f in &fields {
+            if f.non_serialized {
+                continue;
+            }
             write_mutable_member_decode(out, "  ", &f.get);
         }
     } else {
@@ -1631,6 +1655,9 @@ fn emit_struct(
             let _ = writeln!(out, "  discard r.getU32()");
         }
         for f in &fields {
+            if f.non_serialized {
+                continue;
+            }
             if f.optional {
                 // uint8 presence flag then the value only if present (§7.4.5.1.4).
                 let _ = writeln!(out, "  result.{}_present = r.getBool()", f.nim_name);

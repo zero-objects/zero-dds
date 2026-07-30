@@ -250,6 +250,11 @@ fn mutable_member_ids(s: &StructDef) -> Vec<u32> {
     let mut ids = Vec::new();
     let mut next: u32 = 0;
     for m in &s.members {
+        // P0-5 (#2): a `@non_serialized` member has no wire id and does NOT
+        // advance the sequential counter, so survivors' ids compact.
+        if zerodds_idl::semantics::annotations::member_is_non_serialized(&m.annotations) {
+            continue;
+        }
         let raw_name = m.declarators.first().map_or("", |d| d.name().text.as_str());
         let fixed = zerodds_idl::semantics::member_id::fixed_member_id(
             autoid_hash,
@@ -528,7 +533,10 @@ fn collect_member_brand_imports(m: &Member, imports: &mut ImportSet) {
     {
         imports.zerodds_brands.insert("Array");
     }
-    if member_is_optional(m) {
+    if member_is_optional(m)
+        || zerodds_idl::semantics::annotations::member_is_non_serialized(&m.annotations)
+    {
+        // `@non_serialized` fields are emitted as `Optional[T] = None` (P0-5).
         imports.zerodds_brands.insert("Optional");
     }
 }
@@ -711,6 +719,29 @@ fn emit_struct(out: &mut String, s: &StructDef, scope: &[String]) -> Result<()> 
     let typename = qualified_typename(&s.name, scope);
     let class_name = python_class_name(&s.name, scope);
 
+    // P0-5 (#2): `@non_serialized` members keep their dataclass field but are
+    // excluded from every wire form and both TypeObjects. Their names are handed
+    // to the runtime via `non_serialized=[...]`, which drops them from the
+    // encode/decode `kinds`; the fields themselves are emitted last with a
+    // default so the decode `cls(**values)` (values for serialized fields only)
+    // still constructs, leaving the member at its default.
+    let non_serialized_names: Vec<String> = s
+        .members
+        .iter()
+        .filter(|m| zerodds_idl::semantics::annotations::member_is_non_serialized(&m.annotations))
+        .flat_map(|m| m.declarators.iter().map(|d| d.name().text.clone()))
+        .collect();
+    let ns_kwarg = if non_serialized_names.is_empty() {
+        String::new()
+    } else {
+        let list = non_serialized_names
+            .iter()
+            .map(|n| format!("\"{n}\""))
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!(", non_serialized=[{list}]")
+    };
+
     match struct_extensibility_kwarg(s) {
         Some("mutable") => {
             // A `@mutable` struct needs the per-member id list so the runtime's
@@ -724,19 +755,19 @@ fn emit_struct(out: &mut String, s: &StructDef, scope: &[String]) -> Result<()> 
             writeln!(
                 out,
                 "@idl_struct(typename=\"{typename}\", extensibility=\"mutable\", \
-                 member_ids=[{id_list}])"
+                 member_ids=[{id_list}]{ns_kwarg})"
             )
             .ok();
         }
         Some(ext) => {
             writeln!(
                 out,
-                "@idl_struct(typename=\"{typename}\", extensibility=\"{ext}\")"
+                "@idl_struct(typename=\"{typename}\", extensibility=\"{ext}\"{ns_kwarg})"
             )
             .ok();
         }
         None => {
-            writeln!(out, "@idl_struct(typename=\"{typename}\")").ok();
+            writeln!(out, "@idl_struct(typename=\"{typename}\"{ns_kwarg})").ok();
         }
     }
     writeln!(out, "@dataclass").ok();
@@ -759,8 +790,21 @@ fn emit_struct(out: &mut String, s: &StructDef, scope: &[String]) -> Result<()> 
             writeln!(out, "    pass").ok();
         }
     } else {
+        // Serialized members first (unchanged, no default), then the
+        // `@non_serialized` members with a default. Dataclass rules require
+        // default-valued fields to follow non-default ones, so the
+        // wire-absent members necessarily trail; the runtime skips them via the
+        // `non_serialized=[...]` kwarg, so this reordering is wire-neutral.
         for m in &s.members {
+            if zerodds_idl::semantics::annotations::member_is_non_serialized(&m.annotations) {
+                continue;
+            }
             emit_members_of(out, m, scope)?;
+        }
+        for m in &s.members {
+            if zerodds_idl::semantics::annotations::member_is_non_serialized(&m.annotations) {
+                emit_non_serialized_member(out, m, scope)?;
+            }
         }
     }
     // §7.2.2.4.8 — `@verbatim(placement=END_DECLARATION)` as the last element.
@@ -843,6 +887,34 @@ fn emit_members_of(out: &mut String, m: &Member, scope: &[String]) -> Result<()>
             t = format!("Optional[{t}]");
         }
         writeln!(out, "    {field_name}: {t}").ok();
+    }
+    Ok(())
+}
+
+/// Emits a `@non_serialized` member (P0-5, #2) as a dataclass field WITH a
+/// default (`= None`), so the decode `cls(**values)` — which passes only the
+/// serialized fields — still constructs the object with the member present at
+/// its default. The runtime never reads/writes it (excluded from `kinds` via
+/// the `non_serialized=[...]` kwarg), so the `None` default is purely the
+/// in-memory resting value.
+fn emit_non_serialized_member(out: &mut String, m: &Member, scope: &[String]) -> Result<()> {
+    let py_type = python_type_for(&m.type_spec, scope)?;
+    for d in &m.declarators {
+        let field_name = escape_python_keyword(d.name().text.as_str());
+        let mut t = py_type.clone();
+        if let Declarator::Array(arr) = d {
+            for size in arr.sizes.iter().rev() {
+                let n = eval_const_int(size).ok_or_else(|| {
+                    IdlPythonError::Unsupported(format!(
+                        "array bound is not a literal integer: {size:?}"
+                    ))
+                })?;
+                t = format!("Array[{t}, {n}]");
+            }
+        }
+        // `Optional[...]` because the resting default is `None`; the wire never
+        // touches it, so no presence-flag semantics apply.
+        writeln!(out, "    {field_name}: Optional[{t}] = None").ok();
     }
     Ok(())
 }

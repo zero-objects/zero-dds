@@ -1115,6 +1115,7 @@ def idl_struct(
     typename: str,
     extensibility: str = "final",
     member_ids: "list[int] | None" = None,
+    non_serialized: "list[str] | None" = None,
 ) -> Callable[[Type[T]], Type[T]]:
     """Decorator. Turns a `@dataclass` into a ZeroDDS IDL type.
 
@@ -1200,8 +1201,16 @@ def idl_struct(
                     ) from exc
             return annot
 
+        # `@non_serialized` members (XTypes 1.3 §7.2.4.4.2 — broad-audit P0-5,
+        # #2) keep their dataclass field (in-memory) but are absent from every
+        # wire form AND from both TypeObjects. They are excluded from `kinds`
+        # here, so encode/decode and the member-id lockstep skip them entirely;
+        # on decode the field takes its dataclass default.
+        _non_serialized = set(non_serialized or ())
         kinds: list[tuple[str, _IdlKind]] = []
         for f in fields(cls):
+            if f.name in _non_serialized:
+                continue
             kinds.append((f.name, _kind_from_annotation(_resolve(f.type))))
 
         framed = extensibility in ("appendable", "mutable")

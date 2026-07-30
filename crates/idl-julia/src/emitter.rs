@@ -1477,6 +1477,8 @@ fn emit_struct(
         // `@must_understand`: sets the EMHEADER must-understand bit (bit 31)
         // for this member in the `@mutable` framing (#A17).
         must_understand: bool,
+        // `@non_serialized`: kept in the Julia struct, off every wire form.
+        non_serialized: bool,
     }
     let mut fields: Vec<FieldGen> = Vec::new();
     let mut next_id: u32 = 0;
@@ -1502,10 +1504,19 @@ fn emit_struct(
                 .iter()
                 .any(|a| matches!(a, BuiltinAnnotation::MustUnderstand))
         });
+        // P0-5 (#2): a `@non_serialized` member keeps its Julia field but is off
+        // the wire and does NOT consume a sequential id slot (ids compact).
+        let non_serialized =
+            zerodds_idl::semantics::annotations::member_is_non_serialized(&m.annotations);
         for d in &m.declarators {
             let name = escape_julia_ident(&d.name().text);
-            let id = explicit_id.unwrap_or(next_id);
-            next_id = id + 1;
+            let id = if non_serialized {
+                0
+            } else {
+                let assigned = explicit_id.unwrap_or(next_id);
+                next_id = assigned + 1;
+                assigned
+            };
             let (julia_type, put, get, key_type) = match d {
                 Declarator::Simple(_) => {
                     let expr = format!("v.{name}");
@@ -1548,6 +1559,7 @@ fn emit_struct(
                 key_type,
                 optional,
                 must_understand,
+                non_serialized,
             });
         }
     }
@@ -1576,6 +1588,9 @@ fn emit_struct(
         // member id) + NEXTINT (body length) + body (XTypes §7.4.3.4.2).
         let _ = writeln!(out, "    body = Writer(w.endian)");
         for f in &fields {
+            if f.non_serialized {
+                continue;
+            }
             // An `@optional` member is omitted from the member list when absent
             // (XTypes 1.3 §7.4.3.4.2): guard its EMHEADER+body on the flag.
             if f.optional {
@@ -1610,6 +1625,9 @@ fn emit_struct(
             "body"
         };
         for f in &fields {
+            if f.non_serialized {
+                continue;
+            }
             if f.optional {
                 // Bool presence flag then the value if present (§7.4.5.1.4).
                 let _ = writeln!(out, "    put_u8!({wv}, v.{}_present ? 1 : 0)", f.name);
@@ -1637,7 +1655,10 @@ fn emit_struct(
     let _ = writeln!(out, "    marshal_into!(v, w)");
     let _ = writeln!(out, "    bytes(w)");
     let _ = writeln!(out, "end");
-    let mut zdkeys: Vec<&FieldGen> = fields.iter().filter(|f| f.key).collect();
+    let mut zdkeys: Vec<&FieldGen> = fields
+        .iter()
+        .filter(|f| f.key && !f.non_serialized)
+        .collect();
     zdkeys.sort_by_key(|f| f.id);
     if !zdkeys.is_empty() {
         // #A10: inherited `@key` members participate in the KeyHash too, so
@@ -1693,6 +1714,13 @@ fn emit_struct(
     if ext == ExtensibilityKind::Mutable {
         let _ = writeln!(out, "    get_u32!(r)");
         for f in &fields {
+            if f.non_serialized {
+                // Off the wire: bind the local to the type's zero value so the
+                // positional constructor below still receives it (P0-5, #2).
+                let zero = zero_value(&f.julia_type, enum_names);
+                let _ = writeln!(out, "    {} = {zero}", f.name);
+                continue;
+            }
             // Mutable-optional decode rides the naive decoder: it assumes every
             // member is present in declaration order and does NOT reconcile an
             // omitted `@optional` member against its EMHEADER id (XTypes 1.3
@@ -1710,6 +1738,12 @@ fn emit_struct(
             let _ = writeln!(out, "    get_u32!(r)");
         }
         for f in &fields {
+            if f.non_serialized {
+                // Off the wire: bind the local to the type's zero value (P0-5, #2).
+                let zero = zero_value(&f.julia_type, enum_names);
+                let _ = writeln!(out, "    {} = {zero}", f.name);
+                continue;
+            }
             if f.optional {
                 // Bool presence flag then the value only if present; the value
                 // local is zero-initialised for the absent case (§7.4.5.1.4).

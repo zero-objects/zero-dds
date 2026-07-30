@@ -1205,6 +1205,13 @@ fn resolved_wire_members(s: &StructDef, table: &TypeTable) -> Vec<Member> {
         out.extend(def.members.iter().cloned());
     }
     out.extend(s.members.iter().cloned());
+    // Broad-audit P0-5 (#2): drop `@non_serialized` members (XTypes 1.3
+    // §7.2.4.4.2) from every wire path — encode, decode, keyHash, and the
+    // sequential PL/EMHEADER auto-id counter all consume THIS list, so ids
+    // compact over the survivors exactly as the TypeObject builder does. The
+    // Java field/getter/setter (emitted from the raw `s.members`) stays; on
+    // decode the field keeps its Java default, since nothing sets it.
+    out.retain(|m| !zerodds_idl::semantics::annotations::member_is_non_serialized(&m.annotations));
     out
 }
 

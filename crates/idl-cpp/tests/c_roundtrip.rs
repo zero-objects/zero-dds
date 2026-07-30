@@ -200,6 +200,57 @@ int main(void) {
 // C-Foundation #43 — additional feature roundtrips (each gcc-compiled + run).
 // ===========================================================================
 
+/// Broad-audit P0-5 (#2): a `@non_serialized` member keeps its C struct field
+/// but is written to NO wire form and read from none. Byte-proof (real gcc
+/// compile + run): the C struct has the `secret` field, yet the encoded length
+/// is only `a`+`b` and its value is independent of `secret`; decode leaves the
+/// field untouched (memset 0). Also asserts the @final wire byte layout.
+#[test]
+#[ignore = "requires gcc in PATH"]
+fn non_serialized_absent_from_wire_p0_5_roundtrip() {
+    if !gcc_available() {
+        return;
+    }
+    let h =
+        gen_c("module m { @final struct S { long a; @non_serialized long secret; long b; }; };");
+    // The C struct still declares the field (in-memory ABI slot kept).
+    assert!(
+        h.contains("int32_t secret;"),
+        "the @non_serialized field must stay in the C struct:\n{h}"
+    );
+    let main = r#"
+#include "gen.h"
+#include <assert.h>
+#include <string.h>
+int main(void){
+    m_sS_t s; memset(&s,0,sizeof s);
+    s.a = 1; s.secret = 999; s.b = 2;
+    uint8_t b[256]; size_t n=0;
+    assert(m_sS_encode(&s,b,sizeof b,&n)==0);
+    /* @final: a(4) + b(4) = 8 bytes; secret is NOT on the wire. */
+    assert(n==8);
+    assert(*(int32_t*)&b[0]==1);
+    assert(*(int32_t*)&b[4]==2);
+
+    /* Changing secret must not change a single wire byte. */
+    m_sS_t s2; memset(&s2,0,sizeof s2);
+    s2.a = 1; s2.secret = -424242; s2.b = 2;
+    uint8_t b2[256]; size_t n2=0;
+    assert(m_sS_encode(&s2,b2,sizeof b2,&n2)==0);
+    assert(n2==n && memcmp(b,b2,n)==0);
+
+    /* Decode leaves secret at its default (0); a and b round-trip. */
+    m_sS_t back; memset(&back,0,sizeof back);
+    assert(m_sS_decode(b,n,&back)==0);
+    assert(back.a==1 && back.b==2 && back.secret==0);
+    return 0;
+}
+"#;
+    if let Err(e) = compile_and_run(&h, main) {
+        panic!("@non_serialized C roundtrip failed:\n{e}");
+    }
+}
+
 /// const-array-bound: `const long N = 4; long v[N];` — the bound resolves to
 /// its literal (4) just like every other backend (#43).
 #[test]

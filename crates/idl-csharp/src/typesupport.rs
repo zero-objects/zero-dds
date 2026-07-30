@@ -98,6 +98,13 @@ fn resolved_wire_members(s: &StructDef) -> Vec<zerodds_idl::ast::Member> {
         out.extend(def.members.iter().cloned());
     }
     out.extend(s.members.iter().cloned());
+    // Broad-audit P0-5 (#2): `@non_serialized` members (XTypes 1.3 §7.2.4.4.2)
+    // are dropped from every wire path — encode, decode, keyHash, and the
+    // sequential id counter in `collect_member_info` all consume THIS list, so
+    // ids compact over the survivors as the TypeObject builder does. The C#
+    // property (emitted from the raw `s.members`) stays; on decode it keeps its
+    // C# default, since nothing assigns it.
+    out.retain(|m| !zerodds_idl::semantics::annotations::member_is_non_serialized(&m.annotations));
     out
 }
 

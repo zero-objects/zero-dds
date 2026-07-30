@@ -1747,6 +1747,12 @@ fn emit_struct_descriptor(
 
     let mut next_id: i64 = 0;
     for m in &s.members {
+        // @non_serialized: absent from the runtime type descriptor (the TS
+        // TypeObject analog) AND from the sequential id counter, so it matches
+        // the wire and the XTypes TypeObject (P0-5, #2).
+        if zerodds_idl::semantics::annotations::member_is_non_serialized(&m.annotations) {
+            continue;
+        }
         let key_flag = has_annotation(&m.annotations, "key");
         let optional_flag = has_annotation(&m.annotations, "optional");
         let must_flag = has_annotation(&m.annotations, "must_understand");
@@ -2615,7 +2621,25 @@ fn lookup_scoped_kind(s: &ScopedName) -> Option<ScopedKind> {
 /// order — the emitted TS interface still declares only own members and inherits
 /// the rest via `extends Base`. Base resolution is by simple name through
 /// `TYPE_REG`; a seen-list bounds pathological inheritance cycles.
+/// The struct's WIRE member list — the serialized members only. A
+/// `@non_serialized` member (XTypes 1.3 §7.2.4.4.2) is dropped here so every
+/// wire consumer (encode, decode reads, the sequential PL/EMHEADER auto-id
+/// counter, the KeyHash `@key` filter) skips it AND compacts the survivors'
+/// ids to match the TypeObject (broad-audit P0-5, #2). The struct interface
+/// (built from the raw `s.members`) still declares the field, and
+/// `emit_decode_return` re-adds it with a default so the decoded object keeps
+/// its in-memory shape.
 fn resolved_wire_members(s: &zerodds_idl::ast::StructDef) -> Vec<zerodds_idl::ast::Member> {
+    let mut out = resolved_wire_members_all(s);
+    out.retain(|m| !zerodds_idl::semantics::annotations::member_is_non_serialized(&m.annotations));
+    out
+}
+
+/// Like [`resolved_wire_members`] but INCLUDING `@non_serialized` members — the
+/// full inheritance-flattened member list. Only `emit_decode_return` uses it,
+/// to list every in-memory field (the serialized ones from their decoded
+/// bindings, the `@non_serialized` ones from a default).
+fn resolved_wire_members_all(s: &zerodds_idl::ast::StructDef) -> Vec<zerodds_idl::ast::Member> {
     let mut chain: Vec<zerodds_idl::ast::StructDef> = Vec::new();
     let mut seen: Vec<String> = Vec::new();
     let mut cur = s.base.clone();
@@ -3359,14 +3383,60 @@ fn emit_decode_return(
     // so no `as unknown as <Name>` cast is required.
     let _ = name;
     out.push_str(&alloc::format!("{indent}return {{\n"));
-    for m in &resolved_wire_members(s) {
+    for m in &resolved_wire_members_all(s) {
+        // @non_serialized members were not read off the wire (no `_f_<field>`
+        // binding); re-add the in-memory field with a type-plausible default so
+        // the decoded object keeps the interface shape (P0-5, #2).
+        let non_serialized =
+            zerodds_idl::semantics::annotations::member_is_non_serialized(&m.annotations);
         for d in &m.declarators {
             let field = d.name().text.clone();
-            out.push_str(&alloc::format!("{indent}    {field}: _f_{field},\n"));
+            if non_serialized {
+                let default = ts_default_expr(&m.type_spec, d);
+                out.push_str(&alloc::format!("{indent}    {field}: {default},\n"));
+            } else {
+                out.push_str(&alloc::format!("{indent}    {field}: _f_{field},\n"));
+            }
         }
     }
     out.push_str(&alloc::format!("{indent}}};\n"));
     Ok(())
+}
+
+/// A type-plausible default value expression for a `@non_serialized` member's
+/// in-memory field, used only in the decode return (the member is never read
+/// off the wire). Primitives/strings/collections get their zero value; a named
+/// (scoped) type or `fixed`/`any` falls back to `undefined as unknown as T`,
+/// which keeps the field present without fabricating a nested default.
+fn ts_default_expr(t: &TypeSpec, d: &zerodds_idl::ast::Declarator) -> String {
+    use zerodds_idl::ast::Declarator;
+    if matches!(d, Declarator::Array(_)) {
+        return "[]".into();
+    }
+    match t {
+        TypeSpec::Primitive(p) => match p {
+            PrimitiveType::Boolean => "false".into(),
+            PrimitiveType::Char | PrimitiveType::WideChar => "\"\"".into(),
+            PrimitiveType::Integer(
+                IntegerType::LongLong
+                | IntegerType::Int64
+                | IntegerType::ULongLong
+                | IntegerType::UInt64,
+            ) => "0n".into(),
+            PrimitiveType::Integer(_) | PrimitiveType::Octet => "0".into(),
+            PrimitiveType::Floating(_) => "0".into(),
+        },
+        TypeSpec::String(_) => "\"\"".into(),
+        TypeSpec::Sequence(_) => "[]".into(),
+        TypeSpec::Map(_) => "new Map()".into(),
+        // Named types / fixed / any: keep the field present without inventing a
+        // nested default; the value is unused (the member is never on the wire).
+        TypeSpec::Scoped(_) | TypeSpec::Fixed(_) | TypeSpec::Any => {
+            let ty = typespec_to_ts(t).unwrap_or_else(|_| "unknown".into());
+            let ty = wrap_with_array_dimensions(&ty, d);
+            alloc::format!("(undefined as unknown as {ty})")
+        }
+    }
 }
 /// zerodds-lint: recursion-depth 64 (read_typespec_expr bounded by AST depth)
 /// Returns the TS read-expression string for a TypeSpec.

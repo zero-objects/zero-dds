@@ -1610,6 +1610,9 @@ impl<'a> Ctx<'a> {
 
     fn emit_struct_body_writes(&mut self, def: &StructDef) -> Result<(), CppGenError> {
         for member in &def.members {
+            if is_non_serialized(&member.annotations) {
+                continue;
+            }
             let optional = is_optional(&member.annotations);
             for decl in &member.declarators {
                 let f = escape_c_ident(&decl.name().text);
@@ -2246,6 +2249,11 @@ impl<'a> Ctx<'a> {
             zerodds_idl::semantics::member_id::container_autoid_hash(&def.annotations);
         let mut auto_id: u32 = 0;
         for member in &def.members {
+            // @non_serialized: no wire slot AND no id-counter step, so survivors
+            // compact exactly as the TypeObject builder does (P0-5, #2).
+            if is_non_serialized(&member.annotations) {
+                continue;
+            }
             // P0-3: central resolver — explicit @id / @hashid / struct-level
             // @autoid(HASH), else the sequential (prev+1) fallback. No positional
             // counter for hashed ids, so the C wire ids match the TypeObject,
@@ -2334,6 +2342,11 @@ impl<'a> Ctx<'a> {
             zerodds_idl::semantics::member_id::container_autoid_hash(&def.annotations);
         let mut auto_id: u32 = 0;
         for member in &def.members {
+            // @non_serialized: skipped from the wire AND from the id counter, so
+            // survivors compact exactly as the TypeObject builder does (P0-5, #2).
+            if is_non_serialized(&member.annotations) {
+                continue;
+            }
             // P0-3: central resolver — explicit @id / @hashid / struct-level
             // @autoid(HASH), else the sequential (prev+1) fallback. No positional
             // counter for hashed ids, so the C wire ids match the TypeObject,
@@ -2417,6 +2430,11 @@ impl<'a> Ctx<'a> {
             zerodds_idl::semantics::member_id::container_autoid_hash(&def.annotations);
         let mut auto_id: u32 = 0;
         for member in &def.members {
+            // @non_serialized: skipped from the wire AND from the id counter, so
+            // survivors compact exactly as the TypeObject builder does (P0-5, #2).
+            if is_non_serialized(&member.annotations) {
+                continue;
+            }
             // P0-3: central resolver — explicit @id / @hashid / struct-level
             // @autoid(HASH), else the sequential (prev+1) fallback. No positional
             // counter for hashed ids, so the C wire ids match the TypeObject,
@@ -2592,6 +2610,9 @@ impl<'a> Ctx<'a> {
 
     fn emit_struct_body_reads(&mut self, def: &StructDef) -> Result<(), CppGenError> {
         for member in &def.members {
+            if is_non_serialized(&member.annotations) {
+                continue;
+            }
             let optional = is_optional(&member.annotations);
             for decl in &member.declarators {
                 let f = escape_c_ident(&decl.name().text);
@@ -3233,6 +3254,11 @@ impl<'a> Ctx<'a> {
             zerodds_idl::semantics::member_id::container_autoid_hash(&def.annotations);
         let mut auto_id: u32 = 0;
         for member in &def.members {
+            // @non_serialized: skipped from the wire AND from the id counter, so
+            // survivors compact exactly as the TypeObject builder does (P0-5, #2).
+            if is_non_serialized(&member.annotations) {
+                continue;
+            }
             // P0-3: central resolver — explicit @id / @hashid / struct-level
             // @autoid(HASH), else the sequential (prev+1) fallback. No positional
             // counter for hashed ids, so the C wire ids match the TypeObject,
@@ -3637,6 +3663,14 @@ fn is_optional(annotations: &[Annotation]) -> bool {
             .last()
             .is_some_and(|p| p.text == "optional" || p.text == "Optional")
     })
+}
+
+/// `@non_serialized` (XTypes 1.3 §7.2.4.4.2) via the central `zerodds-idl`
+/// predicate (broad-audit P0-5, #2). The C struct keeps its field, but every
+/// wire body-write/read loop skips the member BEFORE advancing the sequential
+/// auto-id counter, so survivors' ids compact exactly as the TypeObject does.
+fn is_non_serialized(annotations: &[Annotation]) -> bool {
+    zerodds_idl::semantics::annotations::member_is_non_serialized(annotations)
 }
 
 /// XCDR2 wire byte size of a primitive scalar (XTypes 1.3 §7.4.1). Used to pick

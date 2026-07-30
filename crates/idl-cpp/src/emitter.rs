@@ -2700,6 +2700,14 @@ fn resolved_wire_members(s: &StructDef) -> Vec<Member> {
         out.extend(def.members.iter().cloned());
     }
     out.extend(s.members.iter().cloned());
+    // Broad-audit P0-5 (#2): a `@non_serialized` member (XTypes 1.3 §7.2.4.4.2)
+    // keeps its in-memory C++ field/accessor (emitted from the raw `s.members`)
+    // but is removed from EVERY wire path — encode, decode, and the parallel
+    // `resolved_member_ids` all consume THIS list, so they stay in lockstep and
+    // the sequential auto-id counter compacts over the survivors (matching the
+    // TypeObject builder). On decode the field simply keeps its
+    // default-constructed value, since nothing reads it off the wire.
+    out.retain(|m| !zerodds_idl::semantics::annotations::member_is_non_serialized(&m.annotations));
     out
 }
 

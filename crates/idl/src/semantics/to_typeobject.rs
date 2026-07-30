@@ -623,10 +623,16 @@ impl LoweredSpec {
 /// "Path A" (`lower_struct_to_minimal`) uses — never a hand-rolled flag copy
 /// that can drift from it.
 ///
-/// `@non_serialized` members are intentionally NOT skipped here (they carry an
-/// ABI slot even though they have no wire form); this mirrors the byte layout
-/// the pre-#24 `idl-rust` Path B produced so its emitted `TYPE_IDENTIFIER`
-/// remains stable across this refactor.
+/// `@non_serialized` members (XTypes 1.3 §7.2.4.4.2) are skipped here, exactly
+/// as in the Minimal path (`lower_struct_to_minimal` /
+/// `lower_struct_minimal_resolved`): the member keeps its in-memory slot in the
+/// generated language type but appears in NEITHER the Minimal nor the Complete
+/// TypeObject, so the two carry the identical member set and the emitted
+/// `TYPE_IDENTIFIER` no longer covers it (broad-audit P0-5, #2 (a) — the changed
+/// TypeIdentifier is the intended rc correction). Members that remain keep the
+/// member-id assignment the builder resolves (P0-3): dropping a `@non_serialized`
+/// member does not renumber the survivors, since ids come from `@id`/`@hashid`/
+/// autoid, not the loop position.
 ///
 /// # Errors
 /// `MapError` if a member type cannot be resolved (`fixed`/`any`, or a scoped
@@ -669,6 +675,14 @@ pub fn build_complete_struct_type(
     }
 
     for member in &s.members {
+        // §7.2.4.4.2 — `@non_serialized` members are excluded from the Complete
+        // TypeObject too (broad-audit P0-5, #2), so it carries the identical
+        // member set as the Minimal path (`lower_struct_to_minimal`); the
+        // `continue` before the builder call also keeps the sequential-autoid
+        // counter from advancing, compacting the survivors' ids.
+        if super::annotations::member_is_non_serialized(&member.annotations) {
+            continue;
+        }
         let member_anns = lower_annotations(&member.annotations)
             .map_err(|e| MapError::Annotation(alloc::format!("{e:?}")))?;
         let is_key = member_anns.has_key();

@@ -1213,6 +1213,7 @@ fn emit_struct(
         optional: bool,
         must_understand: bool,
         default_value: String,
+        non_serialized: bool,
     }
     let mut fields: Vec<FieldGen> = Vec::new();
     let mut next_id: u32 = 0;
@@ -1256,10 +1257,19 @@ fn emit_struct(
                 }
             }
         }
+        // P0-5 (#2): a `@non_serialized` member keeps its Swift field but is off
+        // the wire and does NOT consume a sequential id slot (ids compact).
+        let non_serialized =
+            zerodds_idl::semantics::annotations::member_is_non_serialized(&m.annotations);
         for d in &m.declarators {
             let name = escape_swift_ident(&d.name().text);
-            let id = explicit_id.unwrap_or(next_id);
-            next_id = id + 1;
+            let id = if non_serialized {
+                0
+            } else {
+                let assigned = explicit_id.unwrap_or(next_id);
+                next_id = assigned + 1;
+                assigned
+            };
             let mut array_sizes: Option<Vec<i64>> = None;
             let (swift_type, put, get) = match d {
                 Declarator::Simple(_) => {
@@ -1304,6 +1314,7 @@ fn emit_struct(
                 optional,
                 must_understand,
                 default_value,
+                non_serialized,
             });
         }
     }
@@ -1346,6 +1357,9 @@ fn emit_struct(
         // a separate coordinated cross-backend change).
         let _ = writeln!(out, "        var body = Writer(w.endian)");
         for f in &fields {
+            if f.non_serialized {
+                continue;
+            }
             // An `@optional` member is omitted from the member list when absent
             // (XTypes 1.3 §7.4.3.4.2): guard its EMHEADER+body on the flag.
             if f.optional {
@@ -1380,6 +1394,9 @@ fn emit_struct(
             "body"
         };
         for f in &fields {
+            if f.non_serialized {
+                continue;
+            }
             let put = f.put.replace("$w", wv);
             if f.optional {
                 // uint8 presence flag then the value if present (§7.4.5.1.4).
@@ -1426,6 +1443,16 @@ fn emit_struct(
         // limitation); present-only values round-trip.
         let _ = writeln!(out, "        _ = r.getU32() // DHEADER");
         for f in &fields {
+            if f.non_serialized {
+                // Off the wire: bind the in-memory field to its default so the
+                // memberwise init below still receives it (P0-5, #2).
+                let _ = writeln!(
+                    out,
+                    "        let {}: {} = {}",
+                    f.name, f.swift_type, f.default_value
+                );
+                continue;
+            }
             if f.optional {
                 let _ = writeln!(out, "        var {}_present: Bool = true", f.name);
             }
@@ -1439,6 +1466,15 @@ fn emit_struct(
             let _ = writeln!(out, "        _ = r.getU32() // DHEADER");
         }
         for f in &fields {
+            if f.non_serialized {
+                // Off the wire: bind the in-memory field to its default (P0-5, #2).
+                let _ = writeln!(
+                    out,
+                    "        let {}: {} = {}",
+                    f.name, f.swift_type, f.default_value
+                );
+                continue;
+            }
             if f.optional {
                 // uint8 presence flag then the value if present (§7.4.5.1.4);
                 // the value takes a zero default in the absent branch.
@@ -1478,7 +1514,10 @@ fn emit_struct(
     let _ = writeln!(out, "        return try unmarshalFrom(&r)");
     let _ = writeln!(out, "    }}");
 
-    let mut zdkeys: Vec<&FieldGen> = fields.iter().filter(|f| f.key).collect();
+    let mut zdkeys: Vec<&FieldGen> = fields
+        .iter()
+        .filter(|f| f.key && !f.non_serialized)
+        .collect();
     zdkeys.sort_by_key(|f| f.id);
     if !zdkeys.is_empty() {
         // #A10: the effective (base-first) member list, so an inherited `@key`

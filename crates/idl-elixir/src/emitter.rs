@@ -1591,6 +1591,8 @@ fn emit_struct(
         // `@must_understand`: EMHEADER must-understand bit 31 under @mutable
         // (XTypes 1.3 §7.4.3.4.2 — #A17). No effect on @final/@appendable wire.
         must_understand: bool,
+        // `@non_serialized`: kept in the Elixir defstruct, off every wire form.
+        non_serialized: bool,
     }
     let mut fields: Vec<FieldGen> = Vec::new();
     let mut next_id: u32 = 0;
@@ -1614,10 +1616,19 @@ fn emit_struct(
                 .iter()
                 .any(|a| matches!(a, BuiltinAnnotation::MustUnderstand))
         });
+        // P0-5 (#2): a `@non_serialized` member keeps its defstruct field but is
+        // off the wire and does NOT consume a sequential id slot (ids compact).
+        let non_serialized =
+            zerodds_idl::semantics::annotations::member_is_non_serialized(&m.annotations);
         for d in &m.declarators {
             let name = escape_elixir_ident(&d.name().text);
-            let id = explicit_id.unwrap_or(next_id);
-            next_id = id + 1;
+            let id = if non_serialized {
+                0
+            } else {
+                let assigned = explicit_id.unwrap_or(next_id);
+                next_id = assigned + 1;
+                assigned
+            };
             let (seg, get, key_type) = match d {
                 Declarator::Simple(_) => {
                     let expr = format!("v.{name}");
@@ -1654,6 +1665,7 @@ fn emit_struct(
                 key_type,
                 optional,
                 must_understand,
+                non_serialized,
             });
         }
     }
@@ -1702,6 +1714,9 @@ fn emit_struct(
         // coordinated cross-backend change).
         let _ = writeln!(out, "    body = {wire}.writer(w.endian)");
         for (i, f) in fields.iter().enumerate() {
+            if f.non_serialized {
+                continue;
+            }
             // An `@optional` member is omitted from the member list when absent
             // (XTypes 1.3 §7.4.3.4.2): guard its EMHEADER+body on the flag.
             let mu_bit = if f.must_understand {
@@ -1747,12 +1762,18 @@ fn emit_struct(
     } else if ext == ExtensibilityKind::Final {
         let _ = writeln!(out, "    w");
         for f in &fields {
+            if f.non_serialized {
+                continue;
+            }
             let _ = writeln!(out, "    |> {}", field_step(f));
         }
     } else {
         let _ = writeln!(out, "    body =");
         let _ = writeln!(out, "      {wire}.writer(w.endian)");
         for f in &fields {
+            if f.non_serialized {
+                continue;
+            }
             let _ = writeln!(out, "      |> {}", field_step(f));
         }
         let _ = writeln!(out, "      |> {wire}.bytes()");
@@ -1768,7 +1789,10 @@ fn emit_struct(
     let _ = writeln!(out, "    |> {wire}.bytes()");
     let _ = writeln!(out, "  end");
 
-    let mut zdkeys: Vec<&FieldGen> = fields.iter().filter(|f| f.key).collect();
+    let mut zdkeys: Vec<&FieldGen> = fields
+        .iter()
+        .filter(|f| f.key && !f.non_serialized)
+        .collect();
     zdkeys.sort_by_key(|f| f.id);
     if !zdkeys.is_empty() {
         // Include inherited `@key` members (#A10): key-hash covers base keys too.
@@ -1831,6 +1855,9 @@ fn emit_struct(
     if ext == ExtensibilityKind::Mutable {
         let _ = writeln!(out, "    {{_, r}} = {wire}.get_u32(r)");
         for f in &fields {
+            if f.non_serialized {
+                continue; // off the wire; defstruct default (nil) in the struct.
+            }
             let _ = writeln!(out, "    {{_, r}} = {wire}.get_u32(r)");
             let _ = writeln!(out, "    {{_, r}} = {wire}.get_u32(r)");
             let _ = writeln!(out, "    {{{}, r}} = {}", f.name, f.get.replace("$r", "r"));
@@ -1843,6 +1870,9 @@ fn emit_struct(
             let _ = writeln!(out, "    {{_, r}} = {wire}.get_u32(r)");
         }
         for f in &fields {
+            if f.non_serialized {
+                continue; // off the wire; defstruct default (nil) in the struct.
+            }
             if f.optional {
                 let _ = writeln!(out, "    {{{}_present, r}} = {wire}.get_bool(r)", f.name);
                 let _ = writeln!(
@@ -1858,6 +1888,7 @@ fn emit_struct(
     }
     let struct_fields = fields
         .iter()
+        .filter(|f| !f.non_serialized)
         .flat_map(|f| {
             if f.optional {
                 vec![

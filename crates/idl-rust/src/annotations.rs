@@ -136,6 +136,18 @@ pub fn member_is_optional(annotations: &[Annotation]) -> bool {
     annotations.iter().any(|a| annotation_name(a) == "optional")
 }
 
+/// Reads `@non_serialized` (default false) — the same predicate the central
+/// `zerodds_idl::semantics::annotations::member_is_non_serialized` applies, so
+/// every backend agrees (broad-audit P0-5, #2). A `@non_serialized` member keeps
+/// its in-memory field but is omitted from every wire form and both TypeObjects;
+/// on decode it is left at its default.
+#[must_use]
+pub fn member_is_non_serialized(annotations: &[Annotation]) -> bool {
+    annotations
+        .iter()
+        .any(|a| annotation_name(a) == "non_serialized")
+}
+
 /// Reads `@external` (default false) — indirect (pointer/shared) member
 /// storage, XTypes 1.3 §7.2.2.4.4.4.6 / `StructMemberFlag::IS_EXTERNAL`.
 #[must_use]

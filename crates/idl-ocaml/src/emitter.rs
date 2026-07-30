@@ -1595,6 +1595,8 @@ fn emit_struct(
         // `@must_understand`: sets EMHEADER bit 31 in the `@mutable` framing
         // (#A17). Wire-neutral for `@final`/`@appendable`.
         must_understand: bool,
+        // `@non_serialized`: kept in the OCaml record, off every wire form.
+        non_serialized: bool,
     }
     // #A10/P3: base-first effective member list — a `struct D : Base` carries
     // Base's members (recursively) ahead of its own, in the OCaml record type
@@ -1627,10 +1629,19 @@ fn emit_struct(
                 "@optional combined with @key".to_string(),
             ));
         }
+        // P0-5 (#2): a `@non_serialized` member keeps its OCaml field but is off
+        // the wire and does NOT consume a sequential id slot (ids compact).
+        let non_serialized =
+            zerodds_idl::semantics::annotations::member_is_non_serialized(&m.annotations);
         for d in &m.declarators {
             let name = escape_ocaml_ident(&d.name().text);
-            let id = explicit_id.unwrap_or(next_id);
-            next_id = id + 1;
+            let id = if non_serialized {
+                0
+            } else {
+                let assigned = explicit_id.unwrap_or(next_id);
+                next_id = assigned + 1;
+                assigned
+            };
             let mut array_sizes: Option<Vec<i64>> = None;
             let mut opt_put = String::new();
             let (ocaml_type, put, get) = match d {
@@ -1692,6 +1703,7 @@ fn emit_struct(
                 optional,
                 opt_put,
                 must_understand,
+                non_serialized,
             });
         }
     }
@@ -1725,6 +1737,9 @@ fn emit_struct(
         // length) + body (XTypes §7.4.3.4.2).
         let _ = writeln!(out, "    let body = Wire.writer endian in");
         for f in &fields {
+            if f.non_serialized {
+                continue;
+            }
             // An `@optional` member is omitted from the member list when absent
             // (XTypes 1.3 §7.4.3.4.2): emit its EMHEADER+body only for `Some`.
             let (open, put_src, close) = if f.optional {
@@ -1768,6 +1783,9 @@ fn emit_struct(
             "body"
         };
         for f in &fields {
+            if f.non_serialized {
+                continue;
+            }
             if f.optional {
                 // uint8 presence flag then the value if present (§7.4.5.1.4).
                 let op = f.opt_put.replace("$w", wv);
@@ -1796,7 +1814,10 @@ fn emit_struct(
     let _ = writeln!(out, "    let w = Wire.writer endian in");
     let _ = writeln!(out, "    marshal_into v w endian;");
     let _ = writeln!(out, "    Wire.bytes w");
-    let mut zdkeys: Vec<&FieldGen> = fields.iter().filter(|f| f.key).collect();
+    let mut zdkeys: Vec<&FieldGen> = fields
+        .iter()
+        .filter(|f| f.key && !f.non_serialized)
+        .collect();
     zdkeys.sort_by_key(|f| f.id);
     if !zdkeys.is_empty() {
         let key_members: Vec<&Member> = s
@@ -1866,6 +1887,17 @@ fn emit_struct(
     if ext == ExtensibilityKind::Mutable {
         let _ = writeln!(out, "    ignore (Wire.get_u32 r);");
         for f in &fields {
+            if f.non_serialized {
+                // Off the wire: bind the field to its default so the record
+                // construction below still has it (P0-5, #2).
+                let _ = writeln!(
+                    out,
+                    "    let {} = {} in",
+                    f.name,
+                    ocaml_default(&f.ocaml_type)?
+                );
+                continue;
+            }
             let g = f.get.replace("$r", "r");
             // @mutable @optional decode rides the naive member-order decoder:
             // an absent member is omitted on encode, but this reader assumes a
@@ -1884,6 +1916,16 @@ fn emit_struct(
             let _ = writeln!(out, "    ignore (Wire.get_u32 r);");
         }
         for f in &fields {
+            if f.non_serialized {
+                // Off the wire: bind the field to its default (P0-5, #2).
+                let _ = writeln!(
+                    out,
+                    "    let {} = {} in",
+                    f.name,
+                    ocaml_default(&f.ocaml_type)?
+                );
+                continue;
+            }
             let g = f.get.replace("$r", "r");
             // @optional (final/appendable): read the uint8 presence flag, then
             // the value only if present (§7.4.5.1.4).

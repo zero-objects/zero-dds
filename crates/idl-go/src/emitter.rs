@@ -1781,6 +1781,7 @@ fn emit_struct(
         optional: bool,     // `@optional`: uint8 presence flag then value
         must_understand: bool, // `@must_understand`: EMHEADER bit 31 (@mutable)
         external: bool,     // `@external`: wire-neutral, surfaced as a doc marker
+        non_serialized: bool, // `@non_serialized`: kept in the Go struct, off the wire
     }
     // #A10/P3: base-first effective member list (inherited members precede the
     // derived struct's own, in the type and on the wire).
@@ -1815,10 +1816,20 @@ fn emit_struct(
                 .iter()
                 .any(|a| matches!(a, BuiltinAnnotation::External))
         });
+        // P0-5 (#2): a `@non_serialized` member keeps its Go struct field but is
+        // absent from the wire — and does NOT consume a sequential id slot, so
+        // the survivors' ids compact exactly as the TypeObject builder does.
+        let non_serialized =
+            zerodds_idl::semantics::annotations::member_is_non_serialized(&m.annotations);
         for d in &m.declarators {
             let go_name = dedup_name(&mut used_names, exported(&d.name().text));
-            let id = explicit_id.unwrap_or(next_id);
-            next_id = id + 1;
+            let id = if non_serialized {
+                0
+            } else {
+                let assigned = explicit_id.unwrap_or(next_id);
+                next_id = assigned + 1;
+                assigned
+            };
             let simple = matches!(d, Declarator::Simple(_));
             let (go_type, put, get) = match d {
                 Declarator::Simple(_) => {
@@ -1872,6 +1883,7 @@ fn emit_struct(
                 optional,
                 must_understand,
                 external,
+                non_serialized,
             });
         }
     }
@@ -1923,12 +1935,18 @@ fn emit_struct(
     match ext {
         ExtensibilityKind::Final => {
             for f in &fields {
+                if f.non_serialized {
+                    continue;
+                }
                 write_put(out, f, "w");
             }
         }
         ExtensibilityKind::Appendable => {
             let _ = writeln!(out, "\tbody := NewWriter(w.Endian)");
             for f in &fields {
+                if f.non_serialized {
+                    continue;
+                }
                 write_put(out, f, "body");
             }
             let _ = writeln!(out, "\tw.PutU32(uint32(len(body.Buf)))");
@@ -1942,6 +1960,9 @@ fn emit_struct(
         ExtensibilityKind::Mutable => {
             let _ = writeln!(out, "\tbody := NewWriter(w.Endian)");
             for f in &fields {
+                if f.non_serialized {
+                    continue;
+                }
                 if f.optional {
                     let _ = writeln!(out, "\tif v.{}Present {{", f.go_name);
                 }
@@ -1990,12 +2011,18 @@ fn emit_struct(
     match ext {
         ExtensibilityKind::Final => {
             for f in &fields {
+                if f.non_serialized {
+                    continue;
+                }
                 write_get(out, f);
             }
         }
         ExtensibilityKind::Appendable => {
             let _ = writeln!(out, "\t_ = r.GetU32() // DHEADER");
             for f in &fields {
+                if f.non_serialized {
+                    continue;
+                }
                 write_get(out, f);
             }
         }
@@ -2008,6 +2035,9 @@ fn emit_struct(
         ExtensibilityKind::Mutable => {
             let _ = writeln!(out, "\t_ = r.GetU32() // DHEADER");
             for f in &fields {
+                if f.non_serialized {
+                    continue;
+                }
                 if f.optional {
                     let _ = writeln!(out, "\tv.{}Present = true", f.go_name);
                 }
@@ -2030,7 +2060,10 @@ fn emit_struct(
     // order). ≤16-byte KeyHolder → those bytes zero-padded to 16; larger (or
     // dynamically sized) → MD5(bytes)[0..16] (step 5.2). The branch is static
     // per type, decided by the shared max-size analysis.
-    let mut keys: Vec<&FieldGen> = fields.iter().filter(|f| f.key).collect();
+    let mut keys: Vec<&FieldGen> = fields
+        .iter()
+        .filter(|f| f.key && !f.non_serialized)
+        .collect();
     keys.sort_by_key(|f| f.id);
     if !keys.is_empty() {
         let key_members: Vec<&Member> = all_members

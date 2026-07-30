@@ -1461,6 +1461,7 @@ fn emit_struct(
         opt_inner_type: String,
         resolved_type: TypeSpec,
         array_sizes: Option<Vec<i64>>,
+        non_serialized: bool,
     }
     // KV structs for map members, emitted before the containing struct.
     let mut pre = String::new();
@@ -1487,11 +1488,20 @@ fn emit_struct(
                 .iter()
                 .any(|a| matches!(a, BuiltinAnnotation::MustUnderstand))
         });
+        // P0-5 (#2): a `@non_serialized` member keeps its Zig field but is off
+        // the wire and does NOT consume a sequential id slot (ids compact).
+        let non_serialized =
+            zerodds_idl::semantics::annotations::member_is_non_serialized(&m.annotations);
         for d in &m.declarators {
             let raw_name = d.name().text.clone();
             let zig_name = escape_zig_ident(&raw_name);
-            let id = explicit_id.unwrap_or(next_id);
-            next_id = id + 1;
+            let id = if non_serialized {
+                0
+            } else {
+                let assigned = explicit_id.unwrap_or(next_id);
+                next_id = assigned + 1;
+                assigned
+            };
             let mut array_sizes: Option<Vec<i64>> = None;
             let mut opt_inner_put = String::new();
             let mut opt_inner_get = String::new();
@@ -1607,6 +1617,7 @@ fn emit_struct(
                 opt_inner_type,
                 resolved_type: resolved.clone(),
                 array_sizes,
+                non_serialized,
             });
         }
     }
@@ -1639,6 +1650,9 @@ fn emit_struct(
         let _ = writeln!(out, "        defer body_s.deinit();");
         let _ = writeln!(out, "        const body = &body_s;");
         for f in &fields {
+            if f.non_serialized {
+                continue;
+            }
             let mu = if f.must_understand {
                 0x8000_0000_u32
             } else {
@@ -1694,6 +1708,9 @@ fn emit_struct(
             "body"
         };
         for f in &fields {
+            if f.non_serialized {
+                continue;
+            }
             let _ = writeln!(out, "        {}", f.put.replace("$w", wv));
         }
         if ext != ExtensibilityKind::Final {
@@ -1712,7 +1729,10 @@ fn emit_struct(
     let _ = writeln!(out, "        try self.marshalInto(&w);");
     let _ = writeln!(out, "        return try w.buf.toOwnedSlice();");
     let _ = writeln!(out, "    }}");
-    let mut zdkeys: Vec<&FieldGen> = fields.iter().filter(|f| f.key).collect();
+    let mut zdkeys: Vec<&FieldGen> = fields
+        .iter()
+        .filter(|f| f.key && !f.non_serialized)
+        .collect();
     zdkeys.sort_by_key(|f| f.id);
     if !zdkeys.is_empty() {
         // #A10: inherited `@key` members count too — filter the base-first
@@ -1799,6 +1819,9 @@ fn emit_struct(
         // the go backend's documented scope. A fully-present value round-trips.
         let _ = writeln!(out, "        _ = r.getU32();");
         for f in &fields {
+            if f.non_serialized {
+                continue;
+            }
             let _ = writeln!(out, "        _ = r.getU32();");
             let _ = writeln!(out, "        _ = r.getU32();");
             if f.optional {
@@ -1818,6 +1841,9 @@ fn emit_struct(
             let _ = writeln!(out, "        _ = r.getU32();");
         }
         for f in &fields {
+            if f.non_serialized {
+                continue;
+            }
             let _ = writeln!(out, "        {}", f.get.replace("$r", "r"));
         }
     }
