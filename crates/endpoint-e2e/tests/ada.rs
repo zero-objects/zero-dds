@@ -229,6 +229,7 @@ fn build_app(dir: &std::path::Path) -> std::path::PathBuf {
         &ast,
         &AdaGenOptions {
             package_name: "Pp_Gen".to_string(),
+            ..Default::default()
         },
     )
     .expect("gen ada");

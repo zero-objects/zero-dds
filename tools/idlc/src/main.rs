@@ -1363,6 +1363,7 @@ fn emit_backend(
             // unit name (mixed-case is fine, GNAT is case-insensitive).
             let opts_ada = AdaGenOptions {
                 package_name: base.to_string(),
+                ..Default::default()
             };
             let module = generate_ada_module(ast, &opts_ada)
                 .map_err(|e| CliError::NotImplemented(format!("ada codegen failed: {e}")))?;
