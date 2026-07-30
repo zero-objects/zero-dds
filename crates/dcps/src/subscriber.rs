@@ -16,7 +16,6 @@
 
 extern crate alloc;
 use alloc::boxed::Box;
-use alloc::string::ToString;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::marker::PhantomData;
@@ -77,6 +76,45 @@ fn decode_for_encap<T: DdsType>(
         (0, true) => T::decode_xcdr1_be(bytes),
         (_, false) => T::decode(bytes),
         (_, true) => T::decode_be(bytes),
+    }
+}
+
+/// Builds a diagnostic `WireError` for a failed sample decode. Beyond the inner
+/// error it records the received encapsulation (representation + byte order) and
+/// this reader type's own extensibility, and — because the most common
+/// cross-vendor cause is an extensibility/framing mismatch — names that as a
+/// *plausible* cause. It is deliberately not asserted: without the remote type
+/// the true cause cannot be confirmed here. See issue #27.
+fn decode_wire_error<T: DdsType>(
+    inner: &crate::dds_type::DecodeError,
+    representation: u8,
+    big_endian: bool,
+) -> DdsError {
+    use crate::dds_type::Extensibility;
+    let repr = if representation == 0 {
+        "XCDR1"
+    } else {
+        "XCDR2"
+    };
+    let endian = if big_endian {
+        "big-endian"
+    } else {
+        "little-endian"
+    };
+    let ext = match T::EXTENSIBILITY {
+        Extensibility::Final => "final",
+        Extensibility::Appendable => "appendable",
+        Extensibility::Mutable => "mutable",
+    };
+    DdsError::WireError {
+        message: alloc::format!(
+            "decode error: {inner} (received {repr} {endian}; this reader's type '{}' is @{ext}. \
+             A plausible cross-vendor cause is an extensibility mismatch — in XCDR2 \
+             @appendable/@mutable carry a DHEADER length prefix and @final does not, so a peer \
+             whose type has a different extensibility fails to decode. Not confirmed: the remote \
+             type is not available here to verify.)",
+            T::TYPE_NAME,
+        ),
     }
 }
 
@@ -748,9 +786,7 @@ impl<T: DdsType> DataReader<T> {
                         ..
                     } => {
                         let sample = decode_for_encap::<T>(&bytes, representation, big_endian)
-                            .map_err(|e| DdsError::WireError {
-                                message: e.to_string(),
-                            })?;
+                            .map_err(|e| decode_wire_error::<T>(&e, representation, big_endian))?;
                         if !self.sample_passes_filter(&sample) {
                             continue;
                         }
@@ -785,9 +821,7 @@ impl<T: DdsType> DataReader<T> {
                         ..
                     } => {
                         let sample = decode_for_encap::<T>(&bytes, representation, big_endian)
-                            .map_err(|e| DdsError::WireError {
-                                message: e.to_string(),
-                            })?;
+                            .map_err(|e| decode_wire_error::<T>(&e, representation, big_endian))?;
                         if !self.sample_passes_filter(&sample) {
                             continue;
                         }
@@ -844,12 +878,8 @@ impl<T: DdsType> DataReader<T> {
             else {
                 continue;
             };
-            let sample =
-                decode_for_encap::<T>(&bytes, representation, big_endian).map_err(|e| {
-                    DdsError::WireError {
-                        message: e.to_string(),
-                    }
-                })?;
+            let sample = decode_for_encap::<T>(&bytes, representation, big_endian)
+                .map_err(|e| decode_wire_error::<T>(&e, representation, big_endian))?;
             if !self.sample_passes_filter(&sample) {
                 continue;
             }
@@ -983,12 +1013,8 @@ impl<T: DdsType> DataReader<T> {
             else {
                 continue;
             };
-            let sample =
-                decode_for_encap::<T>(&bytes, representation, big_endian).map_err(|e| {
-                    DdsError::WireError {
-                        message: e.to_string(),
-                    }
-                })?;
+            let sample = decode_for_encap::<T>(&bytes, representation, big_endian)
+                .map_err(|e| decode_wire_error::<T>(&e, representation, big_endian))?;
             if !self.sample_passes_filter(&sample) {
                 continue;
             }
@@ -1739,12 +1765,8 @@ impl<T: DdsType> DataReader<T> {
             let sample_source_ts = src_ts.map_or(now, crate::time::he_timestamp_to_time);
             // Decode T to (a) evaluate the filter and (b) compute the
             // KeyHash.
-            let sample =
-                decode_for_encap::<T>(&bytes, representation, big_endian).map_err(|e| {
-                    DdsError::WireError {
-                        message: alloc::string::ToString::to_string(&e),
-                    }
-                })?;
+            let sample = decode_for_encap::<T>(&bytes, representation, big_endian)
+                .map_err(|e| decode_wire_error::<T>(&e, representation, big_endian))?;
             if !self.sample_passes_filter(&sample) {
                 continue;
             }
@@ -2382,6 +2404,27 @@ mod tests {
         assert_eq!(decode_for_encap::<Probe>(&[], 1, true).unwrap(), Probe(2));
         assert_eq!(decode_for_encap::<Probe>(&[], 0, false).unwrap(), Probe(10));
         assert_eq!(decode_for_encap::<Probe>(&[], 0, true).unwrap(), Probe(20));
+    }
+
+    /// A failed decode carries diagnostic context (encapsulation + this reader's
+    /// extensibility) and flags the extensibility/framing mismatch as a
+    /// *plausible* — not asserted — cause (issue #27).
+    #[test]
+    fn decode_wire_error_carries_diagnostic_context() {
+        use crate::dds_type::DecodeError;
+        let inner = DecodeError::Invalid { what: "boom" };
+        // RawBytes is @final by default; received XCDR2 little-endian.
+        let msg = match decode_wire_error::<RawBytes>(&inner, 1, false) {
+            DdsError::WireError { message } => message,
+            _ => alloc::string::String::new(),
+        };
+        assert!(!msg.is_empty(), "expected a WireError variant");
+        assert!(msg.contains("XCDR2"), "{msg}");
+        assert!(msg.contains("little-endian"), "{msg}");
+        assert!(msg.contains("@final"), "{msg}");
+        assert!(msg.contains("DHEADER"), "{msg}");
+        assert!(msg.to_lowercase().contains("plausible"), "{msg}");
+        assert!(msg.contains("Not confirmed"), "{msg}");
     }
 
     #[test]
