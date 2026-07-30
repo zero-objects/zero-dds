@@ -139,8 +139,22 @@ pub fn bind_peer_on(port: u16) -> Option<Peer> {
 /// Panics (fails the test) if the app does not send the exact `Ping` or does not
 /// print the exact `Pong`.
 pub fn ping_pong(peer: &Peer, child: Child, label: &str) {
+    // 90 s, not 30: the endpoint apps compile a real toolchain at test time
+    // (kotlinc/swiftc/nim/ocamlopt/…), and a GitHub runner's FIRST cold compile
+    // of one of these routinely runs 30-60 s before the app can send its ping.
+    // This is the external compiler's cold-start, not a ZeroDDS round-trip.
+    // Julia's JIT is heavier still — it passes an even longer timeout directly.
+    ping_pong_with_timeout(peer, child, label, Duration::from_secs(90));
+}
+
+/// Like [`ping_pong`] but with an explicit peer read-timeout. Interpreted
+/// backends with a slow, variable cold start (Julia's first-run JIT of the
+/// generated module + `Sockets` on a cold CI depot can exceed the 30 s default)
+/// pass a longer timeout — this covers the language runtime's compile latency,
+/// which is external to ZeroDDS, NOT a wire round-trip that got slower.
+pub fn ping_pong_with_timeout(peer: &Peer, child: Child, label: &str, timeout: Duration) {
     peer.sock
-        .set_read_timeout(Some(Duration::from_secs(30)))
+        .set_read_timeout(Some(timeout))
         .expect("set timeout");
     let mut buf = [0u8; 4096];
     let (n, app_addr) = peer.sock.recv_from(&mut buf).expect("recv ping frame");

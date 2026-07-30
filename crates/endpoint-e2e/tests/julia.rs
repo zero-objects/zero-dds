@@ -15,8 +15,9 @@
 
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
+use std::time::Duration;
 
-use zerodds_endpoint_e2e::{IDL, Peer, bind_peer, ping_pong};
+use zerodds_endpoint_e2e::{IDL, Peer, bind_peer, ping_pong_with_timeout};
 use zerodds_idl::config::ParserConfig;
 use zerodds_idl_julia::{JuliaGenOptions, generate_julia_module};
 
@@ -139,7 +140,15 @@ fn endpoint_case(mode: &str) {
     }
     let peer: Peer = bind_peer().expect("bind peer");
     let child = build_julia(mode, peer.port);
-    ping_pong(&peer, child, &format!("julia/{mode}"));
+    // Julia's first-run JIT (the generated module + `Sockets`) on a cold CI
+    // depot can take well over the 30 s default before the app sends its ping.
+    // That is Julia's compile latency, not a ZeroDDS round-trip — give it room.
+    ping_pong_with_timeout(
+        &peer,
+        child,
+        &format!("julia/{mode}"),
+        Duration::from_secs(120),
+    );
 }
 
 #[test]
