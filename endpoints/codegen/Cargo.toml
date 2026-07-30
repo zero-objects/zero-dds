@@ -19,4 +19,4 @@ name = "zerodds-endpoint-codegen"
 path = "src/main.rs"
 
 [dependencies]
-zerodds-idl = { version = "1.0.0-rc.6", path = "../../crates/idl" }
+zerodds-idl = { version = "1.0.0-rc.7", path = "../../crates/idl" }

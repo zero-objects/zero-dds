@@ -27,8 +27,8 @@ ext-default-final = ["zerodds-idl-compose/ext-default-final"]
 ext-default-mutable = ["zerodds-idl-compose/ext-default-mutable"]
 
 [dependencies]
-zerodds-idl-compose = { version = "1.0.0-rc.6", path = "../idl-compose", default-features = false }
-zerodds-idl-rust = { version = "1.0.0-rc.6", path = "../idl-rust" }
+zerodds-idl-compose = { version = "1.0.0-rc.7", path = "../idl-compose", default-features = false }
+zerodds-idl-rust = { version = "1.0.0-rc.7", path = "../idl-rust" }
 
 [dev-dependencies]
 tempfile = "3"

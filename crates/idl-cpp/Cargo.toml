@@ -26,9 +26,19 @@ default = ["std"]
 std = []
 
 [dependencies]
-zerodds-idl = { version = "1.0.0-rc.6", path = "../idl" }
-zerodds-rpc = { version = "1.0.0-rc.6", path = "../rpc", default-features = false, features = ["alloc"] }
+zerodds-idl = { version = "1.0.0-rc.7", path = "../idl" }
+zerodds-rpc = { version = "1.0.0-rc.7", path = "../rpc", default-features = false, features = ["alloc"] }
 
 [dev-dependencies]
 tempfile = "3"
 insta = { workspace = true }
+# #24 cross-binding parity: assert the cpp-emitted TypeObject bytes yield the
+# same TypeIdentifier hash that `idl-rust` advertises for the same IDL.
+zerodds-idl-rust = { version = "1.0.0-rc.7", path = "../idl-rust" }
+zerodds-foundation = { version = "1.0.0-rc.7", path = "../foundation" }
+# P0-3 cross-backend member-id parity: read the canonical NameHash + TypeObject
+# member ids for the @autoid(HASH)/@hashid/@id parity assertions.
+zerodds-types = { version = "1.0.0-rc.7", path = "../types", default-features = false, features = ["alloc", "std"] }
+# P0-4 cross-backend extensibility parity: assert C/C++/TS honor the
+# `@extensibility(X)` long form identically to Rust (dev-only, no cycle).
+zerodds-idl-ts = { version = "1.0.0-rc.7", path = "../idl-ts" }

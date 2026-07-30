@@ -31,4 +31,11 @@ ext-default-final = []
 ext-default-mutable = []
 
 [dependencies]
-zerodds-idl = { version = "1.0.0-rc.6", path = "../idl" }
+zerodds-idl = { version = "1.0.0-rc.7", path = "../idl" }
+
+[dev-dependencies]
+tempfile = "3"
+# Multi-input dedup test drives the real Rust emitter to prove the deduplicated
+# project output compiles without E0428. `zerodds-idl-rust` does not depend on
+# this crate, so this dev-only edge introduces no cycle.
+zerodds-idl-rust = { version = "1.0.0-rc.7", path = "../idl-rust" }

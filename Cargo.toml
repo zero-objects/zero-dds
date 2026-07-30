@@ -207,6 +207,9 @@ members = [
     # bridge daemons (ws/mqtt/coap/amqp/grpc/corba): TLS + auth modes
     # + topic ACL.
     "crates/bridge-security",
+    # OMG dds-rtps interop-suite `shape_main` reference client (BUILD +
+    # LOCAL-VALIDATE phase — github.com/omg-dds/dds-rtps not yet touched).
+    "tools/omg-shape-main",
 ]
 # The Tauri shell is a sub-project with its own toolchain (tauri-cli +
 # platform deps). It is not built via the cargo workspace.
@@ -215,7 +218,7 @@ exclude = [
 ]
 
 [workspace.package]
-version = "1.0.0-rc.6"
+version = "1.0.0-rc.7"
 edition = "2024"
 rust-version = "1.88"
 license = "Apache-2.0"

@@ -8,12 +8,18 @@ set -euo pipefail
 TARGET=""
 VERSION=""
 OUT=""
+SDK_STAGE=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        --target)  TARGET="$2";  shift 2;;
-        --version) VERSION="$2"; shift 2;;
-        --out)     OUT="$2";     shift 2;;
+        --target)    TARGET="$2";    shift 2;;
+        --version)   VERSION="$2";   shift 2;;
+        --out)       OUT="$2";       shift 2;;
+        # Optional: path to a pre-populated `cmake --install` staging tree
+        # (…/usr). When omitted, this script builds it itself (see
+        # ensure_sdk_stage). The zerodds-dev sub-package is filled EXCLUSIVELY
+        # from that tree — no hand-maintained header copy list (spec P0-4).
+        --sdk-stage) SDK_STAGE="$2"; shift 2;;
         *) echo "unknown arg: $1" >&2; exit 1;;
     esac
 done
@@ -33,6 +39,30 @@ mkdir -p "$OUT"
 ROOT=$(mktemp -d)
 trap 'rm -rf "$ROOT"' EXIT
 
+# Materialise the single SDK install staging tree once. Everything a C/C++
+# consumer needs is produced by `cmake --install` (root CMakeLists.txt install
+# block) — headers (C + C++), the static library, zeroddsConfig.cmake +
+# ConfigVersion, the IDLC generator module, zerodds.pc, and the zerodds-idlc
+# host tool. The zerodds-dev package is then a thin copy of this tree, so no
+# header can be present in one packaging path but missing from another.
+# Static lib on purpose: the runtime shared .so ships in zerodds-core; -dev
+# provides the self-contained static SDK + the CMake/pkg-config glue.
+ensure_sdk_stage () {
+    [ -n "$SDK_STAGE" ] && return 0
+    local build
+    build="$ROOT/zdw-build"
+    SDK_STAGE="$ROOT/zdw-stage/usr"
+    cmake -S . -B "$build" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DBUILD_SHARED_LIBS=OFF \
+        -DZERODDS_BUILD_CPP=ON \
+        -DZERODDS_BUILD_IDLC=ON \
+        -DZERODDS_BUILD_EXAMPLES=OFF \
+        -DZERODDS_BUILD_TESTS=OFF
+    cmake --build "$build"
+    cmake --install "$build" --prefix "$SDK_STAGE"
+}
+
 build_pkg () {
     local name="$1"        # z.B. zerodds-ws-bridge
     local daemon="$2"      # ws-bridged | "" fuer core/cli/dev
@@ -40,6 +70,14 @@ build_pkg () {
                                       # router = router.json (JSON config)
     local stage
     stage=$(mktemp -d -p "$ROOT")
+
+    # Per-package runtime dependencies. -dev pulls in -cli because the SDK's
+    # zeroddsConfig.cmake references /usr/bin/zerodds-idlc, which -cli owns
+    # (the host tool is not duplicated into -dev to avoid a dpkg file clash).
+    local depends="libssl3"
+    case "$name" in
+        zerodds-dev) depends="libssl3, zerodds-core (= $VERSION), zerodds-cli (= $VERSION)";;
+    esac
 
     mkdir -p "$stage/DEBIAN"
     sed -e "s/@DAEMON@/$daemon/g" -e "s/@CONF@/$conf/g" \
@@ -58,7 +96,7 @@ Maintainer: ZeroDDS Contributors <release@zerodds.org>
 Section: net
 Priority: optional
 Homepage: https://zerodds.org
-Depends: libssl3
+Depends: $depends
 Description: ZeroDDS sub-package $name
  See zerodds-deployment-1.0.md §2.2.1.
 CONTROL
@@ -93,10 +131,17 @@ CONTROL
             done
             ;;
         zerodds-dev)
-            install -Dm0644 crates/zerodds-c-api/include/zerodds.h \
-                "$stage/usr/include/zerodds.h"
-            install -Dm0644 packaging/linux/rpm/zerodds.pc \
-                "$stage/usr/lib/pkgconfig/zerodds.pc"
+            # Thin adapter over the single SDK staging tree — NO per-file copy
+            # list. Everything (C + C++ headers, static lib, zeroddsConfig.cmake
+            # + ConfigVersion, IDLC generator module, zerodds.pc) comes from
+            # `cmake --install` (spec P0-4).
+            ensure_sdk_stage
+            mkdir -p "$stage/usr"
+            cp -a "$SDK_STAGE/." "$stage/usr/"
+            # The zerodds-idlc host tool is owned by zerodds-cli; drop the copy
+            # the SDK install placed in bin/ so the two packages do not clash.
+            rm -f "$stage/usr/bin/zerodds-idlc"
+            rmdir "$stage/usr/bin" 2>/dev/null || true
             ;;
         zerodds-*-bridge|zerodds-ros2)
             local bin="zerodds-$daemon"

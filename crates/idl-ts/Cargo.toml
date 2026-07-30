@@ -26,9 +26,15 @@ std = ["alloc"]
 alloc = []
 
 [dependencies]
-zerodds-idl = { version = "1.0.0-rc.6", path = "../idl" }
+zerodds-idl = { version = "1.0.0-rc.7", path = "../idl" }
 
 [dev-dependencies]
 insta = { workspace = true }
 tempfile = "3"
+# TS TypeObject post-pass (`render_ts`) lives in the shared compose crate, not
+# in this emitter. The compile-check test appends it to the emitter output to
+# prove the *combined* CLI output (`zerodds-idlc generate --ts`) type-checks —
+# that combination is where the P0-8 enum/bitmask redeclaration surfaced.
+# Dev-only; idl-compose does not depend on idl-ts, so there is no cycle.
+zerodds-idl-compose = { path = "../idl-compose" }
 

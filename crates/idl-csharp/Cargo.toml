@@ -26,8 +26,13 @@ default = ["std"]
 std = []
 
 [dependencies]
-zerodds-idl = { version = "1.0.0-rc.6", path = "../idl" }
+zerodds-idl = { version = "1.0.0-rc.7", path = "../idl" }
+zerodds-rpc = { version = "1.0.0-rc.7", path = "../rpc" }
 
 [dev-dependencies]
 insta = { workspace = true }
 tempfile = "3"
+# #24 cross-binding parity: assert the C#-emitted TypeObject bytes yield the
+# same TypeIdentifier hash that `idl-rust` advertises for the same IDL.
+zerodds-idl-rust = { version = "1.0.0-rc.7", path = "../idl-rust" }
+zerodds-foundation = { version = "1.0.0-rc.7", path = "../foundation" }

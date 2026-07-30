@@ -16,4 +16,4 @@ dist = false
 workspace = true
 
 [dependencies]
-zerodds-cdr = { version = "1.0.0-rc.6", path = "../../crates/cdr", default-features = false, features = ["std"] }
+zerodds-cdr = { version = "1.0.0-rc.7", path = "../../crates/cdr", default-features = false, features = ["std"] }

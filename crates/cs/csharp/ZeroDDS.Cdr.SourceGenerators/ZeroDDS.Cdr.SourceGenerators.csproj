@@ -6,7 +6,8 @@
     <RootNamespace>ZeroDDS.Cdr.SourceGenerators</RootNamespace>
     <AssemblyName>ZeroDDS.Cdr.SourceGenerators</AssemblyName>
     <PackageId>ZeroDDS.Cdr.SourceGenerators</PackageId>
-    <Version>0.0.0</Version>
+    <!-- Single source of truth = Cargo workspace.package.version. NuGet accepts 1.0.0-rc.7. -->
+    <Version>1.0.0-rc.7</Version>
     <Description>Roslyn source generator for the #[DdsType] attribute. Implements zerodds-xcdr2-csharp-1.0 §11.4.</Description>
     <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
     <IsRoslynComponent>true</IsRoslynComponent>

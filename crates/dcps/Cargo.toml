@@ -94,38 +94,38 @@ recvmmsg-batch = ["zerodds-transport-udp/recvmmsg-batch"]
 inspect = ["dep:zerodds-inspect-endpoint", "zerodds-inspect-endpoint/inspect"]
 
 [dependencies]
-zerodds-cdr = { version = "1.0.0-rc.6", path = "../cdr" }
-zerodds-foundation = { version = "1.0.0-rc.6", path = "../foundation" }
-zerodds-qos = { version = "1.0.0-rc.6", path = "../qos" }
-zerodds-rtps = { version = "1.0.0-rc.6", path = "../rtps" }
-zerodds-types = { version = "1.0.0-rc.6", path = "../types" }
-zerodds-transport = { version = "1.0.0-rc.6", path = "../transport" }
-zerodds-transport-udp = { version = "1.0.0-rc.6", path = "../transport-udp" }
+zerodds-cdr = { version = "1.0.0-rc.7", path = "../cdr" }
+zerodds-foundation = { version = "1.0.0-rc.7", path = "../foundation" }
+zerodds-qos = { version = "1.0.0-rc.7", path = "../qos" }
+zerodds-rtps = { version = "1.0.0-rc.7", path = "../rtps" }
+zerodds-types = { version = "1.0.0-rc.7", path = "../types" }
+zerodds-transport = { version = "1.0.0-rc.7", path = "../transport" }
+zerodds-transport-udp = { version = "1.0.0-rc.7", path = "../transport-udp" }
 # TCP transport (DDSI-RTPS §9.4 LocatorKind=TCPv4=4). Optionally
 # selected via the env var ZERODDS_USER_TRANSPORT=TCPv4.
-zerodds-transport-tcp = { version = "1.0.0-rc.6", path = "../transport-tcp" }
+zerodds-transport-tcp = { version = "1.0.0-rc.7", path = "../transport-tcp" }
 # Same-host SHM transport (feature `same-host-shm`). Default off —
 # only ZeroDDS peers on the same host benefit; cross-vendor
 # interop keeps running over UDP.
-zerodds-transport-shm = { version = "1.0.0-rc.6", path = "../transport-shm", optional = true }
+zerodds-transport-shm = { version = "1.0.0-rc.7", path = "../transport-shm", optional = true }
 # 4b.5 — same-host UDS datagram transport (feature `same-host-uds`).
-zerodds-transport-uds = { version = "1.0.0-rc.6", path = "../transport-uds", optional = true }
+zerodds-transport-uds = { version = "1.0.0-rc.7", path = "../transport-uds", optional = true }
 # Live TSN transport (feature `tsn-live`, Linux-only).
-zerodds-transport-tsn = { version = "1.0.0-rc.6", path = "../transport-tsn", optional = true, default-features = false }
-zerodds-discovery = { version = "1.0.0-rc.6", path = "../discovery" }
-zerodds-sql-filter = { version = "1.0.0-rc.6", path = "../sql-filter" }
-zerodds-security-runtime = { version = "1.0.0-rc.6", path = "../security-runtime", optional = true }
+zerodds-transport-tsn = { version = "1.0.0-rc.7", path = "../transport-tsn", optional = true, default-features = false }
+zerodds-discovery = { version = "1.0.0-rc.7", path = "../discovery" }
+zerodds-sql-filter = { version = "1.0.0-rc.7", path = "../sql-filter" }
+zerodds-security-runtime = { version = "1.0.0-rc.7", path = "../security-runtime", optional = true }
 # Auth plugin SPI (AuthenticationPlugin/IdentityHandle) — only needed
 # for the handshake driver path (enable_security_builtins_with_auth).
-zerodds-security = { version = "1.0.0-rc.6", path = "../security", optional = true }
+zerodds-security = { version = "1.0.0-rc.7", path = "../security", optional = true }
 # Property-driven security logger (dds.sec.log.*) wireup.
-zerodds-security-logging = { version = "1.0.0-rc.6", path = "../security-logging", optional = true }
-zerodds-flatdata = { version = "1.0.0-rc.6", path = "../flatdata", optional = true, default-features = false, features = ["std"] }
-zerodds-iceoryx-cyclone = { version = "1.0.0-rc.6", path = "../iceoryx-cyclone", optional = true, features = ["posh"] }
+zerodds-security-logging = { version = "1.0.0-rc.7", path = "../security-logging", optional = true }
+zerodds-flatdata = { version = "1.0.0-rc.7", path = "../flatdata", optional = true, default-features = false, features = ["std"] }
+zerodds-iceoryx-cyclone = { version = "1.0.0-rc.7", path = "../iceoryx-cyclone", optional = true, features = ["posh"] }
 # Inspect endpoint tap hooks (PDE Reality Inspector).
-zerodds-inspect-endpoint = { version = "1.0.0-rc.6", path = "../inspect-endpoint", optional = true }
+zerodds-inspect-endpoint = { version = "1.0.0-rc.7", path = "../inspect-endpoint", optional = true }
 # Hook points for zerodds-monitor-1.1 §2.3. Optional.
-zerodds-monitor = { version = "1.0.0-rc.6", path = "../monitor", optional = true, default-features = false, features = ["std"] }
+zerodds-monitor = { version = "1.0.0-rc.7", path = "../monitor", optional = true, default-features = false, features = ["std"] }
 
 # Linux-only: libc for pthread_setschedparam + sched_setaffinity in
 # `apply_thread_tuning` (Sprint D.5d lever C — RT pinning + priority).

@@ -19,5 +19,5 @@ name = "zerodds-endpoint-golden"
 path = "src/main.rs"
 
 [dependencies]
-zerodds-cdr = { version = "1.0.0-rc.6", path = "../../crates/cdr", default-features = false, features = ["std"] }
-zerodds-xrce = { version = "1.0.0-rc.6", path = "../../crates/xrce" }
+zerodds-cdr = { version = "1.0.0-rc.7", path = "../../crates/cdr", default-features = false, features = ["std"] }
+zerodds-xrce = { version = "1.0.0-rc.7", path = "../../crates/xrce" }

@@ -3,7 +3,7 @@
 # Push updated PKGBUILD + .SRCINFO to AUR for zerodds-bin and zerodds.
 #
 # Inputs:
-#   $1 — release tag (e.g. v1.0.0-rc.1)
+#   $1 — release tag (e.g. v1.0.0-rc.7)
 #
 # Required env (set by release.yml):
 #   ~/.ssh/aur — private SSH key registered with the fishermen21 AUR account
@@ -16,7 +16,7 @@
 #
 # AUR-pkgver darf nur [a-zA-Z0-9._] enthalten — kein '-'.
 # v1.0.0           → 1.0.0
-# v1.0.0-rc.1      → 1.0.0_rc.1
+# v1.0.0-rc.7      → 1.0.0_rc.7
 # v1.0.0-beta.5    → 1.0.0_beta.5
 # v1.0.0-alpha.1+x → 1.0.0_alpha.1.x  (build-metadata stripped)
 
