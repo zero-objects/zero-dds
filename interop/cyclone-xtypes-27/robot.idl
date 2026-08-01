@@ -1,0 +1,4 @@
+struct Robot {
+    uint32 id;
+    uint32 label;
+};

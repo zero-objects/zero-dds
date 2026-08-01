@@ -2564,11 +2564,13 @@ fn build_publication_data(
 }
 
 /// The `DataRepresentation` set a **DataReader** announces (PID_DATA_REPRESENTATION
-/// in its SEDP subscription). Per OMG XTypes 1.3 §7.6.2, a reader with the
-/// default (empty) policy accepts **both** XCDR1 and XCDR2 — and ZeroDDS decodes
-/// both (the read path dispatches on the per-sample encapsulation id). So the
-/// reader advertises every representation it can decode, not just the writer's
-/// preferred one.
+/// in its SEDP subscription). Per OMG XTypes 1.3 §7.6.2 the *default* (empty)
+/// policy is **XCDR1 only** — a reader left at that default would announce, and
+/// accept, only XCDR1. ZeroDDS deliberately does not rely on the default: it
+/// advertises **both** XCDR1 and XCDR2 (it can decode either — the read path
+/// dispatches on the per-sample encapsulation id), so the reader accepts every
+/// representation it can decode rather than a single preferred one. This is
+/// ZeroDDS' own interop choice, not what the spec's default policy means.
 ///
 /// This matters cross-vendor: CycloneDDS (and legacy RTI / OpenDDS < 3.16)
 /// default their *writers* to **XCDR1** for `@final` types (non-XTypes backward
@@ -11905,12 +11907,12 @@ mod tests {
         assert_ne!(parse_data_repr_offer_str("XCDR1"), Some(vec![dr::XML]));
     }
 
-    /// A DataReader announces every representation it can decode (XCDR2 + XCDR1)
-    /// — XTypes 1.3 §7.6.2: the default reader policy accepts both. CycloneDDS
-    /// (and legacy RTI / OpenDDS < 3.16) default their writers to XCDR1 for
-    /// `@final` types; without XCDR1 in the reader's announced set those writers
-    /// fail the DataRepresentation RxO check and never deliver. Regression for
-    /// Bug DR1.
+    /// A DataReader announces every representation it can decode (XCDR2 + XCDR1).
+    /// The spec default (empty policy, XTypes 1.3 §7.6.2) is XCDR1 only; ZeroDDS
+    /// deliberately advertises both instead. CycloneDDS (and legacy RTI /
+    /// OpenDDS < 3.16) default their writers to XCDR1 for `@final` types; without
+    /// XCDR1 in the reader's announced set those writers fail the
+    /// DataRepresentation RxO check and never deliver. Regression for Bug DR1.
     #[test]
     fn reader_accept_repr_always_includes_both_representations() {
         use zerodds_rtps::publication_data::data_representation as dr;

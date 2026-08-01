@@ -1,0 +1,24 @@
+# Standalone reproducer crate for the CycloneDDS XTypes interop matrix (#27).
+# Own `[workspace]` table so it is excluded from the parent workspace and
+# never built by a normal `cargo build` at the repo root — it is driven only
+# by `run_matrix.sh`, which regenerates `src/robot.rs` per case.
+[package]
+name = "cyclone27-reader"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+zerodds-dcps = { path = "../../../crates/dcps" }
+zerodds-cdr = { path = "../../../crates/cdr" }
+zerodds-types = { path = "../../../crates/types" }
+
+[[bin]]
+name = "reader"
+path = "src/main.rs"
+
+[[bin]]
+name = "writer"
+path = "src/writer.rs"
+
+[workspace]
