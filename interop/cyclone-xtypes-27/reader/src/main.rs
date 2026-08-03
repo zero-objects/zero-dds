@@ -26,7 +26,7 @@ fn main() {
     // Domain is configurable (ZERODDS_DOMAIN) so the #28 interop CI gate can
     // give each vendor/direction cell a unique domain and avoid cross-job
     // multicast contamination. Defaults to 100 (the #27/#29 matrix domain).
-    let domain: u32 = std::env::var("ZERODDS_DOMAIN")
+    let domain: i32 = std::env::var("ZERODDS_DOMAIN")
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(100);

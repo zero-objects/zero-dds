@@ -37,13 +37,18 @@ cmake_install() {  # <dir> [extra cmake args...]
 }
 
 if [ ! -d "$PREFIX/include/fastdds" ]; then
+  echo "=== install_fastdds: foonathan_memory (vendor) ==="
+  clone_pinned foonathan_memory_vendor master foonathan
+  cmake_install foonathan -DBUILD_SHARED_LIBS=ON
+
   echo "=== install_fastdds: Fast CDR ${FASTCDR_VERSION} ==="
   clone_pinned Fast-CDR "$FASTCDR_VERSION" fastcdr
   cmake_install fastcdr
 
-  echo "=== install_fastdds: Fast DDS ${FASTDDS_VERSION} (with bundled foonathan_memory) ==="
+  echo "=== install_fastdds: Fast DDS ${FASTDDS_VERSION} ==="
   clone_pinned Fast-DDS "$FASTDDS_VERSION" fastdds
-  cmake_install fastdds -DTHIRDPARTY=ON -DCOMPILE_EXAMPLES=OFF -DBUILD_TESTING=OFF
+  # foonathan + fastcdr from PREFIX; asio + tinyxml2 + openssl from the system.
+  cmake_install fastdds -DCOMPILE_EXAMPLES=OFF -DBUILD_TESTING=OFF
 fi
 export LD_LIBRARY_PATH="$PREFIX/lib:${LD_LIBRARY_PATH:-}"
 echo "LD_LIBRARY_PATH=$PREFIX/lib:${LD_LIBRARY_PATH:-}" >>"${GITHUB_ENV:-/dev/null}"

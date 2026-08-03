@@ -16,7 +16,7 @@ fn main() {
         .and_then(|s| s.parse().ok())
         .unwrap_or(20);
     // Configurable domain (ZERODDS_DOMAIN), default 100 — see reader main.rs.
-    let domain: u32 = std::env::var("ZERODDS_DOMAIN")
+    let domain: i32 = std::env::var("ZERODDS_DOMAIN")
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or(100);
