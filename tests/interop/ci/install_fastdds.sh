@@ -19,6 +19,11 @@ WORK="${WORK:-$HOME/fastdds-src}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 mkdir -p "$WORK"
 
+# Fast DDS' XTypes/TypeObject translation units are memory-heavy; an all-core
+# build on a hosted runner peaks past the VM limit and the runner is
+# SIGTERM'd (exit 143). Cap parallelism to keep the peak bounded.
+export CMAKE_BUILD_PARALLEL_LEVEL="${BUILD_JOBS:-2}"
+
 echo "=== install_fastdds: build deps ==="
 sudo apt-get update
 sudo apt-get install -y --no-install-recommends \
@@ -58,7 +63,7 @@ GEN_BIN="$PREFIX/share/fastddsgen/scripts/fastddsgen"
 if [ ! -x "$GEN_BIN" ]; then
   git clone --recurse-submodules --depth 1 --branch "$FASTDDSGEN_VERSION" \
     https://github.com/eProsima/Fast-DDS-Gen.git "$WORK/fastddsgen"
-  ( cd "$WORK/fastddsgen" && ./gradlew assemble )
+  ( cd "$WORK/fastddsgen" && ./gradlew assemble --max-workers=2 --no-daemon )
   mkdir -p "$PREFIX/share/fastddsgen"
   cp -r "$WORK/fastddsgen/scripts" "$WORK/fastddsgen/share" "$PREFIX/share/fastddsgen/" 2>/dev/null || \
     cp -r "$WORK/fastddsgen/." "$PREFIX/share/fastddsgen/"

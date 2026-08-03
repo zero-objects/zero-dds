@@ -302,6 +302,7 @@ jobs:
     name: interop (${{ matrix.vendor }})
     needs: [fmt, clippy, interop-harness]
     runs-on: ubuntu-24.04
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
@@ -313,6 +314,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      # Cache the built vendor SDK prefix, keyed on the pinned versions in the
+      # install scripts. The first run builds from source (bounded parallelism
+      # to fit the runner); later runs restore and skip the build.
+      - name: Cache vendor SDK (${{ matrix.vendor }})
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/cyclonedds-install
+            ~/fastdds-install
+          key: interop-${{ matrix.vendor }}-${{ runner.os }}-${{ hashFiles(format('tests/interop/ci/install_{0}.sh', matrix.vendor)) }}
       - name: Install vendor (${{ matrix.vendor }})
         run: bash tests/interop/ci/install_${{ matrix.vendor }}.sh
       - name: Run interop gate (${{ matrix.vendor }})
