@@ -5,6 +5,19 @@ SemVer per [SemVer 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING:** `ParticipantBuiltinTopicData` locator fields are now
+  `Vec<Locator>` (renamed to plural: `default_unicast_locators`,
+  `default_multicast_locators`, `metatraffic_unicast_locators`,
+  `metatraffic_multicast_locators`), not `Option<Locator>` — every field that is
+  a locator list per DDSI-RTPS 2.5 §9.6.1 (#27). Decode retains all repeated
+  locator PIDs in LE and BE (new `Locator::from_bytes_be`); no routing filtering
+  in decode. New helpers: `primary_default_unicast_locator`,
+  `primary_metatraffic_unicast_locator`, `metatraffic_or_default_unicast_locators`,
+  and the public `locator_looks_routable` predicate. See the workspace CHANGELOG
+  for migration notes.
+
 ## [1.0.0-rc.1] — 2026-05-06
 
 ### RC1 audit

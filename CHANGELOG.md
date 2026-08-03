@@ -8,7 +8,42 @@ Versioning follows [Semantic Versioning 2.0](https://semver.org/).
 
 ## [Unreleased]
 
-Reserved for changes after the `1.0.0-rc.6` workspace tag.
+### Fixed
+
+- **Multi-homed discovery (#27).** On a host with more than one interface (VPN,
+  Docker, second NIC) ZeroDDS announced a single discovery locator resolved from
+  the default-route source-address probe. When that interface differs from the
+  one a peer shares, the announced unicast locator is unreachable: the peer
+  discovers the participant over multicast (`discovered=1`) but never matches an
+  endpoint (`matched=0`) and no data flows. Automatic mode now enumerates every
+  eligible unicast interface (`if-addrs`) and announces **all** of them, so a
+  peer on any shared segment finds a reachable locator. Metatraffic is fanned out
+  to every de-duplicated usable peer locator (UDP cannot detect a dead
+  destination). `ZERODDS_INTERFACE` keeps its deterministic single-interface
+  behaviour. Multi-interface multicast join/TX is intentionally deferred (see
+  `docs/OPEN-ITEMS.md`) — packet capture proved multicast was never the failing
+  operation.
+
+### Changed
+
+- **BREAKING (`zerodds-rtps`): `ParticipantBuiltinTopicData` locator fields are
+  now `Vec<Locator>`, not `Option<Locator>`.** Every field that is semantically a
+  locator list per DDSI-RTPS 2.5 §9.6.1 (`default_unicast_locators`,
+  `default_multicast_locators`, `metatraffic_unicast_locators`,
+  `metatraffic_multicast_locators`) changed type, and the four fields were
+  renamed to the plural. This is required for #27 (a `*_LOCATOR` PID may repeat;
+  the wire already allowed it — decode now retains all, in LE and BE).
+
+  **Migration:**
+  - Construction: `default_unicast_locator: Some(loc)` → `default_unicast_locators: vec![loc]`; `…: None` → `…: Vec::new()`.
+  - Single-value reads: use `primary_default_unicast_locator()` /
+    `primary_metatraffic_unicast_locator()` (return `Option<Locator>`, first of
+    the list), or `metatraffic_or_default_unicast_locators()` for the full
+    fan-out set.
+  - Decode no longer filters locators; routing/usability selection moved to
+    DCPS/transport (`locator_looks_routable` is a public predicate there).
+  - No wire-format change and no on-the-wire compatibility break — repeated
+    locator PIDs are standard RTPS and are emitted/parsed by Cyclone/FastDDS.
 
 ## [1.0.0-rc.6] — 2026-07-22
 
