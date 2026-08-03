@@ -48,5 +48,12 @@ pub mod recv_batch;
 #[cfg(feature = "std")]
 mod udp_transport;
 
+/// #27: eligible local IPv4 interface enumeration for multi-locator discovery
+/// announcement.
+#[cfg(feature = "std")]
+pub mod interfaces;
+
+#[cfg(feature = "std")]
+pub use interfaces::{EligibleInterface, eligible_ipv4_interfaces};
 #[cfg(feature = "std")]
 pub use udp_transport::{MAX_DATAGRAM_SIZE, UdpTransport, UdpTransportError};
