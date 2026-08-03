@@ -23,7 +23,7 @@ path = "src/lib.rs"
 [features]
 safety = []  # empty marker for safe-profile lints (internal/safety-flag-drift.md)
 default = ["std"]
-std = ["alloc"]
+std = ["alloc", "dep:if-addrs"]
 alloc = []
 # PDE Reality Inspector hook-up — tap dispatch in the UDP send path.
 # Default OFF (R-034).
@@ -41,6 +41,10 @@ zerodds-rtps = { version = "1.0.0-rc.7", path = "../rtps" }
 zerodds-transport = { version = "1.0.0-rc.7", path = "../transport" }
 zerodds-monitor = { version = "1.0.0-rc.7", path = "../monitor", default-features = false, features = ["std"] }
 socket2 = { workspace = true }
+# #27: eligible interface enumeration, cross-platform. std-only (pulled by
+# the `std` feature). Pcap-free (uses getifaddrs / GetAdaptersAddresses) —
+# unlike pnet_datalink it needs no Npcap Packet.lib, so it links on Windows.
+if-addrs = { version = "0.13", optional = true }
 
 [target.'cfg(unix)'.dependencies]
 # libc for setsockopt(SO_DONTROUTE) configuration (a Cyclone DDS

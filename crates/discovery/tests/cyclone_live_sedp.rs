@@ -189,22 +189,22 @@ fn build_local_participant(local_ip: Ipv4Addr, unicast_port: u16) -> Participant
         guid: Guid::new(GuidPrefix::from_bytes(LOCAL_PREFIX), EntityId::PARTICIPANT),
         protocol_version: ProtocolVersion::V2_5,
         vendor_id: VendorId::ZERODDS,
-        default_unicast_locator: Some(Locator::udp_v4(local_ip.octets(), u32::from(unicast_port))),
-        default_multicast_locator: Some(Locator::udp_v4(
+        default_unicast_locators: vec![Locator::udp_v4(local_ip.octets(), u32::from(unicast_port))],
+        default_multicast_locators: vec![Locator::udp_v4(
             SPDP_MULTICAST_GROUP.octets(),
             u32::from(SPDP_MULTICAST_PORT),
-        )),
+        )],
         // Metatraffic locator = our unicast socket. Cyclone sends SEDP
         // publications exactly there after it matches our beacon.
         // Without this PID, Cyclone does not route SEDP back.
-        metatraffic_unicast_locator: Some(Locator::udp_v4(
+        metatraffic_unicast_locators: vec![Locator::udp_v4(
             local_ip.octets(),
             u32::from(unicast_port),
-        )),
-        metatraffic_multicast_locator: Some(Locator::udp_v4(
+        )],
+        metatraffic_multicast_locators: vec![Locator::udp_v4(
             SPDP_MULTICAST_GROUP.octets(),
             u32::from(SPDP_MULTICAST_PORT),
-        )),
+        )],
         // Domain 42 matching Cyclone's `-D 42`. Without DOMAIN_ID,
         // Cyclone counts the beacon as domain 0 → no match.
         domain_id: Some(CYCLONE_DOMAIN),
@@ -345,7 +345,7 @@ fn cyclone_live_sedp_discovery() {
                         p.sender_prefix,
                         p.sender_vendor,
                         p.data.builtin_endpoint_set,
-                        p.data.default_unicast_locator
+                        p.data.default_unicast_locators
                     );
                     stack.on_participant_discovered(&p);
                     cyclone_discovered = true;

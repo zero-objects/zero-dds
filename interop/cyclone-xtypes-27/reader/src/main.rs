@@ -38,10 +38,12 @@ fn main() {
 
     let start = std::time::Instant::now();
     let mut matched = 0usize;
+    let mut discovered = 0usize;
     let mut samples = 0u64;
     let mut errors = 0u64;
     while start.elapsed().as_secs() < secs {
         matched = matched.max(r.matched_publication_count());
+        discovered = discovered.max(p.discovered_participants_count());
         match r.take() {
             Ok(v) => samples += v.len() as u64,
             Err(e) => {
@@ -53,5 +55,5 @@ fn main() {
         }
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
-    println!("RESULT matched={matched} samples={samples} errors={errors}");
+    println!("RESULT discovered={discovered} matched={matched} samples={samples} errors={errors}");
 }

@@ -275,12 +275,7 @@ impl SedpStack {
         // SEDP routes to metatraffic_unicast_locator (PID 0x0032) —
         // only if that is missing does it fall back to default_unicast_locator.
         // Cyclone/FastDDS announce both, but with strictly separate roles.
-        let unicast_locators: Vec<_> = p
-            .data
-            .metatraffic_unicast_locator
-            .or(p.data.default_unicast_locator)
-            .into_iter()
-            .collect();
+        let unicast_locators: Vec<_> = p.data.metatraffic_or_default_unicast_locators();
         let flags = p.data.builtin_endpoint_set;
 
         // Does the remote have a publications announcer (writer)?
@@ -707,6 +702,7 @@ fn routes_to_sec_sub(reader_id: EntityId, writer_id: EntityId) -> bool {
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use alloc::vec;
     use zerodds_rtps::participant_data::{
         Duration as DdsDuration, ParticipantBuiltinTopicData, endpoint_flag,
     };
@@ -721,10 +717,10 @@ mod tests {
                 guid: Guid::new(prefix, EntityId::PARTICIPANT),
                 protocol_version: ProtocolVersion::V2_5,
                 vendor_id: VendorId::ZERODDS,
-                default_unicast_locator: Some(Locator::udp_v4([127, 0, 0, 99], 7411)),
-                default_multicast_locator: None,
-                metatraffic_unicast_locator: None,
-                metatraffic_multicast_locator: None,
+                default_unicast_locators: vec![Locator::udp_v4([127, 0, 0, 99], 7411)],
+                default_multicast_locators: Vec::new(),
+                metatraffic_unicast_locators: Vec::new(),
+                metatraffic_multicast_locators: Vec::new(),
                 domain_id: None,
                 builtin_endpoint_set: endpoint_set,
                 lease_duration: DdsDuration::from_secs(30),

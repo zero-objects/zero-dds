@@ -1002,6 +1002,27 @@ impl Locator {
             address,
         })
     }
+
+    /// BE decoder (for PL_CDR_BE peers). Mirrors [`Locator::from_bytes_le`];
+    /// the 16-byte address is byte-order-neutral.
+    ///
+    /// # Errors
+    /// `WireError::InvalidLocatorKind` on an unknown kind.
+    pub fn from_bytes_be(bytes: [u8; 24]) -> Result<Self, WireError> {
+        let mut kind_bytes = [0u8; 4];
+        kind_bytes.copy_from_slice(&bytes[..4]);
+        let kind = LocatorKind::from_i32(i32::from_be_bytes(kind_bytes))?;
+        let mut port_bytes = [0u8; 4];
+        port_bytes.copy_from_slice(&bytes[4..8]);
+        let port = u32::from_be_bytes(port_bytes);
+        let mut address = [0u8; 16];
+        address.copy_from_slice(&bytes[8..]);
+        Ok(Self {
+            kind,
+            port,
+            address,
+        })
+    }
 }
 
 #[cfg(test)]

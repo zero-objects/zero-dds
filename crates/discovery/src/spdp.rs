@@ -278,6 +278,7 @@ impl DiscoveredParticipantsCache {
 mod tests {
     #![allow(clippy::expect_used, clippy::unwrap_used, clippy::panic)]
     use super::*;
+    use alloc::vec;
     use zerodds_rtps::participant_data::{Duration, endpoint_flag};
     use zerodds_rtps::wire_types::{Guid, Locator, ProtocolVersion};
 
@@ -286,10 +287,10 @@ mod tests {
             guid: Guid::new(GuidPrefix::from_bytes([0xA; 12]), EntityId::PARTICIPANT),
             protocol_version: ProtocolVersion::V2_5,
             vendor_id: VendorId::ZERODDS,
-            default_unicast_locator: Some(Locator::udp_v4([127, 0, 0, 1], 7410)),
-            default_multicast_locator: Some(Locator::udp_v4([239, 255, 0, 1], 7400)),
-            metatraffic_unicast_locator: None,
-            metatraffic_multicast_locator: None,
+            default_unicast_locators: vec![Locator::udp_v4([127, 0, 0, 1], 7410)],
+            default_multicast_locators: vec![Locator::udp_v4([239, 255, 0, 1], 7400)],
+            metatraffic_unicast_locators: Vec::new(),
+            metatraffic_multicast_locators: Vec::new(),
             domain_id: None,
             builtin_endpoint_set: endpoint_flag::PARTICIPANT_ANNOUNCER
                 | endpoint_flag::PARTICIPANT_DETECTOR,

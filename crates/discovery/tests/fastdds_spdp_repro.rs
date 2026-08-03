@@ -44,7 +44,7 @@ fn zerodds_parses_real_fastdds_spdp() {
             );
             eprintln!(
                 "  metatraffic_unicast={:?} default_unicast={:?}",
-                dp.data.metatraffic_unicast_locator, dp.data.default_unicast_locator
+                dp.data.metatraffic_unicast_locators, dp.data.default_unicast_locators
             );
         }
         Err(e) => eprintln!("ERR: parse_datagram rejects FastDDS SPDP: {e:?}"),
