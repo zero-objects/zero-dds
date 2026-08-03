@@ -27,31 +27,39 @@ pub struct EligibleInterface {
 
 /// Returns the eligible IPv4 interfaces in deterministic order.
 ///
-/// Eligibility (DDSI-RTPS 2.5 §9.6.1 discovery locators): the interface is UP
-/// and multicast-capable and not loopback; the address is a routable unicast
-/// IPv4 — not loopback, not unspecified, not link-local (169.254/16), not
-/// broadcast, not multicast. Exact duplicate `(name, index, ipv4)` tuples are
-/// removed. Order is by IPv4 address ascending, then name, then index —
-/// stable and independent of OS enumeration order.
+/// Eligibility (DDSI-RTPS 2.5 §9.6.1 discovery locators): the interface is
+/// operational (UP — `if-addrs` only returns configured, operational
+/// interfaces) and not loopback; the address is a routable unicast IPv4 — not
+/// loopback, not unspecified, not link-local (169.254/16), not broadcast, not
+/// multicast. Exact duplicate `(name, index, ipv4)` tuples are removed. Order
+/// is by IPv4 address ascending, then name, then index — stable and
+/// independent of OS enumeration order.
+///
+/// Multicast-capability is assumed here: this set drives **unicast** locator
+/// announcement (a unicast SEDP destination does not require the interface to
+/// be multicast-capable). The per-interface multicast join/TX that would need
+/// the actual `IFF_MULTICAST` flag is deferred discovery-hardening.
 #[must_use]
 pub fn eligible_ipv4_interfaces() -> Vec<EligibleInterface> {
-    collect_eligible(pnet_datalink::interfaces().into_iter().map(|nif| {
-        let addrs = nif
-            .ips
-            .iter()
-            .filter_map(|ipn| match ipn.ip() {
-                IpAddr::V4(v4) => Some(v4),
-                IpAddr::V6(_) => None,
-            })
-            .collect();
-        RawInterface {
-            name: nif.name.clone(),
-            index: nif.index,
-            up: nif.is_up(),
-            multicast: nif.is_multicast(),
-            loopback: nif.is_loopback(),
-            v4_addrs: addrs,
-        }
+    let ifaces = match if_addrs::get_if_addrs() {
+        Ok(v) => v,
+        Err(_) => return Vec::new(),
+    };
+    collect_eligible(ifaces.into_iter().filter_map(|iface| {
+        let ipv4 = match iface.ip() {
+            IpAddr::V4(v4) => v4,
+            IpAddr::V6(_) => return None,
+        };
+        Some(RawInterface {
+            name: iface.name.clone(),
+            index: iface.index.unwrap_or(0),
+            // get_if_addrs returns only operational (UP) interfaces; the
+            // multicast flag is not exposed, so assume it (see fn doc).
+            up: true,
+            multicast: true,
+            loopback: iface.is_loopback(),
+            v4_addrs: vec![ipv4],
+        })
     }))
 }
 
