@@ -7,6 +7,7 @@ Extensibility is set on the type (default = final, matching Cyclone's own
 generator default); representation is set via the DataRepresentation QoS.
 Writes topic `robot` on domain 100.
 """
+import os
 import sys
 import time
 from dataclasses import dataclass
@@ -39,7 +40,7 @@ qos = Qos(Policy.DataRepresentation(
     use_cdrv0_representation=(rep == "xcdr1"),
     use_xcdrv2_representation=(rep == "xcdr2"),
 ))
-dp = DomainParticipant(domain_id=100)
+dp = DomainParticipant(domain_id=int(os.environ.get("ZERODDS_DOMAIN", "100")))
 tp = Topic(dp, "robot", RobotType)
 w = DataWriter(Publisher(dp), tp, qos=qos)
 print(f"[cyclone writer] ext={ext} rep={rep}", flush=True)

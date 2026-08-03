@@ -15,9 +15,14 @@ fn main() {
         .nth(1)
         .and_then(|s| s.parse().ok())
         .unwrap_or(20);
+    // Configurable domain (ZERODDS_DOMAIN), default 100 — see reader main.rs.
+    let domain: u32 = std::env::var("ZERODDS_DOMAIN")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(100);
     let f = DomainParticipantFactory::instance();
     let p = f
-        .create_participant(100, DomainParticipantQos::default())
+        .create_participant(domain, DomainParticipantQos::default())
         .unwrap();
     let t = p
         .create_topic::<Robot>("robot", TopicQos::default())
@@ -26,7 +31,7 @@ fn main() {
     let w = pubr
         .create_datawriter::<Robot>(&t, DataWriterQos::default())
         .expect("writer");
-    eprintln!("[zerodds writer] domain=100 topic=robot window={secs}s");
+    eprintln!("[zerodds writer] domain={domain} topic=robot window={secs}s");
     let start = std::time::Instant::now();
     let mut c: u32 = 0;
     while start.elapsed().as_secs() < secs {

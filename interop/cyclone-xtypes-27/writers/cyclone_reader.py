@@ -7,6 +7,7 @@ Usage: cyclone_reader.py <final|appendable> [seconds]
 Counts successfully received samples on topic `robot`, domain 100, and prints
 `CYCLONE_RESULT samples=<n>`.
 """
+import os
 import sys
 import time
 from dataclasses import dataclass
@@ -33,7 +34,7 @@ else:
         id: uint32 = 0
         label: uint32 = 0
 
-dp = DomainParticipant(domain_id=100)
+dp = DomainParticipant(domain_id=int(os.environ.get("ZERODDS_DOMAIN", "100")))
 tp = Topic(dp, "robot", RobotType)
 r = DataReader(Subscriber(dp), tp)
 print(f"[cyclone reader] ext={ext}", flush=True)

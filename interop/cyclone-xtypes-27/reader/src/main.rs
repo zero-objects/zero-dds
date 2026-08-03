@@ -23,9 +23,16 @@ fn main() {
         .nth(1)
         .and_then(|s| s.parse().ok())
         .unwrap_or(12);
+    // Domain is configurable (ZERODDS_DOMAIN) so the #28 interop CI gate can
+    // give each vendor/direction cell a unique domain and avoid cross-job
+    // multicast contamination. Defaults to 100 (the #27/#29 matrix domain).
+    let domain: u32 = std::env::var("ZERODDS_DOMAIN")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(100);
     let f = DomainParticipantFactory::instance();
     let p = f
-        .create_participant(100, DomainParticipantQos::default())
+        .create_participant(domain, DomainParticipantQos::default())
         .unwrap();
     let t = p
         .create_topic::<Robot>("robot", TopicQos::default())
@@ -34,7 +41,7 @@ fn main() {
     let r = s
         .create_datareader::<Robot>(&t, DataReaderQos::default())
         .expect("reader");
-    eprintln!("[zerodds reader] domain=100 topic=robot window={secs}s");
+    eprintln!("[zerodds reader] domain={domain} topic=robot window={secs}s");
 
     let start = std::time::Instant::now();
     let mut matched = 0usize;

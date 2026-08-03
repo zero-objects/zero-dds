@@ -261,3 +261,68 @@ jobs:
           name: lcov
           path: lcov.info
           retention-days: 30
+
+  # ---------------------------------------------------------------------------
+  # interop-harness — deterministic, vendor-free tests of the interop gate
+  # harness itself (result classifier, exact-PID cleanup, shell lint). Runs
+  # everywhere and blocks merges; no DDS stack required. See tests/interop/ci/.
+  # ---------------------------------------------------------------------------
+  interop-harness:
+    name: interop harness self-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pytest
+        run: python -m pip install --user pytest
+      - name: Result classifier unit tests
+        run: python -m pytest tests/interop/ci/tests/test_interop_result.py -q
+      - name: Exact-PID cleanup contract test
+        run: bash tests/interop/ci/tests/test_cleanup.sh
+      - name: Shell lint the runner and libs
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends shellcheck
+          shellcheck -S warning tests/interop/ci/run_vendor.sh \
+            tests/interop/ci/lib.sh \
+            tests/interop/ci/install_cyclone.sh \
+            tests/interop/ci/install_fastdds.sh \
+            tests/interop/ci/tests/test_cleanup.sh
+
+  # ---------------------------------------------------------------------------
+  # interop — REQUIRED cross-vendor gate: typed `Robot` samples exchanged over
+  # live DDS/RTPS between ZeroDDS and each open-source vendor, BOTH directions.
+  # SPDP discovery alone is never a pass. Separate matrix cell per vendor with
+  # fail-fast: false so one vendor's logs survive the other's failure. Vendor
+  # versions are pinned (see the install_* scripts). ubuntu-24.04 is pinned so
+  # the apt-provided CycloneDDS version is deterministic.
+  # ---------------------------------------------------------------------------
+  interop:
+    name: interop (${{ matrix.vendor }})
+    needs: [fmt, clippy, interop-harness]
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        vendor: [cyclone, fastdds]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install vendor (${{ matrix.vendor }})
+        run: bash tests/interop/ci/install_${{ matrix.vendor }}.sh
+      - name: Run interop gate (${{ matrix.vendor }})
+        run: |
+          mkdir -p interop-artifacts
+          bash tests/interop/ci/run_vendor.sh ${{ matrix.vendor }} interop-artifacts
+      - name: Upload interop artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: interop-${{ matrix.vendor }}
+          path: interop-artifacts
+          retention-days: 30
