@@ -2,30 +2,48 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 ZeroDDS Contributors
 #
-# Install a pinned CycloneDDS + Python binding for the #28 interop gate on a
-# hosted Ubuntu runner. The CycloneDDS C library comes from the runner image's
-# apt archive (deterministic for a pinned `runs-on: ubuntu-24.04` image), the
-# Python binding is pinned to a matching release.
+# Build + install a PINNED CycloneDDS and its Python binding for the #28
+# interop gate. Neither Eclipse nor Ubuntu ships an apt package for the hosted
+# runner, so the C library is built from a pinned git tag and the Python
+# binding from a matching PyPI release — fully deterministic, no floating
+# `latest`, no unverified third-party installer.
 #
 # Prints the resolved versions so the CI artifact states exactly what ran.
 set -euo pipefail
 
-CYCLONEDDS_PY_VERSION="${CYCLONEDDS_PY_VERSION:-0.10.5}"
+CYCLONEDDS_VERSION="${CYCLONEDDS_VERSION:-0.10.5}"       # C library git tag
+CYCLONEDDS_PY_VERSION="${CYCLONEDDS_PY_VERSION:-0.10.5}" # matching PyPI release
+PREFIX="${CYCLONEDDS_HOME:-$HOME/cyclonedds-install}"
+WORK="${WORK:-$HOME/cyclonedds-src}"
 
-echo "=== install_cyclone: apt CycloneDDS C library ==="
+echo "=== install_cyclone: build deps ==="
 sudo apt-get update
 sudo apt-get install -y --no-install-recommends \
-  libcyclonedds-dev cyclonedds-tools python3-pip
+  git cmake g++ python3-dev python3-pip
 
-# The Python binding builds against an installed ddsc; apt puts it under /usr.
-export CYCLONEDDS_HOME=/usr
-echo "CYCLONEDDS_HOME=$CYCLONEDDS_HOME" >>"${GITHUB_ENV:-/dev/null}"
+echo "=== install_cyclone: build CycloneDDS ${CYCLONEDDS_VERSION} (source) ==="
+if [ ! -x "$PREFIX/bin/idlc" ]; then
+  rm -rf "$WORK"
+  git clone --depth 1 --branch "$CYCLONEDDS_VERSION" \
+    https://github.com/eclipse-cyclonedds/cyclonedds.git "$WORK"
+  cmake -S "$WORK" -B "$WORK/build" \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_INSTALL_PREFIX="$PREFIX" \
+    -DBUILD_IDLC=ON -DBUILD_EXAMPLES=OFF -DBUILD_TESTING=OFF
+  cmake --build "$WORK/build" --target install --parallel
+fi
+export CYCLONEDDS_HOME="$PREFIX"
+{
+  echo "CYCLONEDDS_HOME=$PREFIX"
+  echo "LD_LIBRARY_PATH=$PREFIX/lib:${LD_LIBRARY_PATH:-}"
+} >>"${GITHUB_ENV:-/dev/null}"
+export LD_LIBRARY_PATH="$PREFIX/lib:${LD_LIBRARY_PATH:-}"
 
 echo "=== install_cyclone: Python binding cyclonedds==${CYCLONEDDS_PY_VERSION} ==="
 python3 -m pip install --user --upgrade pip
-CYCLONEDDS_HOME=/usr python3 -m pip install --user "cyclonedds==${CYCLONEDDS_PY_VERSION}"
+CYCLONEDDS_HOME="$PREFIX" python3 -m pip install --user "cyclonedds==${CYCLONEDDS_PY_VERSION}"
 
 echo "=== install_cyclone: versions ==="
-dpkg -s libcyclonedds-dev 2>/dev/null | sed -n 's/^Version: /  libcyclonedds-dev /p' || true
+echo "  cyclonedds-c ${CYCLONEDDS_VERSION} (prefix $PREFIX)"
 python3 -c 'import cyclonedds; print("  cyclonedds-python", getattr(cyclonedds, "__version__", "?"))'
 python3 -c 'from cyclonedds.domain import DomainParticipant; DomainParticipant(0); print("  cyclonedds runtime OK")'

@@ -2,54 +2,71 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright 2026 ZeroDDS Contributors
 #
-# Install a pinned eProsima Fast DDS + Fast-DDS-Gen and build the fastdds_robot
-# interop client for the #28 gate on a hosted Ubuntu runner.
-#
-# Fast DDS is installed from the official versioned .deb bundle published on the
-# eProsima GitHub release; Fast-DDS-Gen from its official versioned release.
-# Both are pinned by tag — never `latest`, never an unverified curl|sh.
+# Build + install a PINNED eProsima Fast DDS stack (Fast CDR + Fast DDS +
+# Fast-DDS-Gen) from source and build the fastdds_robot interop client for
+# the #28 gate. eProsima publishes no apt package for the hosted runner and no
+# binary GitHub release asset, so everything is built from pinned git tags —
+# fully deterministic, no floating `latest`, no unverified installer.
 #
 # Prints the resolved versions so the CI artifact states exactly what ran.
 set -euo pipefail
 
-FASTDDS_VERSION="${FASTDDS_VERSION:-3.1.0}"
-FASTDDSGEN_VERSION="${FASTDDSGEN_VERSION:-4.0.1}"
+FASTCDR_VERSION="${FASTCDR_VERSION:-v2.2.4}"
+FASTDDS_VERSION="${FASTDDS_VERSION:-v3.1.0}"
+FASTDDSGEN_VERSION="${FASTDDSGEN_VERSION:-v4.0.1}"
+PREFIX="${FASTDDS_PREFIX:-$HOME/fastdds-install}"
+WORK="${WORK:-$HOME/fastdds-src}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
-WORK="${WORK:-$HOME/fastdds-install}"
 mkdir -p "$WORK"
 
 echo "=== install_fastdds: build deps ==="
 sudo apt-get update
 sudo apt-get install -y --no-install-recommends \
-  cmake g++ default-jre wget ca-certificates
+  git cmake g++ default-jdk libssl-dev libasio-dev libtinyxml2-dev
 
-echo "=== install_fastdds: Fast DDS ${FASTDDS_VERSION} (.deb bundle) ==="
-DEB_TGZ="ubuntu-fastdds-${FASTDDS_VERSION}.tgz"
-DEB_URL="https://github.com/eProsima/Fast-DDS/releases/download/v${FASTDDS_VERSION}/${DEB_TGZ}"
-wget -q -O "$WORK/$DEB_TGZ" "$DEB_URL"
-tar -xzf "$WORK/$DEB_TGZ" -C "$WORK"
-# The bundle unpacks a set of .deb packages (fastcdr, fastdds, foonathan_memory).
-sudo apt-get install -y "$WORK"/*.deb || {
-  # Fall back to dpkg + fix-broken if apt cannot resolve the local files.
-  sudo dpkg -i "$WORK"/*.deb || true
-  sudo apt-get install -y -f
+clone_pinned() {  # <repo> <tag> <dir>
+  [ -d "$WORK/$3" ] && return 0
+  git clone --depth 1 --branch "$2" "https://github.com/eProsima/$1.git" "$WORK/$3"
 }
-sudo ldconfig
+cmake_install() {  # <dir> [extra cmake args...]
+  local d="$1"; shift
+  cmake -S "$WORK/$d" -B "$WORK/$d/build" \
+    -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$PREFIX" \
+    -DCMAKE_PREFIX_PATH="$PREFIX" "$@"
+  cmake --build "$WORK/$d/build" --target install --parallel
+}
+
+if [ ! -d "$PREFIX/include/fastdds" ]; then
+  echo "=== install_fastdds: Fast CDR ${FASTCDR_VERSION} ==="
+  clone_pinned Fast-CDR "$FASTCDR_VERSION" fastcdr
+  cmake_install fastcdr
+
+  echo "=== install_fastdds: Fast DDS ${FASTDDS_VERSION} (with bundled foonathan_memory) ==="
+  clone_pinned Fast-DDS "$FASTDDS_VERSION" fastdds
+  cmake_install fastdds -DTHIRDPARTY=ON -DCOMPILE_EXAMPLES=OFF -DBUILD_TESTING=OFF
+fi
+export LD_LIBRARY_PATH="$PREFIX/lib:${LD_LIBRARY_PATH:-}"
+echo "LD_LIBRARY_PATH=$PREFIX/lib:${LD_LIBRARY_PATH:-}" >>"${GITHUB_ENV:-/dev/null}"
 
 echo "=== install_fastdds: Fast-DDS-Gen ${FASTDDSGEN_VERSION} ==="
-GEN_URL="https://github.com/eProsima/Fast-DDS-Gen/releases/download/v${FASTDDSGEN_VERSION}/fastddsgen.tar.gz"
-wget -q -O "$WORK/fastddsgen.tar.gz" "$GEN_URL"
-tar -xzf "$WORK/fastddsgen.tar.gz" -C "$WORK"
-GEN_BIN="$(find "$WORK" -type f -name fastddsgen | head -1)"
-[ -n "$GEN_BIN" ] || { echo "fastddsgen binary not found after extract" >&2; exit 1; }
+GEN_BIN="$PREFIX/share/fastddsgen/scripts/fastddsgen"
+if [ ! -x "$GEN_BIN" ]; then
+  git clone --recurse-submodules --depth 1 --branch "$FASTDDSGEN_VERSION" \
+    https://github.com/eProsima/Fast-DDS-Gen.git "$WORK/fastddsgen"
+  ( cd "$WORK/fastddsgen" && ./gradlew assemble )
+  mkdir -p "$PREFIX/share/fastddsgen"
+  cp -r "$WORK/fastddsgen/scripts" "$WORK/fastddsgen/share" "$PREFIX/share/fastddsgen/" 2>/dev/null || \
+    cp -r "$WORK/fastddsgen/." "$PREFIX/share/fastddsgen/"
+  GEN_BIN="$(find "$PREFIX/share/fastddsgen" "$WORK/fastddsgen" -name fastddsgen -type f | head -1)"
+fi
 chmod +x "$GEN_BIN"
 sudo ln -sf "$GEN_BIN" /usr/local/bin/fastddsgen
 
 echo "=== install_fastdds: build fastdds_robot ==="
-cmake -S "$HERE/fastdds" -B "$HERE/fastdds/build" -DCMAKE_BUILD_TYPE=Release
+cmake -S "$HERE/fastdds" -B "$HERE/fastdds/build" \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$PREFIX"
 cmake --build "$HERE/fastdds/build" --parallel
 
 echo "=== install_fastdds: versions ==="
-echo "  fast-dds .deb bundle v${FASTDDS_VERSION}"
-fastddsgen -version 2>/dev/null | sed 's/^/  /' || echo "  fastddsgen (version query unsupported)"
+echo "  fastcdr ${FASTCDR_VERSION}  fastdds ${FASTDDS_VERSION}  gen ${FASTDDSGEN_VERSION}"
 "$HERE/fastdds/build/fastdds_robot" version | sed 's/^/  /' || true
