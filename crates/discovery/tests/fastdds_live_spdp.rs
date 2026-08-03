@@ -92,19 +92,19 @@ fn build_local_participant(local_ip: Ipv4Addr, unicast_port: u16) -> Participant
         guid: Guid::new(GuidPrefix::from_bytes(LOCAL_PREFIX), EntityId::PARTICIPANT),
         protocol_version: ProtocolVersion::V2_5,
         vendor_id: VendorId::ZERODDS,
-        default_unicast_locator: Some(Locator::udp_v4(local_ip.octets(), u32::from(unicast_port))),
-        default_multicast_locator: Some(Locator::udp_v4(
+        default_unicast_locators: vec![Locator::udp_v4(local_ip.octets(), u32::from(unicast_port))],
+        default_multicast_locators: vec![Locator::udp_v4(
             SPDP_MULTICAST_GROUP.octets(),
             u32::from(SPDP_MULTICAST_PORT),
-        )),
-        metatraffic_unicast_locator: Some(Locator::udp_v4(
+        )],
+        metatraffic_unicast_locators: vec![Locator::udp_v4(
             local_ip.octets(),
             u32::from(unicast_port),
-        )),
-        metatraffic_multicast_locator: Some(Locator::udp_v4(
+        )],
+        metatraffic_multicast_locators: vec![Locator::udp_v4(
             SPDP_MULTICAST_GROUP.octets(),
             u32::from(SPDP_MULTICAST_PORT),
-        )),
+        )],
         domain_id: Some(FASTDDS_DOMAIN),
         builtin_endpoint_set: flags,
         lease_duration: DdsDuration::from_secs(30),

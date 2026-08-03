@@ -91,10 +91,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         protocol_version: ProtocolVersion::V2_5,
         vendor_id: VendorId::ZERODDS,
         participant_security_info: None,
-        default_unicast_locator: Some(Locator::udp_v4([127, 0, 0, 1], 7410)),
-        default_multicast_locator: Some(Locator::udp_v4(SPDP_DEFAULT_MULTICAST_ADDRESS, port)),
-        metatraffic_unicast_locator: None,
-        metatraffic_multicast_locator: None,
+        default_unicast_locators: vec![Locator::udp_v4([127, 0, 0, 1], 7410)],
+        default_multicast_locators: vec![Locator::udp_v4(SPDP_DEFAULT_MULTICAST_ADDRESS, port)],
+        metatraffic_unicast_locators: Vec::new(),
+        metatraffic_multicast_locators: Vec::new(),
         domain_id: None,
         builtin_endpoint_set: endpoint_flag::PARTICIPANT_ANNOUNCER
             | endpoint_flag::PARTICIPANT_DETECTOR,
@@ -147,8 +147,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 p.data.guid.prefix,
                                 p.sender_vendor,
                                 p.data.protocol_version,
-                                p.data.default_unicast_locator,
-                                p.data.default_multicast_locator,
+                                p.data.default_unicast_locators,
+                                p.data.default_multicast_locators,
                             );
                             println!("  total known participants: {}", c.len());
                         }

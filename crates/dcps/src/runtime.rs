@@ -1061,7 +1061,7 @@ mod endpoint_attr_tests {
 }
 
 /// Unicast targets for the WLP heartbeat fan-out (M-2): per discovered peer the
-/// `metatraffic_unicast_locator` (fallback `default_unicast_locator`), filtered
+/// `metatraffic_unicast_locators` (fallback `default_unicast_locators`), filtered
 /// to routable kinds. WLP is metatraffic (DDSI-RTPS §8.4.13); in multicast-
 /// free environments (container/cloud) the pure multicast pulse never reaches the
 /// peer reader → the lease expires although the peer is alive. The additional
@@ -1071,8 +1071,8 @@ fn wlp_unicast_targets(peers: &[zerodds_discovery::spdp::DiscoveredParticipant])
         .iter()
         .filter_map(|dp| {
             dp.data
-                .metatraffic_unicast_locator
-                .or(dp.data.default_unicast_locator)
+                .primary_metatraffic_unicast_locator()
+                .or_else(|| dp.data.primary_default_unicast_locator())
         })
         .filter(is_routable_user_locator)
         .collect()
@@ -3084,10 +3084,10 @@ impl DcpsRuntime {
             guid: Guid::new(guid_prefix, EntityId::PARTICIPANT),
             protocol_version: ProtocolVersion::V2_5,
             vendor_id: VendorId::ZERODDS,
-            default_unicast_locator: Some(user_locator),
-            default_multicast_locator: None,
-            metatraffic_unicast_locator: Some(spdp_uc_locator),
-            metatraffic_multicast_locator: Some(Locator {
+            default_unicast_locators: vec![user_locator],
+            default_multicast_locators: Vec::new(),
+            metatraffic_unicast_locators: vec![spdp_uc_locator],
+            metatraffic_multicast_locators: vec![Locator {
                 kind: LocatorKind::UdpV4,
                 port: u32::from(spdp_port),
                 address: {
@@ -3095,7 +3095,7 @@ impl DcpsRuntime {
                     a[12..].copy_from_slice(&config.spdp_multicast_group.octets());
                     a
                 },
-            }),
+            }],
             domain_id: Some(domain_id as u32),
             // We announce the endpoints we actually
             // implement: SPDP (participant ann/det) + SEDP
@@ -3526,8 +3526,8 @@ impl DcpsRuntime {
                 return Ok(None);
             };
             dp.data
-                .default_unicast_locator
-                .or(dp.data.metatraffic_unicast_locator)
+                .primary_default_unicast_locator()
+                .or_else(|| dp.data.primary_metatraffic_unicast_locator())
         };
         let Some(target) = target else {
             return Ok(None);
@@ -3994,7 +3994,7 @@ impl DcpsRuntime {
                 for t in dg.targets.iter() {
                     if is_routable_user_locator(t) {
                         // §8.3.7: unicast metatraffic (SEDP DATA to the remote
-                        // metatraffic_unicast_locator) MUST go out from the metatraffic
+                        // metatraffic_unicast_locators) MUST go out from the metatraffic
                         // recv socket `spdp_unicast`, NOT from the ephemeral
                         // `spdp_mc_tx` — otherwise the peer sees a foreign
                         // source port and sends its reliable ACKNACK/resends
@@ -6583,12 +6583,10 @@ impl DcpsRuntime {
             ) {
                 continue;
             }
-            // Reader prefix → default_unicast_locator from discovery.
+            // Reader prefix → default unicast locators from discovery.
             if let Ok(cache) = discovered.lock() {
                 if let Some(p) = cache.get(&reader.prefix) {
-                    if let Some(loc) = p.data.default_unicast_locator {
-                        skip.push(loc);
-                    }
+                    skip.extend(p.data.default_unicast_locators.iter().copied());
                 }
             }
         }
@@ -9064,7 +9062,7 @@ fn remote_user_locators(
     match discovered.lock() {
         Ok(cache) => cache
             .get(&prefix)
-            .and_then(|p| p.data.default_unicast_locator)
+            .and_then(|p| p.data.primary_default_unicast_locator())
             .into_iter()
             .collect(),
         Err(_) => Vec::new(),
@@ -11487,8 +11485,8 @@ fn dispatch_type_lookup_datagram(rt: &Arc<DcpsRuntime>, bytes: &[u8], source: &L
                 .and_then(|d| {
                     d.get(&src_prefix).and_then(|dp| {
                         dp.data
-                            .default_unicast_locator
-                            .or(dp.data.metatraffic_unicast_locator)
+                            .primary_default_unicast_locator()
+                            .or_else(|| dp.data.primary_metatraffic_unicast_locator())
                     })
                 })
                 .unwrap_or(*source);
@@ -11677,7 +11675,7 @@ fn send_discovery_datagram(rt: &Arc<DcpsRuntime>, targets: &[Locator], bytes: &[
         }
         // Send unicast metatraffic (SEDP responses, VolatileSecure, stateless auth)
         // from the **metatraffic recv socket** (`spdp_unicast`, = announced
-        // metatraffic_unicast_locator), NOT from the ephemeral `spdp_mc_tx`.
+        // metatraffic_unicast_locators), NOT from the ephemeral `spdp_mc_tx`.
         // Otherwise the peer sees a foreign source port and sends its
         // responses (e.g. cyclone's VolatileSecure ACKNACK to the source locator)
         // to a port ZeroDDS does not listen on → reliable resends stay
@@ -14177,10 +14175,10 @@ mod tests {
             guid: Guid::new(remote_prefix, EntityId::PARTICIPANT),
             protocol_version: ProtocolVersion::V2_5,
             vendor_id: VendorId::ZERODDS,
-            default_unicast_locator: None,
-            default_multicast_locator: None,
-            metatraffic_unicast_locator: None,
-            metatraffic_multicast_locator: None,
+            default_unicast_locators: Vec::new(),
+            default_multicast_locators: Vec::new(),
+            metatraffic_unicast_locators: Vec::new(),
+            metatraffic_multicast_locators: Vec::new(),
             domain_id: Some(0),
             builtin_endpoint_set: 0,
             lease_duration: QosDuration::from_secs(100),
@@ -14669,10 +14667,10 @@ mod tests {
             guid: Guid::new(remote_prefix, EntityId::PARTICIPANT),
             protocol_version: ProtocolVersion::V2_5,
             vendor_id: VendorId::ZERODDS,
-            default_unicast_locator: Some(Locator::udp_v4([127, 0, 0, 99], 7500)),
-            default_multicast_locator: None,
-            metatraffic_unicast_locator: Some(Locator::udp_v4([127, 0, 0, 99], 7501)),
-            metatraffic_multicast_locator: None,
+            default_unicast_locators: vec![Locator::udp_v4([127, 0, 0, 99], 7500)],
+            default_multicast_locators: Vec::new(),
+            metatraffic_unicast_locators: vec![Locator::udp_v4([127, 0, 0, 99], 7501)],
+            metatraffic_multicast_locators: Vec::new(),
             domain_id: Some(0),
             builtin_endpoint_set: endpoint_set,
             lease_duration: QosDuration::from_secs(100),
@@ -14704,10 +14702,10 @@ mod tests {
                 guid: Guid::new(prefix, EntityId::PARTICIPANT),
                 protocol_version: ProtocolVersion::V2_5,
                 vendor_id: VendorId::ZERODDS,
-                default_unicast_locator: default,
-                default_multicast_locator: None,
-                metatraffic_unicast_locator: metatraffic,
-                metatraffic_multicast_locator: None,
+                default_unicast_locators: default.into_iter().collect(),
+                default_multicast_locators: Vec::new(),
+                metatraffic_unicast_locators: metatraffic.into_iter().collect(),
+                metatraffic_multicast_locators: Vec::new(),
                 domain_id: Some(0),
                 builtin_endpoint_set: 0,
                 lease_duration: QosDuration::from_secs(100),
@@ -14757,10 +14755,10 @@ mod tests {
             guid: Guid::new(remote_prefix, EntityId::PARTICIPANT),
             protocol_version: ProtocolVersion::V2_5,
             vendor_id: VendorId::ZERODDS,
-            default_unicast_locator: Some(Locator::udp_v4([127, 0, 0, 99], 7500)),
-            default_multicast_locator: None,
-            metatraffic_unicast_locator: Some(Locator::udp_v4([127, 0, 0, 99], 7501)),
-            metatraffic_multicast_locator: None,
+            default_unicast_locators: vec![Locator::udp_v4([127, 0, 0, 99], 7500)],
+            default_multicast_locators: Vec::new(),
+            metatraffic_unicast_locators: vec![Locator::udp_v4([127, 0, 0, 99], 7501)],
+            metatraffic_multicast_locators: Vec::new(),
             domain_id: Some(0),
             builtin_endpoint_set: endpoint_set,
             lease_duration: QosDuration::from_secs(100),

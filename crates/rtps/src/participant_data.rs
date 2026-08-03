@@ -191,16 +191,21 @@ pub struct ParticipantBuiltinTopicData {
     pub protocol_version: ProtocolVersion,
     /// Vendor-Identifier.
     pub vendor_id: VendorId,
-    /// Default-Unicast-Locator — wohin Peers User-Daten schicken.
-    pub default_unicast_locator: Option<Locator>,
-    /// Default multicast locator — user-data multicast.
-    pub default_multicast_locator: Option<Locator>,
-    /// Metatraffic unicast locator — where peers send SEDP unicast.
+    /// Default unicast locators — where peers send user data. A list
+    /// (DDSI-RTPS 2.5 §9.6.1: `PID_DEFAULT_UNICAST_LOCATOR` may repeat); on a
+    /// multi-homed host every usable address is announced so a peer on any
+    /// shared segment finds a reachable one (#27). Empty = none announced.
+    /// Wire order preserved; exact duplicates removed on encode.
+    pub default_unicast_locators: Vec<Locator>,
+    /// Default multicast locators — user-data multicast groups.
+    pub default_multicast_locators: Vec<Locator>,
+    /// Metatraffic unicast locators — where peers send SEDP unicast.
     /// Indispensable for SEDP interop (e.g. Cyclone): Cyclone routes
-    /// publications/subscriptions to exactly this locator after a match.
-    pub metatraffic_unicast_locator: Option<Locator>,
-    /// Metatraffic multicast locator — the SPDP/SEDP multicast group.
-    pub metatraffic_multicast_locator: Option<Locator>,
+    /// publications/subscriptions to these locators after a match. Announced
+    /// as the full multi-homed set (#27).
+    pub metatraffic_unicast_locators: Vec<Locator>,
+    /// Metatraffic multicast locators — the SPDP/SEDP multicast groups.
+    pub metatraffic_multicast_locators: Vec<Locator>,
     /// DDS domain ID. Cyclone filters beacons from other domains; if the
     /// PID is missing, domain 0 is usually assumed.
     pub domain_id: Option<u32>,
@@ -256,6 +261,37 @@ pub struct ParticipantBuiltinTopicData {
 }
 
 impl ParticipantBuiltinTopicData {
+    /// First announced default-unicast locator, if any. Ergonomic accessor
+    /// for call sites that only need one representative locator (e.g. logging
+    /// or a legacy single-destination path). Prefer iterating the full list
+    /// for actual transmission (fan-out).
+    #[must_use]
+    pub fn primary_default_unicast_locator(&self) -> Option<Locator> {
+        self.default_unicast_locators.first().copied()
+    }
+
+    /// First announced metatraffic-unicast locator, if any. See
+    /// [`Self::primary_default_unicast_locator`].
+    #[must_use]
+    pub fn primary_metatraffic_unicast_locator(&self) -> Option<Locator> {
+        self.metatraffic_unicast_locators.first().copied()
+    }
+
+    /// The full set of unicast locators a peer should use to reach this
+    /// participant's metatraffic (SEDP): the announced metatraffic list, or —
+    /// if none was announced — the default-unicast list (DDSI-RTPS 2.5
+    /// §8.5.4.2 fallback). Returns **all** of them so the caller can fan out
+    /// to every advertised destination (#27); the list is empty only when the
+    /// participant announced no unicast locator at all.
+    #[must_use]
+    pub fn metatraffic_or_default_unicast_locators(&self) -> Vec<Locator> {
+        if self.metatraffic_unicast_locators.is_empty() {
+            self.default_unicast_locators.clone()
+        } else {
+            self.metatraffic_unicast_locators.clone()
+        }
+    }
+
     /// Encodes to PL_CDR_LE bytes (with a 4-byte encapsulation header).
     /// The output is directly usable as the `serialized_payload` of a DATA
     /// submessage.
@@ -281,36 +317,31 @@ impl ParticipantBuiltinTopicData {
             self.guid.to_bytes().to_vec(),
         ));
 
-        // DEFAULT_UNICAST_LOCATOR (optional): 24 byte
-        if let Some(loc) = self.default_unicast_locator {
-            params.push(Parameter::new(
-                pid::DEFAULT_UNICAST_LOCATOR,
-                loc.to_bytes_le().to_vec(),
-            ));
-        }
-
-        // DEFAULT_MULTICAST_LOCATOR (optional): 24 byte
-        if let Some(loc) = self.default_multicast_locator {
-            params.push(Parameter::new(
+        // Locator lists: one PID per locator, wire order preserved, exact
+        // duplicates removed (24 byte each, LE).
+        for (id, locs) in [
+            (pid::DEFAULT_UNICAST_LOCATOR, &self.default_unicast_locators),
+            (
                 pid::DEFAULT_MULTICAST_LOCATOR,
-                loc.to_bytes_le().to_vec(),
-            ));
-        }
-
-        // METATRAFFIC_UNICAST_LOCATOR (optional): 24 byte
-        if let Some(loc) = self.metatraffic_unicast_locator {
-            params.push(Parameter::new(
+                &self.default_multicast_locators,
+            ),
+            (
                 pid::METATRAFFIC_UNICAST_LOCATOR,
-                loc.to_bytes_le().to_vec(),
-            ));
-        }
-
-        // METATRAFFIC_MULTICAST_LOCATOR (optional): 24 byte
-        if let Some(loc) = self.metatraffic_multicast_locator {
-            params.push(Parameter::new(
+                &self.metatraffic_unicast_locators,
+            ),
+            (
                 pid::METATRAFFIC_MULTICAST_LOCATOR,
-                loc.to_bytes_le().to_vec(),
-            ));
+                &self.metatraffic_multicast_locators,
+            ),
+        ] {
+            let mut seen: Vec<Locator> = Vec::new();
+            for loc in locs {
+                if seen.contains(loc) {
+                    continue;
+                }
+                seen.push(*loc);
+                params.push(Parameter::new(id, loc.to_bytes_le().to_vec()));
+            }
         }
 
         // DOMAIN_ID (optional): 4 byte u32
@@ -427,22 +458,29 @@ impl ParticipantBuiltinTopicData {
             self.guid.to_bytes().to_vec(),
         ));
 
-        for (id, loc) in [
-            (pid::DEFAULT_UNICAST_LOCATOR, self.default_unicast_locator),
+        // One PID per locator, wire order preserved, exact duplicates removed
+        // (a repeated locator carries no information and only bloats the beacon).
+        for (id, locs) in [
+            (pid::DEFAULT_UNICAST_LOCATOR, &self.default_unicast_locators),
             (
                 pid::DEFAULT_MULTICAST_LOCATOR,
-                self.default_multicast_locator,
+                &self.default_multicast_locators,
             ),
             (
                 pid::METATRAFFIC_UNICAST_LOCATOR,
-                self.metatraffic_unicast_locator,
+                &self.metatraffic_unicast_locators,
             ),
             (
                 pid::METATRAFFIC_MULTICAST_LOCATOR,
-                self.metatraffic_multicast_locator,
+                &self.metatraffic_multicast_locators,
             ),
         ] {
-            if let Some(loc) = loc {
+            let mut seen: Vec<Locator> = Vec::new();
+            for loc in locs {
+                if seen.contains(loc) {
+                    continue;
+                }
+                seen.push(*loc);
                 params.push(Parameter::new(id, loc.to_bytes_be().to_vec()));
             }
         }
@@ -565,25 +603,18 @@ impl ParticipantBuiltinTopicData {
             })
             .unwrap_or(VendorId::UNKNOWN);
 
-        // Unicast locators may be announced multiple times (multi-homed peer):
-        // decode all and prefer the routable one instead of blindly the first (M-1).
-        let default_unicast_locator = pick_routable_locator(
-            pl.find_all(pid::DEFAULT_UNICAST_LOCATOR)
-                .filter_map(|p| decode_locator(&p.value, little_endian)),
-        );
-
-        let default_multicast_locator = pl
-            .find(pid::DEFAULT_MULTICAST_LOCATOR)
-            .and_then(|p| decode_locator(&p.value, little_endian));
-
-        let metatraffic_unicast_locator = pick_routable_locator(
-            pl.find_all(pid::METATRAFFIC_UNICAST_LOCATOR)
-                .filter_map(|p| decode_locator(&p.value, little_endian)),
-        );
-
-        let metatraffic_multicast_locator = pl
-            .find(pid::METATRAFFIC_MULTICAST_LOCATOR)
-            .and_then(|p| decode_locator(&p.value, little_endian));
+        // Locator PIDs may appear zero, one, or many times (multi-homed peer,
+        // DDSI-RTPS 2.5 §9.6.1). Retain ALL valid ones in wire order — no
+        // routing/usability filtering here; that belongs in DCPS/transport.
+        let decode_all = |id: u16| -> Vec<Locator> {
+            pl.find_all(id)
+                .filter_map(|p| decode_locator(&p.value, little_endian))
+                .collect()
+        };
+        let default_unicast_locators = decode_all(pid::DEFAULT_UNICAST_LOCATOR);
+        let default_multicast_locators = decode_all(pid::DEFAULT_MULTICAST_LOCATOR);
+        let metatraffic_unicast_locators = decode_all(pid::METATRAFFIC_UNICAST_LOCATOR);
+        let metatraffic_multicast_locators = decode_all(pid::METATRAFFIC_MULTICAST_LOCATOR);
 
         let domain_id = pl.find(pid::DOMAIN_ID).and_then(|p| {
             if p.value.len() == 4 {
@@ -695,10 +726,10 @@ impl ParticipantBuiltinTopicData {
             guid,
             protocol_version,
             vendor_id,
-            default_unicast_locator,
-            default_multicast_locator,
-            metatraffic_unicast_locator,
-            metatraffic_multicast_locator,
+            default_unicast_locators,
+            default_multicast_locators,
+            metatraffic_unicast_locators,
+            metatraffic_multicast_locators,
             domain_id,
             builtin_endpoint_set,
             lease_duration,
@@ -719,7 +750,13 @@ impl ParticipantBuiltinTopicData {
 /// link-local (169.254.0.0/16) or unspecified (0.0.0.0). Loopback (127.0.0.0/8)
 /// counts as routable (same-host). Non-UDPv4 kinds (TCP/SHM/UDS/IPv6) are
 /// not heuristically downgraded.
-fn locator_looks_routable(loc: &Locator) -> bool {
+/// Heuristic: does this locator look like a routable destination? UDPv4
+/// unspecified (0.0.0.0) and link-local (169.254/16) are treated as
+/// non-routable; every other kind/address is assumed routable. Used by
+/// DCPS/transport for usability ordering of a peer's announced locator list
+/// (the RTPS decode path itself performs **no** filtering — it retains all).
+#[must_use]
+pub fn locator_looks_routable(loc: &Locator) -> bool {
     if loc.kind != LocatorKind::UdpV4 {
         return true;
     }
@@ -729,37 +766,17 @@ fn locator_looks_routable(loc: &Locator) -> bool {
     !(unspecified || link_local)
 }
 
-/// Picks from several announced locators (multi-homed peer, DDSI-RTPS
-/// §8.5.3.2 / §9.6.1.1: a `*_UNICAST_LOCATOR` PID may appear multiple times)
-/// the most likely reachable one: a plausibly routable one ([`locator_looks_routable`])
-/// is preferred, otherwise the first announced. Fixes the misroute where a
-/// non-routable FIRST locator (link-local listed first) sent the reverse SPDP/
-/// SEDP/VolatileSecure reply to an unreachable target.
-fn pick_routable_locator(candidates: impl Iterator<Item = Locator>) -> Option<Locator> {
-    let mut first = None;
-    let mut best = None;
-    for loc in candidates {
-        if first.is_none() {
-            first = Some(loc);
-        }
-        if best.is_none() && locator_looks_routable(&loc) {
-            best = Some(loc);
-        }
-    }
-    best.or(first)
-}
-
 fn decode_locator(value: &[u8], little_endian: bool) -> Option<Locator> {
     if value.len() != Locator::WIRE_SIZE {
         return None;
     }
-    if !little_endian {
-        // Limitation: BE locator not implemented.
-        return None;
-    }
     let mut bs = [0u8; 24];
     bs.copy_from_slice(value);
-    Locator::from_bytes_le(bs).ok()
+    if little_endian {
+        Locator::from_bytes_le(bs).ok()
+    } else {
+        Locator::from_bytes_be(bs).ok()
+    }
 }
 
 #[cfg(test)]
@@ -770,35 +787,78 @@ mod tests {
     use alloc::vec;
 
     #[test]
-    fn pick_routable_prefers_non_link_local() {
-        // Regression M-1: a multi-homed peer may list the link-local
-        // locator FIRST. pick_routable_locator must still choose the
-        // routable one, otherwise the reverse-discovery reply goes to
-        // 169.254.x.x into the void.
-        let link_local = Locator::udp_v4([169, 254, 1, 5], 7410);
-        let routable = Locator::udp_v4([192, 168, 1, 10], 7410);
-        assert_eq!(
-            pick_routable_locator([link_local, routable].into_iter()),
-            Some(routable)
-        );
-        // Only link-local → fall back to the first (better than nothing).
-        assert_eq!(
-            pick_routable_locator([link_local].into_iter()),
-            Some(link_local)
-        );
-        // unspecified is downgraded too.
-        let unspec = Locator::udp_v4([0, 0, 0, 0], 7410);
-        assert_eq!(
-            pick_routable_locator([unspec, routable].into_iter()),
-            Some(routable)
-        );
+    fn locator_looks_routable_classifies_addresses() {
+        // The routability heuristic is a pure predicate now (DCPS orders the
+        // retained list with it; the decode path itself never filters).
+        assert!(locator_looks_routable(&Locator::udp_v4(
+            [192, 168, 1, 10],
+            7410
+        )));
         // Loopback counts as routable (same-host operation).
-        let loopback = Locator::udp_v4([127, 0, 0, 1], 7410);
+        assert!(locator_looks_routable(&Locator::udp_v4(
+            [127, 0, 0, 1],
+            7410
+        )));
+        // link-local and unspecified are non-routable.
+        assert!(!locator_looks_routable(&Locator::udp_v4(
+            [169, 254, 1, 5],
+            7410
+        )));
+        assert!(!locator_looks_routable(&Locator::udp_v4(
+            [0, 0, 0, 0],
+            7410
+        )));
+    }
+
+    #[test]
+    fn decode_retains_all_repeated_unicast_locators_in_order_le_and_be() {
+        // A multi-homed peer lists every usable unicast locator. Decode keeps
+        // ALL of them in wire order (no reduction), LE and BE alike (#27).
+        let a = Locator::udp_v4([169, 254, 1, 5], 7410); // link-local FIRST
+        let b = Locator::udp_v4([192, 168, 1, 10], 7410);
+        let c = Locator::udp_v4([10, 0, 0, 7], 7410);
+        for be in [false, true] {
+            let mut src = sample_data();
+            src.default_unicast_locators = vec![a, b, c];
+            src.metatraffic_unicast_locators = vec![b, c];
+            let bytes = if be {
+                src.to_pl_cdr_be()
+            } else {
+                src.to_pl_cdr_le()
+            };
+            let decoded = ParticipantBuiltinTopicData::from_pl_cdr_le(&bytes).unwrap();
+            assert_eq!(
+                decoded.default_unicast_locators,
+                vec![a, b, c],
+                "be={be}: all three retained, wire order preserved"
+            );
+            assert_eq!(decoded.metatraffic_unicast_locators, vec![b, c], "be={be}");
+            // No routing filtering in decode: the link-local FIRST survives.
+            assert_eq!(decoded.default_unicast_locators[0], a, "be={be}");
+        }
+    }
+
+    #[test]
+    fn encode_dedups_exact_duplicate_locators() {
+        let b = Locator::udp_v4([192, 168, 1, 10], 7410);
+        let mut src = sample_data();
+        src.default_unicast_locators = vec![b, b, b];
+        let decoded = ParticipantBuiltinTopicData::from_pl_cdr_le(&src.to_pl_cdr_le()).unwrap();
         assert_eq!(
-            pick_routable_locator([loopback].into_iter()),
-            Some(loopback)
+            decoded.default_unicast_locators,
+            vec![b],
+            "duplicates removed"
         );
-        assert_eq!(pick_routable_locator(core::iter::empty()), None);
+    }
+
+    #[test]
+    fn decode_zero_locators_yields_empty_lists() {
+        let mut src = sample_data();
+        src.default_unicast_locators.clear();
+        src.metatraffic_unicast_locators.clear();
+        let decoded = ParticipantBuiltinTopicData::from_pl_cdr_le(&src.to_pl_cdr_le()).unwrap();
+        assert!(decoded.default_unicast_locators.is_empty());
+        assert!(decoded.metatraffic_unicast_locators.is_empty());
     }
 
     fn sample_data() -> ParticipantBuiltinTopicData {
@@ -809,10 +869,10 @@ mod tests {
             ),
             protocol_version: ProtocolVersion::V2_5,
             vendor_id: VendorId::ZERODDS,
-            default_unicast_locator: Some(Locator::udp_v4([192, 168, 1, 100], 7410)),
-            default_multicast_locator: Some(Locator::udp_v4([239, 255, 0, 1], 7400)),
-            metatraffic_unicast_locator: None,
-            metatraffic_multicast_locator: None,
+            default_unicast_locators: vec![Locator::udp_v4([192, 168, 1, 100], 7410)],
+            default_multicast_locators: vec![Locator::udp_v4([239, 255, 0, 1], 7400)],
+            metatraffic_unicast_locators: Vec::new(),
+            metatraffic_multicast_locators: Vec::new(),
             domain_id: None,
             builtin_endpoint_set: endpoint_flag::PARTICIPANT_ANNOUNCER
                 | endpoint_flag::PARTICIPANT_DETECTOR,
@@ -1104,12 +1164,12 @@ mod tests {
     #[test]
     fn participant_data_without_optional_locators() {
         let mut d = sample_data();
-        d.default_unicast_locator = None;
-        d.default_multicast_locator = None;
+        d.default_unicast_locators.clear();
+        d.default_multicast_locators.clear();
         let bytes = d.to_pl_cdr_le();
         let decoded = ParticipantBuiltinTopicData::from_pl_cdr_le(&bytes).unwrap();
-        assert!(decoded.default_unicast_locator.is_none());
-        assert!(decoded.default_multicast_locator.is_none());
+        assert!(decoded.default_unicast_locators.is_empty());
+        assert!(decoded.default_multicast_locators.is_empty());
     }
 
     #[test]

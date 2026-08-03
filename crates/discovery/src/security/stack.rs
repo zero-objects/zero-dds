@@ -238,12 +238,7 @@ impl SecurityBuiltinStack {
         if !caps.has_stateless_auth && !caps.has_volatile_secure {
             return;
         }
-        let unicast: Vec<Locator> = peer
-            .data
-            .metatraffic_unicast_locator
-            .or(peer.data.default_unicast_locator)
-            .into_iter()
-            .collect();
+        let unicast: Vec<Locator> = peer.data.metatraffic_or_default_unicast_locators();
         let remote_prefix = peer.sender_prefix;
 
         if caps.has_stateless_auth {
@@ -727,6 +722,7 @@ impl PeerHandshake {
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
+    use alloc::vec;
     use zerodds_rtps::participant_data::{
         Duration as DdsDuration, ParticipantBuiltinTopicData, endpoint_flag,
     };
@@ -752,10 +748,10 @@ mod tests {
                 guid: Guid::new(remote_prefix(), EntityId::PARTICIPANT),
                 protocol_version: ProtocolVersion::V2_5,
                 vendor_id: VendorId::ZERODDS,
-                default_unicast_locator: Some(Locator::udp_v4([127, 0, 0, 99], 7411)),
-                default_multicast_locator: None,
-                metatraffic_unicast_locator: None,
-                metatraffic_multicast_locator: None,
+                default_unicast_locators: vec![Locator::udp_v4([127, 0, 0, 99], 7411)],
+                default_multicast_locators: Vec::new(),
+                metatraffic_unicast_locators: Vec::new(),
+                metatraffic_multicast_locators: Vec::new(),
                 domain_id: None,
                 builtin_endpoint_set: flags,
                 lease_duration: DdsDuration::from_secs(30),
