@@ -1937,6 +1937,40 @@ mod tests {
     }
 
     #[test]
+    fn write_fans_out_to_every_unicast_locator_of_a_proxy() {
+        // #27: a multi-homed reader advertises several unicast locators. UDP
+        // cannot detect a dead destination, so the writer targets EVERY
+        // advertised locator — the reachable one delivers even when the first
+        // advertised locator is unreachable.
+        let mut w = make_writer(10, Duration::from_secs(10));
+        let rguid = reader_guid();
+        let unreachable = Locator::udp_v4([192, 0, 2, 9], 7411); // TEST-NET-1, FIRST
+        let reachable = Locator::udp_v4([127, 0, 0, 1], 7411); // loopback, SECOND
+        // Replace the default proxy with a two-unicast-locator one (no multicast,
+        // so `targets_for` uses the unicast list).
+        w.add_reader_proxy(ReaderProxy::new(
+            rguid,
+            alloc::vec![unreachable, reachable],
+            alloc::vec![],
+            true,
+        ));
+        assert_eq!(w.reader_proxy_count(), 1, "same guid replaces, not appends");
+        let dgs = w.write(&alloc::vec![0xAA]).unwrap();
+        let d = dgs
+            .iter()
+            .find(|d| d.targets.contains(&reachable))
+            .expect("a datagram targets the reachable locator");
+        assert!(
+            d.targets.contains(&unreachable),
+            "the unreachable FIRST locator is still targeted"
+        );
+        assert!(
+            d.targets.contains(&reachable),
+            "the reachable SECOND locator is targeted — delivery succeeds despite the dead first"
+        );
+    }
+
+    #[test]
     fn add_reader_proxy_is_idempotent_on_same_guid() {
         let mut w = make_writer(10, Duration::from_secs(10));
         let rguid = reader_guid();

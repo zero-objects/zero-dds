@@ -249,6 +249,57 @@ fn announce_locator(uc: &(dyn Transport + Send + Sync), hint: Ipv4Addr) -> Locat
     to_locator([127, 0, 0, 1])
 }
 
+/// Materializes the **full** set of unicast locators to announce for a
+/// `0.0.0.0`-bound socket (#27).
+///
+/// On a multi-homed host the single [`announce_locator`] probe resolves only
+/// the default-route source address, which can diverge from the interface a
+/// given peer actually shares — the peer then learns one unreachable locator
+/// and discovery half-completes (participant discovered, endpoints never
+/// match). Instead, in automatic mode this announces **every** eligible
+/// unicast interface address at the socket's bound port, so a peer on any
+/// shared segment finds a reachable one and can fan out to all of them.
+///
+/// An explicit interface (`ZERODDS_INTERFACE` / `RuntimeConfig`) keeps its
+/// deterministic single-interface behaviour. Non-UDPv4 locators, and the case
+/// where interface enumeration yields nothing, fall back to the single
+/// [`announce_locator`] result — the announced list is never empty.
+#[cfg(feature = "std")]
+fn announce_locators(uc: &(dyn Transport + Send + Sync), hint: Ipv4Addr) -> Vec<Locator> {
+    let raw = uc.local_locator();
+    let single = announce_locator(uc, hint);
+    // Explicit pin, or a non-UDPv4 locator (V6/SHM/TCP), or an already-concrete
+    // bound address → keep the single deterministic locator.
+    let ip = Ipv4Addr::new(
+        raw.address[12],
+        raw.address[13],
+        raw.address[14],
+        raw.address[15],
+    );
+    if !hint.is_unspecified() || raw.kind != LocatorKind::UdpV4 || !ip.is_unspecified() {
+        return alloc::vec![single];
+    }
+    // Automatic: one locator per eligible interface, deterministic order
+    // (already sorted by ip in the enumerator), deduplicated by address.
+    let port = raw.port;
+    let mut locs: Vec<Locator> = Vec::new();
+    for e in zerodds_transport_udp::eligible_ipv4_interfaces() {
+        let loc = Locator::udp_v4(e.ipv4.octets(), port);
+        if !locs.contains(&loc) {
+            locs.push(loc);
+        }
+    }
+    // Guarantee the probe-resolved address is present even if enumeration
+    // missed it, and never announce an empty list.
+    if locs.is_empty() {
+        return alloc::vec![single];
+    }
+    if !locs.contains(&single) && zerodds_rtps::participant_data::locator_looks_routable(&single) {
+        locs.push(single);
+    }
+    locs
+}
+
 /// Converts a `core::time::Duration` (std) to a `zerodds_qos::Duration`
 /// (spec 2^-32 fraction encoding). Saturates on overflow — `i32::MAX`
 /// seconds suffices for over 60 years of lease.
@@ -1067,15 +1118,19 @@ mod endpoint_attr_tests {
 /// peer reader → the lease expires although the peer is alive. The additional
 /// unicast fan-out follows the SEDP locator model.
 fn wlp_unicast_targets(peers: &[zerodds_discovery::spdp::DiscoveredParticipant]) -> Vec<Locator> {
-    peers
-        .iter()
-        .filter_map(|dp| {
-            dp.data
-                .primary_metatraffic_unicast_locator()
-                .or_else(|| dp.data.primary_default_unicast_locator())
-        })
-        .filter(is_routable_user_locator)
-        .collect()
+    // #27 fan-out: a peer may advertise several metatraffic locators (multi-
+    // homed). UDP cannot tell which one is reachable, so send the WLP pulse to
+    // every deduplicated usable one — the reachable locator delivers, the rest
+    // fall on the floor.
+    let mut out: Vec<Locator> = Vec::new();
+    for dp in peers {
+        for loc in dp.data.metatraffic_or_default_unicast_locators() {
+            if is_routable_user_locator(&loc) && !out.contains(&loc) {
+                out.push(loc);
+            }
+        }
+    }
+    out
 }
 
 /// Extracts the IPv4 address from a `Locator` (UDP-V4).
@@ -2508,7 +2563,7 @@ fn build_publication_data(
     writer_eid: EntityId,
     cfg: &UserWriterConfig,
     runtime_offer: &[i16],
-    user_locator: Locator,
+    user_locators: &[Locator],
 ) -> zerodds_rtps::publication_data::PublicationBuiltinTopicData {
     use zerodds_qos::{ReliabilityKind, ReliabilityQosPolicy};
     zerodds_rtps::publication_data::PublicationBuiltinTopicData {
@@ -2558,7 +2613,7 @@ fn build_publication_data(
         // DDSI-RTPS 2.5 §8.5.3.3: endpoint locator. All user endpoints
         // share the one `user_unicast` socket — hence the
         // endpoint locator equals the resolved participant locator.
-        unicast_locators: alloc::vec![user_locator],
+        unicast_locators: user_locators.to_vec(),
         multicast_locators: Vec::new(),
     }
 }
@@ -2596,7 +2651,7 @@ fn build_subscription_data(
     reader_eid: EntityId,
     cfg: &UserReaderConfig,
     runtime_offer: &[i16],
-    user_locator: Locator,
+    user_locators: &[Locator],
 ) -> zerodds_rtps::subscription_data::SubscriptionBuiltinTopicData {
     use zerodds_qos::{ReliabilityKind, ReliabilityQosPolicy};
     zerodds_rtps::subscription_data::SubscriptionBuiltinTopicData {
@@ -2639,7 +2694,7 @@ fn build_subscription_data(
         type_identifier: cfg.type_identifier.clone(),
         // DDSI-RTPS 2.5 §8.5.3.2: endpoint locator (see
         // build_publication_data).
-        unicast_locators: alloc::vec![user_locator],
+        unicast_locators: user_locators.to_vec(),
         multicast_locators: Vec::new(),
     }
 }
@@ -2667,6 +2722,13 @@ pub struct DcpsRuntime {
     /// via `announce_locator`, so the endpoint and participant locators
     /// are guaranteed identical.
     pub user_announce_locator: Locator,
+    /// #27: the FULL set of user-unicast locators to announce — every eligible
+    /// interface address (automatic mode) or the single pinned one. Written as
+    /// the endpoint `PID_UNICAST_LOCATOR` list in EVERY SEDP pub/sub announce
+    /// so a peer on any shared segment can reach the endpoint. Mirrors the
+    /// participant `default_unicast_locators`. Never empty (falls back to
+    /// `[user_announce_locator]`).
+    pub user_announce_locators: Vec<Locator>,
     /// Sender socket for the SPDP multicast announce (separate UdpSocket
     /// without SO_REUSE/SO_BIND_IP_MULTICAST, so send_to routes cleanly).
     spdp_mc_tx: Arc<UdpTransport>,
@@ -3078,15 +3140,25 @@ impl DcpsRuntime {
         // (no traffic, just the routing table) and announce the
         // resulting local interface address — cross-host-capable
         // without an external crate dependency.
-        let user_locator = announce_locator(&*user_uc, config.multicast_interface);
-        let spdp_uc_locator = announce_locator(&spdp_uc, config.multicast_interface);
+        // #27: announce EVERY eligible interface address (automatic mode), so a
+        // peer on any shared segment finds a reachable locator. An explicit
+        // `ZERODDS_INTERFACE` collapses these to the single pinned address.
+        let user_locators = announce_locators(&*user_uc, config.multicast_interface);
+        let spdp_uc_locators = announce_locators(&spdp_uc, config.multicast_interface);
+        // Primary (first) locator for the single-locator API surface
+        // (`user_locator()`, endpoint-locator fallback). The full list drives
+        // the announced participant/endpoint locator sets.
+        let user_locator = user_locators
+            .first()
+            .copied()
+            .unwrap_or_else(|| announce_locator(&*user_uc, config.multicast_interface));
         let participant_data = ParticipantBuiltinTopicData {
             guid: Guid::new(guid_prefix, EntityId::PARTICIPANT),
             protocol_version: ProtocolVersion::V2_5,
             vendor_id: VendorId::ZERODDS,
-            default_unicast_locators: vec![user_locator],
+            default_unicast_locators: user_locators.clone(),
             default_multicast_locators: Vec::new(),
-            metatraffic_unicast_locators: vec![spdp_uc_locator],
+            metatraffic_unicast_locators: spdp_uc_locators,
             metatraffic_multicast_locators: vec![Locator {
                 kind: LocatorKind::UdpV4,
                 port: u32::from(spdp_port),
@@ -3175,6 +3247,7 @@ impl DcpsRuntime {
             spdp_unicast: Arc::new(spdp_uc),
             user_unicast: user_uc,
             user_announce_locator: user_locator,
+            user_announce_locators: user_locators,
             spdp_mc_tx: Arc::new(spdp_mc_tx),
             spdp_beacon: Mutex::new(beacon),
             participant_data,
@@ -4523,7 +4596,7 @@ impl DcpsRuntime {
             eid,
             &cfg,
             &self.config.data_representation_offer,
-            self.user_announce_locator,
+            &self.user_announce_locators,
         );
         // FU2 cross-vendor: EndpointSecurityInfo from the governance
         // data_protection — otherwise cyclone/FastDDS reject the user endpoint
@@ -4794,7 +4867,7 @@ impl DcpsRuntime {
             eid,
             &cfg,
             &reader_repr,
-            self.user_announce_locator,
+            &self.user_announce_locators,
         );
         // FU2 cross-vendor: EndpointSecurityInfo from the governance (see writer).
         sub_data.security_info = self.user_endpoint_security_info();
@@ -12267,6 +12340,45 @@ mod tests {
         // Without a pin (UNSPECIFIED) → probe/fallback does NOT return the pin IP.
         let auto = super::announce_locator(&udp, Ipv4Addr::UNSPECIFIED);
         assert_ne!(auto.address[12..], [10, 11, 12, 13]);
+    }
+
+    #[test]
+    fn announce_locators_pins_to_single_interface() {
+        // #27: an explicit interface keeps the deterministic SINGLE-locator
+        // behaviour — no multi-interface fan-out of the announced set.
+        let udp = UdpTransport::bind_v4(Ipv4Addr::UNSPECIFIED, 0).expect("bind");
+        let pin = Ipv4Addr::new(10, 11, 12, 13);
+        let locs = super::announce_locators(&udp, pin);
+        assert_eq!(
+            locs.len(),
+            1,
+            "pinned interface announces exactly one locator"
+        );
+        assert_eq!(locs[0].address[12..], [10, 11, 12, 13]);
+        assert_eq!(locs[0], super::announce_locator(&udp, pin));
+    }
+
+    #[test]
+    fn announce_locators_automatic_is_non_empty_and_includes_probe() {
+        // Automatic mode enumerates eligible interfaces; the list is never
+        // empty and always contains at least the route-probe address (so the
+        // default-route peer stays reachable while extra segments are added).
+        let udp = UdpTransport::bind_v4(Ipv4Addr::UNSPECIFIED, 0).expect("bind");
+        let locs = super::announce_locators(&udp, Ipv4Addr::UNSPECIFIED);
+        assert!(!locs.is_empty(), "automatic announce is never empty");
+        let probe = super::announce_locator(&udp, Ipv4Addr::UNSPECIFIED);
+        // The probe address is a real interface (or the loopback fallback);
+        // either way it must be present in the announced set.
+        assert!(
+            locs.contains(&probe),
+            "announced set includes the route-probe locator"
+        );
+        // No exact-duplicate locators in the announced set.
+        let mut seen = alloc::vec::Vec::new();
+        for l in &locs {
+            assert!(!seen.contains(l), "no duplicate announced locators");
+            seen.push(*l);
+        }
     }
 
     #[test]
