@@ -259,6 +259,16 @@ jobs:
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
           df -h /
+      # Two test binaries refuse to pass on nothing in a CI job: the generated
+      # TypeScript is type-checked with runtime/typescript's own tsc
+      # (crates/lang-rules/tests/typescript_toolchain) and the wire-probe's
+      # TypeScript column runs on node (crates/wire-probe/tests/
+      # typescript_column_gate.rs). The GitLab image carries both.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: TypeScript compiler of runtime/typescript
+        run: npm ci --no-audit --no-fund --prefix runtime/typescript
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -375,6 +385,16 @@ jobs:
         run: |
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
           df -h /
+      # Two test binaries refuse to pass on nothing in a CI job: the generated
+      # TypeScript is type-checked with runtime/typescript's own tsc
+      # (crates/lang-rules/tests/typescript_toolchain) and the wire-probe's
+      # TypeScript column runs on node (crates/wire-probe/tests/
+      # typescript_column_gate.rs). The GitLab image carries both.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - name: TypeScript compiler of runtime/typescript
+        run: npm ci --no-audit --no-fund --prefix runtime/typescript
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
