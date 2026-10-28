@@ -430,20 +430,11 @@ fn declare(
                 name: Ident::new(&name),
                 target: kotlin_member_type(ast, target, &node.name)?,
             }));
-            // A typedef of a plain value gets a function of its own name
-            // that answers its zero: `typealias m_LL = Int` has no
-            // constructor, and a codec allocating an `Array<m_LL>` writes
-            // `Array(n) { m_LL() }` (`resolve-typedef-chain-three`). A
-            // typealias and a function live in separate namespaces.
-            if let Some(zero) = crate::default_kotlin::alias_zero(ast, target) {
-                out.push(kotlin::Decl::Func(kotlin::FuncDecl {
-                    doc: Doc::none(),
-                    name: Ident::new(&name),
-                    params: Vec::new(),
-                    returns: kotlin::Type::named(&name),
-                    body: vec![kotlin::Stmt::Return(Some(zero))],
-                }));
-            }
+            // No function of the alias's own name for its zero: Kotlin 2.4
+            // reports it and the alias as conflicting overloads. A codec
+            // allocating an `Array<m_LL>` writes the zero into the slots
+            // itself (`default_kotlin::alias_slot_start`,
+            // `resolve-typedef-chain-three`).
         }
 
         TypeKind::Enumeration { enumerators } => {

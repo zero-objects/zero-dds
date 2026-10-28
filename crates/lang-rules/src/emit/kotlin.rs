@@ -93,6 +93,29 @@ pub struct Kotlin;
 const SIGNED_CHAR: &str = "signed char";
 
 impl Kotlin {
+    /// `place = Array(count) { start }` with `init` as each slot's start
+    /// value, or the element type's own where it is `None`.
+    fn allocate(
+        base: &str,
+        element: kotlin::Type,
+        count: kotlin::Expr,
+        init: Option<kotlin::Expr>,
+        fill: Vec<kotlin::Stmt>,
+    ) -> Vec<kotlin::Stmt> {
+        let length = Self::to_array_size(count);
+        let mut out = vec![kotlin::Stmt::Expr(kotlin::Expr::Binary {
+            op: "=",
+            lhs: Box::new(<Self as CodecTarget>::whole(base)),
+            rhs: Box::new(kotlin::Expr::NewArray {
+                element: Box::new(element),
+                length: Box::new(length),
+                init: init.map(Box::new),
+            }),
+        })];
+        out.extend(fill);
+        out
+    }
+
     /// `write_u32` as `writeU32` — the runtime's own convention, and the
     /// walk's spelling is the wire's.
     fn camel(method: &str) -> String {
@@ -993,17 +1016,24 @@ impl CodecTarget for Kotlin {
         _assigned_whole: bool,
         fill: Vec<Self::Stmt>,
     ) -> Vec<Self::Stmt> {
-        let length = Self::to_array_size(count);
-        let mut out = vec![kotlin::Stmt::Expr(kotlin::Expr::Binary {
-            op: "=",
-            lhs: Box::new(Self::whole(base)),
-            rhs: Box::new(kotlin::Expr::NewArray {
-                element: Box::new(element),
-                length: Box::new(length),
-            }),
-        })];
-        out.extend(fill);
-        out
+        Self::allocate(base, element, count, None, fill)
+    }
+
+    /// `Array(count) { 0 }` where the element is the `typealias` of a
+    /// typedef of a plain value, which has no constructor for `T()`
+    /// (`default_kotlin::alias_slot_start`); [`Kotlin::make_room`] for
+    /// every other element.
+    fn make_room_of(
+        ast: &Ast,
+        element_id: Id<TypeNode>,
+        base: &str,
+        element: Self::Type,
+        count: Self::Expr,
+        _assigned_whole: bool,
+        fill: Vec<Self::Stmt>,
+    ) -> Vec<Self::Stmt> {
+        let init = crate::default_kotlin::alias_slot_start(ast, element_id);
+        Self::allocate(base, element, count, init, fill)
     }
 
     /// The narrowing `Byte`, `Short` and `Char` holders need, and no
@@ -1213,8 +1243,8 @@ impl CodecTarget for Kotlin {
     /// `T()`, `Float128.zero()`); a `typealias` is interchangeable with its
     /// target. A typedef of a plain value keeps its name: the declaration
     /// holds it boxed as `Array<Alias>`, which a specialised `IntArray`
-    /// would not match, and `adapter/kotlin.rs` gives it a function of
-    /// its own name for the slot's start value.
+    /// would not match, and [`Kotlin::make_room_of`] writes the slot's
+    /// start value, because the alias has no constructor.
     fn value_type(ast: &Ast, id: Id<TypeNode>) -> Self::Type {
         let mut seen = id;
         for _ in 0..64 {

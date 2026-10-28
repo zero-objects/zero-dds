@@ -134,6 +134,53 @@ fn every_codec_pair_is_overridden_with_its_own_alignment_cap() {
     );
 }
 
+/// A generated type continues a sample behind a prefix someone else wrote
+/// at any offset: `encode_continuing` and `decode_continuing` are its own,
+/// not the trait's, which refuse an offset that is not a multiple of the
+/// alignment cap. DDS-RPC 1.0 §7.5.1.1 puts a reply behind a `ReplyHeader`
+/// of 28 octets; under XCDR1 the trait's default refused every generated
+/// reply type there.
+#[test]
+fn the_continuing_pair_is_overridden() {
+    let text = generated("Reply", "@final struct Reply { double v; };");
+    for method in ["fn encode_continuing(", "fn decode_continuing("] {
+        assert!(text.contains(method), "`{method}` is missing:\n{text}");
+    }
+    assert_eq!(
+        text.matches("zerodds_wire::Writer::continuing(").count(),
+        2,
+        "one continuing writer per version:\n{text}"
+    );
+}
+
+#[test]
+#[ignore = "builds a crate around the generated module; run with --include-ignored"]
+fn a_generated_type_continues_behind_a_reply_header() {
+    run_generated(
+        "continuing",
+        "@final struct Reply { double v; };",
+        r#"
+        #[test]
+        fn a_double_behind_28_octets_aligns_to_the_sample() {
+            use zerodds_dcps::DdsType;
+            let value = Reply { v: 2.5 };
+            // XCDR1: the double aligns to 8 counted from the sample's start,
+            // four octets of padding behind the 28.
+            let mut v1 = vec![0xAAu8; 28];
+            value.encode_continuing(&mut v1, true).unwrap();
+            assert_eq!(v1.len(), 40);
+            assert_eq!(&v1[28..32], &[0, 0, 0, 0]);
+            assert_eq!(Reply::decode_continuing(&v1, 28, true).unwrap().v, 2.5);
+            // XCDR2: the cap is 4, and 28 is a multiple of it.
+            let mut v2 = vec![0xAAu8; 28];
+            value.encode_continuing(&mut v2, false).unwrap();
+            assert_eq!(v2.len(), 36);
+            assert_eq!(Reply::decode_continuing(&v2, 28, false).unwrap().v, 2.5);
+        }
+        "#,
+    );
+}
+
 /// The impl never claims the two versions coincide.
 ///
 /// `XCDR1_MATCHES_XCDR2` exists so a hand-written type may let the

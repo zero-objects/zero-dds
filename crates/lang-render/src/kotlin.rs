@@ -494,15 +494,19 @@ fn expr_text(node: &Expr) -> String {
             out.push(')');
             out
         }
-        Expr::NewArray { element, length } => {
+        Expr::NewArray {
+            element,
+            length,
+            init,
+        } => {
             if is_specialised(element) {
                 alloc::format!("{}({})", array_type(element), expr_text(length))
             } else {
-                alloc::format!(
-                    "Array({}) {{ {} }}",
-                    expr_text(length),
-                    element_init(element)
-                )
+                let start = match init {
+                    Some(init) => expr_text(init),
+                    None => element_init(element),
+                };
+                alloc::format!("Array({}) {{ {} }}", expr_text(length), start)
             }
         }
         Expr::ArrayOf { element, elements } => array_of(element, elements),

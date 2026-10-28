@@ -1390,6 +1390,18 @@ on the new foundation. That single fact explains most of what follows.
   (`test_qos_composition`, `test_samples_api`, `test_entity_operations`,
   `test_default_qos_matches_the_specification`).
 
+- **BREAKING (C++ generated types): `zerodds-idlc generate --lang c++`
+  writes the DDS-PSM-Cxx 1.0 §7.4 and §8.1 mapping by default**
+  (`f5c1b25b3a5`). A structure is a class with accessor functions
+  (`t.celsius()` reads, `t.celsius(21.5)` writes) instead of public fields,
+  a union has `_d()` and one accessor per case, `@optional` is
+  `dds::core::optional`, an array `dds::core::array` and a `map`
+  `std::map`. The native types the codec reads and writes stand in the
+  namespace `zd_native`.
+
+  **Migration:** accessor calls instead of field access, or
+  `--cpp-mapping native` for the structures with public fields of rc.6.
+
 - **BREAKING (C++ API): vendor interfaces left the namespaces that
   DDS-PSM-Cxx 1.0 §2.2 reserves, and entity classes carry no vendor
   members** (`1a1fa83d000`, `169915a0401`, `def4ff43f03`).
@@ -2353,9 +2365,11 @@ on the new foundation. That single fact explains most of what follows.
   not fit its 257-octet buffer; a truncated name is never compared. Tests:
   `writer_matched_rpc_readers_bounds`, `reader_matched_rpc_writers_bounds`.
 
-- **`zerodds-idlc generate --lang c++ --cpp-mapping native|psm`**
-  (DDS-PSM-Cxx 1.0 §8.1; `56ff5b5f25f`). `native`, the default, is the
-  mapping that existed. `psm` writes a structure as a class with the
+- **`zerodds-idlc generate --lang c++ --cpp-mapping native|psm|classic`**
+  (DDS-PSM-Cxx 1.0 §8.1; `56ff5b5f25f`, `f5c1b25b3a5`, `f0f79f0b517`).
+  `psm` is the default; `native` is the mapping that existed; `classic` is
+  the OMG IDL to C++ 1.3 mapping in C++03, over the native codec (test:
+  `tools/idlc/tests/cpp_classic.rs`). `psm` writes a structure as a class with the
   accessors of §7.4.6, an all-members constructor, `swap` and `==`; a union
   as a class with `_d()` and one accessor per case; `wchar` as `wchar_t`,
   `wstring` as `std::wstring`, `map` as `std::map`, an array as
@@ -2561,6 +2575,25 @@ on the new foundation. That single fact explains most of what follows.
   (`BuiltinTopicQosTest`).
 
 ### Fixed
+
+- **Generated Kotlin compiles under Kotlin 2.4.** A typedef of a plain
+  value had a function of the alias's own name beside its `typealias`
+  (`typealias ValueT = Int`, `fun ValueT(): ValueT`), for the codec's
+  `Array(n) { ValueT() }`; kotlinc 2.4.21 reports the two as conflicting
+  overloads, 2.0.21 accepted them. The function is gone; the codec writes
+  the zero into the slots (`Array(n) { 0 }`), and a defaulter's empty
+  sequence of such an alias does the same. Test:
+  `the_generated_kotlin_compiles` under kotlinc 2.4.21.
+
+- **DDS-RPC: a type from `zerodds-build` is answered under XCDR1.** A
+  reply stands behind its 28-octet `ReplyHeader` (DDS-RPC 1.0 §7.5.1.1).
+  The `DdsType` impls of `zerodds-build` had no `encode_continuing` and
+  `decode_continuing`, so the trait's default refused that offset under
+  XCDR1, and the replier sent `REMOTE_EX_UNKNOWN_EXCEPTION` in place of the
+  reply. The generated codec now continues at any offset
+  (`Writer::continuing`, `Reader::skip_to`), as the interface emitter's
+  types already did. Tests: `the_continuing_pair_is_overridden`,
+  `a_generated_type_continues_behind_a_reply_header`.
 
 - **Generated Java has no documentation comment that documents nothing.**
   The Java generator wrote what is left of a `typedef` or a `native` type,

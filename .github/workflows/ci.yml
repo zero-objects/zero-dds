@@ -398,7 +398,16 @@ jobs:
         # `build-test`: the DCPS integration tests of one binary share a
         # domain and its lease, and run in parallel they take each other's
         # (type_lookup_e2e failed here that way).
-        run: cargo llvm-cov --workspace --include-build-script --lcov --output-path lcov.info -- --test-threads=1
+        #
+        # `--skip`: the three test functions `build-test` skips, for its
+        # reason — they read the zerodds-matrix repository, which this
+        # job does not check out.
+        run: >-
+          cargo llvm-cov --workspace --include-build-script --lcov --output-path lcov.info
+          -- --test-threads=1
+          --skip every_language_has_a_cell_generator
+          --skip the_matrix_cells_are_the_recorded_rows
+          --skip the_shape_with_no_storage_is_left_to_the_clause
       # The report of the run above; `cargo llvm-cov` without `report` would
       # run every test a second time.
       - name: Coverage summary

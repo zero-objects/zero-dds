@@ -499,9 +499,11 @@ fn codec_items(
     for (name, order) in [("decode", "Little"), ("decode_be", "Big")] {
         out.push_str(&decode_fn(path, name, "decode", order, v2, &v2_read));
     }
+    let mut v1_continuing = None;
     if has_xcdr1 {
         let v1 = xcdr1_encoding(extensibility).max_alignment();
         let (v1_write, v1_read) = (wire_settings(v1_key, true), wire_settings(v1_key, false));
+        v1_continuing = Some((v1, v1_write.clone(), v1_read.clone()));
         for (name, order) in [("encode_xcdr1", "Little"), ("encode_xcdr1_be", "Big")] {
             out.push_str(&encode_fn(
                 path,
@@ -523,7 +525,85 @@ fn codec_items(
             ));
         }
     }
+    out.push_str(&continuing_fns(
+        path,
+        second,
+        (v2, &v2_write, &v2_read),
+        v1_continuing
+            .as_ref()
+            .map(|(align, write, read)| (*align, write.as_str(), read.as_str())),
+    ));
     out
+}
+
+/// `encode_continuing` and `decode_continuing`: the value as the
+/// continuation of a sample whose first octets someone else wrote, little
+/// endian, alignment counted from the start of the sample. DDS-RPC 1.0
+/// §7.5.1.1 puts a request behind its `RequestHeader` and a reply behind its
+/// `ReplyHeader`, whose 28 octets are no multiple of XCDR1's alignment cap
+/// of 8.
+///
+/// The trait's default refuses an offset that is not a multiple of the cap,
+/// because it cannot know whether a member cares; the generated codec
+/// starts at any offset (`Writer::continuing`, `Reader::skip_to`), as the
+/// interface emitter's topic types already did. Without it a generated
+/// reply type behind a `ReplyHeader` was refused under XCDR1 and the
+/// replier sent `REMOTE_EX_UNKNOWN_EXCEPTION` in place of the reply.
+///
+/// `v1` is `None` for a type with no XCDR1 plan: its `xcdr1` branch refuses
+/// as the trait's XCDR1 methods do.
+fn continuing_fns(
+    path: &str,
+    second: &str,
+    v2: (u8, &str, &str),
+    v1: Option<(u8, &str, &str)>,
+) -> String {
+    let (v2_align, v2_write, v2_read) = v2;
+    let (encode_v1, decode_v1) = match v1 {
+        Some((v1_align, v1_write, v1_read)) => (
+            format!(
+                "let mut w = zerodds_wire::Writer::continuing(\n                \
+                 zerodds_wire::Endianness::Little,\n                {v1_align},\n                \
+                 core::mem::take(prefix),\n            ){v1_write};\n            \
+                 let written = {path}::encode{second}(self, &mut w).and_then(|_| w.check_deferred());\n            \
+                 *prefix = w.finish();\n            written"
+            ),
+            format!(
+                "let mut r = zerodds_wire::Reader::with_max_align(\n                bytes,\n                \
+                 zerodds_wire::Endianness::Little,\n                {v1_align},\n            ){v1_read};\n            \
+                 r.skip_to(offset)?;\n            \
+                 Ok({path}::decode{second}(&mut r)?)"
+            ),
+        ),
+        None => (
+            "return Err(zerodds_dcps::EncodeError::Invalid {\n                \
+             what: \"XCDR1 encoding not implemented for this type\",\n            })"
+                .to_string(),
+            "Err(zerodds_dcps::DecodeError::Invalid {\n                \
+             what: \"XCDR1 decoding not implemented for this type\",\n            })"
+                .to_string(),
+        ),
+    };
+    format!(
+        "\n    fn encode_continuing(\n        &self,\n        prefix: &mut Vec<u8>,\n        xcdr1: bool,\n    \
+         ) -> Result<(), zerodds_dcps::EncodeError> {{\n        \
+         let start = prefix.len();\n        \
+         let written = if xcdr1 {{\n            {encode_v1}\n        }} else {{\n            \
+         let mut w = zerodds_wire::Writer::continuing(\n                \
+         zerodds_wire::Endianness::Little,\n                {v2_align},\n                \
+         core::mem::take(prefix),\n            ){v2_write};\n            \
+         let written = {path}::encode(self, &mut w).and_then(|_| w.check_deferred());\n            \
+         *prefix = w.finish();\n            written\n        }};\n        \
+         if written.is_err() {{\n            prefix.truncate(start);\n        }}\n        \
+         written?;\n        Ok(())\n    }}\n\n    \
+         fn decode_continuing(\n        bytes: &[u8],\n        offset: usize,\n        xcdr1: bool,\n    \
+         ) -> Result<Self, zerodds_dcps::DecodeError> {{\n        \
+         if xcdr1 {{\n            {decode_v1}\n        }} else {{\n            \
+         let mut r = zerodds_wire::Reader::with_max_align(\n                bytes,\n                \
+         zerodds_wire::Endianness::Little,\n                {v2_align},\n            ){v2_read};\n            \
+         r.skip_to(offset)?;\n            \
+         Ok({path}::decode(&mut r)?)\n        }}\n    }}\n"
+    )
 }
 
 /// The `with_*` calls that set a generated `Reader` (`writer == false`) or

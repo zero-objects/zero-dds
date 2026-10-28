@@ -1147,7 +1147,9 @@ fn sequence_body<T: CodecTarget>(
             counted_loop::<T>("zd_i", name::<T>("zd_n"), T::block(body))
         }
     };
-    statements.extend(T::make_room(
+    statements.extend(T::make_room_of(
+        ast,
+        element,
         "v",
         element_type,
         name::<T>("zd_n"),

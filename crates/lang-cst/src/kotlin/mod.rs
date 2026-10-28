@@ -492,6 +492,11 @@ pub enum Expr {
         element: Box<Type>,
         /// The length.
         length: Box<Expr>,
+        /// The value every slot starts with, in place of `T()`: a
+        /// `typealias` of a value type has no constructor to call.
+        /// `None` for an element whose type constructs its own start
+        /// value; a specialised array ignores it.
+        init: Option<Box<Expr>>,
     },
     /// `arrayOf(a, b, c)`, or the primitive-specialised
     /// `intArrayOf`/`byteArrayOf`/… the renderer picks for a primitive

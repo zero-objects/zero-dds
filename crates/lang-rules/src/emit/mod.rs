@@ -978,6 +978,22 @@ pub trait CodecTarget {
         fill: Vec<Self::Stmt>,
     ) -> Vec<Self::Stmt>;
 
+    /// [`CodecTarget::make_room`] for a sequence whose element is
+    /// `element_id`. A target that cannot spell a slot's start value from
+    /// `element` alone overrides it: Kotlin's `Array(n) { T() }` has no
+    /// constructor to call where `T` is a `typealias` of `Int`.
+    fn make_room_of(
+        _ast: &Ast,
+        _element_id: Id<TypeNode>,
+        base: &str,
+        element: Self::Type,
+        count: Self::Expr,
+        assigned_whole: bool,
+        fill: Vec<Self::Stmt>,
+    ) -> Vec<Self::Stmt> {
+        Self::make_room(base, element, count, assigned_whole, fill)
+    }
+
     /// One scalar, as it comes off the runtime, into a place of
     /// `type_`.
     ///

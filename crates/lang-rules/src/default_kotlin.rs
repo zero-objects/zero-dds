@@ -259,9 +259,18 @@ fn body_of(
             let kotlin::Type::Array(element) = value_type(ast, id) else {
                 return Err(refuse("collection whose Kotlin form is not an array"));
             };
+            // `Array(0) { .. }` compiles its lambda although it never
+            // runs it.
+            let init = match &node.kind {
+                TypeKind::Sequence { element, .. } => element
+                    .resolved()
+                    .and_then(|element| alias_slot_start(ast, element)),
+                _ => None,
+            };
             vec![give_back(kotlin::Expr::NewArray {
                 element,
                 length: Box::new(kotlin::Expr::int(0)),
+                init: init.map(Box::new),
             })]
         }
 
@@ -459,13 +468,26 @@ pub(crate) fn enumerator_constant(ast: &Ast, id: Id<TypeNode>, enumerator: &str)
     kotlin::Expr::field(name(&kotlin_type_name(ast, id)), &property_name(enumerator))
 }
 
-/// The zero a typedef of a plain value takes, for the function of the
-/// typedef's own name `adapter/kotlin.rs` declares beside its
-/// `typealias`: Table 9's primitive row, an enumeration's default
-/// literal, a bitmask's empty holder. `None` for every other target —
-/// a generated class already has a constructor the alias calls, and a
-/// collection has no one zero worth naming.
-pub(crate) fn alias_zero(ast: &Ast, target: Id<TypeNode>) -> Option<kotlin::Expr> {
+/// The start value of an array slot whose Kotlin type is the
+/// `typealias` of a typedef of a plain value: `Array(n) { T() }` has no
+/// constructor to call there, because a typealias of `Int` has none, and
+/// a function of the alias's own name conflicts with the alias from
+/// Kotlin 2.4 on. `None` for an element that is no typedef, or a typedef
+/// of a type that constructs its own start value.
+pub(crate) fn alias_slot_start(ast: &Ast, element: Id<TypeNode>) -> Option<kotlin::Expr> {
+    match ast.type_(element).map(|node| &node.kind) {
+        Ok(TypeKind::Alias { aliased }) => aliased
+            .resolved()
+            .and_then(|target| alias_zero(ast, target)),
+        _ => None,
+    }
+}
+
+/// The zero a typedef of a plain value takes: Table 9's primitive row,
+/// an enumeration's default literal, a bitmask's empty holder. `None`
+/// for every other target — a generated class already has a constructor
+/// the alias calls, and a collection has no one zero worth naming.
+fn alias_zero(ast: &Ast, target: Id<TypeNode>) -> Option<kotlin::Expr> {
     let resolved = resolve_alias(ast, target);
     match ast.type_(resolved).map(|node| &node.kind) {
         Ok(TypeKind::Primitive(kind)) => Some(primitive_default(*kind)),
@@ -724,7 +746,12 @@ fn calls_in_expr(expr: &kotlin::Expr, out: &mut Vec<String>) {
                 calls_in_expr(arg, out);
             }
         }
-        kotlin::Expr::NewArray { length, .. } => calls_in_expr(length, out),
+        kotlin::Expr::NewArray { length, init, .. } => {
+            calls_in_expr(length, out);
+            if let Some(init) = init {
+                calls_in_expr(init, out);
+            }
+        }
         kotlin::Expr::ArrayOf { elements, .. } => {
             for element in elements {
                 calls_in_expr(element, out);
