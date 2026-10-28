@@ -194,10 +194,11 @@ jobs:
   # on).
   #
   # All logic (per-language minimum-tokens + committed baselines, the shared
-  # exclude list mirroring .jscpd.json, and the PMD download) lives in ONE
-  # script, scripts/cpd-gate.sh, called identically here and in the GitLab CI
-  # so the gate can't drift. PMD 7.x is a JVM tool → setup-java; the script
-  # fetches pmd-dist at runtime (never committed). To re-baseline:
+  # exclude list mirroring .jscpd.json) lives in ONE script,
+  # scripts/cpd-gate.sh, called identically here and in the GitLab CI so the
+  # gate can't drift. PMD 7.x is a JVM tool → setup-java; the script takes
+  # PMD from PMD_BIN and downloads nothing, so the step below provisions the
+  # same pinned distribution as the GitLab job (URL and SHA-256). To re-baseline:
   # `scripts/cpd-gate.sh --update-baseline` and copy the numbers into the file.
   #
   # This job MUST stay in sync with the `cpd` job in .gitlab-ci.yml (the
@@ -206,12 +207,21 @@ jobs:
   cpd:
     name: cpd (token-based copy/paste detection)
     runs-on: ubuntu-latest
+    env:
+      PMD_VERSION: "7.27.0"
+      PMD_SHA256: "4ae396ffaf2b0d3ef0b73a10b2925e77066f73d57a4ce9078c60e7302bcddec9"
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "21"
+      - name: Provision PMD
+        run: |
+          curl -fsSL -o /tmp/pmd.zip "https://github.com/pmd/pmd/releases/download/pmd_releases%2F${PMD_VERSION}/pmd-dist-${PMD_VERSION}-bin.zip"
+          echo "${PMD_SHA256}  /tmp/pmd.zip" | sha256sum -c -
+          unzip -q /tmp/pmd.zip -d /tmp/pmd
+          echo "PMD_BIN=/tmp/pmd/pmd-bin-${PMD_VERSION}/bin/pmd" >> "$GITHUB_ENV"
       - run: bash scripts/cpd-gate.sh
 
   # ---------------------------------------------------------------------------
@@ -233,8 +243,18 @@ jobs:
           - target: aarch64-unknown-linux-gnu
             runner: ubuntu-latest
             cross: true
+    env:
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
     steps:
       - uses: actions/checkout@v7
+      # The workspace's debug test build needs more disk than a hosted runner
+      # leaves free: the x86_64 test build and the coverage build ended in
+      # "No space left on device". The SDKs removed here are not used by
+      # this job; line tables instead of full debug info shrink the build.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
@@ -289,10 +309,18 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Build socket.rs + run live_frame unit tests
         run: cargo test -p zerodds-transport-tsn --features live
+      # Built as the runner user, run as root: the hosted runner's sudo
+      # ignores -E, so a cargo started under sudo finds neither the pinned
+      # toolchain nor the user's CARGO_HOME, and a root-owned target/ would
+      # break the cache step after it.
       - name: Real RTPS round trip over a veth pair (needs root)
+        working-directory: crates/transport-tsn
         run: |
-          sudo -E "$(command -v cargo)" test -p zerodds-transport-tsn \
-            --features live --test veth_loopback -- --ignored --test-threads=1
+          bin=$(cargo test -p zerodds-transport-tsn --features live --test veth_loopback \
+            --no-run --message-format=json \
+            | jq -r 'select(.reason == "compiler-artifact" and .target.name == "veth_loopback" and .executable != null) | .executable')
+          test -x "$bin"
+          sudo "$bin" --ignored --test-threads=1
 
   # ---------------------------------------------------------------------------
   # No-std build for the Safe-Subset crates.
@@ -331,8 +359,18 @@ jobs:
     name: coverage (cargo-llvm-cov)
     needs: [fmt, clippy]
     runs-on: ubuntu-latest
+    env:
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
     steps:
       - uses: actions/checkout@v7
+      # The workspace's debug test build needs more disk than a hosted runner
+      # leaves free: the x86_64 test build and the coverage build ended in
+      # "No space left on device". The SDKs removed here are not used by
+      # this job; line tables instead of full debug info shrink the build.
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: llvm-tools-preview
