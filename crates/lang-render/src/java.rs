@@ -261,7 +261,7 @@ fn render_member(w: &mut Writer, node: &Member) {
             w.dedent();
             w.line("}");
         }
-        Member::Comment(c) => doc(w, c),
+        Member::Comment(c) => line_comment(w, c),
         Member::Verbatim(text) => verbatim_lines(w, text),
     }
 }
@@ -488,7 +488,7 @@ fn render_statement(w: &mut Writer, node: &Statement) {
             line.push(';');
             w.line(&line);
         }
-        Statement::Comment(c) => doc(w, c),
+        Statement::Comment(c) => line_comment(w, c),
     }
 }
 
@@ -829,6 +829,18 @@ fn doc(w: &mut Writer, doc: &Doc) {
     w.line("/**");
     comment_lines(w, " * ", doc.as_lines());
     w.line(" */");
+}
+
+/// A comment that documents no declaration after it — what is left of a
+/// typedef or a native type, a note between statements — as line comments.
+/// Javadoc there is a documentation comment attached to nothing, which
+/// `javac -Xlint` reports as `dangling-doc-comments` (JDK 23 on) and
+/// `-Werror` refuses.
+fn line_comment(w: &mut Writer, doc: &Doc) {
+    if doc.is_empty() {
+        return;
+    }
+    comment_lines(w, "// ", doc.as_lines());
 }
 
 /// A statement as it appears inside a `for` clause: no semicolon, no

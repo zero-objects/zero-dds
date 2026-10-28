@@ -49,7 +49,7 @@ public final class Values {
         return DurationImpl.infinite(environment);
     }
 
-    /**
+    /*
      * The overloads below build their value in the environment of this
      * binding's own {@code ServiceEnvironmentImpl} singleton, which is the one
      * an application gets from

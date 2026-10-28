@@ -176,6 +176,11 @@ exceptions = [
     # file-level copyleft — option-ext exports 1 trait, none of its own
     # source comes over to us. Acceptable.
     { allow = ["MPL-2.0"], crate = "option-ext" },
+    # serialport: the serial-line transport of the XRCE agent, only with
+    # zerodds-xrce-agent's `serial` feature (default off). Linked unmodified
+    # from crates.io; MPL-2.0 is file-level copyleft and none of its files
+    # are copied into ours.
+    { allow = ["MPL-2.0"], crate = "serialport" },
 ]
 
 [bans]
@@ -232,10 +237,6 @@ skip = [
     # (build-dep). Goes away once cbindgen moves its toml stack to
     # a single winnow.
     { crate = "winnow" },
-    # wit-bindgen 0.51 (wasip3 rc) vs 0.57 (wasip2) — pulled in by
-    # getrandom backends for WASI targets. Transitive consequence of the
-    # getrandom version spread.
-    { crate = "wit-bindgen" },
 
     # ----- rc.2 transitive wave (all 15 crates new in rc.2) -----
     # Pulled in from zenoh + rdkafka + new idl crates. All transitive,
@@ -258,7 +259,6 @@ skip = [
     { crate = "r-efi" },
     # rand 0.8 (shared_memory + older stack) vs 0.9 (proptest, zenoh).
     { crate = "rand" },
-    { crate = "rand_chacha" },
     { crate = "rand_core" },
     # socket2 0.5 (transport-udp direct) vs 0.6 (zenoh).
     { crate = "socket2" },
@@ -282,6 +282,23 @@ skip = [
     # transitive without a direct lever.
     { crate = "rustix" },
     { crate = "linux-raw-sys" },
+
+    # ----- rc.7, seen with --all-features (both CIs check with it) -----
+    # base64 0.22 (arrow-cast, pem, postgres-protocol, serde_with, zenoh)
+    # vs 0.23 (ureq 3.4, a build dependency of libduckdb-sys behind the
+    # lakehouse store's `duckdb` feature).
+    { crate = "base64" },
+    # secrecy 0.8 (zenoh-config 1.10, the zenoh bridge) vs 0.10 (cryptoki
+    # 0.12, the `pkcs11` feature of zerodds-security-runtime).
+    { crate = "secrecy" },
+    # crypto-bigint 0.5 (elliptic-curve 0.13 <- p256/p384 <- webrtc-dtls
+    # 0.12, the `dtls` features) vs 0.7 (zerodds-security-crypto and
+    # -keyexchange). Same root as RUSTSEC-2026-0387 above; goes away when
+    # webrtc-dtls moves to elliptic-curve 0.14.
+    { crate = "crypto-bigint" },
+    # yasna 0.5 (rcgen 0.13 <- webrtc-dtls 0.12 and zerodds-xrce) vs 0.6
+    # (rcgen 0.14). Goes away with webrtc-dtls on rcgen 0.14.
+    { crate = "yasna" },
 
     # ----- rc.3 transitive wave: two incompatible x509 dep trees -----
     # The x509-parser family is pulled in TWO generations, each from

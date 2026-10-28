@@ -13,15 +13,9 @@ public final class ZdTypes {
      * An IDL module, as the class its declarations nest in.
      */
     public static final class DDS {
-        /**
-         * typedef short TypeKind; — Java has no alias, so every use takes short.
-         */
-        /**
-         * typedef java.lang.String ObjectName; — Java has no alias, so every use takes java.lang.String.
-         */
-        /**
-         * typedef short PrimitiveTypeId; — Java has no alias, so every use takes short.
-         */
+        // typedef short TypeKind; — Java has no alias, so every use takes short.
+        // typedef java.lang.String ObjectName; — Java has no alias, so every use takes java.lang.String.
+        // typedef short PrimitiveTypeId; — Java has no alias, so every use takes short.
 
         /**
          * A union: the discriminator, and one field per case.
@@ -35,12 +29,8 @@ public final class ZdTypes {
             public long constructed_type_id;
         }
 
-        /**
-         * typedef ZdTypes.DDS.TypeId[] TypeIdSeq; — Java has no alias, so every use takes ZdTypes.DDS.TypeId[].
-         */
-        /**
-         * typedef long MemberId; — Java has no alias, so every use takes long.
-         */
+        // typedef ZdTypes.DDS.TypeId[] TypeIdSeq; — Java has no alias, so every use takes ZdTypes.DDS.TypeId[].
+        // typedef long MemberId; — Java has no alias, so every use takes long.
 
         /**
          * A union: the discriminator, and one field per case.
@@ -72,18 +62,14 @@ public final class ZdTypes {
             public ZdTypes.DDS.AnnotationMemberValue value;
         }
 
-        /**
-         * typedef ZdTypes.DDS.AnnotationUsageMember[] AnnotationUsageMemberSeq; — Java has no alias, so every use takes ZdTypes.DDS.AnnotationUsageMember[].
-         */
+        // typedef ZdTypes.DDS.AnnotationUsageMember[] AnnotationUsageMemberSeq; — Java has no alias, so every use takes ZdTypes.DDS.AnnotationUsageMember[].
 
         public static final class AnnotationUsage {
             public ZdTypes.DDS.TypeId type_id;
             public ZdTypes.DDS.AnnotationUsageMember[] member;
         }
 
-        /**
-         * typedef ZdTypes.DDS.AnnotationUsage[] AnnotationUsageSeq; — Java has no alias, so every use takes ZdTypes.DDS.AnnotationUsage[].
-         */
+        // typedef ZdTypes.DDS.AnnotationUsage[] AnnotationUsageSeq; — Java has no alias, so every use takes ZdTypes.DDS.AnnotationUsage[].
 
         /**
          * A bitmask, as the constants its bits name. A member of this type takes the unsigned holder Table 33 of XTypes 1.3 7.4.1.1.3.2 gives for its bound, mapped through the unsigned rule this file states.
@@ -127,9 +113,7 @@ public final class ZdTypes {
             public ZdTypes.DDS.AnnotationUsage[] annotation;
         }
 
-        /**
-         * typedef ZdTypes.DDS.Member[] MemberSeq; — Java has no alias, so every use takes ZdTypes.DDS.Member[].
-         */
+        // typedef ZdTypes.DDS.Member[] MemberSeq; — Java has no alias, so every use takes ZdTypes.DDS.Member[].
 
         public static final class StructureType {
             public ZdTypes.DDS.TypeProperty property;
@@ -138,9 +122,7 @@ public final class ZdTypes {
             public ZdTypes.DDS.Member[] member;
         }
 
-        /**
-         * typedef int[] UnionCaseLabelSeq; — Java has no alias, so every use takes int[].
-         */
+        // typedef int[] UnionCaseLabelSeq; — Java has no alias, so every use takes int[].
 
         public static final class UnionMember {
             public ZdTypes.DDS.MemberProperty property;
@@ -148,9 +130,7 @@ public final class ZdTypes {
             public int[] label;
         }
 
-        /**
-         * typedef ZdTypes.DDS.UnionMember[] UnionMemberSeq; — Java has no alias, so every use takes ZdTypes.DDS.UnionMember[].
-         */
+        // typedef ZdTypes.DDS.UnionMember[] UnionMemberSeq; — Java has no alias, so every use takes ZdTypes.DDS.UnionMember[].
 
         public static final class UnionType {
             public ZdTypes.DDS.TypeProperty property;
@@ -164,9 +144,7 @@ public final class ZdTypes {
             public ZdTypes.DDS.AnnotationMemberValue default_value;
         }
 
-        /**
-         * typedef ZdTypes.DDS.AnnotationMember[] AnnotationMemberSeq; — Java has no alias, so every use takes ZdTypes.DDS.AnnotationMember[].
-         */
+        // typedef ZdTypes.DDS.AnnotationMember[] AnnotationMemberSeq; — Java has no alias, so every use takes ZdTypes.DDS.AnnotationMember[].
 
         public static final class AnnotationType {
             public ZdTypes.DDS.TypeProperty property;
@@ -181,12 +159,8 @@ public final class ZdTypes {
             public ZdTypes.DDS.TypeId base_type;
         }
 
-        /**
-         * typedef long CollectionBound; — Java has no alias, so every use takes long.
-         */
-        /**
-         * typedef long[] CollectionBoundSeq; — Java has no alias, so every use takes long[].
-         */
+        // typedef long CollectionBound; — Java has no alias, so every use takes long.
+        // typedef long[] CollectionBoundSeq; — Java has no alias, so every use takes long[].
 
         public static final class CollectionType {
             public ZdTypes.DDS.TypeProperty property;
@@ -233,9 +207,7 @@ public final class ZdTypes {
             public java.lang.String name;
         }
 
-        /**
-         * typedef ZdTypes.DDS.Bit[] BitSeq; — Java has no alias, so every use takes ZdTypes.DDS.Bit[].
-         */
+        // typedef ZdTypes.DDS.Bit[] BitSeq; — Java has no alias, so every use takes ZdTypes.DDS.Bit[].
 
         public static final class BitSetType {
             public ZdTypes.DDS.TypeProperty property;
@@ -249,9 +221,7 @@ public final class ZdTypes {
             public java.lang.String name;
         }
 
-        /**
-         * typedef ZdTypes.DDS.EnumeratedConstant[] EnumeratedConstantSeq; — Java has no alias, so every use takes ZdTypes.DDS.EnumeratedConstant[].
-         */
+        // typedef ZdTypes.DDS.EnumeratedConstant[] EnumeratedConstantSeq; — Java has no alias, so every use takes ZdTypes.DDS.EnumeratedConstant[].
 
         public static final class EnumerationType {
             public ZdTypes.DDS.TypeProperty property;
@@ -303,9 +273,7 @@ public final class ZdTypes {
             public ZdTypes.DDS.Module mod;
         }
 
-        /**
-         * typedef ZdTypes.DDS.TypeLibraryElement[] TypeLibraryElementSeq; — Java has no alias, so every use takes ZdTypes.DDS.TypeLibraryElement[].
-         */
+        // typedef ZdTypes.DDS.TypeLibraryElement[] TypeLibraryElementSeq; — Java has no alias, so every use takes ZdTypes.DDS.TypeLibraryElement[].
 
         public static final class TypeLibrary {
             public ZdTypes.DDS.TypeLibraryElement[] element;

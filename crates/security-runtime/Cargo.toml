@@ -82,7 +82,7 @@ zerodds-security-rtps = { version = "1.0.0-rc.7", path = "../security-rtps" }
 # behind the `pkcs11` feature. `default-features = false` uses the
 # pre-generated bindings and loads the module through `libloading` at
 # runtime, so no PKCS#11 library is needed to build.
-cryptoki = { version = "0.7", optional = true, default-features = false }
+cryptoki = { version = "0.12", optional = true, default-features = false }
 # SHA-256 for the ECDSA digest `CKM_ECDSA` signs: the token signs the
 # pre-computed digest, not the message.
 sha2 = { workspace = true, optional = true }

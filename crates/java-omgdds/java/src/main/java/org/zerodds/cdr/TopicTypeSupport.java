@@ -126,7 +126,6 @@ public interface TopicTypeSupport<T> {
         return id;
     }
 
-    /** Encode with default endianness (LE). */
     /**
      * Whether a reader keeps the octets each sample arrived as beside the value it decoded from
      * them ({@code SampleImpl.serialized()}). The DDS-RPC 1.0 binding (§7.11.2) reads requests

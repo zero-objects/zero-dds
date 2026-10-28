@@ -61,11 +61,6 @@ public interface DomainParticipant {
     }
 
     /**
-     * Delete a writer this participant created — DDS-RPC 1.0 §7.9.3:
-     * "Deactivation shall delete the underlying DDS entities (i.e.,
-     * DataReader and DataWriter only)."
-     */
-    /**
      * As {@link #createWriter(String, String, RpcQos, String, org.zerodds.ddsrpc.TypeDescription)},
      * with what the params say of the entity in the terms of the DDS Java PSM (§7.11.2): the
      * topic type, the Publisher, the DataWriterQos. A binding that is not the PSM creates the
@@ -97,6 +92,11 @@ public interface DomainParticipant {
         return createReader(topic, typeName, qos, serviceInstanceName, description);
     }
 
+    /**
+     * Delete a writer this participant created — DDS-RPC 1.0 §7.9.3:
+     * "Deactivation shall delete the underlying DDS entities (i.e.,
+     * DataReader and DataWriter only)."
+     */
     void deleteWriter(DataWriter writer);
 
     /** Delete a reader this participant created — §7.9.3. */

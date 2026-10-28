@@ -123,10 +123,6 @@ public final class QosCompatibility {
     }
 
     /**
-     * The QoS policies of {@code qos} as a map from policy class to policy,
-     * which is the shape {@link #isCompatible} compares.
-     */
-    /**
      * The policies of any {@code EntityQos}, widened to the {@code QosPolicy}
      * key and value types, so a caller can compare two QoS of different
      * entity kinds (DDS 1.2 §2.2.2.3.7 {@code copy_from_topic_qos}).
@@ -148,8 +144,10 @@ public final class QosCompatibility {
         return (Class<? extends QosPolicy>) key;
     }
 
-
-
+    /**
+     * The QoS policies of {@code qos} as a map from policy class to policy,
+     * which is the shape {@link #isCompatible} compares.
+     */
     @SuppressWarnings("unchecked") // every key of a QoS map is the Class of a policy (§7.3.5.2)
     public static Map<Class<? extends QosPolicy>, QosPolicy> policiesOf(
             java.util.Map<?, ? extends QosPolicy> qos) {

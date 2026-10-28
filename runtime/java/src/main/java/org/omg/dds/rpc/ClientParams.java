@@ -30,13 +30,13 @@ public interface ClientParams {
     /** The service instance every request of this client is bound to (§7.11.1.4.3), {@code ""} for the default instance. */
     ClientParams instanceName(String name);
 
-    /** The run-time suffix of the request topic name, §7.4.2.3. */
     /** The whole name of the request topic (§7.4.2.2); {@code ""} for the composed name. */
     ClientParams requestTopicName(String name);
 
     /** The whole name of the reply topic (§7.4.2.2); {@code ""} for the composed name. */
     ClientParams replyTopicName(String name);
 
+    /** The run-time suffix of the request topic name, §7.4.2.3. */
     ClientParams requestTopicNameSuffix(String suffix);
 
     /** The run-time suffix of the reply topic name, §7.4.2.3. */

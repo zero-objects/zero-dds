@@ -1061,19 +1061,6 @@ public final class Writer {
     }
 
     /**
-     * A bitset, as the anchor integer its bitfields pack into.
-     *
-     * <p>DDS-XTypes 1.3 has no serialisation rule for a bitset — §7.4.3.5.3
-     * runs from rule (1) to rule (30) and no left-hand side matches one. How
-     * wide the anchor is comes from the layout planner and arrives here as a
-     * number, the same as every other framing decision.
-     *
-     * <p>At an anchor of eight the argument is the bit pattern, for the same
-     * reason {@link #writeU64(long)}'s is. Below that it is a number, and one
-     * the anchor cannot hold is refused rather than masked: masking would
-     * drop the bitfields above the cut and report success.
-     */
-    /**
      * One bitfield, shifted into the accumulator a bitset packs into.
      *
      * The counterpart of {@code zdw_bitfield}. A value wider than the
@@ -1101,6 +1088,19 @@ public final class Writer {
         return value << position;
     }
 
+    /**
+     * A bitset, as the anchor integer its bitfields pack into.
+     *
+     * <p>DDS-XTypes 1.3 has no serialisation rule for a bitset — §7.4.3.5.3
+     * runs from rule (1) to rule (30) and no left-hand side matches one. How
+     * wide the anchor is comes from the layout planner and arrives here as a
+     * number, the same as every other framing decision.
+     *
+     * <p>At an anchor of eight the argument is the bit pattern, for the same
+     * reason {@link #writeU64(long)}'s is. Below that it is a number, and one
+     * the anchor cannot hold is refused rather than masked: masking would
+     * drop the bitfields above the cut and report success.
+     */
     public void writeBitset(int anchorBytes, long bits) {
         switch (anchorBytes) {
             case 1:

@@ -920,10 +920,6 @@ implements DomainParticipant {
         renewManualByParticipant();
     }
 
-    /**
-     * Renews the liveliness of every DataWriter of this participant whose LIVELINESS is
-     * MANUAL_BY_PARTICIPANT (DDS 1.4 §2.2.3.11, §2.2.2.2.1.7).
-     */
     /** The liveliness of the participant was asserted: the MANUAL_BY_PARTICIPANT writers renew. */
     public void livelinessAsserted() {
         if (manualWriters.get() == 0) {
@@ -942,6 +938,10 @@ implements DomainParticipant {
         manualWriters.decrementAndGet();
     }
 
+    /**
+     * Renews the liveliness of every DataWriter of this participant whose LIVELINESS is
+     * MANUAL_BY_PARTICIPANT (DDS 1.4 §2.2.3.11, §2.2.2.2.1.7).
+     */
     public void renewManualByParticipant() {
         for (Publisher publisher : new ArrayList<>(publishers)) {
             if (!(publisher instanceof PublisherImpl)) {

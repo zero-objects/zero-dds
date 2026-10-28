@@ -280,10 +280,6 @@ implements Publisher, DomainEntity<PublisherListener, PublisherQos> {
         }
     }
 
-    /**
-     * The name of the coherent set in progress, or 0 if there is none or PRESENTATION does not
-     * ask for coherent access; the writers put it on the wire as the coherent set of their samples.
-     */
     /** Whether the PRESENTATION of this publisher has access scope GROUP (DDSI-RTPS 2.5 8.7.5). */
     boolean groupScope() {
         return qos.getPresentation().getAccessScope()
@@ -357,6 +353,10 @@ implements Publisher, DomainEntity<PublisherListener, PublisherQos> {
         return org.zerodds.rtps.GroupDigest.of(ids);
     }
 
+    /**
+     * The name of the coherent set in progress, or 0 if there is none or PRESENTATION does not
+     * ask for coherent access; the writers put it on the wire as the coherent set of their samples.
+     */
     long coherentSetName() {
         synchronized (this) {
             return coherentDepth > 0 && qos.getPresentation().isCoherentAccess() ? coherentEpoch : 0;

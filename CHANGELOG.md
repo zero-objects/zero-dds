@@ -89,6 +89,19 @@ on the new foundation. That single fact explains most of what follows.
 
 ### Security
 
+- **`cryptoki` 0.12 and `duckdb` 1.10506.1 close four advisories.**
+  `zerodds-security-runtime`'s `pkcs11` feature took `cryptoki` 0.7, which
+  RUSTSEC-2026-0286 covers (an out-of-bounds read when decoding
+  `CKA_ALLOWED_MECHANISMS`); it now takes 0.12, with `CInitializeArgs::new`
+  and the `secrecy` PIN of that release. The lakehouse store's `duckdb`
+  feature reached `zip` 6 through `libduckdb-sys` 1.10505.0
+  (RUSTSEC-2026-0367, -0368, -0369, all in archive extraction);
+  `libduckdb-sys` 1.10506.1 takes `zip` 9. Both CIs run `cargo deny` with
+  `--all-features` now, which is where the four showed: without it the
+  optional features were not checked. `serialport`, the XRCE agent's serial
+  line behind its `serial` feature, is allowed under MPL-2.0 as a single
+  exception.
+
 - **A deeply nested XML text no longer overflows the stack of its reader.**
   `roxmltree` 0.20 recurses once per open element and has no limit of its
   own; 100 000 unclosed start tags overflowed an 8 MiB main thread in a
@@ -486,6 +499,40 @@ on the new foundation. That single fact explains most of what follows.
   `a_refused_handshake_request_is_recorded_with_its_reason`.
 
 ### Changed
+
+- **BREAKING (generated Rust): an IDL `map` is a `Vec<MapEntry<K, V>>`**
+  (`2e6e454418b`, `ab55a59d1d1`). XTypes 1.3 §7.5.1.3.6 binds a map to the
+  sequence of `MapEntry` where a language has no map of its own; rc.6
+  generated a `BTreeMap<K, V>`, whose entries come out in ascending key
+  order rather than in the order they were put in. The entry is
+  `zerodds_wire::MapEntry { key, value }`. **Migration:** build the
+  entries (`vec![MapEntry::new(k, v)]`), or keep the `BTreeMap` with
+  `zerodds-idlc --rust-map btree-map` or, in a `build.rs`,
+  `zerodds_build::Config::rust_map(RustMapForm::BTreeMap)`.
+
+- **BREAKING: `UserWriterConfig` and `UserReaderConfig` grew fields since
+  rc.6.** `UserWriterConfig`: `data_max_size_serialized`, `entity_name`,
+  `group_entity_id`, `durability_service`, `latency_budget`,
+  `destination_order`, `transport_priority`, `presentation`, `property`,
+  `data_tags`. `UserReaderConfig`, besides `resource_limits` below:
+  `entity_name`, `group_entity_id`, `time_based_filter`, `latency_budget`,
+  `destination_order`, `presentation`, `content_filter`, `relay`,
+  `property`, `data_tags`. A struct literal that names every field does
+  not compile. **Migration:** both have a `Default` (`UserWriterConfig`
+  since `b31d44d0fd3`); `..Default::default()` keeps a literal to the
+  fields that differ.
+
+- **BREAKING (`zerodds-rtps`): `ParticipantBuiltinTopicData` grew six
+  fields** besides the locator lists below: `domain_tag`,
+  `available_builtin_endpoints_ext`, `expects_inline_qos`,
+  `manual_liveliness_count`, `entity_name`, `builtin_endpoint_qos`. The
+  struct has no `Default`; a struct literal names them.
+
+- **BREAKING (`zerodds-security`): `LoggingPlugin` has the operations of
+  DDS-Security 1.2 Table 46** (`17359dfef99`): `set_log_options`,
+  `enable_logging` and `set_listener` (§9.6.2.2.1, .3, .4) are required
+  methods. An implementation outside the workspace implements them; `log`
+  logs according to the options only after `enable_logging`.
 
 - **The C++ generators prefix an identifier that is a C++ reserved word
   with `cxx_`** (DDS-RPC 1.0 §7.11.1.1.2 rule 8, `cxx_name` in
@@ -2514,6 +2561,14 @@ on the new foundation. That single fact explains most of what follows.
   (`BuiltinTopicQosTest`).
 
 ### Fixed
+
+- **Generated Java has no documentation comment that documents nothing.**
+  The Java generator wrote what is left of a `typedef` or a `native` type,
+  and a note between statements, as Javadoc; javac 23 and later report
+  that as `dangling-doc-comments` and `-Werror` refuses it. They are line
+  comments now, as in the C# generator. Eleven hand-written Java comments
+  that had been separated from their method by a later insertion are back
+  at it.
 
 - **Zenoh bridge: an auto-discovered topic waits for its type.** The
   daemon asked once for a discovered endpoint's type and waited at most

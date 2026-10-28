@@ -142,9 +142,13 @@ jobs:
       # rust-toolchain.toml pins 1.88.0; the cargo-deny-action Docker image
       # only has 1.85.0-musl pre-installed. The rust-version input forces
       # the action to rustup-install the pinned version before cargo-deny.
+      # `--all-features`, as the GitLab `deny` job: optional features carry
+      # dependencies of their own (pkcs11 → cryptoki, the lakehouse store →
+      # duckdb, the XRCE agent daemon → serialport).
       - uses: EmbarkStudios/cargo-deny-action@v2
         with:
           command: check
+          arguments: --all-features
           rust-version: "1.88.0"
 
   # ---------------------------------------------------------------------------
@@ -389,9 +393,16 @@ jobs:
         # where the codec evidence lives — `tests/interop_corpus.rs`
         # alone moves `fill_cpp.rs` from 0 to 73.5% — and excluding them
         # measured the harness rather than the code under it.
-        run: cargo llvm-cov --workspace --include-build-script --lcov --output-path lcov.info
+        #
+        # `--test-threads=1`, as the GitLab test job and the DCPS step of
+        # `build-test`: the DCPS integration tests of one binary share a
+        # domain and its lease, and run in parallel they take each other's
+        # (type_lookup_e2e failed here that way).
+        run: cargo llvm-cov --workspace --include-build-script --lcov --output-path lcov.info -- --test-threads=1
+      # The report of the run above; `cargo llvm-cov` without `report` would
+      # run every test a second time.
       - name: Coverage summary
-        run: cargo llvm-cov --workspace --include-build-script --summary-only
+        run: cargo llvm-cov report --include-build-script --summary-only
       # Branch coverage is nightly-only (`-Z coverage-options=branch`) and
       # rust-toolchain.toml pins 1.88.0, so it cannot come from the step
       # above. It runs here on its own nightly, non-gating: a nightly lint

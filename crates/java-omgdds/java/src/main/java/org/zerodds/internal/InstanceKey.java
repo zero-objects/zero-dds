@@ -23,18 +23,18 @@ public final class InstanceKey {
         return bytes.clone();
     }
 
-    /**
-     * Derive a stable 16-byte InstanceHandle from key bytes (a truncated /
-     * zero-padded copy of the key — mirrors the runtime's key_hash to
-     * instance_handle mapping). The empty (un-keyed) key maps to a fixed
-     * non-NIL handle so a single-instance topic still has a real handle.
-     */
     /** The instance key of a handle this binding produced. */
     public static InstanceKey of(InstanceHandle handle) {
         return new InstanceKey(
                 org.zerodds.core.InstanceHandleImpl.bytesOf(handle));
     }
 
+    /**
+     * Derive a stable 16-byte InstanceHandle from key bytes (a truncated /
+     * zero-padded copy of the key — mirrors the runtime's key_hash to
+     * instance_handle mapping). The empty (un-keyed) key maps to a fixed
+     * non-NIL handle so a single-instance topic still has a real handle.
+     */
     public static InstanceHandle toHandle(InstanceKey key) {
         byte[] out = new byte[16];
         byte[] k = key.bytes;

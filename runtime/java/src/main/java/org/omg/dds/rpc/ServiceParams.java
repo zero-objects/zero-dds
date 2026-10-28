@@ -30,13 +30,13 @@ public interface ServiceParams {
     /** The name this service instance announces as {@code service_instance_name} (§7.6.2.1.1), {@code ""} for the default instance. */
     ServiceParams instanceName(String name);
 
-    /** The run-time suffix of the request topic name, §7.4.2.3. */
     /** The whole name of the request topic (§7.4.2.2); {@code ""} for the composed name. */
     ServiceParams requestTopicName(String name);
 
     /** The whole name of the reply topic (§7.4.2.2); {@code ""} for the composed name. */
     ServiceParams replyTopicName(String name);
 
+    /** The run-time suffix of the request topic name, §7.4.2.3. */
     ServiceParams requestTopicNameSuffix(String suffix);
 
     /** The run-time suffix of the reply topic name, §7.4.2.3. */

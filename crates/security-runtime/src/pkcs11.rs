@@ -460,7 +460,7 @@ fn load_module(uri: &Pkcs11Uri) -> Result<Pkcs11, Pkcs11Error> {
     }
     let pkcs11 =
         Pkcs11::new(&path).map_err(|e| Pkcs11Error::Module(format!("{}: {e}", path.display())))?;
-    match pkcs11.initialize(CInitializeArgs::OsThreads) {
+    match pkcs11.initialize(CInitializeArgs::new(CInitializeFlags::OS_LOCKING_OK)) {
         Ok(()) | Err(CryptokiError::Pkcs11(RvError::CryptokiAlreadyInitialized, _)) => {}
         Err(e) => return Err(Pkcs11Error::Module(format!("{}: {e}", path.display()))),
     }
@@ -483,7 +483,7 @@ fn open_session(uri: &Pkcs11Uri) -> Result<Session, Pkcs11Error> {
     if let Some(pin) = &uri.pin {
         let value = pin_value(pin)?;
         session
-            .login(UserType::User, Some(&AuthPin::new(value)))
+            .login(UserType::User, Some(&AuthPin::new(value.into())))
             .map_err(|e| Pkcs11Error::Session(format!("C_Login: {e}")))?;
     }
     Ok(session)
@@ -670,7 +670,7 @@ fn der_length(out: &mut Vec<u8>, len: usize) {
 }
 
 #[cfg(feature = "pkcs11")]
-use cryptoki::context::{CInitializeArgs, Pkcs11};
+use cryptoki::context::{CInitializeArgs, CInitializeFlags, Pkcs11};
 #[cfg(feature = "pkcs11")]
 use cryptoki::error::{Error as CryptokiError, RvError};
 #[cfg(feature = "pkcs11")]

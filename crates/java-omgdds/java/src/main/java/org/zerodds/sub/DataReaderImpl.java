@@ -217,7 +217,6 @@ public final class DataReaderImpl<T> extends EntityBase<DataReaderListener<T>, D
     private int lostReadBaseline = 0;
     private boolean lossPending;
     private final Map<String, Long> lastSequence = new java.util.HashMap<>();
-    /** Counts the samples in the order they reach this reader. */
     /**
      * The order of arrival over all readers of the process: ordered access with access_scope GROUP
      * orders the samples of several readers (DDS 1.4 2.2.3.6).

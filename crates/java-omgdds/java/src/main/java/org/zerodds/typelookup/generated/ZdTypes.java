@@ -13,9 +13,7 @@ public final class ZdTypes {
      * An IDL module, as the class its declarations nest in.
      */
     public static final class DDS {
-        /**
-         * typedef byte[] GuidPrefix_t; — Java has no alias, so every use takes byte[].
-         */
+        // typedef byte[] GuidPrefix_t; — Java has no alias, so every use takes byte[].
 
         public static final class EntityId_t {
             public byte[] entityKey;
@@ -123,42 +121,18 @@ public final class ZdTypes {
          * An IDL module, as the class its declarations nest in.
          */
         public static final class XTypes {
-            /**
-             * typedef byte EquivalenceKind; — Java has no alias, so every use takes byte.
-             */
-            /**
-             * typedef byte TypeKind; — Java has no alias, so every use takes byte.
-             */
-            /**
-             * typedef byte TypeIdentiferKind; — Java has no alias, so every use takes byte.
-             */
-            /**
-             * typedef java.lang.String MemberName; — Java has no alias, so every use takes java.lang.String.
-             */
-            /**
-             * typedef java.lang.String QualifiedTypeName; — Java has no alias, so every use takes java.lang.String.
-             */
-            /**
-             * typedef byte PrimitiveTypeId; — Java has no alias, so every use takes byte.
-             */
-            /**
-             * typedef byte[] EquivalenceHash; — Java has no alias, so every use takes byte[].
-             */
-            /**
-             * typedef byte[] NameHash; — Java has no alias, so every use takes byte[].
-             */
-            /**
-             * typedef long LBound; — Java has no alias, so every use takes long.
-             */
-            /**
-             * typedef long[] LBoundSeq; — Java has no alias, so every use takes long[].
-             */
-            /**
-             * typedef byte SBound; — Java has no alias, so every use takes byte.
-             */
-            /**
-             * typedef byte[] SBoundSeq; — Java has no alias, so every use takes byte[].
-             */
+            // typedef byte EquivalenceKind; — Java has no alias, so every use takes byte.
+            // typedef byte TypeKind; — Java has no alias, so every use takes byte.
+            // typedef byte TypeIdentiferKind; — Java has no alias, so every use takes byte.
+            // typedef java.lang.String MemberName; — Java has no alias, so every use takes java.lang.String.
+            // typedef java.lang.String QualifiedTypeName; — Java has no alias, so every use takes java.lang.String.
+            // typedef byte PrimitiveTypeId; — Java has no alias, so every use takes byte.
+            // typedef byte[] EquivalenceHash; — Java has no alias, so every use takes byte[].
+            // typedef byte[] NameHash; — Java has no alias, so every use takes byte[].
+            // typedef long LBound; — Java has no alias, so every use takes long.
+            // typedef long[] LBoundSeq; — Java has no alias, so every use takes long[].
+            // typedef byte SBound; — Java has no alias, so every use takes byte.
+            // typedef byte[] SBoundSeq; — Java has no alias, so every use takes byte[].
 
             /**
              * A union: the discriminator, and one field per case.
@@ -288,33 +262,15 @@ public final class ZdTypes {
                 public static final int IS_DEFAULT = 1 << 6;
             }
 
-            /**
-             * typedef int CollectionElementFlag; — Java has no alias, so every use takes int.
-             */
-            /**
-             * typedef int StructMemberFlag; — Java has no alias, so every use takes int.
-             */
-            /**
-             * typedef int UnionMemberFlag; — Java has no alias, so every use takes int.
-             */
-            /**
-             * typedef int UnionDiscriminatorFlag; — Java has no alias, so every use takes int.
-             */
-            /**
-             * typedef int EnumeratedLiteralFlag; — Java has no alias, so every use takes int.
-             */
-            /**
-             * typedef int AnnotationParameterFlag; — Java has no alias, so every use takes int.
-             */
-            /**
-             * typedef int AliasMemberFlag; — Java has no alias, so every use takes int.
-             */
-            /**
-             * typedef int BitflagFlag; — Java has no alias, so every use takes int.
-             */
-            /**
-             * typedef int BitsetMemberFlag; — Java has no alias, so every use takes int.
-             */
+            // typedef int CollectionElementFlag; — Java has no alias, so every use takes int.
+            // typedef int StructMemberFlag; — Java has no alias, so every use takes int.
+            // typedef int UnionMemberFlag; — Java has no alias, so every use takes int.
+            // typedef int UnionDiscriminatorFlag; — Java has no alias, so every use takes int.
+            // typedef int EnumeratedLiteralFlag; — Java has no alias, so every use takes int.
+            // typedef int AnnotationParameterFlag; — Java has no alias, so every use takes int.
+            // typedef int AliasMemberFlag; — Java has no alias, so every use takes int.
+            // typedef int BitflagFlag; — Java has no alias, so every use takes int.
+            // typedef int BitsetMemberFlag; — Java has no alias, so every use takes int.
 
             /**
              * The enumeration of the flags of a bitmask (XTypes 1.3 7.5.1.2.2): `_<label>` is the flag's value, 1 << position.
@@ -377,30 +333,14 @@ public final class ZdTypes {
                 public static final int IS_AUTOID_HASH = 1 << 4;
             }
 
-            /**
-             * typedef int StructTypeFlag; — Java has no alias, so every use takes int.
-             */
-            /**
-             * typedef int UnionTypeFlag; — Java has no alias, so every use takes int.
-             */
-            /**
-             * typedef int CollectionTypeFlag; — Java has no alias, so every use takes int.
-             */
-            /**
-             * typedef int AnnotationTypeFlag; — Java has no alias, so every use takes int.
-             */
-            /**
-             * typedef int AliasTypeFlag; — Java has no alias, so every use takes int.
-             */
-            /**
-             * typedef int EnumTypeFlag; — Java has no alias, so every use takes int.
-             */
-            /**
-             * typedef int BitmaskTypeFlag; — Java has no alias, so every use takes int.
-             */
-            /**
-             * typedef int BitsetTypeFlag; — Java has no alias, so every use takes int.
-             */
+            // typedef int StructTypeFlag; — Java has no alias, so every use takes int.
+            // typedef int UnionTypeFlag; — Java has no alias, so every use takes int.
+            // typedef int CollectionTypeFlag; — Java has no alias, so every use takes int.
+            // typedef int AnnotationTypeFlag; — Java has no alias, so every use takes int.
+            // typedef int AliasTypeFlag; — Java has no alias, so every use takes int.
+            // typedef int EnumTypeFlag; — Java has no alias, so every use takes int.
+            // typedef int BitmaskTypeFlag; — Java has no alias, so every use takes int.
+            // typedef int BitsetTypeFlag; — Java has no alias, so every use takes int.
 
             public static final class StringSTypeDefn {
                 public byte bound;
@@ -1001,12 +941,8 @@ public final class ZdTypes {
                     }
             }
 
-            /**
-             * typedef ZdTypes.DDS.XTypes.TypeIdentifier[] TypeIdentifierSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.TypeIdentifier[].
-             */
-            /**
-             * typedef long MemberId; — Java has no alias, so every use takes long.
-             */
+            // typedef ZdTypes.DDS.XTypes.TypeIdentifier[] TypeIdentifierSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.TypeIdentifier[].
+            // typedef long MemberId; — Java has no alias, so every use takes long.
 
             public static final class ExtendedAnnotationParameterValue {
                     /** Equal when every member is equal; an array by its elements. */
@@ -1514,9 +1450,7 @@ public final class ZdTypes {
                     }
             }
 
-            /**
-             * typedef ZdTypes.DDS.XTypes.AppliedAnnotationParameter[] AppliedAnnotationParameterSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.AppliedAnnotationParameter[].
-             */
+            // typedef ZdTypes.DDS.XTypes.AppliedAnnotationParameter[] AppliedAnnotationParameterSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.AppliedAnnotationParameter[].
 
             public static final class AppliedAnnotation {
                 public ZdTypes.DDS.XTypes.TypeIdentifier annotation_typeid;
@@ -1546,9 +1480,7 @@ public final class ZdTypes {
                     }
             }
 
-            /**
-             * typedef ZdTypes.DDS.XTypes.AppliedAnnotation[] AppliedAnnotationSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.AppliedAnnotation[].
-             */
+            // typedef ZdTypes.DDS.XTypes.AppliedAnnotation[] AppliedAnnotationSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.AppliedAnnotation[].
 
             public static final class AppliedVerbatimAnnotation {
                 public java.lang.String placement;
@@ -1726,9 +1658,7 @@ public final class ZdTypes {
                     }
             }
 
-            /**
-             * typedef ZdTypes.DDS.XTypes.CompleteStructMember[] CompleteStructMemberSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.CompleteStructMember[].
-             */
+            // typedef ZdTypes.DDS.XTypes.CompleteStructMember[] CompleteStructMemberSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.CompleteStructMember[].
 
             public static final class MinimalStructMember {
                 public ZdTypes.DDS.XTypes.CommonStructMember common;
@@ -1755,9 +1685,7 @@ public final class ZdTypes {
                     }
             }
 
-            /**
-             * typedef ZdTypes.DDS.XTypes.MinimalStructMember[] MinimalStructMemberSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.MinimalStructMember[].
-             */
+            // typedef ZdTypes.DDS.XTypes.MinimalStructMember[] MinimalStructMemberSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.MinimalStructMember[].
 
             public static final class AppliedBuiltinTypeAnnotations {
                 /**
@@ -1943,9 +1871,7 @@ public final class ZdTypes {
                     }
             }
 
-            /**
-             * typedef int[] UnionCaseLabelSeq; — Java has no alias, so every use takes int[].
-             */
+            // typedef int[] UnionCaseLabelSeq; — Java has no alias, so every use takes int[].
 
             public static final class CommonUnionMember {
                 public long member_id;
@@ -2001,9 +1927,7 @@ public final class ZdTypes {
                     }
             }
 
-            /**
-             * typedef ZdTypes.DDS.XTypes.CompleteUnionMember[] CompleteUnionMemberSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.CompleteUnionMember[].
-             */
+            // typedef ZdTypes.DDS.XTypes.CompleteUnionMember[] CompleteUnionMemberSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.CompleteUnionMember[].
 
             public static final class MinimalUnionMember {
                 public ZdTypes.DDS.XTypes.CommonUnionMember common;
@@ -2030,9 +1954,7 @@ public final class ZdTypes {
                     }
             }
 
-            /**
-             * typedef ZdTypes.DDS.XTypes.MinimalUnionMember[] MinimalUnionMemberSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.MinimalUnionMember[].
-             */
+            // typedef ZdTypes.DDS.XTypes.MinimalUnionMember[] MinimalUnionMemberSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.MinimalUnionMember[].
 
             public static final class CommonDiscriminatorMember {
                 public int member_flags;
@@ -2271,9 +2193,7 @@ public final class ZdTypes {
                     }
             }
 
-            /**
-             * typedef ZdTypes.DDS.XTypes.CompleteAnnotationParameter[] CompleteAnnotationParameterSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.CompleteAnnotationParameter[].
-             */
+            // typedef ZdTypes.DDS.XTypes.CompleteAnnotationParameter[] CompleteAnnotationParameterSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.CompleteAnnotationParameter[].
 
             public static final class MinimalAnnotationParameter {
                 public ZdTypes.DDS.XTypes.CommonAnnotationParameter common;
@@ -2302,9 +2222,7 @@ public final class ZdTypes {
                     }
             }
 
-            /**
-             * typedef ZdTypes.DDS.XTypes.MinimalAnnotationParameter[] MinimalAnnotationParameterSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.MinimalAnnotationParameter[].
-             */
+            // typedef ZdTypes.DDS.XTypes.MinimalAnnotationParameter[] MinimalAnnotationParameterSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.MinimalAnnotationParameter[].
 
             public static final class CompleteAnnotationHeader {
                 public java.lang.String annotation_name;
@@ -2998,9 +2916,7 @@ public final class ZdTypes {
                     }
             }
 
-            /**
-             * typedef int BitBound; — Java has no alias, so every use takes int.
-             */
+            // typedef int BitBound; — Java has no alias, so every use takes int.
 
             public static final class CommonEnumeratedLiteral {
                 public int value;
@@ -3052,9 +2968,7 @@ public final class ZdTypes {
                     }
             }
 
-            /**
-             * typedef ZdTypes.DDS.XTypes.CompleteEnumeratedLiteral[] CompleteEnumeratedLiteralSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.CompleteEnumeratedLiteral[].
-             */
+            // typedef ZdTypes.DDS.XTypes.CompleteEnumeratedLiteral[] CompleteEnumeratedLiteralSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.CompleteEnumeratedLiteral[].
 
             public static final class MinimalEnumeratedLiteral {
                 public ZdTypes.DDS.XTypes.CommonEnumeratedLiteral common;
@@ -3081,9 +2995,7 @@ public final class ZdTypes {
                     }
             }
 
-            /**
-             * typedef ZdTypes.DDS.XTypes.MinimalEnumeratedLiteral[] MinimalEnumeratedLiteralSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.MinimalEnumeratedLiteral[].
-             */
+            // typedef ZdTypes.DDS.XTypes.MinimalEnumeratedLiteral[] MinimalEnumeratedLiteralSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.MinimalEnumeratedLiteral[].
 
             public static final class CommonEnumeratedHeader {
                 public int bit_bound;
@@ -3260,9 +3172,7 @@ public final class ZdTypes {
                     }
             }
 
-            /**
-             * typedef ZdTypes.DDS.XTypes.CompleteBitflag[] CompleteBitflagSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.CompleteBitflag[].
-             */
+            // typedef ZdTypes.DDS.XTypes.CompleteBitflag[] CompleteBitflagSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.CompleteBitflag[].
 
             public static final class MinimalBitflag {
                 public ZdTypes.DDS.XTypes.CommonBitflag common;
@@ -3289,9 +3199,7 @@ public final class ZdTypes {
                     }
             }
 
-            /**
-             * typedef ZdTypes.DDS.XTypes.MinimalBitflag[] MinimalBitflagSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.MinimalBitflag[].
-             */
+            // typedef ZdTypes.DDS.XTypes.MinimalBitflag[] MinimalBitflagSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.MinimalBitflag[].
 
             public static final class CommonBitmaskHeader {
                 public int bit_bound;
@@ -3316,12 +3224,8 @@ public final class ZdTypes {
                     }
             }
 
-            /**
-             * typedef ZdTypes.DDS.XTypes.CompleteEnumeratedHeader CompleteBitmaskHeader; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.CompleteEnumeratedHeader.
-             */
-            /**
-             * typedef ZdTypes.DDS.XTypes.MinimalEnumeratedHeader MinimalBitmaskHeader; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.MinimalEnumeratedHeader.
-             */
+            // typedef ZdTypes.DDS.XTypes.CompleteEnumeratedHeader CompleteBitmaskHeader; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.CompleteEnumeratedHeader.
+            // typedef ZdTypes.DDS.XTypes.MinimalEnumeratedHeader MinimalBitmaskHeader; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.MinimalEnumeratedHeader.
 
             public static final class CompleteBitmaskType {
                 public int bitmask_flags;
@@ -3431,9 +3335,7 @@ public final class ZdTypes {
                     }
             }
 
-            /**
-             * typedef ZdTypes.DDS.XTypes.CompleteBitfield[] CompleteBitfieldSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.CompleteBitfield[].
-             */
+            // typedef ZdTypes.DDS.XTypes.CompleteBitfield[] CompleteBitfieldSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.CompleteBitfield[].
 
             public static final class MinimalBitfield {
                 public ZdTypes.DDS.XTypes.CommonBitfield common;
@@ -3460,9 +3362,7 @@ public final class ZdTypes {
                     }
             }
 
-            /**
-             * typedef ZdTypes.DDS.XTypes.MinimalBitfield[] MinimalBitfieldSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.MinimalBitfield[].
-             */
+            // typedef ZdTypes.DDS.XTypes.MinimalBitfield[] MinimalBitfieldSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.MinimalBitfield[].
 
             public static final class CompleteBitsetHeader {
                 public ZdTypes.DDS.XTypes.CompleteTypeDetail detail;
@@ -4342,12 +4242,8 @@ public final class ZdTypes {
                     }
             }
 
-            /**
-             * typedef ZdTypes.DDS.XTypes.TypeObject[] TypeObjectSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.TypeObject[].
-             */
-            /**
-             * typedef ZdTypes.DDS.XTypes.TypeObject[] StronglyConnectedComponent; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.TypeObject[].
-             */
+            // typedef ZdTypes.DDS.XTypes.TypeObject[] TypeObjectSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.TypeObject[].
+            // typedef ZdTypes.DDS.XTypes.TypeObject[] StronglyConnectedComponent; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.TypeObject[].
 
             public static final class TypeIdentifierTypeObjectPair {
                 public ZdTypes.DDS.XTypes.TypeIdentifier type_identifier;
@@ -4374,9 +4270,7 @@ public final class ZdTypes {
                     }
             }
 
-            /**
-             * typedef ZdTypes.DDS.XTypes.TypeIdentifierTypeObjectPair[] TypeIdentifierTypeObjectPairSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.TypeIdentifierTypeObjectPair[].
-             */
+            // typedef ZdTypes.DDS.XTypes.TypeIdentifierTypeObjectPair[] TypeIdentifierTypeObjectPairSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.TypeIdentifierTypeObjectPair[].
 
             public static final class TypeIdentifierPair {
                 public ZdTypes.DDS.XTypes.TypeIdentifier type_identifier1;
@@ -4403,9 +4297,7 @@ public final class ZdTypes {
                     }
             }
 
-            /**
-             * typedef ZdTypes.DDS.XTypes.TypeIdentifierPair[] TypeIdentifierPairSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.TypeIdentifierPair[].
-             */
+            // typedef ZdTypes.DDS.XTypes.TypeIdentifierPair[] TypeIdentifierPairSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.TypeIdentifierPair[].
 
             public static final class TypeIdentifierWithSize {
                 public ZdTypes.DDS.XTypes.TypeIdentifier type_id;
@@ -4432,9 +4324,7 @@ public final class ZdTypes {
                     }
             }
 
-            /**
-             * typedef ZdTypes.DDS.XTypes.TypeIdentifierWithSize[] TypeIdentifierWithSizeSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.TypeIdentifierWithSize[].
-             */
+            // typedef ZdTypes.DDS.XTypes.TypeIdentifierWithSize[] TypeIdentifierWithSizeSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.TypeIdentifierWithSize[].
 
             public static final class TypeIdentifierWithDependencies {
                 public ZdTypes.DDS.XTypes.TypeIdentifierWithSize typeid_with_size;
@@ -4463,9 +4353,7 @@ public final class ZdTypes {
                     }
             }
 
-            /**
-             * typedef ZdTypes.DDS.XTypes.TypeIdentifierWithDependencies[] TypeIdentifierWithDependenciesSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.TypeIdentifierWithDependencies[].
-             */
+            // typedef ZdTypes.DDS.XTypes.TypeIdentifierWithDependencies[] TypeIdentifierWithDependenciesSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.TypeIdentifierWithDependencies[].
 
             public static final class TypeInformation {
                 public ZdTypes.DDS.XTypes.TypeIdentifierWithDependencies minimal;
@@ -4492,9 +4380,7 @@ public final class ZdTypes {
                     }
             }
 
-            /**
-             * typedef ZdTypes.DDS.XTypes.TypeInformation[] TypeInformationSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.TypeInformation[].
-             */
+            // typedef ZdTypes.DDS.XTypes.TypeInformation[] TypeInformationSeq; — Java has no alias, so every use takes ZdTypes.DDS.XTypes.TypeInformation[].
             public static final byte EK_MINIMAL = (byte) 0xF1;
             public static final byte EK_COMPLETE = (byte) 0xF2;
             public static final byte EK_BOTH = (byte) 0xF3;
@@ -4551,15 +4437,9 @@ public final class ZdTypes {
          * An IDL module, as the class its declarations nest in.
          */
         public static final class RPC {
-            /**
-             * typedef byte UnknownOperation; — Java has no alias, so every use takes byte.
-             */
-            /**
-             * typedef byte UnknownException; — Java has no alias, so every use takes byte.
-             */
-            /**
-             * typedef byte UnusedMember; — Java has no alias, so every use takes byte.
-             */
+            // typedef byte UnknownOperation; — Java has no alias, so every use takes byte.
+            // typedef byte UnknownException; — Java has no alias, so every use takes byte.
+            // typedef byte UnusedMember; — Java has no alias, so every use takes byte.
 
             /**
              * An enumeration, as CORBA 3.3 part 3 §1.5.9 maps it: one instance per enumerator, the int constants `_NAME`, `value()` and `from_int`.
@@ -4630,9 +4510,7 @@ public final class ZdTypes {
                     }
             }
 
-            /**
-             * typedef java.lang.String InstanceName; — Java has no alias, so every use takes java.lang.String.
-             */
+            // typedef java.lang.String InstanceName; — Java has no alias, so every use takes java.lang.String.
 
             public static final class RequestHeader {
                 public ZdTypes.DDS.SampleIdentity requestId;
